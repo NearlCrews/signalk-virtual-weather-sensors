@@ -7,9 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [1.0.0] - 2025-10-03
 
-### 🎉 Initial Release - Modern TypeScript SignalK Weather Plugin
+### 🎉 Initial Release - Modern TypeScript Signal K Weather Plugin
 
-First production release of signalk-virtual-weather-sensors - a comprehensive weather data plugin for SignalK servers with NMEA2000 compatibility and AccuWeather API integration.
+First production release of signalk-virtual-weather-sensors - a comprehensive weather data plugin for Signal K servers with NMEA2000 compatibility and AccuWeather API integration.
 
 ### 🚀 Added
 
@@ -52,7 +52,7 @@ First production release of signalk-virtual-weather-sensors - a comprehensive we
 ### 🔄 Changed
 
 #### Breaking Changes
-- **Plugin name**: `signalk-n2k-weather-provider` → `signalk-virtual-weather-sensors`
+- **Plugin name**: `@signalk/signalk-n2k-weather-provider` → `signalk-virtual-weather-sensors`
 - **Main entry**: `plugin/index.js` → `dist/index.js` (built from TypeScript)
 - **Module system**: CommonJS → ESM modules throughout
 - **Configuration**: Enhanced with new optional settings for advanced features
@@ -110,9 +110,9 @@ First production release of signalk-virtual-weather-sensors - a comprehensive we
 
 #### Backward Compatibility
 - **Configuration**: All existing settings supported with sensible defaults
-- **Core paths**: All original SignalK paths preserved
+- **Core paths**: All original Signal K paths preserved
 - **NMEA2000**: Enhanced compatibility while maintaining existing integrations
-- **SignalK server**: Compatible with all current SignalK server versions
+- **Signal K server**: Compatible with all current Signal K server versions
 
 #### Forward Compatibility
 - **Extensible architecture** for additional weather data sources
@@ -135,9 +135,9 @@ First production release of signalk-virtual-weather-sensors - a comprehensive we
 - **Documentation**: Complete inline documentation with JSDoc comments
 - **Build process**: Reliable, fast builds with proper dependency management
 
-### 📝 SignalK Standards Compliance
-- **95% compliance** with SignalK plugin development standards
-- Follows [SignalK Plugin Guidelines](https://demo.signalk.org/documentation/Developing/Plugins.html)
+### 📝 Signal K Standards Compliance
+- **95% compliance** with Signal K plugin development standards
+- Follows [Signal K Plugin Guidelines](https://demo.signalk.org/documentation/Developing/Plugins.html)
 - Implements [Configuration Schema Standards](https://demo.signalk.org/documentation/Developing/Plugins/Configuration.html)
 - Adheres to [Weather Provider Patterns](https://demo.signalk.org/documentation/Developing/Plugins/Weather_Providers.html)
 - **Note**: Humidity output as percentage (0-100) for Garmin compatibility instead of ratio (0-1)
@@ -145,7 +145,7 @@ First production release of signalk-virtual-weather-sensors - a comprehensive we
 ### 🔗 Repository Information
 - **GitHub**: https://github.com/NearlCrews/signalk-virtual-weather-sensors
 - **NPM Package**: signalk-virtual-weather-sensors
-- **Display Name**: SignalK Virtual Weather Sensors
+- **Display Name**: Signal K Virtual Weather Sensors
 
 ---
 

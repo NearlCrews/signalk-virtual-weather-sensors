@@ -1,0 +1,202 @@
+name: Dependency Updates
+
+on:
+  schedule:
+    # Run every Monday at 9:00 AM UTC
+    - cron: '0 9 * * 1'
+  workflow_dispatch:
+
+jobs:
+  update-dependencies:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20.x'
+          cache: 'npm'
+      
+      - name: Check for outdated dependencies
+        id: outdated
+        run: |
+          npm outdated --json > outdated.json || true
+          if [ -s outdated.json ]; then
+            echo "has_updates=true" >> $GITHUB_OUTPUT
+            cat outdated.json
+          else
+            echo "has_updates=false" >> $GITHUB_OUTPUT
+          fi
+      
+      - name: Update dependencies
+        if: steps.outdated.outputs.has_updates == 'true'
+        run: |
+          # Update dependencies
+          npm update
+          
+          # Check if there are changes
+          if git diff --quiet package.json package-lock.json; then
+            echo "No dependency changes after update"
+            exit 0
+          fi
+          
+          echo "Dependencies updated successfully"
+      
+      - name: Install dependencies and validate
+        if: steps.outdated.outputs.has_updates == 'true'
+        run: |
+          npm ci
+          npm run validate
+      
+      - name: Generate update summary
+        if: steps.outdated.outputs.has_updates == 'true'
+        id: summary
+        run: |
+          echo "## Dependency Updates Summary" > update-summary.md
+          echo "" >> update-summary.md
+          echo "The following dependencies have been updated:" >> update-summary.md
+          echo "" >> update-summary.md
+          
+          # Parse outdated.json and create markdown table
+          node -e "
+            const outdated = require('./outdated.json');
+            console.log('| Package | Current | Wanted | Latest |');
+            console.log('|---------|---------|--------|--------|');
+            Object.entries(outdated).forEach(([pkg, info]) => {
+              console.log(\`| \${pkg} | \${info.current} | \${info.wanted} | \${info.latest} |\`);
+            });
+          " >> update-summary.md
+          
+          echo "" >> update-summary.md
+          echo "### Validation Results" >> update-summary.md
+          echo "" >> update-summary.md
+          echo "✅ All tests pass" >> update-summary.md
+          echo "✅ Linting successful" >> update-summary.md
+          echo "✅ Type checking successful" >> update-summary.md
+      
+      - name: Create Pull Request
+        if: steps.outdated.outputs.has_updates == 'true'
+        uses: peter-evans/create-pull-request@v6
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          commit-message: 'chore(deps): update dependencies'
+          title: 'chore(deps): Automated dependency updates'
+          body-path: update-summary.md
+          branch: automated-dependency-updates
+          delete-branch: true
+          labels: |
+            dependencies
+            automated
+          assignees: ${{ github.repository_owner }}
+
+  security-audit:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20.x'
+          cache: 'npm'
+      
+      - name: Install dependencies
+        run: npm ci
+      
+      - name: Run security audit
+        id: audit
+        run: |
+          npm audit --json > audit-results.json || true
+          
+          # Check if there are vulnerabilities
+          VULNERABILITIES=$(node -e "
+            const audit = require('./audit-results.json');
+            const total = audit.metadata?.vulnerabilities?.total || 0;
+            console.log(total);
+          ")
+          
+          echo "vulnerabilities=$VULNERABILITIES" >> $GITHUB_OUTPUT
+          
+          if [ "$VULNERABILITIES" -gt 0 ]; then
+            echo "Found $VULNERABILITIES vulnerabilities"
+          else
+            echo "No vulnerabilities found"
+          fi
+      
+      - name: Create security issue
+        if: steps.audit.outputs.vulnerabilities > 0
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const audit = JSON.parse(fs.readFileSync('audit-results.json', 'utf8'));
+            
+            const vulnerabilities = audit.metadata?.vulnerabilities || {};
+            const advisories = audit.advisories || {};
+            
+            let body = '## 🔒 Security Vulnerabilities Detected\n\n';
+            body += `**Total Vulnerabilities:** ${vulnerabilities.total}\n\n`;
+            body += `- Critical: ${vulnerabilities.critical || 0}\n`;
+            body += `- High: ${vulnerabilities.high || 0}\n`;
+            body += `- Moderate: ${vulnerabilities.moderate || 0}\n`;
+            body += `- Low: ${vulnerabilities.low || 0}\n\n`;
+            
+            body += '### Affected Packages\n\n';
+            
+            Object.entries(advisories).forEach(([id, advisory]) => {
+              body += `#### ${advisory.module_name}\n`;
+              body += `- **Severity:** ${advisory.severity}\n`;
+              body += `- **Vulnerable versions:** ${advisory.vulnerable_versions}\n`;
+              body += `- **Patched versions:** ${advisory.patched_versions || 'None'}\n`;
+              body += `- **Recommendation:** ${advisory.recommendation}\n`;
+              body += `- **More info:** ${advisory.url}\n\n`;
+            });
+            
+            body += '### Action Required\n\n';
+            body += 'Please review the vulnerabilities above and update the affected packages.\n\n';
+            body += '```bash\n';
+            body += 'npm audit fix\n';
+            body += '# or for breaking changes:\n';
+            body += 'npm audit fix --force\n';
+            body += '```\n';
+            
+            // Check if a similar issue already exists
+            const issues = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: 'open',
+              labels: 'security,automated'
+            });
+            
+            const existingIssue = issues.data.find(issue => 
+              issue.title.includes('Security Vulnerabilities Detected')
+            );
+            
+            if (existingIssue) {
+              // Update existing issue
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: existingIssue.number,
+                body: `### Updated Security Scan (${new Date().toISOString()})\n\n${body}`
+              });
+            } else {
+              // Create new issue
+              await github.rest.issues.create({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                title: '🔒 Security Vulnerabilities Detected',
+                body: body,
+                labels: ['security', 'automated', 'dependencies']
+              });
+            }

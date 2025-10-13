@@ -1,6 +1,6 @@
 /**
- * SignalK Virtual Weather Sensors - Main Entry Point
- * Modern TypeScript SignalK plugin providing comprehensive AccuWeather integration
+ * Signal K Virtual Weather Sensors - Main Entry Point
+ * Modern TypeScript Signal K plugin providing comprehensive AccuWeather integration
  * with enhanced NMEA2000 environmental measurements and sk-n2k-emitter alignment
  */
 
@@ -11,7 +11,7 @@ import type { LogLevel, PluginConfiguration, PluginState } from './types/index.j
 import { ConfigurationValidator } from './utils/validation.js';
 
 /**
- * SignalK data value structure
+ * Signal K data value structure
  */
 interface SignalKDataValue {
   value: unknown;
@@ -25,7 +25,7 @@ interface SignalKDataValue {
 }
 
 /**
- * SignalK Server Application Interface
+ * Signal K Server Application Interface
  */
 interface SignalKApp {
   debug(...args: unknown[]): void;
@@ -49,8 +49,8 @@ interface PluginInstance {
 
 /**
  * Main plugin factory function
- * @param app SignalK server application instance
- * @returns SignalK plugin interface
+ * @param app Signal K server application instance
+ * @returns Signal K plugin interface
  */
 export default function createPlugin(app: SignalKApp) {
   const instance: PluginInstance = {
@@ -129,7 +129,7 @@ export default function createPlugin(app: SignalKApp) {
     },
 
     /**
-     * Plugin configuration schema for SignalK server UI
+     * Plugin configuration schema for Signal K server UI
      */
     schema: () => ({
       type: 'object',
@@ -328,7 +328,7 @@ function setupEnhancedEmissionSystem(
         // Create enhanced NMEA2000 delta message
         const delta = instance.pathMapper.mapToSignalKPaths(weatherData);
 
-        // Emit to SignalK server
+        // Emit to Signal K server
         if (app.handleMessage) {
           app.handleMessage(PLUGIN.NAME, delta);
         }
@@ -476,7 +476,7 @@ function getEnhancedFieldCount(): number {
   return 24;
 }
 
-// Export plugin metadata for SignalK compatibility
+// Export plugin metadata for Signal K compatibility
 export const metadata = {
   id: PLUGIN.NAME,
   name: PLUGIN.DISPLAY_NAME,

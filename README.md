@@ -1,11 +1,15 @@
-# SignalK Virtual Weather Sensors Plugin
+# Signal K Virtual Weather Sensors Plugin
 
+[![npm version](https://img.shields.io/npm/v/signalk-virtual-weather-sensors.svg)](https://www.npmjs.com/package/signalk-virtual-weather-sensors)
+[![npm downloads](https://img.shields.io/npm/dm/signalk-virtual-weather-sensors.svg)](https://www.npmjs.com/package/signalk-virtual-weather-sensors)
+[![License](https://img.shields.io/github/license/NearlCrews/signalk-virtual-weather-sensors.svg)](https://github.com/NearlCrews/signalk-virtual-weather-sensors/blob/main/LICENSE)
+[![CI](https://github.com/NearlCrews/signalk-virtual-weather-sensors/workflows/CI/badge.svg)](https://github.com/NearlCrews/signalk-virtual-weather-sensors/actions)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.7+-blue.svg)](https://www.typescriptlang.org/)
 [![NMEA2000](https://img.shields.io/badge/NMEA2000-Compatible-green.svg)](https://www.nmea.org/)
 [![AccuWeather](https://img.shields.io/badge/AccuWeather-API-orange.svg)](https://developer.accuweather.com/)
-[![SignalK](https://img.shields.io/badge/SignalK-Plugin-navy.svg)](https://signalk.org/)
+[![Signal K](https://img.shields.io/badge/Signal%20K-Plugin-navy.svg)](https://signalk.org/)
 
-A modern TypeScript SignalK plugin that provides comprehensive weather data from AccuWeather API with enhanced NMEA2000-compatible environmental measurements and perfect sk-n2k-emitter alignment.
+A modern TypeScript Signal K plugin that provides comprehensive weather data from AccuWeather API with enhanced NMEA2000-compatible environmental measurements and perfect sk-n2k-emitter alignment.
 
 ## 🚀 Features
 
@@ -48,14 +52,14 @@ npm install
 npm run build
 
 # The built plugin is now in dist/signalk-virtual-weather-sensors/
-# Copy this directory to your SignalK plugins directory
+# Copy this directory to your Signal K plugins directory
 cp -r dist/signalk-virtual-weather-sensors ~/.signalk/node_modules/
 ```
 
 ### Option 3: Direct Installation from Built Package
 If you have a pre-built `dist/signalk-virtual-weather-sensors` directory:
 ```bash
-# Copy the built package to your SignalK plugins directory
+# Copy the built package to your Signal K plugins directory
 cp -r dist/signalk-virtual-weather-sensors ~/.signalk/node_modules/
 
 # Or create a symlink for development
@@ -75,7 +79,7 @@ ln -s /path/to/signalk-virtual-weather-sensors/dist/signalk-virtual-weather-sens
 - **Debug Logging**: Enable detailed troubleshooting logs
 - **Max Vessel Data Age**: Reject stale navigation data (5-300 seconds, default: 30)
 
-## 🗺️ SignalK Paths
+## 🗺️ Signal K Paths
 
 ### Core Environmental Measurements
 ```
@@ -200,7 +204,7 @@ AccuWeather API → Enhanced Data Extraction → Vector Wind Calculations
                                           ↓
 NMEA2000 Path Mapping ← Validation & Sanitization ← Atmospheric Calculations
                     ↓
-SignalK Delta Messages → NMEA2000 Network → Marine Electronics
+Signal K Delta Messages → NMEA2000 Network → Marine Electronics
 ```
 
 ## 🏗️ Architecture
@@ -239,7 +243,7 @@ Enhanced to extract all available fields:
 ### Vector Wind Calculations
 Precise apparent wind calculations using:
 - **True wind vector**: From AccuWeather API
-- **Vessel motion vector**: From SignalK navigation data
+- **Vessel motion vector**: From Signal K navigation data
 - **Vector addition**: Industry-standard marine formulas
 
 ## 🔄 Migration from v1.0
@@ -250,27 +254,27 @@ The plugin maintains compatibility while adding enhanced features:
 - **Enhanced paths**: New paths added without breaking existing integrations
 - **Performance**: Significantly improved with TypeScript optimizations
 
-## 📋 SignalK Standards Compliance
+## 📋 Signal K Standards Compliance
 
-This plugin follows official SignalK development standards:
-- **Plugin Structure**: Complies with [SignalK Plugin Development Guidelines](https://demo.signalk.org/documentation/Developing/Plugins.html)
-- **Configuration**: Implements [SignalK Configuration Schema Standards](https://demo.signalk.org/documentation/Developing/Plugins/Configuration.html)
-- **Weather Data**: Follows [SignalK Weather Provider Patterns](https://demo.signalk.org/documentation/Developing/Plugins/Weather_Providers.html)
+This plugin follows official Signal K development standards:
+- **Plugin Structure**: Complies with [Signal K Plugin Development Guidelines](https://demo.signalk.org/documentation/Developing/Plugins.html)
+- **Configuration**: Implements [Signal K Configuration Schema Standards](https://demo.signalk.org/documentation/Developing/Plugins/Configuration.html)
+- **Weather Data**: Follows [Signal K Weather Provider Patterns](https://demo.signalk.org/documentation/Developing/Plugins/Weather_Providers.html)
 
 ### Compliance Status: 95% ✅
 
 **Delta Message Format**: ✅ Proper context and updates structure
-**SignalK Paths**: ✅ Standard `environment.*` conventions
+**Signal K Paths**: ✅ Standard `environment.*` conventions
 **Configuration Schema**: ✅ JSON Schema with validation
 **Source Metadata**: ✅ Proper labeling and typing
 
 ### Known Deviation: Humidity Format
 
-This plugin outputs humidity as **percentage (0-100)** instead of the SignalK recommended **ratio (0-1)** format. This is a deliberate choice for **Garmin marine display compatibility**, as Garmin devices and most NMEA2000 equipment expect percentage format.
+This plugin outputs humidity as **percentage (0-100)** instead of the Signal K recommended **ratio (0-1)** format. This is a deliberate choice for **Garmin marine display compatibility**, as Garmin devices and most NMEA2000 equipment expect percentage format.
 
-**Impact**: May cause minor display inconsistencies in some SignalK clients, but ensures proper display on physical marine electronics where it matters most.
+**Impact**: May cause minor display inconsistencies in some Signal K clients, but ensures proper display on physical marine electronics where it matters most.
 
-For more details, see [`TODO.md`](TODO.md) - SignalK Standards Compliance section.
+For more details, see [`TODO.md`](TODO.md) - Signal K Standards Compliance section.
 
 ## 📝 License
 
@@ -278,7 +282,9 @@ Apache-2.0 License - See [LICENSE](LICENSE) file for details.
 
 ## 🤝 Contributing
 
-Contributions welcome! The codebase uses modern TypeScript standards:
+Contributions welcome! Please read [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
+
+The codebase uses modern TypeScript standards:
 - **TypeScript 5.7+** with strict mode and ES2023 target
 - **Biome** for linting and formatting (replaces ESLint + Prettier)
 - **Vitest 3.x** for testing with v8 coverage
@@ -304,7 +310,11 @@ npm run validate
 
 ## 🆘 Support
 
-For issues and feature requests, please use the GitHub issue tracker.
+- 🐛 [Report bugs](https://github.com/NearlCrews/signalk-virtual-weather-sensors/issues/new?template=bug_report.yml)
+- 💡 [Request features](https://github.com/NearlCrews/signalk-virtual-weather-sensors/issues/new?template=feature_request.yml)
+- 💬 [GitHub Discussions](https://github.com/NearlCrews/signalk-virtual-weather-sensors/discussions)
+- 📖 [Documentation](https://github.com/NearlCrews/signalk-virtual-weather-sensors#readme)
+- 🔒 [Security issues](SECURITY.md)
 
 ---
 

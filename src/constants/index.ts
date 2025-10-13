@@ -10,11 +10,11 @@
 /** Plugin identification and versioning */
 export const PLUGIN = {
   NAME: 'signalk-virtual-weather-sensors',
-  DISPLAY_NAME: 'SignalK Virtual Weather Sensors',
+  DISPLAY_NAME: 'Signal K Virtual Weather Sensors',
   DESCRIPTION:
-    'SignalK plugin providing comprehensive weather data from AccuWeather API with NMEA2000-compatible environmental measurements',
+    'Signal K plugin providing comprehensive weather data from AccuWeather API with NMEA2000-compatible environmental measurements',
   VERSION: process.env.PKG_VERSION || '1.0.0',
-  AUTHOR: 'SignalK Community',
+  AUTHOR: 'Signal K Community',
 } as const;
 
 // ===============================
@@ -66,10 +66,10 @@ export const NMEA2000_DESTINATION = {
 } as const;
 
 // ===============================
-// SignalK Path Constants
+// Signal K Path Constants
 // ===============================
 
-/** Standardized SignalK paths for environmental data (enhanced) */
+/** Standardized Signal K paths for environmental data (enhanced) */
 export const SIGNALK_PATHS = {
   ENVIRONMENT: {
     OUTSIDE: {
@@ -138,9 +138,9 @@ export const SIGNALK_PATHS = {
   },
 } as const;
 
-/** SignalK data source configuration */
+/** Signal K data source configuration */
 export const SIGNALK_SOURCE = {
-  label: 'SignalK Virtual Weather Sensors',
+  label: 'Signal K Virtual Weather Sensors',
   type: 'plugin',
 } as const;
 
@@ -212,7 +212,7 @@ export const VALIDATION_LIMITS = {
 
   HUMIDITY: {
     MIN: 0,
-    MAX: 1, // 0-100% as 0-1 ratio
+    MAX: 100, // 0-100% as percentage for Garmin compatibility
   },
 
   WIND_SPEED: {
@@ -339,7 +339,7 @@ export type ConstantKeys<T> = T extends Record<infer K, unknown> ? K : never;
 /** Utility type to extract values from constant objects */
 export type ConstantValues<T> = T extends Record<string, infer V> ? V : never;
 
-/** Type-safe way to get SignalK paths */
+/** Type-safe way to get Signal K paths */
 export type ExtractSignalKPath<T extends keyof typeof SIGNALK_PATHS> =
   (typeof SIGNALK_PATHS)[T] extends Record<string, infer U>
     ? U extends Record<string, infer V>

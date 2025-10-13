@@ -1,12 +1,12 @@
 # TODO - signalk-virtual-weather-sensors
 
-This file tracks remaining tasks, known issues, and future enhancements for the signalk-virtual-weather-sensors SignalK plugin.
+This file tracks remaining tasks, known issues, and future enhancements for the signalk-virtual-weather-sensors Signal K plugin.
 
-## 🔄 SignalK Standards Compliance
+## 🔄 Signal K Standards Compliance
 
 ### Status: 95% Compliant ✅
 
-The plugin follows SignalK plugin standards as documented at:
+The plugin follows Signal K plugin standards as documented at:
 - https://demo.signalk.org/documentation/Developing/Plugins.html
 - https://demo.signalk.org/documentation/Developing/Plugins/Configuration.html
 - https://demo.signalk.org/documentation/Developing/Plugins/Weather_Providers.html
@@ -15,7 +15,7 @@ The plugin follows SignalK plugin standards as documented at:
 - [x] Plugin structure (default export, start/stop methods)
 - [x] Configuration schema (JSON Schema with validation)
 - [x] Delta message format (proper context and updates array)
-- [x] SignalK path conventions (environment.outside.*, environment.wind.*)
+- [x] Signal K path conventions (environment.outside.*, environment.wind.*)
 - [x] Source metadata (label and type)
 - [x] Status reporting (setPluginStatus/setPluginError)
 
@@ -30,21 +30,21 @@ value: data.humidity * 100  // Outputs percentage (0-100)
 meta: { units: '%' }
 ```
 
-**SignalK Standard**: 
+**Signal K Standard**:
 - Specifies ratio format (0-1) for humidity values
 
-**Reason for Deviation**: 
+**Reason for Deviation**:
 - **Garmin Compatibility**: Garmin marine displays expect humidity in percentage format (0-100)
-- Trade-off between SignalK standard compliance and real-world device compatibility
+- Trade-off between Signal K standard compliance and real-world device compatibility
 - Most NMEA2000 devices display humidity as percentage
 
-**Impact**: 
-- May cause minor display issues in some SignalK clients
+**Impact**:
+- May cause minor display issues in some Signal K clients
 - Garmin devices will display correctly
 - Can be converted back to ratio in clients if needed: `ratio = percentage / 100`
 
 **Future Consideration**:
-- Monitor SignalK community feedback
+- Monitor Signal K community feedback
 - Could add configuration option to choose format
 - Could detect client type and adjust format dynamically
 
@@ -53,12 +53,12 @@ meta: { units: '%' }
 ### Testing & Validation
 
 - [ ] **Add delta message format validation tests**
-  - Unit tests to verify proper SignalK delta structure
-  - Test all path mappings against SignalK specification
+  - Unit tests to verify proper Signal K delta structure
+  - Test all path mappings against Signal K specification
   - Validate metadata format
 
-- [ ] **Test with real SignalK server**
-  - Install on actual SignalK server instance
+- [ ] **Test with real Signal K server**
+  - Install on actual Signal K server instance
   - Verify paths appear in data browser
   - Test NMEA2000 network integration
   - Validate with Garmin displays
@@ -98,7 +98,7 @@ meta: { units: '%' }
   - Configurable alert thresholds
   - Push notifications
   - Email alerts
-  - Integration with SignalK notifications
+  - Integration with Signal K notifications
 
 - [ ] **Historical data storage**
   - Database integration
@@ -138,7 +138,7 @@ None currently. All tests passing, no reported bugs.
 
 - [ ] **Implement API key encryption**
   - Encrypt API key in configuration storage
-  - Use SignalK security context
+  - Use Signal K security context
   - Add key rotation support
 
 - [ ] **Add rate limiting**
@@ -153,7 +153,7 @@ None currently. All tests passing, no reported bugs.
   - Set up automated publishing via GitHub Actions
   - Create release tags
 
-- [ ] **Submit to SignalK App Store**
+- [ ] **Submit to Signal K App Store**
   - Prepare appstore metadata
   - Create screenshots
   - Write detailed description
@@ -167,7 +167,7 @@ None currently. All tests passing, no reported bugs.
   - Show and tell for user implementations
 
 - [ ] **Create example projects**
-  - Sample SignalK server configurations
+  - Sample Signal K server configurations
   - Integration examples
   - Custom display examples
 
@@ -204,7 +204,7 @@ None currently. All tests passing, no reported bugs.
 
 ### P1 - High (Within 1-2 releases)
 - Add delta message format validation tests
-- Test with real SignalK server
+- Test with real Signal K server
 - Publish to npm
 
 ### P2 - Medium (Future releases)
@@ -221,6 +221,6 @@ None currently. All tests passing, no reported bugs.
 
 **Last Updated**: 2025-10-11
 
-**Maintainer**: SignalK Community
+**Maintainer**: Signal K Community
 
 **Contributing**: See DEVELOPMENT.md for contribution guidelines

@@ -1,0 +1,125 @@
+name: Publish to npm
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to publish (leave empty for package.json version)'
+        required: false
+        type: string
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write # Required for npm provenance
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20.x'
+          registry-url: 'https://registry.npmjs.org'
+          cache: 'npm'
+      
+      - name: Install dependencies
+        run: npm ci
+      
+      - name: Run validation
+        run: npm run validate
+      
+      - name: Build package
+        run: npm run build
+      
+      - name: Verify build output
+        run: |
+          if [ ! -f "dist/index.js" ]; then
+            echo "Build failed: dist/index.js not found"
+            exit 1
+          fi
+          echo "Build successful"
+          ls -lh dist/
+      
+      - name: Set version (manual trigger)
+        if: github.event_name == 'workflow_dispatch' && github.event.inputs.version != ''
+        run: npm version ${{ github.event.inputs.version }} --no-git-tag-version
+      
+      - name: Publish to npm (with provenance)
+        run: npm publish --provenance --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+      
+      - name: Create GitHub release comment
+        if: github.event_name == 'release'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const version = require('./package.json').version;
+            const releaseId = context.payload.release.id;
+            
+            await github.rest.repos.createReleaseComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              release_id: releaseId,
+              body: `✅ Published to npm: https://www.npmjs.com/package/signalk-virtual-weather-sensors/v/${version}`
+            });
+      
+      - name: Notify on failure
+        if: failure()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+            
+            if (context.eventName === 'release') {
+              await github.rest.repos.createReleaseComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                release_id: context.payload.release.id,
+                body: `❌ npm publish failed. Check the [workflow run](${runUrl}) for details.`
+              });
+            }
+            
+            core.setFailed('Publish workflow failed');
+
+  verify-publish:
+    needs: publish
+    runs-on: ubuntu-latest
+    if: success()
+    
+    steps:
+      - name: Wait for npm registry to update
+        run: sleep 30
+      
+      - name: Verify package on npm
+        run: |
+          PACKAGE_NAME="signalk-virtual-weather-sensors"
+          VERSION=$(npm view $PACKAGE_NAME version)
+          
+          if [ -z "$VERSION" ]; then
+            echo "Failed to verify package on npm registry"
+            exit 1
+          fi
+          
+          echo "Successfully verified $PACKAGE_NAME@$VERSION on npm"
+          echo "Package URL: https://www.npmjs.com/package/$PACKAGE_NAME"
+      
+      - name: Test installation
+        run: |
+          mkdir test-install
+          cd test-install
+          npm init -y
+          npm install signalk-virtual-weather-sensors
+          
+          if [ ! -d "node_modules/signalk-virtual-weather-sensors" ]; then
+            echo "Installation verification failed"
+            exit 1
+          fi
+          
+          echo "Installation verified successfully"

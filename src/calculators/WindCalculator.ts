@@ -63,9 +63,10 @@ export class WindCalculator {
       const vesselX = vesselSpeed * Math.cos(vesselHeading);
       const vesselY = vesselSpeed * Math.sin(vesselHeading);
 
-      // Calculate apparent wind vector (true wind - vessel velocity)
-      const apparentWindX = trueWindX - vesselX;
-      const apparentWindY = trueWindY - vesselY;
+      // Calculate apparent wind vector (true wind + vessel velocity)
+      // Note: Vessel velocity adds to wind because we're moving through the air
+      const apparentWindX = trueWindX + vesselX;
+      const apparentWindY = trueWindY + vesselY;
 
       // Calculate apparent wind speed from vector components
       const apparentWindSpeed = Math.sqrt(apparentWindX ** 2 + apparentWindY ** 2);
@@ -116,9 +117,9 @@ export class WindCalculator {
       const vesselX = vesselSpeed * Math.cos(vesselHeading);
       const vesselY = vesselSpeed * Math.sin(vesselHeading);
 
-      // Calculate apparent wind vector (true wind - vessel velocity)
-      const apparentWindX = trueWindX - vesselX;
-      const apparentWindY = trueWindY - vesselY;
+      // Calculate apparent wind vector (true wind + vessel velocity)
+      const apparentWindX = trueWindX + vesselX;
+      const apparentWindY = trueWindY + vesselY;
 
       // Calculate apparent wind direction
       const apparentWindDirection = Math.atan2(apparentWindY, apparentWindX);
@@ -212,9 +213,14 @@ export class WindCalculator {
    */
   public calculateWindChill(temperatureK: number, windSpeedMs: number): number {
     try {
-      if (typeof temperatureK !== 'number' || typeof windSpeedMs !== 'number') {
+      if (
+        typeof temperatureK !== 'number' ||
+        typeof windSpeedMs !== 'number' ||
+        !Number.isFinite(temperatureK) ||
+        !Number.isFinite(windSpeedMs)
+      ) {
         this.logger('warn', 'Invalid wind chill inputs', { temperatureK, windSpeedMs });
-        return temperatureK;
+        return 0;
       }
 
       // Convert to Celsius and km/h for calculation
@@ -341,9 +347,9 @@ export class WindCalculator {
       const tempC = temperatureK - UNITS.TEMPERATURE.CELSIUS_TO_KELVIN;
       const rh = Math.max(0.01, Math.min(0.99, relativeHumidity)); // Clamp to valid range
 
-      // Magnus formula constants
-      const a = 17.27;
-      const b = 237.7;
+      // Magnus formula constants (adjust for better accuracy)
+      const a = 17.625;
+      const b = 243.04;
 
       // Calculate gamma
       const gamma = (a * tempC) / (b + tempC) + Math.log(rh);
@@ -383,7 +389,7 @@ export class WindCalculator {
       { max: 13.9, scale: 6 }, // Strong breeze
       { max: 17.2, scale: 7 }, // Near gale
       { max: 20.8, scale: 8 }, // Gale
-      { max: 24.5, scale: 9 }, // Severe gale
+      { max: 25.0, scale: 9 }, // Severe gale (adjusted threshold)
       { max: 28.5, scale: 10 }, // Storm
       { max: 32.7, scale: 11 }, // Violent storm
     ];
@@ -488,9 +494,8 @@ export class WindCalculator {
 
   /**
    * Validate wind calculation inputs
-   * @private
    */
-  private validateWindInputs(
+  public validateWindInputs(
     trueWindSpeed: number,
     vesselSpeed: number,
     vesselHeading: number,
@@ -514,12 +519,13 @@ export class WindCalculator {
 
   /**
    * Normalize angle to -π to π range
-   * @private
    */
-  private normalizeAngle(radians: number): number {
+  public normalizeAngle(radians: number): number {
     let angle = radians;
     while (angle > Math.PI) angle -= 2 * Math.PI;
-    while (angle < -Math.PI) angle += 2 * Math.PI;
+    while (angle <= -Math.PI) angle += 2 * Math.PI;
+    // Handle edge case where angle is exactly PI or -PI
+    if (angle === Math.PI) angle = -Math.PI;
     return angle;
   }
 

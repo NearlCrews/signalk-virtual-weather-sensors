@@ -17,7 +17,7 @@ export interface WeatherData {
   readonly temperature: number;
   /** Atmospheric pressure in Pascals (SI base unit) */
   readonly pressure: number;
-  /** Relative humidity as ratio (0-1, unitless) */
+  /** Relative humidity as percentage (0-100) for Garmin compatibility */
   readonly humidity: number;
   /** Wind speed in meters per second (SI unit) */
   readonly windSpeed: number;
@@ -159,7 +159,7 @@ export interface AccuWeatherConfig {
 }
 
 // ===============================
-// NMEA2000 & SignalK Types
+// NMEA2000 & Signal K Types
 // ===============================
 
 /**
@@ -174,7 +174,7 @@ export interface NMEA2000Message {
 }
 
 /**
- * SignalK delta message format for real-time data updates
+ * Signal K delta message format for real-time data updates
  */
 export interface SignalKDelta {
   readonly context: string;
@@ -189,7 +189,7 @@ export interface SignalKDelta {
 }
 
 /**
- * SignalK data source identifier
+ * Signal K data source identifier
  */
 export interface SignalKSource {
   readonly label: string;
@@ -199,8 +199,8 @@ export interface SignalKSource {
 }
 
 /**
- * SignalK path mapping for environment data
- * Maps weather measurements to standardized SignalK paths
+ * Signal K path mapping for environment data
+ * Maps weather measurements to standardized Signal K paths
  */
 export type SignalKPath =
   | `environment.outside.temperature`

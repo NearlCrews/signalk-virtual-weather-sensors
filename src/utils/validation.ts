@@ -559,9 +559,9 @@ export function validateNMEA2000Ranges(data: Partial<WeatherData>): ValidationRe
     warnings.push(`Wind gust speed ${data.windGustSpeed}m/s exceeds NMEA2000 maximum (102.3m/s)`);
   }
 
-  // Humidity must be valid ratio
-  if (data.humidity !== undefined && (data.humidity < 0 || data.humidity > 1)) {
-    errors.push(`Humidity ${data.humidity} must be between 0 and 1 (0-100%)`);
+  // Humidity must be valid percentage (0-100)
+  if (data.humidity !== undefined && (data.humidity < 0 || data.humidity > 100)) {
+    errors.push(`Humidity ${data.humidity} must be between 0 and 100 (percentage)`);
   }
 
   return {
@@ -589,9 +589,9 @@ export function sanitizeForNMEA2000(data: WeatherData): WeatherData {
     sanitized.pressure = Math.max(80000, Math.min(120000, sanitized.pressure));
   }
 
-  // Clamp humidity to valid range
+  // Clamp humidity to valid percentage range (0-100)
   if (sanitized.humidity) {
-    sanitized.humidity = Math.max(0, Math.min(1, sanitized.humidity));
+    sanitized.humidity = Math.max(0, Math.min(100, sanitized.humidity));
   }
 
   // Clamp wind speeds to NMEA2000 maximum

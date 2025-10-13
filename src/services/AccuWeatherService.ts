@@ -119,7 +119,7 @@ export class AccuWeatherService {
     // Core measurements (existing)
     const temperature = conditions.Temperature.Metric.Value + UNITS.TEMPERATURE.CELSIUS_TO_KELVIN;
     const pressure = conditions.Pressure.Metric.Value * UNITS.PRESSURE.MILLIBAR_TO_PASCAL;
-    const humidity = conditions.RelativeHumidity / 100;
+    const humidity = conditions.RelativeHumidity; // Keep as percentage (0-100) for Garmin compatibility
     const windSpeed = conditions.Wind.Speed.Metric.Value * UNITS.WIND_SPEED.KMH_TO_MS;
     const windDirection = conditions.Wind.Direction.Degrees * UNITS.ANGLE.DEGREES_TO_RADIANS;
     const dewPoint = conditions.DewPoint.Metric.Value + UNITS.TEMPERATURE.CELSIUS_TO_KELVIN;
@@ -156,10 +156,14 @@ export class AccuWeatherService {
     // Temperature trends (new)
     const temperatureDeparture24h = conditions.Past24HourTemperatureDeparture.Metric.Value; // Keep as Celsius delta
 
-    // Calculate synthetic values
+    // Calculate synthetic values (convert humidity percentage to ratio for calculations)
     const beaufortScale = this.calculateBeaufortScale(windSpeed, windGustSpeed);
-    const absoluteHumidity = this.calculateAbsoluteHumidity(temperature, humidity);
-    const airDensityEnhanced = this.calculateEnhancedAirDensity(temperature, pressure, humidity);
+    const absoluteHumidity = this.calculateAbsoluteHumidity(temperature, humidity / 100);
+    const airDensityEnhanced = this.calculateEnhancedAirDensity(
+      temperature,
+      pressure,
+      humidity / 100
+    );
     const heatStressIndex = this.calculateHeatStressIndex(wetBulbGlobeTemperature);
 
     const weatherData: WeatherData = {
@@ -538,7 +542,7 @@ export class AccuWeatherService {
       quality -= 0.2;
     }
 
-    // Reduce quality if critical data is missing or invalid
+    // Reduce quality if critical data is missing or invalid (humidity should be 0-100%)
     if (conditions.RelativeHumidity <= 0 || conditions.RelativeHumidity > 100) {
       quality -= 0.1;
     }

@@ -1,18 +1,29 @@
 {
   "name": "signalk-virtual-weather-sensors",
   "version": "1.0.0",
-  "description": "SignalK plugin that provides comprehensive weather data from AccuWeather API with calculated wind values and NMEA2000-compatible environmental measurements",
+  "description": "Signal K plugin that provides comprehensive weather data from AccuWeather API with calculated wind values and NMEA2000-compatible environmental measurements",
   "keywords": [
     "signalk-node-server-plugin",
     "signalk-category-weather",
     "nmea2000",
     "weather",
     "accuweather",
-    "typescript"
+    "typescript",
+    "marine",
+    "sailing",
+    "boat",
+    "navigation",
+    "sensor",
+    "weather-station",
+    "wind-calculator",
+    "apparent-wind",
+    "true-wind",
+    "maritime",
+    "iot"
   ],
   "signalk-plugin-enabled-by-default": false,
   "signalk": {
-    "displayName": "SignalK Virtual Weather Sensors",
+    "displayName": "Signal K Virtual Weather Sensors",
     "supportedVersions": "^2.0.0",
     "compatibility": {
       "nmea2000": true,
@@ -30,8 +41,8 @@
     "tier": "free",
     "verified": false
   },
-  "main": "index.js",
-  "types": "index.d.ts",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
   "files": [
     "dist/",
     "README.md",
@@ -40,12 +51,16 @@
     "DEVELOPMENT.md",
     "TODO.md"
   ],
-  "author": "SignalK Community",
+  "author": "Signal K Community",
   "license": "Apache-2.0",
   "repository": {
     "type": "git",
     "url": "https://github.com/NearlCrews/signalk-virtual-weather-sensors.git"
   },
+  "bugs": {
+    "url": "https://github.com/NearlCrews/signalk-virtual-weather-sensors/issues"
+  },
+  "homepage": "https://github.com/NearlCrews/signalk-virtual-weather-sensors#readme",
   "engines": {
     "node": ">=20.0.0"
   },
@@ -57,7 +72,7 @@
     "zod": "^3.24.1"
   },
   "devDependencies": {
-    "@biomejs/biome": "^2.2.4",
+    "@biomejs/biome": "^2.2.5",
     "@signalk/server-api": "^2.3.0",
     "@types/node": "^22.10.2",
     "@vitest/coverage-v8": "^3.2.4",
@@ -70,11 +85,9 @@
     "vitest": "^3.2.4"
   },
   "scripts": {
-    "build": "npm run clean && npm run build:types && npm run build:bundle && npm run package:dist",
-    "build:types": "tsc --noEmit false --declaration --emitDeclarationOnly --outDir dist/signalk-virtual-weather-sensors",
+    "build": "npm run clean && npm run build:types && npm run build:bundle",
+    "build:types": "tsc --noEmit false --declaration --emitDeclarationOnly --outDir dist",
     "build:bundle": "node esbuild.config.js",
-    "build:deploy": "npm run build",
-    "package:dist": "node -e \"const fs=require('fs'); const path=require('path'); const deployDir='dist/signalk-virtual-weather-sensors'; const pkg=JSON.parse(fs.readFileSync('package.json', 'utf8')); delete pkg.type; delete pkg.devDependencies; delete pkg.scripts; pkg.files=['*.js','*.js.map','*.d.ts','*.d.ts.map','calculators/','constants/','mappers/','services/','types/','utils/','README.md','LICENSE','CHANGELOG.md','DEVELOPMENT.md','TODO.md']; fs.writeFileSync(path.join(deployDir,'package.json'), JSON.stringify(pkg,null,2)); const otherFiles=['README.md','CHANGELOG.md','LICENSE','DEVELOPMENT.md','TODO.md']; otherFiles.forEach(file => { if(fs.existsSync(file)) { fs.copyFileSync(file, path.join(deployDir,file)); console.log('Copied:', file); } }); console.log('Package prepared in:', deployDir);\"",
     "dev": "tsx watch src/index.ts",
     "test": "vitest",
     "test:ui": "vitest --ui",

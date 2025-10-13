@@ -135,6 +135,3 @@ coverage/
 # Config files with sensitive information
 config/local.js
 config/local.json
-
-# Cline
-.roofiles/

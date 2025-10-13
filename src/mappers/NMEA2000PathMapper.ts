@@ -1,7 +1,7 @@
 /**
  * NMEA2000 Path Mapper for Enhanced Weather Data
  * Modern TypeScript implementation aligned with sk-n2k-emitter conventions
- * Maps comprehensive weather data to standardized NMEA2000 SignalK paths with proper PGN support
+ * Maps comprehensive weather data to standardized NMEA2000 Signal K paths with proper PGN support
  */
 
 import { PGN, SIGNALK_PATHS, SIGNALK_SOURCE } from '../constants/index.js';
@@ -31,7 +31,7 @@ const HUMIDITY_INSTANCES = {
 } as const;
 
 /**
- * SignalK value structure with metadata
+ * Signal K value structure with metadata
  */
 interface SignalKValue {
   readonly path: string;
@@ -46,7 +46,7 @@ interface SignalKValue {
 
 /**
  * NMEA2000 Path Mapper Service
- * Provides comprehensive mapping of weather data to NMEA2000-compatible SignalK paths
+ * Provides comprehensive mapping of weather data to NMEA2000-compatible Signal K paths
  */
 export class NMEA2000PathMapper {
   private readonly logger: (
@@ -67,9 +67,9 @@ export class NMEA2000PathMapper {
   }
 
   /**
-   * Map comprehensive weather data to NMEA2000 SignalK paths
+   * Map comprehensive weather data to NMEA2000 Signal K paths
    * @param weatherData Enhanced weather data from AccuWeather
-   * @returns SignalK delta message with complete NMEA2000 mappings
+   * @returns Signal K delta message with complete NMEA2000 mappings
    */
   public mapToSignalKPaths(weatherData: WeatherData): SignalKDelta {
     // Validate and sanitize data for NMEA2000 compatibility
@@ -160,14 +160,14 @@ export class NMEA2000PathMapper {
 
     // Relative humidity (PGN 130313, instance 100)
     // NOTE: Humidity format - Percentage vs Ratio
-    // SignalK spec recommends ratio (0-1), but we use percentage (0-100) for Garmin compatibility.
+    // Signal K spec recommends ratio (0-1), but we use percentage (0-100) for Garmin compatibility.
     // Trade-off: Garmin marine displays and most NMEA2000 devices expect percentage format.
-    // Impact: May cause minor display issues in some SignalK clients, but ensures proper
+    // Impact: May cause minor display issues in some Signal K clients, but ensures proper
     // display on physical marine electronics where it matters most.
     // See TODO.md for full rationale and future considerations.
     values.push({
       path: SIGNALK_PATHS.ENVIRONMENT.OUTSIDE.RELATIVE_HUMIDITY,
-      value: data.humidity * 100,
+      value: data.humidity, // Already in percentage (0-100) format
       timestamp,
       meta: {
         units: '%',
@@ -660,18 +660,19 @@ export class NMEA2000PathMapper {
   public validateWeatherDataForMapping(data: Partial<WeatherData>): boolean {
     const validation = NMEA2000Validator.validateNMEA2000Ranges(data);
 
+    // Log warnings even if validation passes
+    if (validation.warnings.length > 0) {
+      this.logger('warn', 'Weather data validation warnings', {
+        warnings: validation.warnings,
+      });
+    }
+
     if (!validation.isValid) {
       this.logger('error', 'Weather data validation failed', {
         errors: validation.errors,
         warnings: validation.warnings,
       });
       return false;
-    }
-
-    if (validation.warnings.length > 0) {
-      this.logger('warn', 'Weather data validation warnings', {
-        warnings: validation.warnings,
-      });
     }
 
     return true;

@@ -1,6 +1,6 @@
 # Development Documentation
 
-This document provides comprehensive information about the tools, technologies, AI-assisted development process, and workflows used to create the signalk-virtual-weather-sensors SignalK plugin.
+This document provides comprehensive information about the tools, technologies, AI-assisted development process, and workflows used to create the signalk-virtual-weather-sensors Signal K plugin.
 
 ## 🤖 AI-Assisted Development
 
@@ -23,7 +23,7 @@ The project was built through an iterative, AI-assisted workflow:
 The development process involved several key prompt categories:
 
 **Initial Setup Prompts:**
-- "Create a modern TypeScript SignalK plugin for weather data with NMEA2000 compatibility"
+- "Create a modern TypeScript Signal K plugin for weather data with NMEA2000 compatibility"
 - "Set up comprehensive build tooling with esbuild, TypeScript 5.7+, and modern testing"
 - "Configure Biome for linting/formatting to replace ESLint + Prettier"
 
@@ -45,7 +45,7 @@ The development process involved several key prompt categories:
 **Documentation Prompts:**
 - "Create detailed README with installation, configuration, and usage examples"
 - "Generate CHANGELOG following Keep a Changelog format"
-- "Document all SignalK paths and NMEA2000 PGN mappings"
+- "Document all Signal K paths and NMEA2000 PGN mappings"
 
 ### Benefits of AI-Assisted Development
 
@@ -91,7 +91,7 @@ While AI-assisted, this project maintains human oversight for:
 ```
 
 #### Node.js 20+
-- **Purpose**: Runtime environment for SignalK server plugin
+- **Purpose**: Runtime environment for Signal K server plugin
 - **Version**: 20.0.0+ (specified in [`.node-version`](.node-version))
 - **Module System**: Pure ESM (no CommonJS)
 - **Features Used**:
@@ -413,17 +413,17 @@ npm outdated
 
 - Environment-based configuration
 - No hardcoded credentials
-- Secure configuration storage in SignalK
+- Secure configuration storage in Signal K
 
-## 📋 SignalK Standards Compliance
+## 📋 Signal K Standards Compliance
 
 ### Compliance Status: 95% ✅
 
-This plugin adheres to official SignalK development standards with one intentional deviation for hardware compatibility.
+This plugin adheres to official Signal K development standards with one intentional deviation for hardware compatibility.
 
 ### Standards References
 
-- **Plugin Development**: [SignalK Plugin Guidelines](https://demo.signalk.org/documentation/Developing/Plugins.html)
+- **Plugin Development**: [Signal K Plugin Guidelines](https://demo.signalk.org/documentation/Developing/Plugins.html)
 - **Configuration**: [Configuration Schema Standards](https://demo.signalk.org/documentation/Developing/Plugins/Configuration.html)
 - **Weather Providers**: [Weather Provider Patterns](https://demo.signalk.org/documentation/Developing/Plugins/Weather_Providers.html)
 
@@ -434,7 +434,7 @@ This plugin adheres to official SignalK development standards with one intention
 | Plugin Structure | ✅ | Default export, start/stop methods |
 | Configuration Schema | ✅ | JSON Schema with validation |
 | Delta Message Format | ✅ | Proper context and updates array |
-| SignalK Paths | ✅ | Standard environment.* conventions |
+| Signal K Paths | ✅ | Standard environment.* conventions |
 | Source Metadata | ✅ | Proper label and type fields |
 | Status Reporting | ✅ | setPluginStatus/Error implemented |
 
@@ -442,12 +442,12 @@ This plugin adheres to official SignalK development standards with one intention
 
 **Location**: [`src/mappers/NMEA2000PathMapper.ts:165`](src/mappers/NMEA2000PathMapper.ts:165)
 
-**SignalK Standard**: Humidity as ratio (0-1)
+**Signal K Standard**: Humidity as ratio (0-1)
 **Our Implementation**: Humidity as percentage (0-100)
 
 **Rationale**: Garmin marine displays and most NMEA2000 devices expect percentage format. This trade-off prioritizes real-world hardware compatibility over strict specification compliance.
 
-**Impact**: Minor display issues possible in some SignalK clients, but correct display on physical marine electronics.
+**Impact**: Minor display issues possible in some Signal K clients, but correct display on physical marine electronics.
 
 **Future Consideration**: Could add configuration option to choose format based on client requirements.
 
@@ -464,8 +464,8 @@ For complete compliance documentation and TODO items, see [`TODO.md`](TODO.md).
 
 ### External Links
 
-- [SignalK Documentation](https://signalk.org/)
-- [SignalK Plugin Development](https://demo.signalk.org/documentation/Developing/Plugins.html)
+- [Signal K Documentation](https://signalk.org/)
+- [Signal K Plugin Development](https://demo.signalk.org/documentation/Developing/Plugins.html)
 - [NMEA2000 Standards](https://www.nmea.org/)
 - [AccuWeather API](https://developer.accuweather.com/)
 - [TypeScript Documentation](https://www.typescriptlang.org/)

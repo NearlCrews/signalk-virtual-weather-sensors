@@ -18,7 +18,7 @@ import { AccuWeatherService } from './AccuWeatherService.js';
 import { SignalKService } from './SignalKService.js';
 
 /**
- * SignalK data value structure (imported from SignalKService)
+ * Signal K data value structure (imported from SignalKService)
  */
 interface SignalKDataValue {
   value: unknown;
@@ -32,7 +32,7 @@ interface SignalKDataValue {
 }
 
 /**
- * SignalK app interface for main weather service
+ * Signal K app interface for main weather service
  */
 interface SignalKApp {
   getSelfPath(path: string): SignalKDataValue | null | undefined;
@@ -261,7 +261,7 @@ export class WeatherService {
     const baseWeatherData: WeatherData = {
       temperature: 288.15, // 15°C in Kelvin
       pressure: 101325, // Standard sea level pressure in Pascals
-      humidity: 0.65, // 65% as ratio
+      humidity: 65, // 65% as percentage
       windSpeed: 5.14, // 10 knots in m/s
       windDirection: Math.PI / 2, // 90 degrees in radians (East)
       dewPoint: 283.15, // Calculated dew point in Kelvin
@@ -423,13 +423,14 @@ export class WeatherService {
       weatherData.temperature,
       weatherData.windSpeed
     );
+    // Convert humidity from percentage to ratio for calculations
     const heatIndex = this.windCalculator.calculateHeatIndex(
       weatherData.temperature,
-      weatherData.humidity
+      weatherData.humidity / 100
     );
     const dewPoint = this.windCalculator.calculateDewPoint(
       weatherData.temperature,
-      weatherData.humidity
+      weatherData.humidity / 100
     );
 
     const apparentWind = this.calculateApparentWindData(weatherData, vesselData);
@@ -570,17 +571,17 @@ export class WeatherService {
   }
 
   /**
-   * Emit weather data to SignalK
+   * Emit weather data to Signal K
    * @private
    */
   private emitWeatherData(weatherData: WeatherData): void {
     try {
       if (!this.app.handleMessage) {
-        this.logger('warn', 'SignalK handleMessage not available');
+        this.logger('warn', 'Signal K handleMessage not available');
         return;
       }
 
-      // Create SignalK delta message (this will be implemented in path mapping step)
+      // Create Signal K delta message (this will be implemented in path mapping step)
       const delta = this.createSignalKDelta(weatherData);
 
       this.app.handleMessage('signalk-virtual-weather-sensors', delta);
@@ -588,7 +589,7 @@ export class WeatherService {
       this.lastEmission = new Date();
       this.emissionCount++;
 
-      this.logger('debug', 'Weather data emitted to SignalK', {
+      this.logger('debug', 'Weather data emitted to Signal K', {
         emissionCount: this.emissionCount,
       });
     } catch (error) {
@@ -599,7 +600,7 @@ export class WeatherService {
   }
 
   /**
-   * Create comprehensive SignalK delta message with enhanced AccuWeather mappings
+   * Create comprehensive Signal K delta message with enhanced AccuWeather mappings
    * @private
    */
   private createSignalKDelta(weatherData: WeatherData): unknown {
@@ -611,7 +612,7 @@ export class WeatherService {
     this.addAtmosphericData(values, weatherData);
     this.addPrecipitationData(values, weatherData);
 
-    this.logger('debug', 'Created enhanced SignalK delta message', {
+    this.logger('debug', 'Created enhanced Signal K delta message', {
       totalPaths: values.length,
       enhancedFields: this.countEnhancedFieldsInDelta(values),
     });
@@ -629,7 +630,7 @@ export class WeatherService {
   }
 
   /**
-   * Add core environmental measurements to SignalK delta
+   * Add core environmental measurements to Signal K delta
    * @private
    */
   private addCoreEnvironmentalData(
@@ -644,7 +645,7 @@ export class WeatherService {
   }
 
   /**
-   * Add enhanced temperature readings to SignalK delta
+   * Add enhanced temperature readings to Signal K delta
    * @private
    */
   private addEnhancedTemperatureData(
@@ -692,7 +693,7 @@ export class WeatherService {
   }
 
   /**
-   * Add wind data to SignalK delta
+   * Add wind data to Signal K delta
    * @private
    */
   private addWindData(
@@ -724,7 +725,7 @@ export class WeatherService {
   }
 
   /**
-   * Add apparent wind angle and direction to SignalK delta
+   * Add apparent wind angle and direction to Signal K delta
    * @private
    */
   private addApparentWindAngleData(
@@ -756,7 +757,7 @@ export class WeatherService {
   }
 
   /**
-   * Add magnetic wind direction to SignalK delta
+   * Add magnetic wind direction to Signal K delta
    * @private
    */
   private addMagneticWindDirection(
@@ -778,7 +779,7 @@ export class WeatherService {
   }
 
   /**
-   * Add atmospheric conditions to SignalK delta
+   * Add atmospheric conditions to Signal K delta
    * @private
    */
   private addAtmosphericData(
@@ -809,7 +810,7 @@ export class WeatherService {
   }
 
   /**
-   * Add precipitation data to SignalK delta
+   * Add precipitation data to Signal K delta
    * @private
    */
   private addPrecipitationData(

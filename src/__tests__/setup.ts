@@ -49,7 +49,7 @@ export function createMockWeatherData(
   return {
     temperature: 293.15, // 20°C in Kelvin
     pressure: 101325, // 1013.25 mbar in Pascals
-    humidity: 0.65, // 65%
+    humidity: 65, // 65% (percentage format for Garmin compatibility)
     windSpeed: 5.14, // ~10 knots in m/s
     windDirection: Math.PI / 2, // 90° (East) in radians
     dewPoint: 286.48, // ~13.3°C in Kelvin
@@ -240,7 +240,7 @@ export function createMockAccuWeatherResponse(
 }
 
 /**
- * Generate mock SignalK delta message for testing
+ * Generate mock Signal K delta message for testing
  */
 export function createMockSignalKDelta(
   overrides: Partial<import('../types/index.js').SignalKDelta> = {}
@@ -250,15 +250,15 @@ export function createMockSignalKDelta(
     updates: [
       {
         source: {
-          label: 'signalk-virtual-weather-sensors',
-          type: 'NMEA2000',
+          label: 'Signal K Virtual Weather Sensors',
+          type: 'plugin',
           bus: '/dev/actisense',
         },
         timestamp: new Date().toISOString(),
         values: [
           { path: 'environment.outside.temperature', value: 293.15 },
           { path: 'environment.outside.pressure', value: 101325 },
-          { path: 'environment.outside.humidity', value: 0.65 },
+          { path: 'environment.outside.relativeHumidity', value: 65 },
         ],
       },
     ],
@@ -288,7 +288,7 @@ export function createMockFetch(
 }
 
 /**
- * Mock SignalK app for plugin testing
+ * Mock Signal K app for plugin testing
  */
 export function createMockSignalKApp() {
   const mockApp = {
@@ -438,13 +438,13 @@ expect.extend({
 });
 
 /**
- * Custom matcher for testing SignalK delta structure
+ * Custom matcher for testing Signal K delta structure
  */
 expect.extend({
   toBeValidSignalKDelta(received: unknown) {
     if (typeof received !== 'object' || received === null) {
       return {
-        message: () => 'expected value to be a SignalK delta object',
+        message: () => 'expected value to be a Signal K delta object',
         pass: false,
       };
     }
@@ -455,12 +455,12 @@ expect.extend({
 
     if (hasContext && hasUpdates) {
       return {
-        message: () => 'expected value not to be a valid SignalK delta',
+        message: () => 'expected value not to be a valid Signal K delta',
         pass: true,
       };
     }
     return {
-      message: () => 'expected value to be a valid SignalK delta with context and updates',
+      message: () => 'expected value to be a valid Signal K delta with context and updates',
       pass: false,
     };
   },

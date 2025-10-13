@@ -6,7 +6,7 @@ const packageJson = JSON.parse(readFileSync('./package.json', 'utf8'));
 const config = {
   entryPoints: ['src/index.ts'],
   bundle: true,
-  outfile: 'dist/signalk-virtual-weather-sensors/index.js',
+  outfile: 'dist/index.js',
   platform: 'node',
   target: 'es2023',
   format: 'esm',
@@ -45,10 +45,10 @@ const config = {
     'process.env.PKG_VERSION': JSON.stringify(packageJson.version),
   },
 
-  // Banner for SignalK plugin compatibility
+  // Banner for Signal K plugin compatibility
   banner: {
     js: `
-// signalk-virtual-weather-sensors - SignalK Weather Plugin
+// signalk-virtual-weather-sensors - Signal K Weather Plugin
 // Generated: ${new Date().toISOString()}
 // Version: ${packageJson.version}
 // Target: ES2023 | Node.js 20+
@@ -65,7 +65,7 @@ const config = {
 };
 
 try {
-  console.log('🏗️  Building signalk-virtual-weather-sensors plugin...');
+  console.log('🏗️  Building Signal K Virtual Weather Sensors plugin...');
   console.log(`Target: ${config.target} | Format: ${config.format}`);
   
   const result = await build(config);
