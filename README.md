@@ -184,7 +184,10 @@ npm run security-audit     # Run npm security audit
 
 ## 🔌 NMEA2000 Integration
 
+This plugin outputs data in Signal K format, which can be converted to NMEA2000 messages using plugins like [Signal K NMEA2000 Emitter Cannon](https://github.com/SignalK/signalk-n2k-emitter-cannon). This allows virtual weather sensor data to appear as physical NMEA2000 sensors on your marine network.
+
 ### PGN Support
+When used with an NMEA2000 emitter plugin:
 - **130311**: Environmental Parameters (atmospheric pressure)
 - **130312**: Temperature data (8 different temperature instances)
 - **130313**: Humidity data (outside/inside with proper instances)
