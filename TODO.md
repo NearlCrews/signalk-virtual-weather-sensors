@@ -4,7 +4,7 @@ This file tracks remaining tasks, known issues, and future enhancements for the 
 
 ## 🔄 Signal K Standards Compliance
 
-### Status: 95% Compliant ✅
+### Status: Compliant ✅
 
 The plugin follows Signal K plugin standards as documented at:
 - https://demo.signalk.org/documentation/Developing/Plugins.html
@@ -12,12 +12,14 @@ The plugin follows Signal K plugin standards as documented at:
 - https://demo.signalk.org/documentation/Developing/Plugins/Weather_Providers.html
 
 ### ✅ Compliant Areas
-- [x] Plugin structure (default export, start/stop methods)
+- [x] Official `@signalk/server-api` types (`ServerAPI`, `Plugin`, `Delta`)
+- [x] Registered as Weather Provider via `app.registerWeatherProvider()`
+- [x] Plugin structure (default export returning `Plugin` interface)
 - [x] Configuration schema (JSON Schema with validation)
-- [x] Delta message format (proper context and updates array)
-- [x] Signal K path conventions (environment.outside.*, environment.wind.*)
+- [x] Delta message format (typed as `Partial<Delta>`)
+- [x] Signal K path conventions (v1.7.0 spec — `apparentWindChillTemperature`)
 - [x] Source metadata (label and type)
-- [x] Status reporting (setPluginStatus/setPluginError)
+- [x] Status reporting (`setPluginStatus` / `setPluginError` / `app.error()`)
 
 ### ⚠️ Known Deviations
 
@@ -219,7 +221,7 @@ None currently. All tests passing, no reported bugs.
 
 ---
 
-**Last Updated**: 2025-10-11
+**Last Updated**: 2026-03-16
 
 **Maintainer**: Signal K Community
 

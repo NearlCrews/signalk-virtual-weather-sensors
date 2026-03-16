@@ -4,7 +4,7 @@
 [![npm downloads](https://img.shields.io/npm/dm/signalk-virtual-weather-sensors.svg)](https://www.npmjs.com/package/signalk-virtual-weather-sensors)
 [![License](https://img.shields.io/github/license/NearlCrews/signalk-virtual-weather-sensors.svg)](https://github.com/NearlCrews/signalk-virtual-weather-sensors/blob/main/LICENSE)
 [![CI](https://github.com/NearlCrews/signalk-virtual-weather-sensors/workflows/CI/badge.svg)](https://github.com/NearlCrews/signalk-virtual-weather-sensors/actions)
-[![TypeScript](https://img.shields.io/badge/TypeScript-5.7+-blue.svg)](https://www.typescriptlang.org/)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5.9+-blue.svg)](https://www.typescriptlang.org/)
 [![NMEA2000](https://img.shields.io/badge/NMEA2000-Compatible-green.svg)](https://www.nmea.org/)
 [![AccuWeather](https://img.shields.io/badge/AccuWeather-API-orange.svg)](https://developer.accuweather.com/)
 [![Signal K](https://img.shields.io/badge/Signal%20K-Plugin-navy.svg)](https://signalk.org/)
@@ -27,9 +27,10 @@ A modern TypeScript Signal K plugin that provides comprehensive weather data fro
 - **Real-time emission** with configurable intervals for NMEA2000 network recognition
 
 ### Modern Architecture
-- **TypeScript 5.7+** with strict type safety and comprehensive validation
-- **Biome 2.2+** for fast, modern linting and formatting
-- **Vitest 3.x** with comprehensive test coverage and performance testing
+- **TypeScript 5.9+** with strict type safety and comprehensive validation
+- **Official `@signalk/server-api` types** for `ServerAPI`, `Plugin`, `Delta`, and Weather Provider integration
+- **Biome 2.4+** for fast, modern linting and formatting
+- **Vitest 4.x** with comprehensive test coverage and performance testing
 - **Hybrid emission system** combining event-driven updates with reliable intervals
 - **Production-ready error handling** with structured logging and graceful degradation
 - **Performance optimized** for real-time marine applications
@@ -87,7 +88,7 @@ environment.outside.temperature                  # Air temperature (K)
 environment.outside.pressure                    # Atmospheric pressure (Pa)
 environment.outside.relativeHumidity           # Outside humidity (0-1 ratio)
 environment.outside.dewPointTemperature        # Dew point (K)
-environment.outside.windChillTemperature       # Wind chill (K)
+environment.outside.apparentWindChillTemperature       # Wind chill (K)
 environment.outside.heatIndexTemperature       # Heat index (K)
 ```
 
@@ -264,12 +265,14 @@ This plugin follows official Signal K development standards:
 - **Configuration**: Implements [Signal K Configuration Schema Standards](https://demo.signalk.org/documentation/Developing/Plugins/Configuration.html)
 - **Weather Data**: Follows [Signal K Weather Provider Patterns](https://demo.signalk.org/documentation/Developing/Plugins/Weather_Providers.html)
 
-### Compliance Status: 95% ✅
+### Compliance Status ✅
 
-**Delta Message Format**: ✅ Proper context and updates structure
-**Signal K Paths**: ✅ Standard `environment.*` conventions
-**Configuration Schema**: ✅ JSON Schema with validation
-**Source Metadata**: ✅ Proper labeling and typing
+- **Official Types**: Uses `ServerAPI`, `Plugin`, `Delta` from `@signalk/server-api`
+- **Weather Provider API**: Registered via `app.registerWeatherProvider()`
+- **Delta Message Format**: Proper context and updates structure
+- **Signal K Paths**: Standard `environment.*` conventions (v1.7.0 spec)
+- **Configuration Schema**: JSON Schema with validation
+- **Source Metadata**: Proper labeling and typing
 
 ### Known Deviation: Humidity Format
 
@@ -288,11 +291,11 @@ Apache-2.0 License - See [LICENSE](LICENSE) file for details.
 Contributions welcome! Please read [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
 
 The codebase uses modern TypeScript standards:
-- **TypeScript 5.7+** with strict mode and ES2023 target
-- **Biome** for linting and formatting (replaces ESLint + Prettier)
-- **Vitest 3.x** for testing with v8 coverage
+- **TypeScript 5.9+** with strict mode and ES2023 target
+- **Official `@signalk/server-api`** types for full Signal K integration
+- **Biome** for linting and formatting (using defaults, no config file)
+- **Vitest 4.x** for testing with v8 coverage
 - **ESM modules** exclusively with NodeNext resolution
-- **Comprehensive type safety** with Zod validation
 - **Production-ready error handling**
 - **Pre-commit hooks** automatically enforce code quality
 - **Node.js 20+** required

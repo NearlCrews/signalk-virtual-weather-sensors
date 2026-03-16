@@ -1,115 +1,110 @@
 {
-  "name": "signalk-virtual-weather-sensors",
-  "version": "1.0.1",
-  "description": "Signal K plugin that provides comprehensive weather data from AccuWeather API with calculated wind values and NMEA2000-compatible environmental measurements",
-  "keywords": [
-    "signalk-node-server-plugin",
-    "signalk-category-weather",
-    "nmea2000",
-    "weather",
-    "accuweather",
-    "typescript",
-    "marine",
-    "sailing",
-    "boat",
-    "navigation",
-    "sensor",
-    "weather-station",
-    "wind-calculator",
-    "apparent-wind",
-    "true-wind",
-    "maritime",
-    "iot"
-  ],
-  "signalk-plugin-enabled-by-default": false,
-  "signalk": {
-    "displayName": "Signal K Virtual Weather Sensors",
-    "supportedVersions": "^2.0.0",
-    "compatibility": {
-      "nmea2000": true,
-      "signalkVersion": "^2.0.0"
-    }
-  },
-  "appstore": {
-    "id": "signalk-virtual-weather-sensors",
-    "category": "weather",
-    "screenshots": [],
-    "compatibility": {
-      "signalkVersion": "^2.0.0",
-      "node": ">=20.0.0"
-    },
-    "tier": "free",
-    "verified": false
-  },
-  "main": "dist/index.js",
-  "types": "dist/index.d.ts",
-  "files": [
-    "dist/",
-    "README.md",
-    "LICENSE",
-    "CHANGELOG.md",
-    "DEVELOPMENT.md",
-    "TODO.md"
-  ],
-  "author": "Signal K Community",
-  "license": "Apache-2.0",
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/NearlCrews/signalk-virtual-weather-sensors.git"
-  },
-  "bugs": {
-    "url": "https://github.com/NearlCrews/signalk-virtual-weather-sensors/issues"
-  },
-  "homepage": "https://github.com/NearlCrews/signalk-virtual-weather-sensors#readme",
-  "engines": {
-    "node": ">=20.0.0"
-  },
-  "type": "module",
-  "dependencies": {
-    "es-toolkit": "^1.28.1",
-    "node-fetch": "^3.3.2",
-    "rxjs": "^7.8.2",
-    "zod": "^3.24.1"
-  },
-  "devDependencies": {
-    "@biomejs/biome": "^2.2.5",
-    "@signalk/server-api": "^2.3.0",
-    "@types/node": "^22.10.2",
-    "@vitest/coverage-v8": "^3.2.4",
-    "@vitest/ui": "^3.2.4",
-    "esbuild": "^0.24.2",
-    "husky": "^9.1.7",
-    "lint-staged": "^15.2.11",
-    "tsx": "^4.19.2",
-    "typescript": "^5.7.3",
-    "vitest": "^3.2.4"
-  },
-  "scripts": {
-    "build": "npm run clean && npm run build:types && npm run build:bundle",
-    "build:types": "tsc --noEmit false --declaration --emitDeclarationOnly --outDir dist",
-    "build:bundle": "node esbuild.config.js",
-    "dev": "tsx watch src/index.ts",
-    "test": "vitest",
-    "test:ui": "vitest --ui",
-    "test:coverage": "vitest run --coverage",
-    "test:run": "vitest run",
-    "type-check": "tsc --noEmit",
-    "lint": "biome check .",
-    "lint:fix": "biome check --write .",
-    "format": "biome format --write .",
-    "clean": "rm -rf dist/",
-    "validate": "npm run type-check && npm run lint && npm run test:run",
-    "security-audit": "npm audit --audit-level=moderate",
-    "prepublishOnly": "npm run clean && npm run build && npm run test:run",
-    "prepare": "husky || true"
-  },
-  "lint-staged": {
-    "*.{ts,tsx}": [
-      "biome check --write",
-      "biome format --write"
-    ],
-    "*.{json,md}": [
-      "biome format --write"
-    ]
-  }
+	"name": "signalk-virtual-weather-sensors",
+	"version": "1.2.0",
+	"description": "Signal K plugin that provides comprehensive weather data from AccuWeather API with calculated wind values and NMEA2000-compatible environmental measurements",
+	"keywords": [
+		"signalk-node-server-plugin",
+		"signalk-category-weather",
+		"nmea2000",
+		"weather",
+		"accuweather",
+		"typescript",
+		"marine",
+		"sailing",
+		"boat",
+		"navigation",
+		"sensor",
+		"weather-station",
+		"wind-calculator",
+		"apparent-wind",
+		"true-wind",
+		"maritime",
+		"iot"
+	],
+	"signalk-plugin-enabled-by-default": false,
+	"signalk": {
+		"displayName": "Signal K Virtual Weather Sensors",
+		"supportedVersions": "^2.0.0",
+		"compatibility": {
+			"nmea2000": true,
+			"signalkVersion": "^2.0.0"
+		}
+	},
+	"appstore": {
+		"id": "signalk-virtual-weather-sensors",
+		"category": "weather",
+		"screenshots": [],
+		"compatibility": {
+			"signalkVersion": "^2.0.0",
+			"node": ">=20.0.0"
+		},
+		"tier": "free",
+		"verified": false
+	},
+	"main": "dist/index.js",
+	"types": "dist/index.d.ts",
+	"files": [
+		"dist/",
+		"README.md",
+		"LICENSE",
+		"CHANGELOG.md",
+		"DEVELOPMENT.md",
+		"TODO.md"
+	],
+	"author": "Signal K Community",
+	"license": "Apache-2.0",
+	"repository": {
+		"type": "git",
+		"url": "https://github.com/NearlCrews/signalk-virtual-weather-sensors.git"
+	},
+	"bugs": {
+		"url": "https://github.com/NearlCrews/signalk-virtual-weather-sensors/issues"
+	},
+	"homepage": "https://github.com/NearlCrews/signalk-virtual-weather-sensors#readme",
+	"engines": {
+		"node": ">=20.0.0"
+	},
+	"type": "module",
+	"dependencies": {},
+	"devDependencies": {
+		"@biomejs/biome": "^2.4.7",
+		"@signalk/server-api": "^2.23.0",
+		"@types/node": "^25.5.0",
+		"@vitest/coverage-v8": "^4.1.0",
+		"@vitest/ui": "^4.1.0",
+		"esbuild": "^0.27.4",
+		"husky": "^9.1.7",
+		"lint-staged": "^16.4.0",
+		"tsx": "^4.21.0",
+		"typescript": "^5.9.3",
+		"vitest": "^4.1.0"
+	},
+	"scripts": {
+		"build": "npm run clean && npm run build:types && npm run build:bundle",
+		"build:types": "tsc --noEmit false --declaration --emitDeclarationOnly --outDir dist",
+		"build:bundle": "node esbuild.config.js",
+		"dev": "tsx watch src/index.ts",
+		"test": "vitest",
+		"test:ui": "vitest --ui",
+		"test:coverage": "vitest run --coverage",
+		"test:run": "vitest run",
+		"type-check": "tsc --noEmit",
+		"lint": "biome check .",
+		"lint:fix": "biome check --write .",
+		"format": "biome format --write .",
+		"clean": "rm -rf dist/",
+		"validate": "npm run type-check && npm run lint && npm run test:run",
+		"security-audit": "npm audit --audit-level=moderate",
+		"prepublishOnly": "npm run clean && npm run build && npm run test:run",
+		"prepare": "husky || true"
+	},
+	"lint-staged": {
+		"*.{ts,tsx}": [
+			"biome check --write",
+			"biome format --write"
+		],
+		"*.{json,md}": [
+			"biome format --write"
+		]
+	}
 }

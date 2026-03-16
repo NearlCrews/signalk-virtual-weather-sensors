@@ -1,67 +1,67 @@
 {
-  "compilerOptions": {
-    /* Language and Environment */
-    "target": "ES2023",
-    "lib": ["ES2023"],
-    "module": "NodeNext",
-    "moduleResolution": "NodeNext",
-    "allowSyntheticDefaultImports": true,
-    "esModuleInterop": true,
-    "forceConsistentCasingInFileNames": true,
+	"compilerOptions": {
+		/* Language and Environment */
+		"target": "ES2023",
+		"lib": ["ES2023"],
+		"module": "NodeNext",
+		"moduleResolution": "NodeNext",
+		"allowSyntheticDefaultImports": true,
+		"esModuleInterop": true,
+		"forceConsistentCasingInFileNames": true,
 
-    /* Type Checking */
-    "strict": true,
-    "noImplicitAny": true,
-    "strictNullChecks": true,
-    "strictFunctionTypes": true,
-    "strictBindCallApply": true,
-    "strictPropertyInitialization": true,
-    "noImplicitThis": true,
-    "useUnknownInCatchVariables": true,
-    "alwaysStrict": true,
-    "noUnusedLocals": true,
-    "noUnusedParameters": true,
-    "exactOptionalPropertyTypes": true,
-    "noImplicitReturns": true,
-    "noFallthroughCasesInSwitch": true,
-    "noUncheckedIndexedAccess": true,
-    "noImplicitOverride": true,
-    "noPropertyAccessFromIndexSignature": false,
-    "allowUnusedLabels": false,
-    "allowUnreachableCode": false,
+		/* Type Checking */
+		"strict": true,
+		"noImplicitAny": true,
+		"strictNullChecks": true,
+		"strictFunctionTypes": true,
+		"strictBindCallApply": true,
+		"strictPropertyInitialization": true,
+		"noImplicitThis": true,
+		"useUnknownInCatchVariables": true,
+		"alwaysStrict": true,
+		"noUnusedLocals": true,
+		"noUnusedParameters": true,
+		"exactOptionalPropertyTypes": true,
+		"noImplicitReturns": true,
+		"noFallthroughCasesInSwitch": true,
+		"noUncheckedIndexedAccess": true,
+		"noImplicitOverride": true,
+		"noPropertyAccessFromIndexSignature": false,
+		"allowUnusedLabels": false,
+		"allowUnreachableCode": false,
 
-    /* Modules */
-    "resolveJsonModule": true,
-    "allowImportingTsExtensions": false,
-    "isolatedModules": true,
+		/* Modules */
+		"resolveJsonModule": true,
+		"allowImportingTsExtensions": false,
+		"isolatedModules": true,
 
-    /* Emit */
-    "declaration": true,
-    "declarationMap": true,
-    "sourceMap": true,
-    "outDir": "./dist",
-    "removeComments": false,
-    "downlevelIteration": true,
-    "importHelpers": false,
-    "newLine": "lf",
+		/* Emit */
+		"declaration": true,
+		"declarationMap": true,
+		"sourceMap": true,
+		"outDir": "./dist",
+		"removeComments": false,
+		"downlevelIteration": true,
+		"importHelpers": false,
+		"newLine": "lf",
 
-    /* Interop Constraints */
-    "verbatimModuleSyntax": true,
-    "allowJs": false,
-    "checkJs": false,
+		/* Interop Constraints */
+		"verbatimModuleSyntax": true,
+		"allowJs": false,
+		"checkJs": false,
 
-    /* Completeness */
-    "skipLibCheck": true,
+		/* Completeness */
+		"skipLibCheck": true,
 
-    /* Advanced */
-    "preserveWatchOutput": true,
-    "pretty": true,
-    "assumeChangesOnlyAffectDirectDependencies": true
-  },
-  "include": ["src/**/*"],
-  "exclude": ["node_modules", "dist", "**/*.test.ts", "**/__tests__/**/*"],
-  "ts-node": {
-    "esm": true,
-    "experimentalSpecifierResolution": "node"
-  }
+		/* Advanced */
+		"preserveWatchOutput": true,
+		"pretty": true,
+		"assumeChangesOnlyAffectDirectDependencies": true
+	},
+	"include": ["src/**/*"],
+	"exclude": ["node_modules", "dist", "**/*.test.ts", "**/__tests__/**/*"],
+	"ts-node": {
+		"esm": true,
+		"experimentalSpecifierResolution": "node"
+	}
 }

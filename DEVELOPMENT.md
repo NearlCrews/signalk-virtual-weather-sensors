@@ -68,7 +68,7 @@ While AI-assisted, this project maintains human oversight for:
 
 ### Core Technologies
 
-#### TypeScript 5.7+
+#### TypeScript 5.9+
 - **Purpose**: Primary development language with strict type safety
 - **Configuration**: [`tsconfig.json`](tsconfig.json)
 - **Features Used**:
@@ -119,34 +119,24 @@ While AI-assisted, this project maintains human oversight for:
 
 ### Code Quality
 
-#### Biome 2.2+
+#### Biome 2.4+
 - **Purpose**: Modern, fast linting and formatting (replaces ESLint + Prettier)
-- **Configuration**: [`biome.json`](biome.json)
+- **Configuration**: Uses Biome defaults (no config file)
 - **Features**:
   - TypeScript-native linting
   - Automatic code formatting
   - Performance-optimized (Rust-based)
   - Git integration for changed files
 
-**Key Rules Enforced:**
-- No non-null assertions
-- Const over let when possible
-- No unused variables/imports
-- Exhaustive switch cases
-- No double equals (===)
-- Performance optimizations
-
-**Formatting Standards:**
-- 2-space indentation
-- 100 character line width
-- Single quotes for strings
+**Formatting Standards (Biome defaults):**
+- Tab indentation
+- 80 character line width
+- Double quotes for strings
 - Semicolons always
-- Trailing commas (ES5)
-- LF line endings
 
 ### Testing
 
-#### Vitest 3.x
+#### Vitest 4.x
 - **Purpose**: Modern, fast unit testing framework
 - **Configuration**: [`vitest.config.ts`](vitest.config.ts)
 - **Features**:
@@ -170,6 +160,8 @@ src/__tests__/
 │   └── WindCalculator.test.ts       # Wind calculation tests
 ├── mappers/
 │   └── NMEA2000PathMapper.test.ts   # Path mapping tests
+├── providers/
+│   └── WeatherProviderAdapter.test.ts # Weather provider tests
 └── services/
     └── AccuWeatherService.test.ts   # API integration tests
 ```
@@ -241,7 +233,6 @@ signalk-virtual-weather-sensors/
 │       └── ci.yml               # CI/CD pipeline
 ├── .husky/
 │   └── pre-commit               # Git pre-commit hook
-├── biome.json                   # Biome configuration
 ├── tsconfig.json                # TypeScript configuration
 ├── vitest.config.ts             # Vitest configuration
 ├── esbuild.config.js            # esbuild configuration
@@ -391,7 +382,7 @@ npm run test:ui
 
 - **Efficient Calculations**: Optimized mathematical operations
 - **Minimal Memory**: Proper resource cleanup
-- **Fast Validation**: Zod schema validation
+- **Fast Validation**: Custom validation framework
 - **Smart Caching**: Vessel data caching with staleness checks
 
 ## 🔐 Security
@@ -417,9 +408,9 @@ npm outdated
 
 ## 📋 Signal K Standards Compliance
 
-### Compliance Status: 95% ✅
+### Compliance Status ✅
 
-This plugin adheres to official Signal K development standards with one intentional deviation for hardware compatibility.
+This plugin uses official `@signalk/server-api` types and registers as a Weather Provider.
 
 ### Standards References
 
@@ -431,25 +422,21 @@ This plugin adheres to official Signal K development standards with one intentio
 
 | Requirement | Status | Implementation |
 |-------------|--------|----------------|
-| Plugin Structure | ✅ | Default export, start/stop methods |
+| Official Types | ✅ | Uses `ServerAPI`, `Plugin`, `Delta` from `@signalk/server-api` |
+| Weather Provider | ✅ | Registered via `app.registerWeatherProvider()` |
+| Plugin Structure | ✅ | Default export returning `Plugin` interface |
 | Configuration Schema | ✅ | JSON Schema with validation |
-| Delta Message Format | ✅ | Proper context and updates array |
-| Signal K Paths | ✅ | Standard environment.* conventions |
+| Delta Message Format | ✅ | Typed as `Partial<Delta>` |
+| Signal K Paths | ✅ | Standard environment.* conventions (v1.7.0 spec) |
 | Source Metadata | ✅ | Proper label and type fields |
-| Status Reporting | ✅ | setPluginStatus/Error implemented |
+| Status Reporting | ✅ | `app.setPluginStatus()` / `app.setPluginError()` / `app.error()` |
 
 ### Known Deviation: Humidity Format
 
-**Location**: [`src/mappers/NMEA2000PathMapper.ts:165`](src/mappers/NMEA2000PathMapper.ts:165)
-
 **Signal K Standard**: Humidity as ratio (0-1)
-**Our Implementation**: Humidity as percentage (0-100)
+**Our Implementation**: Humidity as percentage (0-100) on NMEA2000 paths
 
-**Rationale**: Garmin marine displays and most NMEA2000 devices expect percentage format. This trade-off prioritizes real-world hardware compatibility over strict specification compliance.
-
-**Impact**: Minor display issues possible in some Signal K clients, but correct display on physical marine electronics.
-
-**Future Consideration**: Could add configuration option to choose format based on client requirements.
+**Rationale**: Garmin marine displays and most NMEA2000 devices expect percentage format. The Weather Provider API returns the correct ratio (0-1) format.
 
 For complete compliance documentation and TODO items, see [`TODO.md`](TODO.md).
 

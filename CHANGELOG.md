@@ -5,6 +5,62 @@ All notable changes to the signalk-virtual-weather-sensors project will be docum
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.0] - 2026-03-16
+
+### 💥 Breaking Changes
+
+- **Wind chill path renamed**: `environment.outside.windChillTemperature` → `environment.outside.apparentWindChillTemperature` to match Signal K spec v1.7.0
+- **Deprecated `environment.outside.humidity` path removed**: Use `environment.outside.relativeHumidity` instead (was already deprecated in Signal K spec)
+- **Removed unused production dependencies**: `es-toolkit`, `node-fetch`, `rxjs`, `zod` — none were imported
+- **Formatting**: Switched to Biome defaults (tabs, double quotes). Removed `biome.json` config file
+- **Duplicate emission system removed**: `index.ts` no longer runs its own emission timer; `WeatherService` handles all emissions
+
+### 🚀 Added
+
+- **Official `@signalk/server-api` types**: Replaced hand-rolled `SignalKApp`, `SignalKDataValue`, `SignalKDelta` interfaces with official `ServerAPI`, `Plugin`, `Delta` types from `@signalk/server-api`
+- **Weather Provider registration**: Plugin now registers as an official Signal K Weather Provider via `app.registerWeatherProvider()`, implementing `getObservations`, `getForecasts`, and `getWarnings`
+- **Weather Provider adapter** (`src/providers/WeatherProviderAdapter.ts`): Converts internal weather data to the official `@signalk/server-api` `WeatherData` format
+- **`fetchWeatherForPosition()`**: New public method on `WeatherService` for fetching weather at arbitrary positions
+- **`Logger` type alias**: Centralized logger type replaces 12+ inline signature repetitions
+- **`@extension` JSDoc annotations**: Non-standard Signal K paths are now clearly documented as plugin extensions
+- **Weather Provider test suite** (`src/__tests__/providers/WeatherProviderAdapter.test.ts`)
+
+### 🐛 Fixed
+
+- **`sanitizeForNMEA2000` zero-value bug**: Truthy checks replaced with `!== undefined` so zero values (calm wind, north direction) are properly sanitized
+- **`convertAccuWeather*` zero-value bug**: Same fix for AccuWeather converter functions rejecting valid `0` values (0°C, calm wind, north direction)
+- **Beaufort scale threshold inconsistency**: Scale 9 threshold corrected to 24.5 m/s (WMO standard) in `WindCalculator` — was 25.0 m/s
+- **Duplicate emission**: Removed second emission timer in `index.ts` that was causing double-publishing to NMEA2000 bus
+- **Redundant vessel data calls**: `getVesselNavigationData()` now called once per emission cycle instead of 3 times
+- **`getCacheStats` redundant field**: Removed `size` field that was identical to `entries`
+- **`app.error()` used for errors**: Error-level log messages now use `app.error()` instead of routing through `app.debug()`
+
+### 🔄 Changed
+
+- **All devDependencies updated** to latest versions:
+  - `@signalk/server-api`: ^2.3.0 → ^2.23.0
+  - `@biomejs/biome`: ^2.2.5 → ^2.4.7
+  - `@types/node`: ^22.10.2 → ^25.5.0
+  - `vitest` / `@vitest/coverage-v8` / `@vitest/ui`: ^3.2.4 → ^4.1.0
+  - `typescript`: ^5.7.3 → ^5.9.3
+  - `esbuild`: ^0.24.2 → ^0.27.4
+  - `lint-staged`: ^15.2.11 → ^16.4.0
+  - `tsx`: ^4.19.2 → ^4.21.0
+- **Removed optional chaining** on `app.setPluginStatus()`, `app.setPluginError()`, `app.handleMessage()` — these are non-optional in `ServerAPI`
+- **Removed duplicate code**: `calculateAbsoluteHumidity`, `calculateAirDensity`, `calculateBeaufortScale`, `normalizeAngle` consolidated to single implementations
+- **Removed `SignalKApp`/`SignalKDataValue`/`SignalKDelta`/`SignalKSource`/`SignalKPath`** from types — use `@signalk/server-api` exports
+- **Removed redundant namespace exports** (`LegacyConverters`, `TemperatureConverter`, etc.) from `conversions.ts` and `validation.ts`
+- **Location cache bounded** to 50 entries with FIFO eviction
+- **Plugin entry simplified**: Removed `NMEA2000PathMapper` from `index.ts` (emission handled by `WeatherService`)
+- **Test count**: 85 → 91 tests (added Weather Provider tests)
+
+### 📝 Signal K Standards Compliance
+
+- **Wind chill path**: Now uses spec-correct `apparentWindChillTemperature`
+- **Deprecated humidity path**: Removed; only `relativeHumidity` emitted
+- **Official types**: Uses `Plugin`, `ServerAPI`, `Delta` from `@signalk/server-api`
+- **Weather Provider API**: Registered through official `registerWeatherProvider()`
+
 ## [1.0.1] - 2025-10-13
 
 ### 🐛 Fixed
@@ -65,7 +121,7 @@ First production release of signalk-virtual-weather-sensors - a comprehensive we
 - **Main entry**: `plugin/index.js` → `dist/index.js` (built from TypeScript)
 - **Module system**: CommonJS → ESM modules throughout
 - **Configuration**: Enhanced with new optional settings for advanced features
-- **Dependencies**: Updated to latest versions (node-fetch v3.3.2, TypeScript 5.3+)
+- **Dependencies**: Updated to latest versions (TypeScript 5.3+)
 
 #### Enhanced Features
 - **Data coverage**: 8 basic fields → 25+ comprehensive environmental measurements
