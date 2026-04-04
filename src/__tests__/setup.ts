@@ -49,7 +49,7 @@ export function createMockWeatherData(
   return {
     temperature: 293.15, // 20°C in Kelvin
     pressure: 101325, // 1013.25 mbar in Pascals
-    humidity: 65, // 65% (percentage format for Garmin compatibility)
+    humidity: 0.65, // 65% as ratio (0-1) per Signal K spec
     windSpeed: 5.14, // ~10 knots in m/s
     windDirection: Math.PI / 2, // 90° (East) in radians
     dewPoint: 286.48, // ~13.3°C in Kelvin

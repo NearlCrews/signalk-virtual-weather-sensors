@@ -19,11 +19,18 @@ import type {
   LogLevel,
   WeatherData,
 } from '../types/index.js';
+import { calculateBeaufortScale } from '../utils/conversions.js';
 
 /**
  * AccuWeather API client for weather data operations
  * Provides type-safe interface to AccuWeather REST API with caching and error handling
  */
+/** Maximum number of entries in location cache before pruning */
+const MAX_CACHE_SIZE = 100;
+
+/** Maximum age in milliseconds for cache entries (2 hours) */
+const CACHE_MAX_AGE_MS = 2 * 60 * 60 * 1000;
+
 export class AccuWeatherService {
   private readonly config: AccuWeatherConfig;
   private readonly logger: (
@@ -32,6 +39,7 @@ export class AccuWeatherService {
     metadata?: Record<string, unknown>
   ) => void;
   private locationCache = new Map<string, { location: AccuWeatherLocation; timestamp: number }>();
+  private lastCachePrune = Date.now();
 
   constructor(
     apiKey: string,
@@ -119,7 +127,7 @@ export class AccuWeatherService {
     // Core measurements (existing)
     const temperature = conditions.Temperature.Metric.Value + UNITS.TEMPERATURE.CELSIUS_TO_KELVIN;
     const pressure = conditions.Pressure.Metric.Value * UNITS.PRESSURE.MILLIBAR_TO_PASCAL;
-    const humidity = conditions.RelativeHumidity; // Keep as percentage (0-100) for Garmin compatibility
+    const humidity = conditions.RelativeHumidity / 100; // Convert percentage to ratio (0-1) per Signal K spec
     const windSpeed = conditions.Wind.Speed.Metric.Value * UNITS.WIND_SPEED.KMH_TO_MS;
     const windDirection = conditions.Wind.Direction.Degrees * UNITS.ANGLE.DEGREES_TO_RADIANS;
     const dewPoint = conditions.DewPoint.Metric.Value + UNITS.TEMPERATURE.CELSIUS_TO_KELVIN;
@@ -156,14 +164,10 @@ export class AccuWeatherService {
     // Temperature trends (new)
     const temperatureDeparture24h = conditions.Past24HourTemperatureDeparture.Metric.Value; // Keep as Celsius delta
 
-    // Calculate synthetic values (convert humidity percentage to ratio for calculations)
-    const beaufortScale = this.calculateBeaufortScale(windSpeed, windGustSpeed);
-    const absoluteHumidity = this.calculateAbsoluteHumidity(temperature, humidity / 100);
-    const airDensityEnhanced = this.calculateEnhancedAirDensity(
-      temperature,
-      pressure,
-      humidity / 100
-    );
+    // Calculate synthetic values (humidity is already a ratio)
+    const beaufortScale = calculateBeaufortScale(windSpeed, windGustSpeed);
+    const absoluteHumidity = this.calculateAbsoluteHumidity(temperature, humidity);
+    const airDensityEnhanced = this.calculateEnhancedAirDensity(temperature, pressure, humidity);
     const heatStressIndex = this.calculateHeatStressIndex(wetBulbGlobeTemperature);
 
     const weatherData: WeatherData = {
@@ -217,29 +221,6 @@ export class AccuWeatherService {
     this.validateWeatherData(weatherData);
 
     return weatherData;
-  }
-
-  /**
-   * Calculate Beaufort scale from wind speed and gusts
-   * @private
-   */
-  private calculateBeaufortScale(windSpeed: number, windGustSpeed: number): number {
-    // Use the higher of sustained or gust speed for classification
-    const effectiveWindSpeed = Math.max(windSpeed, windGustSpeed);
-
-    if (effectiveWindSpeed < 0.3) return 0; // Calm
-    if (effectiveWindSpeed < 1.6) return 1; // Light air
-    if (effectiveWindSpeed < 3.4) return 2; // Light breeze
-    if (effectiveWindSpeed < 5.5) return 3; // Gentle breeze
-    if (effectiveWindSpeed < 8.0) return 4; // Moderate breeze
-    if (effectiveWindSpeed < 10.8) return 5; // Fresh breeze
-    if (effectiveWindSpeed < 13.9) return 6; // Strong breeze
-    if (effectiveWindSpeed < 17.2) return 7; // Near gale
-    if (effectiveWindSpeed < 20.8) return 8; // Gale
-    if (effectiveWindSpeed < 24.5) return 9; // Severe gale
-    if (effectiveWindSpeed < 28.5) return 10; // Storm
-    if (effectiveWindSpeed < 32.7) return 11; // Violent storm
-    return 12; // Hurricane
   }
 
   /**
@@ -346,10 +327,57 @@ export class AccuWeatherService {
   }
 
   /**
+   * Prune expired and excess entries from location cache
+   * @private
+   */
+  private pruneLocationCache(): void {
+    const now = Date.now();
+
+    // Only prune every 5 minutes to avoid overhead
+    if (now - this.lastCachePrune < 5 * 60 * 1000) {
+      return;
+    }
+
+    this.lastCachePrune = now;
+    let pruned = 0;
+
+    // Remove expired entries
+    for (const [key, entry] of this.locationCache.entries()) {
+      if (now - entry.timestamp > CACHE_MAX_AGE_MS) {
+        this.locationCache.delete(key);
+        pruned++;
+      }
+    }
+
+    // If still over max size, remove oldest entries
+    if (this.locationCache.size > MAX_CACHE_SIZE) {
+      const entries = Array.from(this.locationCache.entries()).sort(
+        (a, b) => a[1].timestamp - b[1].timestamp
+      );
+
+      const toRemove = entries.slice(0, entries.length - MAX_CACHE_SIZE);
+      for (const [key] of toRemove) {
+        this.locationCache.delete(key);
+        pruned++;
+      }
+    }
+
+    if (pruned > 0) {
+      this.logger('debug', 'Location cache pruned', {
+        prunedEntries: pruned,
+        remainingEntries: this.locationCache.size,
+      });
+    }
+  }
+
+  /**
    * Get location key for coordinates with caching
    * @private
    */
   private async getLocationKey(location: GeoLocation): Promise<string> {
+    // Prune cache periodically to prevent memory leak
+    this.pruneLocationCache();
+
     const cacheKey = `${location.latitude.toFixed(4)},${location.longitude.toFixed(4)}`;
 
     // Check cache first
@@ -372,6 +400,7 @@ export class AccuWeatherService {
       cacheKey,
       locationKey: locationData.Key,
       locationName: locationData.LocalizedName,
+      cacheSize: this.locationCache.size,
     });
 
     return locationData.Key;
@@ -486,45 +515,93 @@ export class AccuWeatherService {
   }
 
   /**
+   * Parse Retry-After header value to milliseconds
+   * @private
+   */
+  private parseRetryAfter(response: Response): number | null {
+    const retryAfter = response.headers.get('Retry-After');
+    if (!retryAfter) return null;
+
+    // Try parsing as seconds (integer)
+    const seconds = Number.parseInt(retryAfter, 10);
+    if (!Number.isNaN(seconds) && seconds > 0) {
+      return Math.min(seconds * 1000, 60000); // Cap at 60 seconds
+    }
+
+    // Try parsing as HTTP date
+    const retryDate = new Date(retryAfter);
+    if (!Number.isNaN(retryDate.getTime())) {
+      const delayMs = retryDate.getTime() - Date.now();
+      if (delayMs > 0) {
+        return Math.min(delayMs, 60000); // Cap at 60 seconds
+      }
+    }
+
+    return null;
+  }
+
+  /**
    * Handle API error responses
+   * Respects Retry-After header when present for rate limiting
    * @private
    */
   private async handleApiError(response: Response, attempt: number): Promise<never> {
     const statusCode = response.status;
+    const retryAfterMs = this.parseRetryAfter(response);
 
+    let message = response.statusText;
     try {
       const errorData = (await response.json()) as { message?: string };
-      const message = errorData.message || response.statusText;
+      message = errorData.message || response.statusText;
+    } catch {
+      // JSON parse failed, use statusText
+    }
 
-      switch (statusCode) {
-        case 401:
-          throw new Error(`${ERROR_CODES.NETWORK.API_UNAUTHORIZED}: Invalid API key - ${message}`);
-        case 403:
+    switch (statusCode) {
+      case 401:
+        throw new Error(`${ERROR_CODES.NETWORK.API_UNAUTHORIZED}: Invalid API key - ${message}`);
+      case 403:
+        throw new Error(
+          `${ERROR_CODES.NETWORK.API_RATE_LIMIT}: API rate limit exceeded - ${message}`
+        );
+      case 404:
+        throw new Error(
+          `${ERROR_CODES.DATA.INVALID_WEATHER_DATA}: Location not found - ${message}`
+        );
+      case 429:
+        // Rate limited - use Retry-After header or exponential backoff
+        if (attempt < this.config.retryAttempts) {
+          const delayMs = retryAfterMs || this.config.retryDelay * 2 ** (attempt - 1);
+          this.logger('warn', 'Rate limited by API, waiting before retry', {
+            attempt,
+            delayMs,
+            retryAfterHeader: !!retryAfterMs,
+          });
+          await this.delay(delayMs);
           throw new Error(
-            `${ERROR_CODES.NETWORK.API_RATE_LIMIT}: API rate limit exceeded - ${message}`
+            `${ERROR_CODES.NETWORK.API_RATE_LIMIT}: Rate limited, retrying - ${message}`
           );
-        case 404:
+        }
+        throw new Error(`${ERROR_CODES.NETWORK.API_RATE_LIMIT}: Rate limit exceeded - ${message}`);
+      case 503:
+        if (attempt < this.config.retryAttempts) {
+          // Service temporarily unavailable - use Retry-After or exponential backoff
+          const delayMs = retryAfterMs || this.config.retryDelay * 2 ** (attempt - 1);
+          this.logger('warn', 'Service unavailable, waiting before retry', {
+            attempt,
+            delayMs,
+            retryAfterHeader: !!retryAfterMs,
+          });
+          await this.delay(delayMs);
           throw new Error(
-            `${ERROR_CODES.DATA.INVALID_WEATHER_DATA}: Location not found - ${message}`
+            `${ERROR_CODES.NETWORK.NETWORK_ERROR}: Service temporarily unavailable, retrying - ${message}`
           );
-        case 503:
-          if (attempt < this.config.retryAttempts) {
-            // Service temporarily unavailable - retry
-            await this.delay(this.config.retryDelay * attempt);
-            throw new Error(
-              `${ERROR_CODES.NETWORK.NETWORK_ERROR}: Service temporarily unavailable, retrying - ${message}`
-            );
-          }
-          throw new Error(`${ERROR_CODES.NETWORK.NETWORK_ERROR}: Service unavailable - ${message}`);
-        default:
-          throw new Error(
-            `${ERROR_CODES.NETWORK.NETWORK_ERROR}: API request failed (${statusCode}) - ${message}`
-          );
-      }
-    } catch (_parseError) {
-      throw new Error(
-        `${ERROR_CODES.NETWORK.NETWORK_ERROR}: API request failed (${statusCode}) - ${response.statusText}`
-      );
+        }
+        throw new Error(`${ERROR_CODES.NETWORK.NETWORK_ERROR}: Service unavailable - ${message}`);
+      default:
+        throw new Error(
+          `${ERROR_CODES.NETWORK.NETWORK_ERROR}: API request failed (${statusCode}) - ${message}`
+        );
     }
   }
 
@@ -658,10 +735,9 @@ export class AccuWeatherService {
   /**
    * Get cache statistics for monitoring
    */
-  public getCacheStats(): { size: number; entries: number } {
+  public getCacheStats(): { size: number } {
     return {
       size: this.locationCache.size,
-      entries: this.locationCache.size,
     };
   }
 }

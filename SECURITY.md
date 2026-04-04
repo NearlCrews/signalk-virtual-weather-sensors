@@ -177,6 +177,6 @@ If you have questions about this security policy or need clarification, please:
 
 ---
 
-**Last Updated**: 2025-10-13
+**Last Updated**: 2026-01-20
 
 Thank you for helping keep Signal K Virtual Weather Sensors and its users safe!

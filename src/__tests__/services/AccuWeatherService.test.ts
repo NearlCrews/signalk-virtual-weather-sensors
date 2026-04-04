@@ -138,7 +138,7 @@ describe('AccuWeatherService', () => {
 
       // Verify SI unit conversions
       expect(weatherData.temperature).toBeCloseTo(293.15, 2); // 20°C in Kelvin
-      expect(weatherData.humidity).toBeCloseTo(65, 2); // 65% as percentage
+      expect(weatherData.humidity).toBeCloseTo(0.65, 4); // 65% converted to ratio
       expect(weatherData.windSpeed).toBeCloseTo(5.14, 2); // 18.5 km/h in m/s
       expect(weatherData.windGustSpeed).toBeCloseTo(6.94, 2); // 25.0 km/h in m/s
       expect(weatherData.visibility).toBeCloseTo(16000, 1); // 16 km in meters
@@ -282,7 +282,6 @@ describe('AccuWeatherService', () => {
       expect(stats).toEqual(
         expect.objectContaining({
           size: expect.any(Number),
-          entries: expect.any(Number),
         })
       );
     });

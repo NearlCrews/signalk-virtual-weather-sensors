@@ -4,7 +4,7 @@
  * Maps comprehensive weather data to standardized NMEA2000 Signal K paths with proper PGN support
  */
 
-import { PGN, SIGNALK_PATHS, SIGNALK_SOURCE } from '../constants/index.js';
+import { PGN, SIGNALK_PATHS } from '../constants/index.js';
 import type { LogLevel, SignalKDelta, WeatherData } from '../types/index.js';
 import { NMEA2000Validator } from '../utils/validation.js';
 
@@ -114,10 +114,6 @@ export class NMEA2000PathMapper {
       context: 'vessels.self',
       updates: [
         {
-          source: {
-            label: SIGNALK_SOURCE.label,
-            type: SIGNALK_SOURCE.type,
-          },
           timestamp,
           values: values.map((v) => ({ path: v.path, value: v.value })),
         },
@@ -159,22 +155,30 @@ export class NMEA2000PathMapper {
     });
 
     // Relative humidity (PGN 130313, instance 100)
-    // NOTE: Humidity format - Percentage vs Ratio
-    // Signal K spec recommends ratio (0-1), but we use percentage (0-100) for Garmin compatibility.
-    // Trade-off: Garmin marine displays and most NMEA2000 devices expect percentage format.
-    // Impact: May cause minor display issues in some Signal K clients, but ensures proper
-    // display on physical marine electronics where it matters most.
-    // See TODO.md for full rationale and future considerations.
-    values.push({
-      path: SIGNALK_PATHS.ENVIRONMENT.OUTSIDE.RELATIVE_HUMIDITY,
-      value: data.humidity, // Already in percentage (0-100) format
-      timestamp,
-      meta: {
-        units: '%',
-        displayName: 'Outside Relative Humidity',
-        description: 'Current outside relative humidity from AccuWeather API',
+    // Signal K spec: ratio (0-1)
+    values.push(
+      {
+        path: SIGNALK_PATHS.ENVIRONMENT.OUTSIDE.RELATIVE_HUMIDITY,
+        value: data.humidity, // Ratio (0-1) per Signal K spec
+        timestamp,
+        meta: {
+          units: 'ratio',
+          displayName: 'Outside Relative Humidity',
+          description: 'Current outside relative humidity from AccuWeather API',
+        },
       },
-    });
+      // Also emit as 'humidity' for sk-to-nmea2000 compatibility
+      {
+        path: SIGNALK_PATHS.ENVIRONMENT.OUTSIDE.HUMIDITY,
+        value: data.humidity,
+        timestamp,
+        meta: {
+          units: 'ratio',
+          displayName: 'Outside Humidity',
+          description: 'Current outside humidity from AccuWeather API',
+        },
+      }
+    );
   }
 
   /**
@@ -322,6 +326,18 @@ export class NMEA2000PathMapper {
           displayName: 'True Wind Direction',
           description: 'True wind direction from AccuWeather API',
         },
+      },
+      // speedOverGround mirrors speedTrue for weather API data
+      // Required by sk-to-nmea2000 WIND_TRUE_GROUND PGN generator
+      {
+        path: SIGNALK_PATHS.ENVIRONMENT.WIND.SPEED_OVER_GROUND,
+        value: data.windSpeed,
+        timestamp,
+        meta: {
+          units: 'm/s',
+          displayName: 'Wind Speed Over Ground',
+          description: 'True wind speed over ground from AccuWeather API',
+        },
       }
     );
 
@@ -380,16 +396,30 @@ export class NMEA2000PathMapper {
     }
 
     if (data.apparentWindAngle !== undefined) {
-      values.push({
-        path: SIGNALK_PATHS.ENVIRONMENT.WIND.ANGLE_APPARENT,
-        value: data.apparentWindAngle,
-        timestamp,
-        meta: {
-          units: 'rad',
-          displayName: 'Apparent Wind Angle',
-          description: 'Calculated apparent wind angle relative to vessel bow',
+      values.push(
+        {
+          path: SIGNALK_PATHS.ENVIRONMENT.WIND.ANGLE_APPARENT,
+          value: data.apparentWindAngle,
+          timestamp,
+          meta: {
+            units: 'rad',
+            displayName: 'Apparent Wind Angle',
+            description: 'Calculated apparent wind angle relative to vessel bow',
+          },
         },
-      });
+        // angleTrueWater mirrors apparentWindAngle for weather API data
+        // Required by sk-to-nmea2000 WIND_TRUE PGN generator
+        {
+          path: SIGNALK_PATHS.ENVIRONMENT.WIND.ANGLE_TRUE_WATER,
+          value: data.apparentWindAngle,
+          timestamp,
+          meta: {
+            units: 'rad',
+            displayName: 'True Wind Angle (Water)',
+            description: 'True wind angle relative to vessel heading through water',
+          },
+        }
+      );
     }
   }
 

@@ -37,7 +37,7 @@ describe('NMEA2000PathMapper', () => {
       const weatherData = createMockWeatherData({
         temperature: 293.15, // 20°C
         pressure: 101325, // Standard atmosphere
-        humidity: 65, // 65% (percentage format)
+        humidity: 0.65, // 65% as ratio (0-1)
         windSpeed: 5.14, // ~10 knots
         windDirection: Math.PI / 2, // East
       });
@@ -49,14 +49,10 @@ describe('NMEA2000PathMapper', () => {
           context: 'vessels.self',
           updates: expect.arrayContaining([
             expect.objectContaining({
-              source: expect.objectContaining({
-                label: 'Signal K Virtual Weather Sensors',
-                type: 'plugin',
-              }),
               values: expect.arrayContaining([
                 { path: 'environment.outside.temperature', value: 293.15 },
                 { path: 'environment.outside.pressure', value: 101325 },
-                { path: 'environment.outside.relativeHumidity', value: 65 },
+                { path: 'environment.outside.relativeHumidity', value: 0.65 },
                 { path: 'environment.wind.speedTrue', value: 5.14 },
                 { path: 'environment.wind.directionTrue', value: Math.PI / 2 },
               ]),
@@ -200,7 +196,7 @@ describe('NMEA2000PathMapper', () => {
       const extremeWeatherData = createMockWeatherData({
         temperature: 400, // Extreme temperature (over NMEA2000 range)
         pressure: 150000, // Extreme pressure
-        humidity: 150, // Invalid humidity percentage
+        humidity: 1.5, // Invalid humidity > 1.0
         windSpeed: 200, // Over NMEA2000 wind speed limit
       });
 
@@ -296,7 +292,7 @@ describe('NMEA2000PathMapper', () => {
       const invalidWeatherData = {
         temperature: 293.15,
         pressure: 101325,
-        humidity: 200, // Invalid humidity > 100%
+        humidity: 2.0, // Invalid humidity > 1.0
         windSpeed: 5.14,
         windDirection: Math.PI / 2,
         timestamp: new Date().toISOString(),
@@ -394,7 +390,6 @@ describe('NMEA2000PathMapper', () => {
       expect(delta.updates.length).toBe(1);
 
       const update = delta.updates[0];
-      expect(update).toHaveProperty('source');
       expect(update).toHaveProperty('timestamp');
       expect(update).toHaveProperty('values');
       expect(Array.isArray(update.values)).toBe(true);

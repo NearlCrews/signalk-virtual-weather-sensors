@@ -15,24 +15,25 @@ coverage/
 # Development configuration
 .github/
 .husky/
-.roofiles/
+.claude/
 .vscode/
 .idea/
 esbuild.config.js
 biome.json
+.node-version
 
-# Documentation (some kept, some excluded)
+# Documentation (only ship README, LICENSE, CHANGELOG)
 DEVELOPMENT.md
+CONTRIBUTING.md
 TODO.md
+RELEASE.md
+CLAUDE.md
+CODE_OF_CONDUCT.md
+SECURITY.md
 
 # Git
 .git/
 .gitignore
-
-# CI/CD
-.travis.yml
-.gitlab-ci.yml
-appveyor.yml
 
 # Build artifacts not needed
 *.tsbuildinfo
@@ -60,7 +61,8 @@ yarn.lock
 pnpm-lock.yaml
 .pnpm-debug.log
 
-# Optional files
+# Environment files
 .env
 .env.test
 .env.local
+.env.production

@@ -17,7 +17,7 @@ export interface WeatherData {
   readonly temperature: number;
   /** Atmospheric pressure in Pascals (SI base unit) */
   readonly pressure: number;
-  /** Relative humidity as percentage (0-100) for Garmin compatibility */
+  /** Relative humidity as ratio (0-1) per Signal K spec */
   readonly humidity: number;
   /** Wind speed in meters per second (SI unit) */
   readonly windSpeed: number;
@@ -179,7 +179,7 @@ export interface NMEA2000Message {
 export interface SignalKDelta {
   readonly context: string;
   readonly updates: ReadonlyArray<{
-    readonly source: SignalKSource;
+    readonly source?: SignalKSource;
     readonly timestamp: string;
     readonly values: ReadonlyArray<{
       readonly path: string;

@@ -120,7 +120,8 @@ npm run validate         # Run all quality checks
 
 ### TypeScript
 
-- Use **TypeScript 5.7+** with strict mode
+- Use **TypeScript 5.9+** with strict mode
+- Use **@signalk/server-api** types (`Plugin`, `ServerAPI`) for Signal K integration
 - Provide explicit type annotations for function parameters and return types
 - Use interfaces for object shapes
 - Avoid `any` type unless absolutely necessary

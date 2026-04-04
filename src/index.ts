@@ -2,38 +2,16 @@
  * Signal K Virtual Weather Sensors - Main Entry Point
  * Modern TypeScript Signal K plugin providing comprehensive AccuWeather integration
  * with enhanced NMEA2000 environmental measurements and sk-n2k-emitter alignment
+ *
+ * Uses official @signalk/server-api types for maximum compatibility
  */
 
+import type { Plugin, ServerAPI } from '@signalk/server-api';
 import { DEFAULT_CONFIG, ERROR_CODES, PLUGIN } from './constants/index.js';
 import { NMEA2000PathMapper } from './mappers/NMEA2000PathMapper.js';
 import { WeatherService } from './services/WeatherService.js';
 import type { LogLevel, PluginConfiguration, PluginState } from './types/index.js';
 import { ConfigurationValidator } from './utils/validation.js';
-
-/**
- * Signal K data value structure
- */
-interface SignalKDataValue {
-  value: unknown;
-  timestamp?: string;
-  source?: {
-    label?: string;
-    type?: string;
-    bus?: string;
-    src?: string;
-  };
-}
-
-/**
- * Signal K Server Application Interface
- */
-interface SignalKApp {
-  debug(...args: unknown[]): void;
-  setPluginStatus?: (message: string) => void;
-  setPluginError?: (message: string) => void;
-  getSelfPath(path: string): SignalKDataValue | null | undefined;
-  handleMessage?: (pluginId: string, delta: unknown) => void;
-}
 
 /**
  * Plugin instance state
@@ -49,10 +27,11 @@ interface PluginInstance {
 
 /**
  * Main plugin factory function
- * @param app Signal K server application instance
- * @returns Signal K plugin interface
+ * Implements the official SignalK PluginConstructor pattern
+ * @param app Signal K server application instance (ServerAPI)
+ * @returns Signal K Plugin interface
  */
-export default function createPlugin(app: SignalKApp) {
+export default function createPlugin(app: ServerAPI): Plugin {
   const instance: PluginInstance = {
     weatherService: null,
     pathMapper: null,
@@ -64,8 +43,9 @@ export default function createPlugin(app: SignalKApp) {
 
   /**
    * Plugin interface implementation
+   * Conforms to @signalk/server-api Plugin interface
    */
-  const plugin = {
+  const plugin: Plugin = {
     id: PLUGIN.NAME,
     name: PLUGIN.DISPLAY_NAME,
     description: PLUGIN.DESCRIPTION,
@@ -73,7 +53,10 @@ export default function createPlugin(app: SignalKApp) {
     /**
      * Start the plugin with provided configuration
      */
-    start: async (settings: unknown, _restartPlugin?: () => void): Promise<void> => {
+    start: async (
+      settings: object,
+      _restartPlugin: (newConfiguration: object) => void
+    ): Promise<void> => {
       try {
         logPluginStarting(instance, settings);
 
@@ -177,29 +160,19 @@ export default function createPlugin(app: SignalKApp) {
     }),
 
     /**
-     * Get plugin status information
+     * Returns a status message for the plugin
+     * Implements Plugin.statusMessage from @signalk/server-api
      */
-    getStatus: () => {
+    statusMessage: (): string | undefined => {
       if (!instance.weatherService) {
-        return { state: instance.state, message: 'Weather service not initialized' };
+        return 'Weather service not initialized';
       }
 
       const status = instance.weatherService.getServiceStatus();
-      const uptime = instance.startTime ? Date.now() - instance.startTime.getTime() : 0;
-
-      return {
-        state: status.state,
-        uptime,
-        lastUpdate: status.lastUpdate,
-        lastEmission: status.lastEmission,
-        updateCount: status.updateCount,
-        emissionCount: status.emissionCount,
-        errorCount: status.errorCount,
-        hasWeatherData: status.hasWeatherData,
-        enhancedFieldCount: getEnhancedFieldCount(),
-        signalKHealth: status.signalKHealth,
-        cacheStats: status.cacheStats,
-      };
+      if (status.hasWeatherData) {
+        return `Running - ${getEnhancedFieldCount()} data points, ${status.updateCount} updates`;
+      }
+      return `Waiting for weather data...`;
     },
   };
 
@@ -246,7 +219,7 @@ function initializePlugin(instance: PluginInstance, settings: unknown): PluginCo
 async function startServices(
   instance: PluginInstance,
   config: PluginConfiguration,
-  app: SignalKApp
+  app: ServerAPI
 ): Promise<void> {
   // Initialize services
   instance.weatherService = new WeatherService(app, config, instance.logger);
@@ -266,7 +239,7 @@ async function startServices(
 function finalizePluginStart(
   instance: PluginInstance,
   config: PluginConfiguration,
-  app: SignalKApp
+  app: ServerAPI
 ): void {
   instance.state = 'running';
 
@@ -292,14 +265,16 @@ async function handleStartupError(
   instance: PluginInstance,
   error: unknown,
   settings: unknown,
-  app: SignalKApp
+  app: ServerAPI
 ): Promise<void> {
   instance.state = 'error';
   const errorMessage = error instanceof Error ? error.message : String(error);
 
+  // Log error without exposing sensitive settings
   instance.logger('error', 'Failed to start plugin', {
     error: errorMessage,
-    settings: typeof settings === 'object' ? settings : 'invalid',
+    settingsProvided: typeof settings === 'object' && settings !== null,
+    settingsKeys: typeof settings === 'object' && settings !== null ? Object.keys(settings) : [],
   });
 
   if (app.setPluginError) {
@@ -316,7 +291,7 @@ async function handleStartupError(
 function setupEnhancedEmissionSystem(
   instance: PluginInstance,
   config: PluginConfiguration,
-  app: SignalKApp
+  app: ServerAPI
 ): void {
   const emissionInterval = config.emissionInterval * 1000; // Convert seconds to milliseconds
 
@@ -329,9 +304,9 @@ function setupEnhancedEmissionSystem(
         const delta = instance.pathMapper.mapToSignalKPaths(weatherData);
 
         // Emit to Signal K server
-        if (app.handleMessage) {
-          app.handleMessage(PLUGIN.NAME, delta);
-        }
+        // Cast to Partial<Delta> as our SignalKDelta is structurally compatible
+        // but uses plain strings instead of branded types
+        app.handleMessage(PLUGIN.NAME, delta as Parameters<ServerAPI['handleMessage']>[1]);
 
         instance.logger('debug', 'Enhanced weather data emitted', {
           pathCount: delta.updates[0]?.values?.length || 0,
@@ -443,12 +418,17 @@ function validateAndNormalizeSettings(
 
 /**
  * Create structured logger with plugin context
+ * Uses appropriate Signal K server logging methods for each level
  * @private
  */
-function createLogger(app: SignalKApp) {
+function createLogger(app: ServerAPI) {
   return (level: LogLevel, message: string, metadata?: Record<string, unknown>) => {
     const logMessage = `[${PLUGIN.NAME}] ${message}`;
-    const logMetadata = metadata ? ` | ${JSON.stringify(metadata)}` : '';
+    // Only sanitize metadata for warn/error (may contain config with API keys)
+    // Skip for debug/info hot paths to avoid overhead
+    const shouldSanitize = (level === 'warn' || level === 'error') && metadata;
+    const finalMetadata = shouldSanitize ? sanitizeLogMetadata(metadata) : metadata;
+    const logMetadata = finalMetadata ? ` | ${JSON.stringify(finalMetadata)}` : '';
 
     switch (level) {
       case 'debug':
@@ -465,6 +445,29 @@ function createLogger(app: SignalKApp) {
         break;
     }
   };
+}
+
+/**
+ * Sanitize log metadata to remove sensitive information
+ * @private
+ */
+function sanitizeLogMetadata(metadata: Record<string, unknown>): Record<string, unknown> {
+  const sensitiveKeys = ['apikey', 'api_key', 'accuweatherapikey', 'password', 'secret', 'token'];
+  const sanitized: Record<string, unknown> = {};
+
+  for (const [key, value] of Object.entries(metadata)) {
+    const lowerKey = key.toLowerCase();
+    if (sensitiveKeys.some((sensitive) => lowerKey.includes(sensitive))) {
+      sanitized[key] = '[REDACTED]';
+    } else if (typeof value === 'object' && value !== null && !Array.isArray(value)) {
+      // Recursively sanitize nested objects
+      sanitized[key] = sanitizeLogMetadata(value as Record<string, unknown>);
+    } else {
+      sanitized[key] = value;
+    }
+  }
+
+  return sanitized;
 }
 
 /**

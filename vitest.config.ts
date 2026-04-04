@@ -31,7 +31,6 @@ export default defineConfig({
           statements: 80,
         },
       },
-      all: true,
       clean: true,
       cleanOnRerun: true,
     },
@@ -41,11 +40,6 @@ export default defineConfig({
       ignoreSourceErrors: false,
     },
     pool: 'threads',
-    poolOptions: {
-      threads: {
-        singleThread: false,
-      },
-    },
     isolate: true,
     testTimeout: 10000,
     hookTimeout: 10000,

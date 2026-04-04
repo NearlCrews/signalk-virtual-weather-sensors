@@ -6,6 +6,7 @@
 
 import { UNITS, VALIDATION_LIMITS } from '../constants/index.js';
 import type { LogLevel, WindCalculationResult } from '../types/index.js';
+import { calculateBeaufortScale as calculateBeaufortScaleUtil } from '../utils/conversions.js';
 
 /**
  * Wind Calculator Service
@@ -376,52 +377,14 @@ export class WindCalculator {
   }
 
   /**
-   * Get Beaufort scale from wind speed using lookup table
-   */
-  private getBeaufortScaleFromSpeed(speed: number): number {
-    const beaufortThresholds = [
-      { max: 0.3, scale: 0 }, // Calm
-      { max: 1.6, scale: 1 }, // Light air
-      { max: 3.4, scale: 2 }, // Light breeze
-      { max: 5.5, scale: 3 }, // Gentle breeze
-      { max: 8.0, scale: 4 }, // Moderate breeze
-      { max: 10.8, scale: 5 }, // Fresh breeze
-      { max: 13.9, scale: 6 }, // Strong breeze
-      { max: 17.2, scale: 7 }, // Near gale
-      { max: 20.8, scale: 8 }, // Gale
-      { max: 25.0, scale: 9 }, // Severe gale (adjusted threshold)
-      { max: 28.5, scale: 10 }, // Storm
-      { max: 32.7, scale: 11 }, // Violent storm
-    ];
-
-    for (const threshold of beaufortThresholds) {
-      if (speed < threshold.max) {
-        return threshold.scale;
-      }
-    }
-
-    return 12; // Hurricane
-  }
-
-  /**
    * Calculate Beaufort wind scale from wind speed
+   * Uses shared utility function for consistency across services
    * @param windSpeed Wind speed in m/s
    * @param gustSpeed Optional gust speed in m/s
    * @returns Beaufort scale (0-12)
    */
   public calculateBeaufortScale(windSpeed: number, gustSpeed?: number): number {
-    try {
-      // Use the higher of sustained or gust speed for classification
-      const effectiveWindSpeed = gustSpeed ? Math.max(windSpeed, gustSpeed) : windSpeed;
-      return this.getBeaufortScaleFromSpeed(effectiveWindSpeed);
-    } catch (error) {
-      this.logger('error', 'Error calculating Beaufort scale', {
-        error: error instanceof Error ? error.message : String(error),
-        windSpeed,
-        gustSpeed,
-      });
-      return 0;
-    }
+    return calculateBeaufortScaleUtil(windSpeed, gustSpeed);
   }
 
   /**
@@ -508,8 +471,8 @@ export class WindCalculator {
       trueWindSpeed <= VALIDATION_LIMITS.WIND_SPEED.MAX &&
       typeof vesselSpeed === 'number' &&
       Number.isFinite(vesselSpeed) &&
-      vesselSpeed >= 0 &&
-      vesselSpeed <= 100 && // 100 m/s = ~200 knots (extreme but possible)
+      vesselSpeed >= VALIDATION_LIMITS.VESSEL_SPEED.MIN &&
+      vesselSpeed <= VALIDATION_LIMITS.VESSEL_SPEED.MAX &&
       typeof vesselHeading === 'number' &&
       Number.isFinite(vesselHeading) &&
       typeof trueWindDirection === 'number' &&

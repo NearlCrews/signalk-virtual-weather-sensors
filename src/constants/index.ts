@@ -138,12 +138,6 @@ export const SIGNALK_PATHS = {
   },
 } as const;
 
-/** Signal K data source configuration */
-export const SIGNALK_SOURCE = {
-  label: 'Signal K Virtual Weather Sensors',
-  type: 'plugin',
-} as const;
-
 // ===============================
 // Unit Conversion Constants
 // ===============================
@@ -212,7 +206,7 @@ export const VALIDATION_LIMITS = {
 
   HUMIDITY: {
     MIN: 0,
-    MAX: 100, // 0-100% as percentage for Garmin compatibility
+    MAX: 1, // 0-1 ratio per Signal K spec
   },
 
   WIND_SPEED: {
@@ -235,6 +229,18 @@ export const VALIDATION_LIMITS = {
       MAX: 180,
     },
   },
+
+  /** Vessel speed validation (m/s) - 100 m/s ≈ 200 knots (extreme but possible) */
+  VESSEL_SPEED: {
+    MIN: 0,
+    MAX: 100,
+  },
+
+  /** Navigation data age threshold (seconds) */
+  MAX_DATA_AGE: 30,
+
+  /** Vessel movement detection threshold (m/s) - 0.5 m/s ≈ 1 knot */
+  VESSEL_MOVING_THRESHOLD: 0.5,
 } as const;
 
 // ===============================
@@ -293,22 +299,72 @@ export const LOGGING = {
 // Performance and Timing Constants
 // ===============================
 
-/** Performance monitoring and timing configurations */
+/**
+ * Performance monitoring and timing configurations
+ *
+ * These thresholds are based on:
+ * - Real-time marine navigation requirements (sub-second response needed)
+ * - AccuWeather API typical response times (1-3 seconds)
+ * - NMEA2000 network emission requirements
+ * - Signal K server resource constraints
+ */
 export const PERFORMANCE = {
-  /** Maximum allowed processing times in milliseconds */
+  /**
+   * Maximum allowed processing times in milliseconds
+   *
+   * WEATHER_UPDATE: 5000ms (5 seconds)
+   *   - AccuWeather API calls typically complete in 1-3 seconds
+   *   - Allows for network latency and retry logic
+   *   - Exceeding this indicates network issues or API problems
+   *
+   * WIND_CALCULATION: 100ms
+   *   - Vector calculations should complete in <10ms
+   *   - 100ms threshold allows for JS engine variations
+   *   - Exceeding this indicates computational issues
+   *
+   * DATA_EMISSION: 1000ms (1 second)
+   *   - Delta message creation and Signal K emission
+   *   - Should complete in <100ms normally
+   *   - 1 second allows for large delta messages
+   */
   MAX_PROCESSING_TIME: {
     WEATHER_UPDATE: 5000,
     WIND_CALCULATION: 100,
     DATA_EMISSION: 1000,
   },
 
-  /** Memory usage thresholds in bytes */
+  /**
+   * Memory usage thresholds in bytes
+   *
+   * WARNING: 50MB
+   *   - Plugins should typically use <20MB
+   *   - 50MB indicates possible memory leak or excessive caching
+   *   - Triggers warning log for investigation
+   *
+   * CRITICAL: 100MB
+   *   - Approaching Node.js heap limits on constrained devices
+   *   - Triggers error log and potential mitigation actions
+   */
   MEMORY_THRESHOLDS: {
     WARNING: 50 * 1024 * 1024, // 50MB
     CRITICAL: 100 * 1024 * 1024, // 100MB
   },
 
-  /** Timing intervals in milliseconds */
+  /**
+   * Timing intervals in milliseconds for background tasks
+   *
+   * HEALTH_CHECK: 60000ms (1 minute)
+   *   - Frequency for checking service health status
+   *   - Balances monitoring granularity with CPU usage
+   *
+   * MEMORY_CHECK: 300000ms (5 minutes)
+   *   - Memory usage monitoring interval
+   *   - Less frequent to reduce overhead
+   *
+   * CLEANUP: 3600000ms (1 hour)
+   *   - Cache cleanup and resource reclamation
+   *   - Hourly cleanup prevents gradual memory growth
+   */
   INTERVALS: {
     HEALTH_CHECK: 60000, // 1 minute
     MEMORY_CHECK: 300000, // 5 minutes

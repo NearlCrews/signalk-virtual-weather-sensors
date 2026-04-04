@@ -24,7 +24,7 @@ The development process involved several key prompt categories:
 
 **Initial Setup Prompts:**
 - "Create a modern TypeScript Signal K plugin for weather data with NMEA2000 compatibility"
-- "Set up comprehensive build tooling with esbuild, TypeScript 5.7+, and modern testing"
+- "Set up comprehensive build tooling with esbuild, TypeScript 5.9+, and modern testing"
 - "Configure Biome for linting/formatting to replace ESLint + Prettier"
 
 **Architecture Prompts:**
@@ -68,7 +68,7 @@ While AI-assisted, this project maintains human oversight for:
 
 ### Core Technologies
 
-#### TypeScript 5.7+
+#### TypeScript 5.9+
 - **Purpose**: Primary development language with strict type safety
 - **Configuration**: [`tsconfig.json`](tsconfig.json)
 - **Features Used**:
@@ -99,6 +99,29 @@ While AI-assisted, this project maintains human oversight for:
   - Node.js 20+ performance improvements
   - Built-in fetch API support
 
+#### @signalk/server-api 2.10+
+- **Purpose**: Official Signal K type definitions for plugins
+- **Features Used**:
+  - `Plugin` interface for plugin structure compliance
+  - `ServerAPI` interface for type-safe server interaction
+  - Proper typing for `handleMessage()`, `getSelfPath()`, etc.
+
+**Plugin Implementation Pattern:**
+```typescript
+import type { Plugin, ServerAPI } from '@signalk/server-api';
+
+export default function createPlugin(app: ServerAPI): Plugin {
+  const plugin: Plugin = {
+    id: 'my-plugin',
+    name: 'My Plugin',
+    start: (config, restart) => { /* ... */ },
+    stop: () => { /* ... */ },
+    schema: () => ({ /* ... */ }),
+  };
+  return plugin;
+}
+```
+
 ### Build and Bundling
 
 #### esbuild
@@ -119,7 +142,7 @@ While AI-assisted, this project maintains human oversight for:
 
 ### Code Quality
 
-#### Biome 2.2+
+#### Biome 2.3+
 - **Purpose**: Modern, fast linting and formatting (replaces ESLint + Prettier)
 - **Configuration**: [`biome.json`](biome.json)
 - **Features**:
@@ -146,7 +169,7 @@ While AI-assisted, this project maintains human oversight for:
 
 ### Testing
 
-#### Vitest 3.x
+#### Vitest 4.x
 - **Purpose**: Modern, fast unit testing framework
 - **Configuration**: [`vitest.config.ts`](vitest.config.ts)
 - **Features**:
@@ -359,11 +382,15 @@ npm run validate
 - **Edge Case Tests**: Boundary conditions and error handling
 - **Performance Tests**: Real-time calculation efficiency
 
+**Total: 150 tests** across 5 test files
+
 ### Test Files
 
-- [`WindCalculator.test.ts`](src/__tests__/calculators/WindCalculator.test.ts) - Vector mathematics
-- [`NMEA2000PathMapper.test.ts`](src/__tests__/mappers/NMEA2000PathMapper.test.ts) - Path mapping
-- [`AccuWeatherService.test.ts`](src/__tests__/services/AccuWeatherService.test.ts) - API integration
+- [`WeatherService.test.ts`](src/__tests__/services/WeatherService.test.ts) - Core orchestration (25 tests)
+- [`SignalKService.test.ts`](src/__tests__/services/SignalKService.test.ts) - Navigation data (40 tests)
+- [`AccuWeatherService.test.ts`](src/__tests__/services/AccuWeatherService.test.ts) - API integration (17 tests)
+- [`WindCalculator.test.ts`](src/__tests__/calculators/WindCalculator.test.ts) - Vector mathematics (43 tests)
+- [`NMEA2000PathMapper.test.ts`](src/__tests__/mappers/NMEA2000PathMapper.test.ts) - Path mapping (25 tests)
 
 ### Running Specific Tests
 
@@ -391,7 +418,7 @@ npm run test:ui
 
 - **Efficient Calculations**: Optimized mathematical operations
 - **Minimal Memory**: Proper resource cleanup
-- **Fast Validation**: Zod schema validation
+- **Fast Validation**: NMEA2000 range validation with centralized limits
 - **Smart Caching**: Vessel data caching with staleness checks
 
 ## 🔐 Security

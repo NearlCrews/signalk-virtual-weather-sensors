@@ -464,47 +464,6 @@ export function sanitizeWeatherData<T extends Record<string, unknown>>(data: T):
 }
 
 /**
- * Legacy conversion functions for compatibility with existing code
- * @deprecated Use individual functions above for better tree-shaking
- */
-export const LegacyConverters = {
-  // Temperature
-  celsiusToKelvin,
-  kelvinToCelsius,
-  kelvinToFahrenheit,
-  fahrenheitToKelvin,
-
-  // Pressure
-  millibarsToPA,
-
-  // Wind speed
-  kmhToMS,
-  msToKMH,
-  knotsToMS,
-  msToKnots,
-
-  // Angles
-  degreesToRadians,
-  radiansToDegrees,
-
-  // Humidity
-  percentageToRatio,
-  ratioToPercentage,
-
-  // Utilities
-  clamp,
-  isValidNumber,
-  normalizeAngle: normalizeAnglePiToPi,
-
-  // AccuWeather specific
-  convertAccuWeatherTemperature,
-  convertAccuWeatherPressure,
-  convertAccuWeatherHumidity,
-  convertAccuWeatherWindSpeed,
-  convertAccuWeatherWindDirection,
-} as const;
-
-/**
  * Advanced atmospheric calculations
  */
 
@@ -721,4 +680,53 @@ export const FastConverters = {
   fastMillibarsToPA,
   fastKmhToMS,
   fastDegreesToRadians,
+} as const;
+
+/**
+ * Wind classification utilities
+ */
+
+/**
+ * Beaufort scale thresholds (wind speed in m/s)
+ */
+const BEAUFORT_THRESHOLDS = [
+  { max: 0.3, scale: 0 }, // Calm
+  { max: 1.6, scale: 1 }, // Light air
+  { max: 3.4, scale: 2 }, // Light breeze
+  { max: 5.5, scale: 3 }, // Gentle breeze
+  { max: 8.0, scale: 4 }, // Moderate breeze
+  { max: 10.8, scale: 5 }, // Fresh breeze
+  { max: 13.9, scale: 6 }, // Strong breeze
+  { max: 17.2, scale: 7 }, // Near gale
+  { max: 20.8, scale: 8 }, // Gale
+  { max: 24.5, scale: 9 }, // Severe gale
+  { max: 28.5, scale: 10 }, // Storm
+  { max: 32.7, scale: 11 }, // Violent storm
+] as const;
+
+/**
+ * Calculate Beaufort wind scale from wind speed
+ * @param windSpeed Wind speed in m/s
+ * @param gustSpeed Optional gust speed in m/s (uses higher of the two)
+ * @returns Beaufort scale (0-12)
+ */
+export function calculateBeaufortScale(windSpeed: number, gustSpeed?: number): number {
+  // Use the higher of sustained or gust speed for classification
+  const effectiveWindSpeed = gustSpeed !== undefined ? Math.max(windSpeed, gustSpeed) : windSpeed;
+
+  if (!Number.isFinite(effectiveWindSpeed) || effectiveWindSpeed < 0) {
+    return 0;
+  }
+
+  for (const threshold of BEAUFORT_THRESHOLDS) {
+    if (effectiveWindSpeed < threshold.max) {
+      return threshold.scale;
+    }
+  }
+
+  return 12; // Hurricane
+}
+
+export const WindClassification = {
+  calculateBeaufortScale,
 } as const;

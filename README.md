@@ -4,7 +4,7 @@
 [![npm downloads](https://img.shields.io/npm/dm/signalk-virtual-weather-sensors.svg)](https://www.npmjs.com/package/signalk-virtual-weather-sensors)
 [![License](https://img.shields.io/github/license/NearlCrews/signalk-virtual-weather-sensors.svg)](https://github.com/NearlCrews/signalk-virtual-weather-sensors/blob/main/LICENSE)
 [![CI](https://github.com/NearlCrews/signalk-virtual-weather-sensors/workflows/CI/badge.svg)](https://github.com/NearlCrews/signalk-virtual-weather-sensors/actions)
-[![TypeScript](https://img.shields.io/badge/TypeScript-5.7+-blue.svg)](https://www.typescriptlang.org/)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5.9+-blue.svg)](https://www.typescriptlang.org/)
 [![NMEA2000](https://img.shields.io/badge/NMEA2000-Compatible-green.svg)](https://www.nmea.org/)
 [![AccuWeather](https://img.shields.io/badge/AccuWeather-API-orange.svg)](https://developer.accuweather.com/)
 [![Signal K](https://img.shields.io/badge/Signal%20K-Plugin-navy.svg)](https://signalk.org/)
@@ -27,12 +27,15 @@ A modern TypeScript Signal K plugin that provides comprehensive weather data fro
 - **Real-time emission** with configurable intervals for NMEA2000 network recognition
 
 ### Modern Architecture
-- **TypeScript 5.7+** with strict type safety and comprehensive validation
-- **Biome 2.2+** for fast, modern linting and formatting
-- **Vitest 3.x** with comprehensive test coverage and performance testing
+- **TypeScript 5.9+** with strict type safety and comprehensive validation
+- **Official SignalK types** using `@signalk/server-api` for Plugin and ServerAPI interfaces
+- **Biome 2.3+** for fast, modern linting and formatting
+- **Vitest 4.x** with 150 comprehensive tests covering all services
 - **Hybrid emission system** combining event-driven updates with reliable intervals
 - **Production-ready error handling** with structured logging and graceful degradation
-- **Performance optimized** for real-time marine applications
+- **Observability metrics** with counters, gauges, and histograms for monitoring
+- **Memory management** with automatic cache pruning and size limits
+- **Security features** including API key log sanitization and rate limit handling
 - **Pre-commit hooks** with husky for code quality enforcement
 - **GitHub Actions CI/CD** for automated testing and deployment
 
@@ -85,7 +88,7 @@ ln -s /path/to/signalk-virtual-weather-sensors/dist/signalk-virtual-weather-sens
 ```
 environment.outside.temperature                  # Air temperature (K)
 environment.outside.pressure                    # Atmospheric pressure (Pa)
-environment.outside.relativeHumidity           # Outside humidity (0-1 ratio)
+environment.outside.relativeHumidity           # Outside humidity (0-100%)
 environment.outside.dewPointTemperature        # Dew point (K)
 environment.outside.windChillTemperature       # Wind chill (K)
 environment.outside.heatIndexTemperature       # Heat index (K)
@@ -227,12 +230,12 @@ Signal K Delta Messages → NMEA2000 Network → Marine Electronics
 
 ## 🧪 Testing
 
-Comprehensive test suite covering:
-- **API Integration**: AccuWeather field extraction and error handling
-- **Wind Calculations**: Vector mathematics and meteorological formula accuracy
-- **Path Mapping**: NMEA2000 compatibility and sk-n2k-emitter alignment
-- **Data Validation**: NMEA2000 range checking and data sanitization
-- **Performance**: Real-time calculation efficiency
+Comprehensive test suite with **150 tests** covering:
+- **WeatherService**: Initialization, lifecycle, data emission, configuration (25 tests)
+- **SignalKService**: Position, speed, course, heading, caching, health status (40 tests)
+- **AccuWeatherService**: API integration, field extraction, error handling (17 tests)
+- **WindCalculator**: Vector mathematics and meteorological formula accuracy (43 tests)
+- **NMEA2000PathMapper**: Path mapping and sk-n2k-emitter alignment (25 tests)
 
 ## 📚 API Documentation
 
@@ -288,11 +291,11 @@ Apache-2.0 License - See [LICENSE](LICENSE) file for details.
 Contributions welcome! Please read [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
 
 The codebase uses modern TypeScript standards:
-- **TypeScript 5.7+** with strict mode and ES2023 target
-- **Biome** for linting and formatting (replaces ESLint + Prettier)
-- **Vitest 3.x** for testing with v8 coverage
+- **TypeScript 5.9+** with strict mode and ES2023 target
+- **Biome 2.3+** for linting and formatting (replaces ESLint + Prettier)
+- **Vitest 4.x** for testing with v8 coverage
 - **ESM modules** exclusively with NodeNext resolution
-- **Comprehensive type safety** with Zod validation
+- **Comprehensive type safety** with strict TypeScript
 - **Production-ready error handling**
 - **Pre-commit hooks** automatically enforce code quality
 - **Node.js 20+** required

@@ -4,8 +4,9 @@
  * Integrates AccuWeather API, vessel navigation data, and wind calculations
  */
 
+import type { ServerAPI } from '@signalk/server-api';
 import { WindCalculator } from '../calculators/WindCalculator.js';
-import { ERROR_CODES, PERFORMANCE, SIGNALK_PATHS, SIGNALK_SOURCE } from '../constants/index.js';
+import { ERROR_CODES, PERFORMANCE, SIGNALK_PATHS } from '../constants/index.js';
 import type {
   GeoLocation,
   LogLevel,
@@ -18,36 +19,11 @@ import { AccuWeatherService } from './AccuWeatherService.js';
 import { SignalKService } from './SignalKService.js';
 
 /**
- * Signal K data value structure (imported from SignalKService)
- */
-interface SignalKDataValue {
-  value: unknown;
-  timestamp?: string;
-  source?: {
-    label?: string;
-    type?: string;
-    bus?: string;
-    src?: string;
-  };
-}
-
-/**
- * Signal K app interface for main weather service
- */
-interface SignalKApp {
-  getSelfPath(path: string): SignalKDataValue | null | undefined;
-  debug(...args: unknown[]): void;
-  setPluginStatus?: (message: string) => void;
-  setPluginError?: (message: string) => void;
-  handleMessage?: (pluginId: string, delta: unknown) => void;
-}
-
-/**
  * Main Weather Service orchestrating all weather data operations
  * Coordinates AccuWeather API, vessel navigation, and wind calculations
  */
 export class WeatherService {
-  private readonly app: SignalKApp;
+  private readonly app: ServerAPI;
   private readonly config: PluginConfiguration;
   private readonly logger: (
     level: LogLevel,
@@ -73,7 +49,7 @@ export class WeatherService {
   private errorCount = 0;
 
   constructor(
-    app: SignalKApp,
+    app: ServerAPI,
     config: PluginConfiguration,
     logger: (
       level: LogLevel,
@@ -119,10 +95,8 @@ export class WeatherService {
       this.logger('info', 'Starting WeatherService');
 
       // Start periodic weather data updates
+      // Emission is handled by the plugin entry point (index.ts) via NMEA2000PathMapper
       this.setupWeatherUpdates();
-
-      // Start hybrid emission system
-      this.setupHybridEmission();
 
       // Perform initial weather update after brief delay
       setTimeout(() => {
@@ -261,7 +235,7 @@ export class WeatherService {
     const baseWeatherData: WeatherData = {
       temperature: 288.15, // 15°C in Kelvin
       pressure: 101325, // Standard sea level pressure in Pascals
-      humidity: 65, // 65% as percentage
+      humidity: 0.65, // 65% as ratio (0-1)
       windSpeed: 5.14, // 10 knots in m/s
       windDirection: Math.PI / 2, // 90 degrees in radians (East)
       dewPoint: 283.15, // Calculated dew point in Kelvin
@@ -299,11 +273,24 @@ export class WeatherService {
   }
 
   /**
-   * Setup periodic weather data updates
+   * Calculate interval with jitter to avoid synchronized API requests
+   * Adds ±10% random variation to the interval
+   * @private
+   */
+  private addJitter(baseInterval: number): number {
+    const jitterRange = baseInterval * 0.1; // ±10% jitter
+    const jitter = (Math.random() - 0.5) * 2 * jitterRange;
+    return Math.round(baseInterval + jitter);
+  }
+
+  /**
+   * Setup periodic weather data updates with jitter
+   * Jitter prevents multiple plugin instances from synchronizing API requests
    * @private
    */
   private setupWeatherUpdates(): void {
-    const updateInterval = this.config.updateFrequency * 60 * 1000; // Convert minutes to milliseconds
+    const baseInterval = this.config.updateFrequency * 60 * 1000; // Convert minutes to milliseconds
+    const updateInterval = this.addJitter(baseInterval);
 
     this.updateTimer = setInterval(() => {
       this.updateWeatherData().catch((error) => {
@@ -317,27 +304,9 @@ export class WeatherService {
 
     this.logger('info', 'Weather update timer started', {
       intervalMinutes: this.config.updateFrequency,
-      intervalMs: updateInterval,
-    });
-  }
-
-  /**
-   * Setup hybrid event-driven + interval emission system
-   * @private
-   */
-  private setupHybridEmission(): void {
-    const emissionInterval = this.config.emissionInterval * 1000; // Convert seconds to milliseconds
-
-    // Set up interval-based emission as backup
-    this.emissionTimer = setInterval(() => {
-      if (this.currentWeatherData) {
-        this.emitWeatherData(this.currentWeatherData);
-      }
-    }, emissionInterval);
-
-    this.logger('info', 'Hybrid emission system started', {
-      intervalSeconds: this.config.emissionInterval,
-      intervalMs: emissionInterval,
+      baseIntervalMs: baseInterval,
+      actualIntervalMs: updateInterval,
+      jitterApplied: true,
     });
   }
 
@@ -423,14 +392,14 @@ export class WeatherService {
       weatherData.temperature,
       weatherData.windSpeed
     );
-    // Convert humidity from percentage to ratio for calculations
+    // Humidity is already a ratio (0-1)
     const heatIndex = this.windCalculator.calculateHeatIndex(
       weatherData.temperature,
-      weatherData.humidity / 100
+      weatherData.humidity
     );
     const dewPoint = this.windCalculator.calculateDewPoint(
       weatherData.temperature,
-      weatherData.humidity / 100
+      weatherData.humidity
     );
 
     const apparentWind = this.calculateApparentWindData(weatherData, vesselData);
@@ -584,7 +553,11 @@ export class WeatherService {
       // Create Signal K delta message (this will be implemented in path mapping step)
       const delta = this.createSignalKDelta(weatherData);
 
-      this.app.handleMessage('signalk-virtual-weather-sensors', delta);
+      // Cast delta to match ServerAPI.handleMessage parameter type
+      this.app.handleMessage(
+        'signalk-virtual-weather-sensors',
+        delta as Parameters<ServerAPI['handleMessage']>[1]
+      );
 
       this.lastEmission = new Date();
       this.emissionCount++;
@@ -621,7 +594,6 @@ export class WeatherService {
       context: 'vessels.self',
       updates: [
         {
-          source: SIGNALK_SOURCE,
           timestamp: weatherData.timestamp,
           values,
         },
@@ -640,7 +612,9 @@ export class WeatherService {
     values.push(
       { path: SIGNALK_PATHS.ENVIRONMENT.OUTSIDE.TEMPERATURE, value: weatherData.temperature },
       { path: SIGNALK_PATHS.ENVIRONMENT.OUTSIDE.PRESSURE, value: weatherData.pressure },
-      { path: SIGNALK_PATHS.ENVIRONMENT.OUTSIDE.RELATIVE_HUMIDITY, value: weatherData.humidity }
+      { path: SIGNALK_PATHS.ENVIRONMENT.OUTSIDE.RELATIVE_HUMIDITY, value: weatherData.humidity },
+      // Also emit as 'humidity' for sk-to-nmea2000 HUMIDITY_OUTSIDE PGN generator compatibility
+      { path: SIGNALK_PATHS.ENVIRONMENT.OUTSIDE.HUMIDITY, value: weatherData.humidity }
     );
   }
 
@@ -703,7 +677,10 @@ export class WeatherService {
     // Core wind measurements
     values.push(
       { path: SIGNALK_PATHS.ENVIRONMENT.WIND.SPEED_TRUE, value: weatherData.windSpeed },
-      { path: SIGNALK_PATHS.ENVIRONMENT.WIND.DIRECTION_TRUE, value: weatherData.windDirection }
+      { path: SIGNALK_PATHS.ENVIRONMENT.WIND.DIRECTION_TRUE, value: weatherData.windDirection },
+      // speedOverGround mirrors speedTrue for weather API data (no water current distinction)
+      // Required by sk-to-nmea2000 WIND_TRUE_GROUND PGN generator
+      { path: SIGNALK_PATHS.ENVIRONMENT.WIND.SPEED_OVER_GROUND, value: weatherData.windSpeed }
     );
 
     // Enhanced wind measurements
@@ -736,10 +713,18 @@ export class WeatherService {
       return;
     }
 
-    values.push({
-      path: SIGNALK_PATHS.ENVIRONMENT.WIND.ANGLE_APPARENT,
-      value: weatherData.apparentWindAngle,
-    });
+    values.push(
+      {
+        path: SIGNALK_PATHS.ENVIRONMENT.WIND.ANGLE_APPARENT,
+        value: weatherData.apparentWindAngle,
+      },
+      // angleTrueWater mirrors apparentWindAngle for weather API data
+      // Required by sk-to-nmea2000 WIND_TRUE PGN generator
+      {
+        path: SIGNALK_PATHS.ENVIRONMENT.WIND.ANGLE_TRUE_WATER,
+        value: weatherData.apparentWindAngle,
+      }
+    );
 
     const vesselData = this.signalKService.getVesselNavigationData();
     const vesselHeading = vesselData.headingTrue || vesselData.courseOverGroundTrue;

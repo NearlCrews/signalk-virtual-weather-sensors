@@ -4,22 +4,13 @@
  * Provides type-safe interface to SignalK server with comprehensive fallback logic
  */
 
+import type { ServerAPI } from '@signalk/server-api';
 import { UNITS, VALIDATION_LIMITS } from '../constants/index.js';
 import type { GeoLocation, LogLevel, PluginState, VesselNavigationData } from '../types/index.js';
 
 /**
- * SignalK server application interface
- * Minimal typing for the SignalK app object passed to plugins
- */
-interface SignalKApp {
-  getSelfPath(path: string): SignalKDataValue | null | undefined;
-  debug(...args: unknown[]): void;
-  setPluginStatus?: (message: string) => void;
-  setPluginError?: (message: string) => void;
-}
-
-/**
  * SignalK data value structure
+ * Used to type the response from getSelfPath
  */
 interface SignalKDataValue {
   value: unknown;
@@ -49,13 +40,13 @@ interface CachedVesselData {
  * Provides comprehensive vessel data retrieval with fallback logic and caching
  */
 export class SignalKService {
-  private readonly app: SignalKApp;
+  private readonly app: ServerAPI;
   private readonly logger: (
     level: LogLevel,
     message: string,
     metadata?: Record<string, unknown>
   ) => void;
-  private readonly maxDataAge = 30; // Fixed 30 seconds max data age
+  private readonly maxDataAge = VALIDATION_LIMITS.MAX_DATA_AGE;
 
   private cachedData: CachedVesselData = {
     position: null,
@@ -67,7 +58,7 @@ export class SignalKService {
   };
 
   constructor(
-    app: SignalKApp,
+    app: ServerAPI,
     logger: (
       level: LogLevel,
       message: string,
@@ -221,8 +212,10 @@ export class SignalKService {
       const speed = speedData.value;
 
       // Validate speed (should be non-negative and within reasonable limits)
-      if (speed < 0 || speed > 100) {
-        // 100 m/s = ~200 knots (extreme but possible)
+      if (
+        speed < VALIDATION_LIMITS.VESSEL_SPEED.MIN ||
+        speed > VALIDATION_LIMITS.VESSEL_SPEED.MAX
+      ) {
         this.logger('warn', 'Invalid speed value', { speed });
         return null;
       }
@@ -423,10 +416,10 @@ export class SignalKService {
 
   /**
    * Check if vessel is considered to be moving
-   * @param threshold Speed threshold in m/s (default: 0.5 m/s ≈ 1 knot)
+   * @param threshold Speed threshold in m/s (default from VALIDATION_LIMITS.VESSEL_MOVING_THRESHOLD)
    * @returns True if vessel speed exceeds threshold
    */
-  public isVesselMoving(threshold = 0.5): boolean {
+  public isVesselMoving(threshold = VALIDATION_LIMITS.VESSEL_MOVING_THRESHOLD): boolean {
     const speed = this.getVesselSpeedOverGround();
     return speed !== null && speed > threshold;
   }
