@@ -613,7 +613,7 @@ export class WeatherService {
       { path: SIGNALK_PATHS.ENVIRONMENT.OUTSIDE.TEMPERATURE, value: weatherData.temperature },
       { path: SIGNALK_PATHS.ENVIRONMENT.OUTSIDE.PRESSURE, value: weatherData.pressure },
       { path: SIGNALK_PATHS.ENVIRONMENT.OUTSIDE.RELATIVE_HUMIDITY, value: weatherData.humidity },
-      // Also emit as 'humidity' for sk-to-nmea2000 HUMIDITY_OUTSIDE PGN generator compatibility
+      // Also emit as 'humidity' for emitter-cannon HUMIDITY_OUTSIDE PGN generator compatibility
       { path: SIGNALK_PATHS.ENVIRONMENT.OUTSIDE.HUMIDITY, value: weatherData.humidity }
     );
   }
@@ -679,7 +679,7 @@ export class WeatherService {
       { path: SIGNALK_PATHS.ENVIRONMENT.WIND.SPEED_TRUE, value: weatherData.windSpeed },
       { path: SIGNALK_PATHS.ENVIRONMENT.WIND.DIRECTION_TRUE, value: weatherData.windDirection },
       // speedOverGround mirrors speedTrue for weather API data (no water current distinction)
-      // Required by sk-to-nmea2000 WIND_TRUE_GROUND PGN generator
+      // Required by emitter-cannon WIND_TRUE_GROUND PGN generator
       { path: SIGNALK_PATHS.ENVIRONMENT.WIND.SPEED_OVER_GROUND, value: weatherData.windSpeed }
     );
 
@@ -719,7 +719,7 @@ export class WeatherService {
         value: weatherData.apparentWindAngle,
       },
       // angleTrueWater mirrors apparentWindAngle for weather API data
-      // Required by sk-to-nmea2000 WIND_TRUE PGN generator
+      // Required by emitter-cannon WIND_TRUE PGN generator
       {
         path: SIGNALK_PATHS.ENVIRONMENT.WIND.ANGLE_TRUE_WATER,
         value: weatherData.apparentWindAngle,

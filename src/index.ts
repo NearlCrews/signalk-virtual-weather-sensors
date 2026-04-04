@@ -1,7 +1,7 @@
 /**
  * Signal K Virtual Weather Sensors - Main Entry Point
  * Modern TypeScript Signal K plugin providing comprehensive AccuWeather integration
- * with enhanced NMEA2000 environmental measurements and sk-n2k-emitter alignment
+ * with enhanced NMEA2000 environmental measurements and emitter-cannon alignment
  *
  * Uses official @signalk/server-api types for maximum compatibility
  */

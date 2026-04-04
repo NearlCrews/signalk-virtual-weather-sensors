@@ -1,6 +1,6 @@
 /**
  * NMEA2000PathMapper Test Suite
- * Testing enhanced weather data mapping to sk-n2k-emitter compatible paths
+ * Testing enhanced weather data mapping to emitter-cannon compatible paths
  */
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -23,7 +23,7 @@ describe('NMEA2000PathMapper', () => {
       new NMEA2000PathMapper(mockLogger);
       expect(mockLogger).toHaveBeenCalledWith(
         'info',
-        'NMEA2000PathMapper initialized with enhanced sk-n2k-emitter alignment'
+        'NMEA2000PathMapper initialized with enhanced emitter-cannon alignment'
       );
     });
 
@@ -174,7 +174,7 @@ describe('NMEA2000PathMapper', () => {
       expect(pgns.length).toBeGreaterThanOrEqual(5);
     });
 
-    it('should provide temperature instance mappings aligned with sk-n2k-emitter', () => {
+    it('should provide temperature instance mappings aligned with emitter-cannon', () => {
       const instanceMap = mapper.getTemperatureInstanceMap();
 
       expect(instanceMap['environment.outside.temperature']).toBe(101);
@@ -186,7 +186,7 @@ describe('NMEA2000PathMapper', () => {
       expect(instanceMap['environment.outside.wetBulbGlobeTemperature']).toBe(111);
     });
 
-    it('should provide humidity instance mappings aligned with sk-n2k-emitter', () => {
+    it('should provide humidity instance mappings aligned with emitter-cannon', () => {
       const instanceMap = mapper.getHumidityInstanceMap();
 
       expect(instanceMap['environment.outside.relativeHumidity']).toBe(100);
@@ -404,11 +404,11 @@ describe('NMEA2000PathMapper', () => {
     });
   });
 
-  describe('sk-n2k-emitter Alignment', () => {
+  describe('emitter-cannon Alignment', () => {
     it('should use correct NMEA2000 PGN assignments', () => {
       const pgns = mapper.getSupportedPGNs();
 
-      // Verify alignment with sk-n2k-emitter PGNs
+      // Verify alignment with emitter-cannon PGNs
       expect(pgns).toContain(130311); // Atmospheric pressure
       expect(pgns).toContain(130312); // Temperature (multiple instances)
       expect(pgns).toContain(130313); // Humidity (inside/outside)
@@ -419,7 +419,7 @@ describe('NMEA2000PathMapper', () => {
     it('should use correct temperature instance assignments', () => {
       const instanceMap = mapper.getTemperatureInstanceMap();
 
-      // Verify instance assignments match sk-n2k-emitter conventions
+      // Verify instance assignments match emitter-cannon conventions
       expect(instanceMap['environment.outside.temperature']).toBe(101);
       expect(instanceMap['environment.outside.dewPointTemperature']).toBe(102);
       expect(instanceMap['environment.outside.windChillTemperature']).toBe(103);
@@ -435,7 +435,7 @@ describe('NMEA2000PathMapper', () => {
     it('should use correct humidity instance assignments', () => {
       const instanceMap = mapper.getHumidityInstanceMap();
 
-      // Verify humidity instances match sk-n2k-emitter conventions
+      // Verify humidity instances match emitter-cannon conventions
       expect(instanceMap['environment.outside.relativeHumidity']).toBe(100);
     });
   });

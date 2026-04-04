@@ -29,7 +29,7 @@ The development process involved several key prompt categories:
 
 **Architecture Prompts:**
 - "Design service-oriented architecture with dependency injection for testability"
-- "Implement NMEA2000 path mapping aligned with sk-n2k-emitter conventions"
+- "Implement NMEA2000 path mapping aligned with emitter-cannon conventions"
 - "Create comprehensive validation framework for marine data integrity"
 
 **Feature Development Prompts:**

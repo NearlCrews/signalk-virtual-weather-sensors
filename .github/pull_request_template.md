@@ -87,7 +87,7 @@ npm run test:run output here
 <!-- If this PR affects NMEA2000 integration -->
 
 - [ ] PGN assignments verified
-- [ ] Instance numbers follow sk-n2k-emitter conventions
+- [ ] Instance numbers follow emitter-cannon conventions
 - [ ] Data validation within NMEA2000 ranges
 - [ ] Tested with marine electronics (if applicable)
 - [ ] N/A - Does not affect NMEA2000

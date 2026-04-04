@@ -99,12 +99,12 @@ First production release of signalk-virtual-weather-sensors - a comprehensive we
 - **Absolute Humidity** precision calculations for atmospheric analysis
 - **Wind Gust Factor** analysis for wind safety assessment
 
-#### NMEA2000 & sk-n2k-emitter Alignment
-- **Perfect PGN alignment** with sk-n2k-emitter conventions
+#### NMEA2000 & emitter-cannon Alignment
+- **Perfect PGN alignment** with emitter-cannon conventions
 - **Multiple temperature instances** (101-111) for comprehensive temperature monitoring
 - **Enhanced humidity support** with inside/outside instances (100/101)
 - **Improved wind data** with gust integration in PGN 130306
-- **Proper instance assignments** following sk-n2k-emitter standards
+- **Proper instance assignments** following emitter-cannon standards
 
 #### Modern Architecture
 - **Complete TypeScript 5.9+** conversion with strict mode compliance
@@ -131,7 +131,7 @@ First production release of signalk-virtual-weather-sensors - a comprehensive we
 
 #### Enhanced Features
 - **Data coverage**: 8 basic fields → 25+ comprehensive environmental measurements
-- **Path mappings**: Enhanced to align with sk-n2k-emitter path structure
+- **Path mappings**: Enhanced to align with emitter-cannon path structure
 - **Wind calculations**: Improved vector mathematics with comprehensive validation
 - **Error handling**: Production-ready with structured error codes and recovery
 - **Performance**: Significantly improved with TypeScript optimizations

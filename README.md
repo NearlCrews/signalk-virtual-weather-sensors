@@ -9,7 +9,7 @@
 [![AccuWeather](https://img.shields.io/badge/AccuWeather-API-orange.svg)](https://developer.accuweather.com/)
 [![Signal K](https://img.shields.io/badge/Signal%20K-Plugin-navy.svg)](https://signalk.org/)
 
-A modern TypeScript Signal K plugin that provides comprehensive weather data from AccuWeather API with enhanced NMEA2000-compatible environmental measurements and perfect sk-n2k-emitter alignment.
+A modern TypeScript Signal K plugin that provides comprehensive weather data from AccuWeather API with enhanced NMEA2000-compatible environmental measurements and perfect emitter-cannon alignment.
 
 ## 🚀 Features
 
@@ -21,7 +21,7 @@ A modern TypeScript Signal K plugin that provides comprehensive weather data fro
 - **Advanced Calculations**: Air density, absolute humidity, marine-specific indices
 
 ### NMEA2000 Compatibility
-- **Perfect sk-n2k-emitter alignment** with proper PGN assignments
+- **Perfect emitter-cannon alignment** with proper PGN assignments
 - **Multiple PGN support**: 130311 (pressure), 130312 (temperatures), 130313 (humidity), 130306 (wind)
 - **Instance-based organization** for multiple temperature/humidity sensors
 - **Real-time emission** with configurable intervals for NMEA2000 network recognition
@@ -187,7 +187,7 @@ npm run security-audit     # Run npm security audit
 
 ## 🔌 NMEA2000 Integration
 
-This plugin outputs data in Signal K format, which can be converted to NMEA2000 messages using plugins like [Signal K NMEA2000 Emitter Cannon](https://github.com/SignalK/signalk-n2k-emitter-cannon). This allows virtual weather sensor data to appear as physical NMEA2000 sensors on your marine network.
+This plugin outputs data in Signal K format, which can be converted to NMEA2000 messages using plugins like [Signal K NMEA2000 Emitter Cannon](https://github.com/NearlCrews/signalk-nmea2000-emitter-cannon). This allows virtual weather sensor data to appear as physical NMEA2000 sensors on your marine network.
 
 ### PGN Support
 When used with an NMEA2000 emitter plugin:
@@ -198,7 +198,7 @@ When used with an NMEA2000 emitter plugin:
 - **130306**: Wind data (enhanced with gust information)
 
 ### Instance Assignments
-Following sk-n2k-emitter conventions:
+Following emitter-cannon conventions:
 - **Temperature instances**: 101-111 for different temperature types
 - **Humidity instances**: 100 (outside), 101 (inside)
 - **Proper source identification** for multi-sensor environments
@@ -226,7 +226,7 @@ Signal K Delta Messages → NMEA2000 Network → Marine Electronics
 - **Conversion Utilities**: High-performance unit conversions and atmospheric calculations
 
 ### Mappers
-- **NMEA2000PathMapper**: sk-n2k-emitter aligned path mapping with proper instance assignments
+- **NMEA2000PathMapper**: emitter-cannon aligned path mapping with proper instance assignments
 
 ## 🧪 Testing
 
@@ -235,7 +235,7 @@ Comprehensive test suite with **150 tests** covering:
 - **SignalKService**: Position, speed, course, heading, caching, health status (40 tests)
 - **AccuWeatherService**: API integration, field extraction, error handling (17 tests)
 - **WindCalculator**: Vector mathematics and meteorological formula accuracy (43 tests)
-- **NMEA2000PathMapper**: Path mapping and sk-n2k-emitter alignment (25 tests)
+- **NMEA2000PathMapper**: Path mapping and emitter-cannon alignment (25 tests)
 
 ## 📚 API Documentation
 

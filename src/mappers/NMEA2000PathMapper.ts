@@ -1,6 +1,6 @@
 /**
  * NMEA2000 Path Mapper for Enhanced Weather Data
- * Modern TypeScript implementation aligned with sk-n2k-emitter conventions
+ * Modern TypeScript implementation aligned with emitter-cannon conventions
  * Maps comprehensive weather data to standardized NMEA2000 Signal K paths with proper PGN support
  */
 
@@ -9,7 +9,7 @@ import type { LogLevel, SignalKDelta, WeatherData } from '../types/index.js';
 import { NMEA2000Validator } from '../utils/validation.js';
 
 /**
- * NMEA2000 temperature instance assignments (aligned with sk-n2k-emitter)
+ * NMEA2000 temperature instance assignments (aligned with emitter-cannon)
  */
 const TEMPERATURE_INSTANCES = {
   OUTSIDE: 101,
@@ -23,7 +23,7 @@ const TEMPERATURE_INSTANCES = {
 } as const;
 
 /**
- * NMEA2000 humidity instance assignments (aligned with sk-n2k-emitter)
+ * NMEA2000 humidity instance assignments (aligned with emitter-cannon)
  */
 const HUMIDITY_INSTANCES = {
   OUTSIDE: 100,
@@ -63,7 +63,7 @@ export class NMEA2000PathMapper {
     ) => void = () => {}
   ) {
     this.logger = logger;
-    this.logger('info', 'NMEA2000PathMapper initialized with enhanced sk-n2k-emitter alignment');
+    this.logger('info', 'NMEA2000PathMapper initialized with enhanced emitter-cannon alignment');
   }
 
   /**
@@ -167,7 +167,7 @@ export class NMEA2000PathMapper {
           description: 'Current outside relative humidity from AccuWeather API',
         },
       },
-      // Also emit as 'humidity' for sk-to-nmea2000 compatibility
+      // Also emit as 'humidity' for emitter-cannon compatibility
       {
         path: SIGNALK_PATHS.ENVIRONMENT.OUTSIDE.HUMIDITY,
         value: data.humidity,
@@ -328,7 +328,7 @@ export class NMEA2000PathMapper {
         },
       },
       // speedOverGround mirrors speedTrue for weather API data
-      // Required by sk-to-nmea2000 WIND_TRUE_GROUND PGN generator
+      // Required by emitter-cannon WIND_TRUE_GROUND PGN generator
       {
         path: SIGNALK_PATHS.ENVIRONMENT.WIND.SPEED_OVER_GROUND,
         value: data.windSpeed,
@@ -408,7 +408,7 @@ export class NMEA2000PathMapper {
           },
         },
         // angleTrueWater mirrors apparentWindAngle for weather API data
-        // Required by sk-to-nmea2000 WIND_TRUE PGN generator
+        // Required by emitter-cannon WIND_TRUE PGN generator
         {
           path: SIGNALK_PATHS.ENVIRONMENT.WIND.ANGLE_TRUE_WATER,
           value: data.apparentWindAngle,
