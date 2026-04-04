@@ -1,6 +1,6 @@
 {
   "name": "signalk-virtual-weather-sensors",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "description": "Signal K plugin that provides comprehensive weather data from AccuWeather API with calculated wind values and NMEA2000-compatible environmental measurements",
   "keywords": [
     "signalk-node-server-plugin",
