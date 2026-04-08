@@ -153,7 +153,6 @@ describe('WeatherService', () => {
         'WeatherService stopped successfully',
         expect.objectContaining({
           updateCount: expect.any(Number),
-          emissionCount: expect.any(Number),
           errorCount: expect.any(Number),
         })
       );
@@ -200,9 +199,7 @@ describe('WeatherService', () => {
 
       expect(status.state).toBe('stopped');
       expect(status.lastUpdate).toBeNull();
-      expect(status.lastEmission).toBeNull();
       expect(status.updateCount).toBe(0);
-      expect(status.emissionCount).toBe(0);
       expect(status.errorCount).toBe(0);
       expect(status.hasWeatherData).toBe(false);
     });

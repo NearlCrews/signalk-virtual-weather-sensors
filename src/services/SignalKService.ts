@@ -6,7 +6,7 @@
 
 import type { ServerAPI } from '@signalk/server-api';
 import { UNITS, VALIDATION_LIMITS } from '../constants/index.js';
-import type { GeoLocation, LogLevel, PluginState, VesselNavigationData } from '../types/index.js';
+import type { GeoLocation, Logger, PluginState, VesselNavigationData } from '../types/index.js';
 
 /**
  * SignalK data value structure
@@ -41,11 +41,7 @@ interface CachedVesselData {
  */
 export class SignalKService {
   private readonly app: ServerAPI;
-  private readonly logger: (
-    level: LogLevel,
-    message: string,
-    metadata?: Record<string, unknown>
-  ) => void;
+  private readonly logger: Logger;
   private readonly maxDataAge = VALIDATION_LIMITS.MAX_DATA_AGE;
 
   private cachedData: CachedVesselData = {
@@ -57,14 +53,7 @@ export class SignalKService {
     lastUpdate: null,
   };
 
-  constructor(
-    app: ServerAPI,
-    logger: (
-      level: LogLevel,
-      message: string,
-      metadata?: Record<string, unknown>
-    ) => void = () => {}
-  ) {
+  constructor(app: ServerAPI, logger: Logger = () => {}) {
     this.app = app;
     this.logger = logger;
 
@@ -107,11 +96,11 @@ export class SignalKService {
       position: position
         ? { latitude: position.latitude, longitude: position.longitude }
         : undefined,
-      speedOverGround: speedOverGround || undefined,
-      courseOverGroundTrue: courseOverGroundTrue || undefined,
-      headingMagnetic: headingMagnetic || undefined,
-      headingTrue: headingTrue || undefined,
-      magneticVariation: magneticVariation || undefined,
+      speedOverGround: speedOverGround ?? undefined,
+      courseOverGroundTrue: courseOverGroundTrue ?? undefined,
+      headingMagnetic: headingMagnetic ?? undefined,
+      headingTrue: headingTrue ?? undefined,
+      magneticVariation: magneticVariation ?? undefined,
       isComplete,
       dataAge: dataAge || undefined,
     };
@@ -401,10 +390,10 @@ export class SignalKService {
             longitude: this.cachedData.position.longitude,
           }
         : undefined,
-      speedOverGround: this.cachedData.speedOverGround || undefined,
-      courseOverGroundTrue: this.cachedData.courseOverGroundTrue || undefined,
-      headingTrue: this.cachedData.headingTrue || undefined,
-      headingMagnetic: this.cachedData.headingMagnetic || undefined,
+      speedOverGround: this.cachedData.speedOverGround ?? undefined,
+      courseOverGroundTrue: this.cachedData.courseOverGroundTrue ?? undefined,
+      headingTrue: this.cachedData.headingTrue ?? undefined,
+      headingMagnetic: this.cachedData.headingMagnetic ?? undefined,
       isComplete: !!(
         this.cachedData.position &&
         typeof this.cachedData.speedOverGround === 'number' &&

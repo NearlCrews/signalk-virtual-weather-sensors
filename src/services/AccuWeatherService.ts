@@ -16,10 +16,14 @@ import type {
   AccuWeatherLocation,
   ApiResponse,
   GeoLocation,
-  LogLevel,
+  Logger,
   WeatherData,
 } from '../types/index.js';
-import { calculateBeaufortScale } from '../utils/conversions.js';
+import {
+  calculateAbsoluteHumidity,
+  calculateAirDensity,
+  calculateBeaufortScale,
+} from '../utils/conversions.js';
 
 /**
  * AccuWeather API client for weather data operations
@@ -33,23 +37,11 @@ const CACHE_MAX_AGE_MS = 2 * 60 * 60 * 1000;
 
 export class AccuWeatherService {
   private readonly config: AccuWeatherConfig;
-  private readonly logger: (
-    level: LogLevel,
-    message: string,
-    metadata?: Record<string, unknown>
-  ) => void;
+  private readonly logger: Logger;
   private locationCache = new Map<string, { location: AccuWeatherLocation; timestamp: number }>();
   private lastCachePrune = Date.now();
 
-  constructor(
-    apiKey: string,
-    logger: (
-      level: LogLevel,
-      message: string,
-      metadata?: Record<string, unknown>
-    ) => void = () => {},
-    config?: Partial<AccuWeatherConfig>
-  ) {
+  constructor(apiKey: string, logger: Logger = () => {}, config?: Partial<AccuWeatherConfig>) {
     this.config = {
       apiKey,
       locationCacheTimeout: DEFAULT_CONFIG.LOCATION_CACHE_TIMEOUT,
@@ -166,8 +158,8 @@ export class AccuWeatherService {
 
     // Calculate synthetic values (humidity is already a ratio)
     const beaufortScale = calculateBeaufortScale(windSpeed, windGustSpeed);
-    const absoluteHumidity = this.calculateAbsoluteHumidity(temperature, humidity);
-    const airDensityEnhanced = this.calculateEnhancedAirDensity(temperature, pressure, humidity);
+    const absoluteHumidity = calculateAbsoluteHumidity(temperature, humidity);
+    const airDensityEnhanced = calculateAirDensity(temperature, pressure, humidity);
     const heatStressIndex = this.calculateHeatStressIndex(wetBulbGlobeTemperature);
 
     const weatherData: WeatherData = {
@@ -221,69 +213,6 @@ export class AccuWeatherService {
     this.validateWeatherData(weatherData);
 
     return weatherData;
-  }
-
-  /**
-   * Calculate absolute humidity from temperature and relative humidity
-   * @private
-   */
-  private calculateAbsoluteHumidity(temperatureK: number, relativeHumidity: number): number {
-    try {
-      // Convert to Celsius
-      const tempC = temperatureK - UNITS.TEMPERATURE.CELSIUS_TO_KELVIN;
-
-      // Saturation vapor pressure using Magnus formula
-      const a = 17.27;
-      const b = 237.7;
-      const saturationPressure = 6.112 * Math.exp((a * tempC) / (b + tempC)); // hPa
-
-      // Actual vapor pressure
-      const vaporPressure = relativeHumidity * saturationPressure;
-
-      // Absolute humidity in kg/m³
-      const absoluteHumidity = (0.002166 * vaporPressure) / temperatureK;
-
-      return Math.max(0, absoluteHumidity);
-    } catch (error) {
-      this.logger('warn', 'Failed to calculate absolute humidity', {
-        error: error instanceof Error ? error.message : String(error),
-      });
-      return 0;
-    }
-  }
-
-  /**
-   * Calculate enhanced air density including all atmospheric factors
-   * @private
-   */
-  private calculateEnhancedAirDensity(
-    temperatureK: number,
-    pressurePa: number,
-    relativeHumidity: number
-  ): number {
-    try {
-      // Gas constants
-      const R_d = 287.0531; // Specific gas constant for dry air (J/kg·K)
-      const R_v = 461.4964; // Specific gas constant for water vapor (J/kg·K)
-
-      // Calculate vapor pressure
-      const tempC = temperatureK - UNITS.TEMPERATURE.CELSIUS_TO_KELVIN;
-      const saturationPressure = 6.112 * Math.exp((17.27 * tempC) / (237.7 + tempC)) * 100; // Pa
-      const vaporPressure = relativeHumidity * saturationPressure;
-
-      // Dry air pressure
-      const dryAirPressure = pressurePa - vaporPressure;
-
-      // Enhanced air density calculation
-      const density = dryAirPressure / (R_d * temperatureK) + vaporPressure / (R_v * temperatureK);
-
-      return Math.max(0.5, Math.min(2.0, density)); // Reasonable atmospheric density range
-    } catch (error) {
-      this.logger('warn', 'Failed to calculate enhanced air density', {
-        error: error instanceof Error ? error.message : String(error),
-      });
-      return 1.225; // Standard sea level air density
-    }
   }
 
   /**

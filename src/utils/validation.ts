@@ -722,31 +722,12 @@ export function isValidLongitude(longitude: number): boolean {
 /**
  * Grouped exports for backward compatibility
  */
-export const WeatherDataValidator = {
-  validateWeatherData,
-  validateTemperatureConsistency,
-} as const;
-
-export const VesselDataValidator = {
-  validateNavigationData,
-  isCompleteForWindCalculations,
-} as const;
-
 export const ConfigurationValidator = {
   validateConfiguration,
   sanitizeConfiguration,
 } as const;
 
-export const ApiResponseValidator = {
-  validateAccuWeatherResponse,
-} as const;
-
 export const NMEA2000Validator = {
   validateNMEA2000Ranges,
   sanitizeForNMEA2000,
-} as const;
-
-export const ValidationOrchestrator = {
-  validateCompleteWeatherData,
-  getValidationSummary,
 } as const;

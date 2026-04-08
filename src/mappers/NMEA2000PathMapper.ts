@@ -5,7 +5,7 @@
  */
 
 import { PGN, SIGNALK_PATHS } from '../constants/index.js';
-import type { LogLevel, SignalKDelta, WeatherData } from '../types/index.js';
+import type { Logger, SignalKDelta, WeatherData } from '../types/index.js';
 import { NMEA2000Validator } from '../utils/validation.js';
 
 /**
@@ -49,19 +49,9 @@ interface SignalKValue {
  * Provides comprehensive mapping of weather data to NMEA2000-compatible Signal K paths
  */
 export class NMEA2000PathMapper {
-  private readonly logger: (
-    level: LogLevel,
-    message: string,
-    metadata?: Record<string, unknown>
-  ) => void;
+  private readonly logger: Logger;
 
-  constructor(
-    logger: (
-      level: LogLevel,
-      message: string,
-      metadata?: Record<string, unknown>
-    ) => void = () => {}
-  ) {
+  constructor(logger: Logger = () => {}) {
     this.logger = logger;
     this.logger('info', 'NMEA2000PathMapper initialized with enhanced emitter-cannon alignment');
   }

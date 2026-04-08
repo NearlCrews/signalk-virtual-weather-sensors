@@ -271,6 +271,11 @@ export type PluginState = 'stopped' | 'starting' | 'running' | 'stopping' | 'err
 export type LogLevel = 'debug' | 'info' | 'warn' | 'error';
 
 /**
+ * Logger function signature used across all services
+ */
+export type Logger = (level: LogLevel, message: string, metadata?: Record<string, unknown>) => void;
+
+/**
  * Error severity classification
  */
 export type ErrorSeverity = 'low' | 'medium' | 'high' | 'critical';

@@ -10,7 +10,7 @@ import type { Plugin, ServerAPI } from '@signalk/server-api';
 import { DEFAULT_CONFIG, ERROR_CODES, PLUGIN } from './constants/index.js';
 import { NMEA2000PathMapper } from './mappers/NMEA2000PathMapper.js';
 import { WeatherService } from './services/WeatherService.js';
-import type { LogLevel, PluginConfiguration, PluginState } from './types/index.js';
+import type { Logger, PluginConfiguration, PluginState } from './types/index.js';
 import { ConfigurationValidator } from './utils/validation.js';
 
 /**
@@ -22,7 +22,10 @@ interface PluginInstance {
   emissionTimer: NodeJS.Timeout | null;
   state: PluginState;
   startTime: Date | null;
-  logger: (level: LogLevel, message: string, metadata?: Record<string, unknown>) => void;
+  logger: Logger;
+  /** Cached delta to avoid rebuilding on every emission tick */
+  cachedDelta: ReturnType<NMEA2000PathMapper['mapToSignalKPaths']> | null;
+  cachedWeatherDataRef: unknown;
 }
 
 /**
@@ -39,6 +42,8 @@ export default function createPlugin(app: ServerAPI): Plugin {
     state: 'stopped',
     startTime: null,
     logger: createLogger(app),
+    cachedDelta: null,
+    cachedWeatherDataRef: null,
   };
 
   /**
@@ -170,7 +175,7 @@ export default function createPlugin(app: ServerAPI): Plugin {
 
       const status = instance.weatherService.getServiceStatus();
       if (status.hasWeatherData) {
-        return `Running - ${getEnhancedFieldCount()} data points, ${status.updateCount} updates`;
+        return `Running - ${ENHANCED_FIELD_COUNT} data points, ${status.updateCount} updates`;
       }
       return `Waiting for weather data...`;
     },
@@ -245,12 +250,12 @@ function finalizePluginStart(
 
   if (app.setPluginStatus) {
     app.setPluginStatus(
-      `SK to N2K Weather running - Enhanced with ${getEnhancedFieldCount()} data points`
+      `SK to N2K Weather running - Enhanced with ${ENHANCED_FIELD_COUNT} data points`
     );
   }
 
   instance.logger('info', 'signalk-virtual-weather-sensors plugin started successfully', {
-    enhancedFields: getEnhancedFieldCount(),
+    enhancedFields: ENHANCED_FIELD_COUNT,
     emissionInterval: config.emissionInterval,
     updateFrequency: config.updateFrequency,
     hybridMode: true,
@@ -300,18 +305,18 @@ function setupEnhancedEmissionSystem(
     try {
       const weatherData = instance.weatherService?.getCurrentWeatherData();
       if (weatherData && instance.pathMapper) {
-        // Create enhanced NMEA2000 delta message
-        const delta = instance.pathMapper.mapToSignalKPaths(weatherData);
+        // Only rebuild delta when weather data changes (reference comparison)
+        if (weatherData !== instance.cachedWeatherDataRef) {
+          instance.cachedDelta = instance.pathMapper.mapToSignalKPaths(weatherData);
+          instance.cachedWeatherDataRef = weatherData;
+        }
 
-        // Emit to Signal K server
-        // Cast to Partial<Delta> as our SignalKDelta is structurally compatible
-        // but uses plain strings instead of branded types
-        app.handleMessage(PLUGIN.NAME, delta as Parameters<ServerAPI['handleMessage']>[1]);
-
-        instance.logger('debug', 'Enhanced weather data emitted', {
-          pathCount: delta.updates[0]?.values?.length || 0,
-          emissionInterval: config.emissionInterval,
-        });
+        if (instance.cachedDelta) {
+          app.handleMessage(
+            PLUGIN.NAME,
+            instance.cachedDelta as Parameters<ServerAPI['handleMessage']>[1]
+          );
+        }
       }
     } catch (error) {
       instance.logger('error', 'Error in emission timer', {
@@ -320,10 +325,8 @@ function setupEnhancedEmissionSystem(
     }
   }, emissionInterval);
 
-  instance.logger('info', 'Enhanced emission system configured', {
+  instance.logger('info', 'Emission system configured', {
     intervalSeconds: config.emissionInterval,
-    hybridMode: true,
-    enhancedFields: getEnhancedFieldCount(),
   });
 }
 
@@ -350,18 +353,17 @@ async function cleanup(instance: PluginInstance): Promise<void> {
     instance.weatherService = null;
   }
 
-  // Clear path mapper
+  // Clear path mapper and cached delta
   instance.pathMapper = null;
+  instance.cachedDelta = null;
+  instance.cachedWeatherDataRef = null;
 }
 
 /**
  * Validate and normalize plugin settings
  * @private
  */
-function validateAndNormalizeSettings(
-  settings: unknown,
-  logger: (level: LogLevel, message: string, metadata?: Record<string, unknown>) => void
-): PluginConfiguration {
+function validateAndNormalizeSettings(settings: unknown, logger: Logger): PluginConfiguration {
   // Type check settings
   if (!settings || typeof settings !== 'object') {
     throw new Error(`${ERROR_CODES.CONFIGURATION.INVALID_API_KEY}: Invalid plugin configuration`);
@@ -408,9 +410,6 @@ function validateAndNormalizeSettings(
   logger('info', 'Plugin configuration validated and normalized', {
     updateFrequency: finalConfig.updateFrequency,
     emissionInterval: finalConfig.emissionInterval,
-    enableEventDriven: true,
-    useVesselPosition: true,
-    enhancedFieldsAvailable: getEnhancedFieldCount(),
   });
 
   return finalConfig;
@@ -421,8 +420,8 @@ function validateAndNormalizeSettings(
  * Uses appropriate Signal K server logging methods for each level
  * @private
  */
-function createLogger(app: ServerAPI) {
-  return (level: LogLevel, message: string, metadata?: Record<string, unknown>) => {
+function createLogger(app: ServerAPI): Logger {
+  return (level, message, metadata) => {
     const logMessage = `[${PLUGIN.NAME}] ${message}`;
     // Only sanitize metadata for warn/error (may contain config with API keys)
     // Skip for debug/info hot paths to avoid overhead
@@ -470,14 +469,8 @@ function sanitizeLogMetadata(metadata: Record<string, unknown>): Record<string, 
   return sanitized;
 }
 
-/**
- * Get count of enhanced fields for status reporting
- * @private
- */
-function getEnhancedFieldCount(): number {
-  // Count of enhanced fields beyond basic weather data (8 basic → 24+ enhanced)
-  return 24;
-}
+/** Approximate count of Signal K paths emitted (core + enhanced weather fields) */
+const ENHANCED_FIELD_COUNT = 24;
 
 // Export plugin metadata for Signal K compatibility
 export const metadata = {

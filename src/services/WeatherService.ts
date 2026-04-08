@@ -6,10 +6,10 @@
 
 import type { ServerAPI } from '@signalk/server-api';
 import { WindCalculator } from '../calculators/WindCalculator.js';
-import { ERROR_CODES, PERFORMANCE, SIGNALK_PATHS } from '../constants/index.js';
+import { ERROR_CODES, PERFORMANCE } from '../constants/index.js';
 import type {
   GeoLocation,
-  LogLevel,
+  Logger,
   PluginConfiguration,
   PluginState,
   VesselNavigationData,
@@ -25,11 +25,7 @@ import { SignalKService } from './SignalKService.js';
 export class WeatherService {
   private readonly app: ServerAPI;
   private readonly config: PluginConfiguration;
-  private readonly logger: (
-    level: LogLevel,
-    message: string,
-    metadata?: Record<string, unknown>
-  ) => void;
+  private readonly logger: Logger;
 
   private readonly accuWeatherService: AccuWeatherService;
   private readonly signalKService: SignalKService;
@@ -37,25 +33,18 @@ export class WeatherService {
 
   private state: PluginState = 'stopped';
   private updateTimer: NodeJS.Timeout | null = null;
-  private emissionTimer: NodeJS.Timeout | null = null;
 
   private currentWeatherData: WeatherData | null = null;
   private lastUpdate: Date | null = null;
-  private lastEmission: Date | null = null;
 
   // Performance monitoring
   private updateCount = 0;
-  private emissionCount = 0;
   private errorCount = 0;
 
   constructor(
     app: ServerAPI,
     config: PluginConfiguration,
-    logger: (
-      level: LogLevel,
-      message: string,
-      metadata?: Record<string, unknown>
-    ) => void = () => {},
+    logger: Logger = () => {},
     windCalculator?: WindCalculator
   ) {
     this.app = app;
@@ -142,21 +131,15 @@ export class WeatherService {
       this.state = 'stopping';
       this.logger('info', 'Stopping WeatherService');
 
-      // Clear all timers
+      // Clear update timer
       if (this.updateTimer) {
         clearInterval(this.updateTimer);
         this.updateTimer = null;
       }
 
-      if (this.emissionTimer) {
-        clearInterval(this.emissionTimer);
-        this.emissionTimer = null;
-      }
-
       // Clear cached data
       this.currentWeatherData = null;
       this.lastUpdate = null;
-      this.lastEmission = null;
 
       // Clear service caches
       this.accuWeatherService.clearLocationCache();
@@ -165,7 +148,6 @@ export class WeatherService {
       this.state = 'stopped';
       this.logger('info', 'WeatherService stopped successfully', {
         updateCount: this.updateCount,
-        emissionCount: this.emissionCount,
         errorCount: this.errorCount,
       });
 
@@ -197,9 +179,7 @@ export class WeatherService {
   public getServiceStatus(): {
     state: PluginState;
     lastUpdate: Date | null;
-    lastEmission: Date | null;
     updateCount: number;
-    emissionCount: number;
     errorCount: number;
     hasWeatherData: boolean;
     signalKHealth: ReturnType<SignalKService['getHealthStatus']>;
@@ -208,9 +188,7 @@ export class WeatherService {
     return {
       state: this.state,
       lastUpdate: this.lastUpdate,
-      lastEmission: this.lastEmission,
       updateCount: this.updateCount,
-      emissionCount: this.emissionCount,
       errorCount: this.errorCount,
       hasWeatherData: !!this.currentWeatherData,
       signalKHealth: this.signalKService.getHealthStatus(),
@@ -333,18 +311,12 @@ export class WeatherService {
       const vesselData = this.signalKService.getVesselNavigationData();
 
       // Calculate enhanced weather values
-      const enhancedWeatherData = await this.enhanceWeatherData(weatherData, vesselData);
+      const enhancedWeatherData = this.enhanceWeatherData(weatherData, vesselData);
 
-      // Update current data and emit if event-driven mode is enabled
-      const previousData = this.currentWeatherData;
+      // Update current data (emission handled by index.ts via NMEA2000PathMapper)
       this.currentWeatherData = enhancedWeatherData;
       this.lastUpdate = new Date();
       this.updateCount++;
-
-      // Emit immediately if data has changed significantly
-      if (this.shouldEmitOnChange(previousData, enhancedWeatherData)) {
-        this.emitWeatherData(enhancedWeatherData);
-      }
 
       const processingTime = Date.now() - startTime;
       this.logger('info', 'Weather data updated successfully', {
@@ -384,42 +356,35 @@ export class WeatherService {
    * Enhance weather data with calculated values
    * @private
    */
-  private async enhanceWeatherData(
+  private enhanceWeatherData(
     weatherData: WeatherData,
     vesselData: VesselNavigationData
-  ): Promise<WeatherData> {
-    const windChill = this.windCalculator.calculateWindChill(
-      weatherData.temperature,
-      weatherData.windSpeed
-    );
-    // Humidity is already a ratio (0-1)
-    const heatIndex = this.windCalculator.calculateHeatIndex(
-      weatherData.temperature,
-      weatherData.humidity
-    );
-    const dewPoint = this.windCalculator.calculateDewPoint(
-      weatherData.temperature,
-      weatherData.humidity
-    );
+  ): WeatherData {
+    // Only calculate derived values if not already provided by the API
+    const windChill =
+      weatherData.windChill ??
+      this.windCalculator.calculateWindChill(weatherData.temperature, weatherData.windSpeed);
+    const heatIndex =
+      weatherData.heatIndex ??
+      this.windCalculator.calculateHeatIndex(weatherData.temperature, weatherData.humidity);
+    const dewPoint =
+      weatherData.dewPoint ??
+      this.windCalculator.calculateDewPoint(weatherData.temperature, weatherData.humidity);
 
     const apparentWind = this.calculateApparentWindData(weatherData, vesselData);
 
-    const result: WeatherData = {
+    return {
       ...weatherData,
       windChill,
       heatIndex,
       dewPoint,
+      ...(apparentWind.apparentWindSpeed !== undefined && {
+        apparentWindSpeed: apparentWind.apparentWindSpeed,
+      }),
+      ...(apparentWind.apparentWindAngle !== undefined && {
+        apparentWindAngle: apparentWind.apparentWindAngle,
+      }),
     };
-
-    // Only add optional properties if they have values
-    if (apparentWind.apparentWindSpeed !== undefined) {
-      Object.assign(result, { apparentWindSpeed: apparentWind.apparentWindSpeed });
-    }
-    if (apparentWind.apparentWindAngle !== undefined) {
-      Object.assign(result, { apparentWindAngle: apparentWind.apparentWindAngle });
-    }
-
-    return result;
   }
 
   /**
@@ -518,347 +483,14 @@ export class WeatherService {
     windDirection: number,
     vesselData: VesselNavigationData
   ): number {
-    const vesselHeading = vesselData.headingTrue || vesselData.courseOverGroundTrue;
+    const vesselHeading = vesselData.headingTrue ?? vesselData.courseOverGroundTrue;
 
     if (vesselHeading !== undefined && vesselHeading !== null) {
-      return this.normalizeAngle(windDirection - vesselHeading);
+      return this.windCalculator.normalizeAngle(windDirection - vesselHeading);
     }
 
     // No heading available - use true wind direction as absolute angle
     return windDirection;
-  }
-
-  /**
-   * Normalize angle to -π to π range
-   * @private
-   */
-  private normalizeAngle(angle: number): number {
-    let normalized = angle;
-    while (normalized > Math.PI) normalized -= 2 * Math.PI;
-    while (normalized < -Math.PI) normalized += 2 * Math.PI;
-    return normalized;
-  }
-
-  /**
-   * Emit weather data to Signal K
-   * @private
-   */
-  private emitWeatherData(weatherData: WeatherData): void {
-    try {
-      if (!this.app.handleMessage) {
-        this.logger('warn', 'Signal K handleMessage not available');
-        return;
-      }
-
-      // Create Signal K delta message (this will be implemented in path mapping step)
-      const delta = this.createSignalKDelta(weatherData);
-
-      // Cast delta to match ServerAPI.handleMessage parameter type
-      this.app.handleMessage(
-        'signalk-virtual-weather-sensors',
-        delta as Parameters<ServerAPI['handleMessage']>[1]
-      );
-
-      this.lastEmission = new Date();
-      this.emissionCount++;
-
-      this.logger('debug', 'Weather data emitted to Signal K', {
-        emissionCount: this.emissionCount,
-      });
-    } catch (error) {
-      this.logger('error', 'Failed to emit weather data', {
-        error: error instanceof Error ? error.message : String(error),
-      });
-    }
-  }
-
-  /**
-   * Create comprehensive Signal K delta message with enhanced AccuWeather mappings
-   * @private
-   */
-  private createSignalKDelta(weatherData: WeatherData): unknown {
-    const values: Array<{ path: string; value: unknown }> = [];
-
-    this.addCoreEnvironmentalData(values, weatherData);
-    this.addEnhancedTemperatureData(values, weatherData);
-    this.addWindData(values, weatherData);
-    this.addAtmosphericData(values, weatherData);
-    this.addPrecipitationData(values, weatherData);
-
-    this.logger('debug', 'Created enhanced Signal K delta message', {
-      totalPaths: values.length,
-      enhancedFields: this.countEnhancedFieldsInDelta(values),
-    });
-
-    return {
-      context: 'vessels.self',
-      updates: [
-        {
-          timestamp: weatherData.timestamp,
-          values,
-        },
-      ],
-    };
-  }
-
-  /**
-   * Add core environmental measurements to Signal K delta
-   * @private
-   */
-  private addCoreEnvironmentalData(
-    values: Array<{ path: string; value: unknown }>,
-    weatherData: WeatherData
-  ): void {
-    values.push(
-      { path: SIGNALK_PATHS.ENVIRONMENT.OUTSIDE.TEMPERATURE, value: weatherData.temperature },
-      { path: SIGNALK_PATHS.ENVIRONMENT.OUTSIDE.PRESSURE, value: weatherData.pressure },
-      { path: SIGNALK_PATHS.ENVIRONMENT.OUTSIDE.RELATIVE_HUMIDITY, value: weatherData.humidity },
-      // Also emit as 'humidity' for emitter-cannon HUMIDITY_OUTSIDE PGN generator compatibility
-      { path: SIGNALK_PATHS.ENVIRONMENT.OUTSIDE.HUMIDITY, value: weatherData.humidity }
-    );
-  }
-
-  /**
-   * Add enhanced temperature readings to Signal K delta
-   * @private
-   */
-  private addEnhancedTemperatureData(
-    values: Array<{ path: string; value: unknown }>,
-    weatherData: WeatherData
-  ): void {
-    const temperatureFields = [
-      { data: weatherData.dewPoint, path: SIGNALK_PATHS.ENVIRONMENT.OUTSIDE.DEW_POINT_TEMPERATURE },
-      {
-        data: weatherData.windChill,
-        path: SIGNALK_PATHS.ENVIRONMENT.OUTSIDE.WIND_CHILL_TEMPERATURE,
-      },
-      {
-        data: weatherData.heatIndex,
-        path: SIGNALK_PATHS.ENVIRONMENT.OUTSIDE.HEAT_INDEX_TEMPERATURE,
-      },
-      { data: weatherData.realFeelShade, path: SIGNALK_PATHS.ENVIRONMENT.OUTSIDE.REAL_FEEL_SHADE },
-      {
-        data: weatherData.wetBulbTemperature,
-        path: SIGNALK_PATHS.ENVIRONMENT.OUTSIDE.WET_BULB_TEMPERATURE,
-      },
-      {
-        data: weatherData.wetBulbGlobeTemperature,
-        path: SIGNALK_PATHS.ENVIRONMENT.OUTSIDE.WET_BULB_GLOBE_TEMPERATURE,
-      },
-      {
-        data: weatherData.apparentTemperature,
-        path: SIGNALK_PATHS.ENVIRONMENT.OUTSIDE.APPARENT_TEMPERATURE,
-      },
-      {
-        data: weatherData.temperatureDeparture24h,
-        path: SIGNALK_PATHS.ENVIRONMENT.OUTSIDE.TEMPERATURE_DEPARTURE_24H,
-      },
-      {
-        data: weatherData.heatStressIndex,
-        path: SIGNALK_PATHS.ENVIRONMENT.OUTSIDE.HEAT_STRESS_INDEX,
-      },
-    ];
-
-    for (const field of temperatureFields) {
-      if (field.data !== undefined) {
-        values.push({ path: field.path, value: field.data });
-      }
-    }
-  }
-
-  /**
-   * Add wind data to Signal K delta
-   * @private
-   */
-  private addWindData(
-    values: Array<{ path: string; value: unknown }>,
-    weatherData: WeatherData
-  ): void {
-    // Core wind measurements
-    values.push(
-      { path: SIGNALK_PATHS.ENVIRONMENT.WIND.SPEED_TRUE, value: weatherData.windSpeed },
-      { path: SIGNALK_PATHS.ENVIRONMENT.WIND.DIRECTION_TRUE, value: weatherData.windDirection },
-      // speedOverGround mirrors speedTrue for weather API data (no water current distinction)
-      // Required by emitter-cannon WIND_TRUE_GROUND PGN generator
-      { path: SIGNALK_PATHS.ENVIRONMENT.WIND.SPEED_OVER_GROUND, value: weatherData.windSpeed }
-    );
-
-    // Enhanced wind measurements
-    const windFields = [
-      { data: weatherData.windGustSpeed, path: SIGNALK_PATHS.ENVIRONMENT.WIND.SPEED_GUST },
-      { data: weatherData.windGustFactor, path: SIGNALK_PATHS.ENVIRONMENT.WIND.GUST_FACTOR },
-      { data: weatherData.beaufortScale, path: SIGNALK_PATHS.ENVIRONMENT.WIND.BEAUFORT_SCALE },
-      { data: weatherData.apparentWindSpeed, path: SIGNALK_PATHS.ENVIRONMENT.WIND.SPEED_APPARENT },
-    ];
-
-    for (const field of windFields) {
-      if (field.data !== undefined) {
-        values.push({ path: field.path, value: field.data });
-      }
-    }
-
-    this.addApparentWindAngleData(values, weatherData);
-    this.addMagneticWindDirection(values, weatherData);
-  }
-
-  /**
-   * Add apparent wind angle and direction to Signal K delta
-   * @private
-   */
-  private addApparentWindAngleData(
-    values: Array<{ path: string; value: unknown }>,
-    weatherData: WeatherData
-  ): void {
-    if (weatherData.apparentWindAngle === undefined) {
-      return;
-    }
-
-    values.push(
-      {
-        path: SIGNALK_PATHS.ENVIRONMENT.WIND.ANGLE_APPARENT,
-        value: weatherData.apparentWindAngle,
-      },
-      // angleTrueWater mirrors apparentWindAngle for weather API data
-      // Required by emitter-cannon WIND_TRUE PGN generator
-      {
-        path: SIGNALK_PATHS.ENVIRONMENT.WIND.ANGLE_TRUE_WATER,
-        value: weatherData.apparentWindAngle,
-      }
-    );
-
-    const vesselData = this.signalKService.getVesselNavigationData();
-    const vesselHeading = vesselData.headingTrue || vesselData.courseOverGroundTrue;
-
-    if (vesselHeading !== undefined && vesselHeading !== null) {
-      const apparentWindDirection = this.windCalculator.calculateWindDirectionHeading(
-        vesselHeading,
-        weatherData.apparentWindAngle
-      );
-      values.push({
-        path: SIGNALK_PATHS.ENVIRONMENT.WIND.DIRECTION_APPARENT,
-        value: apparentWindDirection,
-      });
-    }
-  }
-
-  /**
-   * Add magnetic wind direction to Signal K delta
-   * @private
-   */
-  private addMagneticWindDirection(
-    values: Array<{ path: string; value: unknown }>,
-    weatherData: WeatherData
-  ): void {
-    const magneticVariation = this.signalKService.getVesselNavigationData().magneticVariation;
-
-    if (magneticVariation !== undefined && magneticVariation !== null) {
-      const directionMagnetic = this.windCalculator.calculateWindDirectionMagnetic(
-        weatherData.windDirection,
-        magneticVariation
-      );
-      values.push({
-        path: SIGNALK_PATHS.ENVIRONMENT.WIND.DIRECTION_MAGNETIC,
-        value: directionMagnetic,
-      });
-    }
-  }
-
-  /**
-   * Add atmospheric conditions to Signal K delta
-   * @private
-   */
-  private addAtmosphericData(
-    values: Array<{ path: string; value: unknown }>,
-    weatherData: WeatherData
-  ): void {
-    const atmosphericFields = [
-      { data: weatherData.uvIndex, path: SIGNALK_PATHS.ENVIRONMENT.OUTSIDE.UV_INDEX },
-      { data: weatherData.visibility, path: SIGNALK_PATHS.ENVIRONMENT.OUTSIDE.VISIBILITY },
-      { data: weatherData.cloudCover, path: SIGNALK_PATHS.ENVIRONMENT.OUTSIDE.CLOUD_COVER },
-      { data: weatherData.cloudCeiling, path: SIGNALK_PATHS.ENVIRONMENT.OUTSIDE.CLOUD_CEILING },
-      {
-        data: weatherData.pressureTendency,
-        path: SIGNALK_PATHS.ENVIRONMENT.OUTSIDE.PRESSURE_TENDENCY,
-      },
-      {
-        data: weatherData.absoluteHumidity,
-        path: SIGNALK_PATHS.ENVIRONMENT.OUTSIDE.ABSOLUTE_HUMIDITY,
-      },
-      { data: weatherData.airDensityEnhanced, path: SIGNALK_PATHS.ENVIRONMENT.OUTSIDE.AIR_DENSITY },
-    ];
-
-    for (const field of atmosphericFields) {
-      if (field.data !== undefined) {
-        values.push({ path: field.path, value: field.data });
-      }
-    }
-  }
-
-  /**
-   * Add precipitation data to Signal K delta
-   * @private
-   */
-  private addPrecipitationData(
-    values: Array<{ path: string; value: unknown }>,
-    weatherData: WeatherData
-  ): void {
-    const precipitationFields = [
-      {
-        data: weatherData.precipitationLastHour,
-        path: SIGNALK_PATHS.ENVIRONMENT.OUTSIDE.PRECIPITATION_LAST_HOUR,
-      },
-      {
-        data: weatherData.precipitationCurrent,
-        path: SIGNALK_PATHS.ENVIRONMENT.OUTSIDE.PRECIPITATION_CURRENT,
-      },
-    ];
-
-    for (const field of precipitationFields) {
-      if (field.data !== undefined) {
-        values.push({ path: field.path, value: field.data });
-      }
-    }
-  }
-
-  /**
-   * Count enhanced fields in delta message for logging
-   * @private
-   */
-  private countEnhancedFieldsInDelta(values: Array<{ path: string; value: unknown }>): number {
-    const enhancedPaths = [
-      'realFeelShade',
-      'wetBulbTemperature',
-      'wetBulbGlobeTemperature',
-      'indoorHumidity',
-      'windGust',
-      'uvIndex',
-      'visibility',
-      'cloudCover',
-      'beaufortScale',
-      'absoluteHumidity',
-    ];
-
-    return values.filter((v) => enhancedPaths.some((enhancedPath) => v.path.includes(enhancedPath)))
-      .length;
-  }
-
-  /**
-   * Determine if weather data change is significant enough for immediate emission
-   * @private
-   */
-  private shouldEmitOnChange(previous: WeatherData | null, current: WeatherData): boolean {
-    if (!previous) return true;
-
-    // Define thresholds for significant changes
-    const tempThreshold = 1; // 1 Kelvin
-    const pressureThreshold = 100; // 100 Pascals
-    const windSpeedThreshold = 1; // 1 m/s
-
-    return (
-      Math.abs(current.temperature - previous.temperature) > tempThreshold ||
-      Math.abs(current.pressure - previous.pressure) > pressureThreshold ||
-      Math.abs(current.windSpeed - previous.windSpeed) > windSpeedThreshold
-    );
   }
 
   /**
