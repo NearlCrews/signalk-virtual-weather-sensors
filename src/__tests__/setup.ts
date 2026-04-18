@@ -90,7 +90,7 @@ export function createMockConfig(
   overrides: Partial<import('../types/index.js').PluginConfiguration> = {}
 ): import('../types/index.js').PluginConfiguration {
   return {
-    accuWeatherApiKey: 'test-api-key-12345',
+    accuWeatherApiKey: 'testapikey123456789012345',
     updateFrequency: 5,
     emissionInterval: 5,
     ...overrides,

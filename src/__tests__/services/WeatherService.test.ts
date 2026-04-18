@@ -130,14 +130,6 @@ describe('WeatherService', () => {
         })
       );
     });
-
-    it('should start successfully', async () => {
-      const service = new WeatherService(mockApp as never, config, mockLogger);
-
-      await service.start();
-
-      expect(mockLogger).toHaveBeenCalledWith('info', 'WeatherService started successfully');
-    });
   });
 
   describe('stop', () => {

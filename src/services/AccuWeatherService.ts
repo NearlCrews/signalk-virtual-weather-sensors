@@ -128,19 +128,20 @@ export class AccuWeatherService {
     const heatIndex =
       conditions.RealFeelTemperature.Metric.Value + UNITS.TEMPERATURE.CELSIUS_TO_KELVIN;
 
-    // Enhanced temperature readings (new)
-    const realFeelShade =
-      conditions.RealFeelTemperatureShade.Metric.Value + UNITS.TEMPERATURE.CELSIUS_TO_KELVIN;
-    const wetBulbTemperature =
-      conditions.WetBulbTemperature.Metric.Value + UNITS.TEMPERATURE.CELSIUS_TO_KELVIN;
-    const wetBulbGlobeTemperature =
-      conditions.WetBulbGlobeTemperature.Metric.Value + UNITS.TEMPERATURE.CELSIUS_TO_KELVIN;
-    const apparentTemperature =
-      conditions.ApparentTemperature.Metric.Value + UNITS.TEMPERATURE.CELSIUS_TO_KELVIN;
+    const toKelvin = (celsius: number | undefined): number | undefined =>
+      typeof celsius === 'number' ? celsius + UNITS.TEMPERATURE.CELSIUS_TO_KELVIN : undefined;
+
+    // Enhanced temperature readings (new) — optional chaining because free-tier keys
+    // and partial responses can omit these fields
+    const realFeelShade = toKelvin(conditions.RealFeelTemperatureShade?.Metric?.Value);
+    const wetBulbTemperature = toKelvin(conditions.WetBulbTemperature?.Metric?.Value);
+    const wetBulbGlobeTemperature = toKelvin(conditions.WetBulbGlobeTemperature?.Metric?.Value);
+    const apparentTemperature = toKelvin(conditions.ApparentTemperature?.Metric?.Value);
 
     // Enhanced wind data (new)
     const windGustSpeed = conditions.WindGust.Speed.Metric.Value * UNITS.WIND_SPEED.KMH_TO_MS;
-    const windGustFactor = windSpeed > 0 ? windGustSpeed / windSpeed : 1;
+    // undefined when wind is calm — a literal 1 would be indistinguishable from "no gust"
+    const windGustFactor = windSpeed > 0 ? windGustSpeed / windSpeed : undefined;
 
     // Atmospheric conditions (new)
     const uvIndex = conditions.UVIndexFloat;
@@ -160,7 +161,10 @@ export class AccuWeatherService {
     const beaufortScale = calculateBeaufortScale(windSpeed, windGustSpeed);
     const absoluteHumidity = calculateAbsoluteHumidity(temperature, humidity);
     const airDensityEnhanced = calculateAirDensity(temperature, pressure, humidity);
-    const heatStressIndex = this.calculateHeatStressIndex(wetBulbGlobeTemperature);
+    const heatStressIndex =
+      wetBulbGlobeTemperature !== undefined
+        ? this.calculateHeatStressIndex(wetBulbGlobeTemperature)
+        : undefined;
 
     const weatherData: WeatherData = {
       // Core measurements
@@ -173,15 +177,16 @@ export class AccuWeatherService {
       windChill,
       heatIndex,
 
-      // Enhanced temperature readings
-      realFeelShade,
-      wetBulbTemperature,
-      wetBulbGlobeTemperature,
-      apparentTemperature,
+      // Enhanced temperature readings — conditional spread so we never assign
+      // explicit `undefined` under exactOptionalPropertyTypes
+      ...(realFeelShade !== undefined && { realFeelShade }),
+      ...(wetBulbTemperature !== undefined && { wetBulbTemperature }),
+      ...(wetBulbGlobeTemperature !== undefined && { wetBulbGlobeTemperature }),
+      ...(apparentTemperature !== undefined && { apparentTemperature }),
 
       // Enhanced wind data
       windGustSpeed,
-      windGustFactor,
+      ...(windGustFactor !== undefined && { windGustFactor }),
 
       // Atmospheric conditions
       uvIndex,
@@ -201,7 +206,7 @@ export class AccuWeatherService {
       beaufortScale,
       absoluteHumidity,
       airDensityEnhanced,
-      heatStressIndex,
+      ...(heatStressIndex !== undefined && { heatStressIndex }),
 
       // Metadata
       description: conditions.WeatherText,
@@ -390,7 +395,7 @@ export class AccuWeatherService {
 
     try {
       this.logger('debug', 'Making API request', {
-        url: url.toString(),
+        url: this.sanitizeUrlForLogging(url),
         attempt,
         maxAttempts: this.config.retryAttempts,
       });
@@ -421,7 +426,10 @@ export class AccuWeatherService {
 
       if (error instanceof Error && error.name === 'AbortError') {
         if (attempt < this.config.retryAttempts) {
-          this.logger('warn', 'Request timeout, retrying', { attempt, url: url.toString() });
+          this.logger('warn', 'Request timeout, retrying', {
+            attempt,
+            url: this.sanitizeUrlForLogging(url),
+          });
           await this.delay(this.config.retryDelay * attempt);
           return this.makeApiRequest<T>(url, attempt + 1);
         }
@@ -490,9 +498,8 @@ export class AccuWeatherService {
       case 401:
         throw new Error(`${ERROR_CODES.NETWORK.API_UNAUTHORIZED}: Invalid API key - ${message}`);
       case 403:
-        throw new Error(
-          `${ERROR_CODES.NETWORK.API_RATE_LIMIT}: API rate limit exceeded - ${message}`
-        );
+        // 403 Forbidden is distinct from 429 Rate Limit: wrong plan, expired key, IP blocked
+        throw new Error(`${ERROR_CODES.NETWORK.API_FORBIDDEN}: API access forbidden - ${message}`);
       case 404:
         throw new Error(
           `${ERROR_CODES.DATA.INVALID_WEATHER_DATA}: Location not found - ${message}`
@@ -632,11 +639,28 @@ export class AccuWeatherService {
    * Check if error is retryable
    * @private
    */
+  /**
+   * Return URL string with the apikey query parameter stripped so it's safe to log.
+   * Debug-level logs are not passed through sanitizeLogMetadata, so we must strip
+   * secrets here before they reach the logger.
+   * @private
+   */
+  private sanitizeUrlForLogging(url: URL): string {
+    const safe = new URL(url.toString());
+    if (safe.searchParams.has('apikey')) {
+      safe.searchParams.set('apikey', '***');
+    }
+    return safe.toString();
+  }
+
   private isRetryableError(error: unknown): boolean {
     if (error instanceof Error) {
       const message = error.message.toLowerCase();
+      // Match on the error codes handleApiError emits for transient failures,
+      // plus common network-layer error names
       return (
-        message.includes('network') ||
+        message.includes(ERROR_CODES.NETWORK.API_RATE_LIMIT.toLowerCase()) ||
+        message.includes(ERROR_CODES.NETWORK.NETWORK_ERROR.toLowerCase()) ||
         message.includes('timeout') ||
         message.includes('econnreset') ||
         message.includes('enotfound')

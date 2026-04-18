@@ -33,6 +33,7 @@ export class WeatherService {
 
   private state: PluginState = 'stopped';
   private updateTimer: NodeJS.Timeout | null = null;
+  private initialUpdateTimer: NodeJS.Timeout | null = null;
 
   private currentWeatherData: WeatherData | null = null;
   private lastUpdate: Date | null = null;
@@ -87,8 +88,12 @@ export class WeatherService {
       // Emission is handled by the plugin entry point (index.ts) via NMEA2000PathMapper
       this.setupWeatherUpdates();
 
-      // Perform initial weather update after brief delay
-      setTimeout(() => {
+      // Perform initial weather update after brief delay. Track the handle so
+      // a stop() within the delay window doesn't leave the callback firing
+      // against a torn-down service.
+      this.initialUpdateTimer = setTimeout(() => {
+        this.initialUpdateTimer = null;
+        if (this.state !== 'running') return;
         this.updateWeatherData().catch((error) => {
           this.logger('error', 'Initial weather update failed', {
             error: error instanceof Error ? error.message : String(error),
@@ -135,6 +140,12 @@ export class WeatherService {
       if (this.updateTimer) {
         clearInterval(this.updateTimer);
         this.updateTimer = null;
+      }
+
+      // Clear pending initial-update timer if still in flight
+      if (this.initialUpdateTimer) {
+        clearTimeout(this.initialUpdateTimer);
+        this.initialUpdateTimer = null;
       }
 
       // Clear cached data

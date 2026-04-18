@@ -200,8 +200,10 @@ function logPluginStarting(instance: PluginInstance, settings: unknown): void {
  * @private
  */
 function isPluginAlreadyRunning(instance: PluginInstance): boolean {
-  if (instance.state === 'running') {
-    instance.logger('warn', 'Plugin already running');
+  // Guard both 'running' and 'starting' to avoid duplicate timers/services
+  // when the server calls start() again while a previous start is in flight
+  if (instance.state === 'running' || instance.state === 'starting') {
+    instance.logger('warn', 'Plugin already running', { state: instance.state });
     return true;
   }
   return false;

@@ -269,7 +269,6 @@ export class WindCalculator {
     let angle = radians;
     while (angle > Math.PI) angle -= 2 * Math.PI;
     while (angle <= -Math.PI) angle += 2 * Math.PI;
-    if (angle === Math.PI) angle = -Math.PI;
     return angle;
   }
 

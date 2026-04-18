@@ -4,7 +4,7 @@
  * Maps comprehensive weather data to standardized NMEA2000 Signal K paths with proper PGN support
  */
 
-import { PGN, SIGNALK_PATHS } from '../constants/index.js';
+import { PGN, PLUGIN, SIGNALK_PATHS } from '../constants/index.js';
 import type { Logger, SignalKDelta, WeatherData } from '../types/index.js';
 import { NMEA2000Validator } from '../utils/validation.js';
 
@@ -104,6 +104,7 @@ export class NMEA2000PathMapper {
       context: 'vessels.self',
       updates: [
         {
+          source: { label: PLUGIN.NAME, type: 'Plugin' },
           timestamp,
           values: values.map((v) => ({ path: v.path, value: v.value })),
         },

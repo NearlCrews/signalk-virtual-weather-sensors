@@ -66,9 +66,7 @@
   },
   "type": "module",
   "dependencies": {
-    "es-toolkit": "^1.44.0",
-    "node-fetch": "^3.3.2",
-    "rxjs": "^7.8.2"
+    "es-toolkit": "^1.44.0"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.3.11",
