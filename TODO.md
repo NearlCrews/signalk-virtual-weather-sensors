@@ -17,46 +17,26 @@ The plugin uses official `@signalk/server-api` types and follows Signal K plugin
 - [x] Configuration schema (JSON Schema with validation)
 - [x] Delta message format (proper context and updates array)
 - [x] Signal K path conventions (environment.outside.*, environment.wind.*)
-- [x] Source metadata (label and type)
-- [x] Status reporting (setPluginStatus/setPluginError/statusMessage)
+- [x] Source metadata -- stamped automatically via `app.handleMessage(pluginId, …)` (no explicit `source` literal)
+- [x] Status reporting (setPluginStatus / setPluginError)
 
 ### ⚠️ Known Deviations
 
-#### Humidity Format - Percentage vs Ratio
-**Location**: `src/mappers/NMEA2000PathMapper.ts:161-177`
-
-**Current Implementation**:
-```typescript
-value: data.humidity,  // Already in percentage (0-100) from AccuWeather
-meta: { units: '%' }
-```
-
-**Signal K Standard**:
-- Specifies ratio format (0-1) for humidity values
-
-**Reason for Deviation**:
-- **Garmin Compatibility**: Garmin marine displays expect humidity in percentage format (0-100)
-- Trade-off between Signal K standard compliance and real-world device compatibility
-- Most NMEA2000 devices display humidity as percentage
-
-**Impact**:
-- May cause minor display issues in some Signal K clients
-- Garmin devices will display correctly
-- Can be converted back to ratio in clients if needed: `ratio = percentage / 100`
-
-**Future Consideration**:
-- Monitor Signal K community feedback
-- Could add configuration option to choose format
-- Could detect client type and adjust format dynamically
+_None as of v1.2.2._ The previous percentage-vs-ratio humidity deviation was resolved in v1.2.2: `environment.outside.humidity` is now emitted as a ratio (0--1) per Signal K spec, with the duplicate `relativeHumidity` path removed.
 
 ## 📋 Enhancement Backlog
 
 ### Testing & Validation
 
-- [x] **Comprehensive unit test coverage** *(v1.1.0)*
-  - ✅ WeatherService tests (25 tests) - initialization, lifecycle, data emission
+- [x] **Comprehensive unit test coverage** *(v1.2.2)*
+  - ✅ WeatherService tests (24 tests) - initialization, lifecycle, data emission
   - ✅ SignalKService tests (40 tests) - position, speed, course, heading, caching
-  - ✅ Total: 150 tests across 5 test files
+  - ✅ AccuWeatherService tests (17 tests, +1 skipped) - API integration, retry, validation
+  - ✅ WindCalculator tests (45 tests) - vector math, edge cases (negative angles, NaN)
+  - ✅ NMEA2000PathMapper tests (15 tests) - delta build, sanitization
+  - ✅ utils/conversions tests (48 tests) - all conversions + edge cases *(new in v1.2.2)*
+  - ✅ utils/validation tests (53 tests) - sanitize, validators, response schema *(new in v1.2.2)*
+  - ✅ Total: 241 tests across 7 test files (coverage: 81.9% stmts, 90.75% funcs)
 
 - [ ] **Add delta message format validation tests**
   - Unit tests to verify proper Signal K delta structure
@@ -131,15 +111,12 @@ meta: { units: '%' }
   - ✅ LRU-style eviction with 100 entry max
   - [ ] Cache weather data between updates
 
-- [x] **Performance monitoring** *(v1.1.0)*
-  - ✅ Added MetricsCollector utility (counters, gauges, histograms)
-  - ✅ Pre-configured plugin metrics for API requests, errors, updates
-  - ✅ Memory monitoring with cache size tracking
-  - ✅ Timing histograms for API calls and calculations
+- [x] **Performance monitoring** *(removed in v1.2.0)*
+  - `MetricsCollector` and `createPluginMetrics` were removed in v1.2.0 -- they were never imported by any production code (332 lines of dead instrumentation). To re-add observability, prefer Signal K server's built-in metrics or a lightweight per-call timer instead.
 
 ## 🐛 Known Issues
 
-None currently. All tests passing, no reported bugs.
+- **Branch coverage at 78.06%** -- below the documented 80% threshold (concentrated in `WeatherService.ts` error paths). Vitest currently treats the threshold as advisory; tightening the test suite is tracked under "Code quality improvements" below.
 
 ## 🔐 Security
 
@@ -148,16 +125,22 @@ None currently. All tests passing, no reported bugs.
   - Use Signal K security context
   - Add key rotation support
 
-- [x] **Add rate limiting support** *(v1.1.0)*
+- [x] **Add rate limiting support** *(v1.1.0, refined in v1.2.2)*
   - ✅ Retry-After header parsing for 429/503 responses
-  - ✅ Exponential backoff fallback
+  - ✅ Linear backoff fallback when header is absent
   - ✅ Polling jitter (±10%) to prevent synchronized requests
   - [ ] Monitor API quota usage dashboard
 
-- [x] **API key protection** *(v1.1.0)*
+- [x] **API key protection** *(v1.1.0, hardened in v1.2.2)*
   - ✅ Automatic log sanitization (filters apikey, password, secret, token)
   - ✅ Enhanced API key validation (length, format, placeholder detection)
+  - ✅ Schema-level `minLength: 20` enforcement *(v1.2.2)*
   - [ ] Encrypt API key in configuration storage
+
+- [x] **AccuWeather response trust boundary** *(v1.2.2)*
+  - ✅ `validateAccuWeatherResponse()` runs before downstream transforms
+  - ✅ 1 MiB response body cap (Content-Length pre-check + post-read recheck)
+  - ✅ `locationKey` regex validation before URL interpolation
 
 ## 📦 Distribution
 
@@ -203,10 +186,11 @@ None currently. All tests passing, no reported bugs.
   - Automate security patches
   - Regular dependency reviews
 
-- [x] **Code quality improvements** *(v1.1.0)*
-  - ✅ Increased test coverage (150 tests, 80%+ coverage)
-  - ✅ Enhanced logger with Signal K UI integration
-  - [ ] Increase test coverage to 90%+
+- [x] **Code quality improvements** *(v1.1.0, expanded v1.2.2)*
+  - ✅ Increased test coverage (241 tests; 81.9% stmts, 90.75% funcs)
+  - ✅ Enhanced logger with Signal K UI integration; errors now route to `app.error`
+  - ✅ Logger sanitizes API keys at all levels
+  - [ ] Increase branch coverage above 80% (currently 78.06%, gaps in WeatherService error paths)
   - [ ] Add mutation testing
 
 ---
@@ -234,7 +218,7 @@ None currently. All tests passing, no reported bugs.
 
 ---
 
-**Last Updated**: 2026-01-20
+**Last Updated**: 2026-04-19
 
 **Maintainer**: Signal K Community
 

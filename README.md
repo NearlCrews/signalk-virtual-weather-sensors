@@ -14,7 +14,8 @@ A Signal K plugin that fetches weather data from the AccuWeather API and emits i
 - **NMEA2000 alignment** with [emitter-cannon](https://github.com/NearlCrews/signalk-nmea2000-emitter-cannon) PGN conventions (130306, 130311, 130312, 130313)
 - **Interval-based emission** (default 5s) for reliable NMEA2000 network recognition
 - **Delta caching** -- only rebuilds the Signal K delta when weather data actually changes
-- **Rate limit handling** with Retry-After header support and exponential backoff
+- **Rate limit handling** with Retry-After header support and linear backoff fallback
+- **Bounded responses** -- 1 MiB cap on AccuWeather response bodies + schema validation before use
 - **API key sanitization** in log output
 
 ## Installation
@@ -56,8 +57,7 @@ ln -s "$(pwd)" ~/.signalk/node_modules/signalk-virtual-weather-sensors
 |------|------|-------------|
 | `environment.outside.temperature` | K | Air temperature |
 | `environment.outside.pressure` | Pa | Atmospheric pressure |
-| `environment.outside.relativeHumidity` | ratio (0--1) | Relative humidity |
-| `environment.outside.humidity` | ratio (0--1) | Alias for emitter-cannon compatibility |
+| `environment.outside.humidity` | ratio (0--1) | Relative humidity (per Signal K spec) |
 | `environment.outside.dewPointTemperature` | K | Dew point |
 | `environment.outside.windChillTemperature` | K | Wind chill |
 | `environment.outside.heatIndexTemperature` | K | Heat index (RealFeel) |
@@ -80,7 +80,6 @@ ln -s "$(pwd)" ~/.signalk/node_modules/signalk-virtual-weather-sensors
 | `environment.wind.speedOverGround` | m/s | Wind speed over ground (mirrors speedTrue) |
 | `environment.wind.speedApparent` | m/s | Apparent wind speed (calculated) |
 | `environment.wind.angleApparent` | rad | Apparent wind angle relative to bow |
-| `environment.wind.angleTrueWater` | rad | True wind angle relative to heading |
 | `environment.wind.directionApparent` | rad | Apparent wind direction (absolute) |
 | `environment.wind.directionMagnetic` | rad | Wind direction (magnetic) |
 | `environment.wind.speedGust` | m/s | Gust speed |
@@ -95,13 +94,12 @@ ln -s "$(pwd)" ~/.signalk/node_modules/signalk-virtual-weather-sensors
 | `environment.outside.visibility` | m | Visibility distance |
 | `environment.outside.cloudCover` | ratio (0--1) | Cloud coverage |
 | `environment.outside.cloudCeiling` | m | Cloud base height |
-| `environment.outside.pressureTendency` | text | Rising / Falling / Steady |
 | `environment.outside.absoluteHumidity` | kg/m3 | Calculated absolute humidity |
 | `environment.outside.airDensity` | kg/m3 | Calculated air density |
 | `environment.outside.heatStressIndex` | 0--4 | Heat stress level |
 | `environment.outside.temperatureDeparture24h` | K | 24-hour temperature change |
-| `environment.outside.precipitationLastHour` | mm | Precipitation in last hour |
-| `environment.outside.precipitationCurrent` | mm/h | Current precipitation rate |
+| `environment.outside.precipitationLastHour` | m | Precipitation in last hour |
+| `environment.outside.precipitationCurrent` | m/s | Current precipitation rate |
 
 ## NMEA2000 Integration
 
@@ -165,7 +163,7 @@ npm run validate       # Type-check + lint + tests (runs on pre-commit)
 - @signalk/server-api 2.10+
 - esbuild for bundling
 - Biome for linting/formatting
-- Vitest for testing (149 tests)
+- Vitest for testing (241 tests)
 - Husky + lint-staged for pre-commit hooks
 
 ## License

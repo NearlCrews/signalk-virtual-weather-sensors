@@ -19,6 +19,27 @@ import { AccuWeatherService } from './AccuWeatherService.js';
 import { SignalKService } from './SignalKService.js';
 
 /**
+ * Public, stable shape returned by `getServiceStatus()` so callers don't
+ * depend on the internal types of `AccuWeatherService` / `SignalKService`.
+ */
+export interface WeatherServiceStatus {
+  readonly state: PluginState;
+  readonly lastUpdate: Date | null;
+  readonly updateCount: number;
+  readonly errorCount: number;
+  readonly hasWeatherData: boolean;
+  readonly signalKHealth: {
+    readonly status: PluginState;
+    readonly dataAge: number | null;
+    readonly isStale: boolean;
+    readonly hasComplete: boolean;
+  };
+  readonly cacheStats: {
+    readonly size: number;
+  };
+}
+
+/**
  * Main Weather Service orchestrating all weather data operations
  * Coordinates AccuWeather API, vessel navigation, and wind calculations
  */
@@ -46,7 +67,9 @@ export class WeatherService {
     app: ServerAPI,
     config: PluginConfiguration,
     logger: Logger = () => {},
-    windCalculator?: WindCalculator
+    windCalculator?: WindCalculator,
+    accuWeatherService?: AccuWeatherService,
+    signalKService?: SignalKService
   ) {
     this.app = app;
     this.config = config;
@@ -60,10 +83,12 @@ export class WeatherService {
       useVesselPosition: true,
     });
 
-    // Initialize services
-    this.accuWeatherService = new AccuWeatherService(this.config.accuWeatherApiKey, this.logger);
+    // Initialize services — accept injected instances for testability while
+    // defaulting to real implementations to keep existing call sites working.
+    this.accuWeatherService =
+      accuWeatherService ?? new AccuWeatherService(this.config.accuWeatherApiKey, this.logger);
 
-    this.signalKService = new SignalKService(this.app, this.logger);
+    this.signalKService = signalKService ?? new SignalKService(this.app, this.logger);
 
     // Use provided wind calculator or create a basic one
     this.windCalculator = windCalculator || this.createBasicWindCalculator();
@@ -187,15 +212,7 @@ export class WeatherService {
   /**
    * Get service status and health information
    */
-  public getServiceStatus(): {
-    state: PluginState;
-    lastUpdate: Date | null;
-    updateCount: number;
-    errorCount: number;
-    hasWeatherData: boolean;
-    signalKHealth: ReturnType<SignalKService['getHealthStatus']>;
-    cacheStats: ReturnType<AccuWeatherService['getCacheStats']>;
-  } {
+  public getServiceStatus(): WeatherServiceStatus {
     return {
       state: this.state,
       lastUpdate: this.lastUpdate,

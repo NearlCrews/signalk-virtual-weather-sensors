@@ -202,14 +202,23 @@ describe('WindCalculator', () => {
       expect(result).toBe(temperature);
     });
 
-    it('should handle invalid inputs', () => {
-      const result = calculator.calculateWindChill(Number.NaN, 10);
-      expect(result).toBe(0);
+    it('should handle invalid inputs by falling back to input temperature', () => {
+      const temperature = 280.15; // 7°C in Kelvin
+      const result = calculator.calculateWindChill(temperature, Number.NaN);
+      // Falls back to input temperature, matching siblings (calculateHeatIndex, calculateDewPoint)
+      // rather than returning literal 0K (≈ -273°C)
+      expect(result).toBe(temperature);
       expect(mockLogger).toHaveBeenCalledWith(
         'warn',
         'Invalid wind chill inputs',
         expect.any(Object)
       );
+    });
+
+    it('should fall back to 0 only when input temperature itself is invalid', () => {
+      const result = calculator.calculateWindChill(Number.NaN, 10);
+      // Number guard: Number.NaN || 0 → 0
+      expect(result).toBe(0);
     });
   });
 
@@ -350,6 +359,15 @@ describe('WindCalculator', () => {
       expect(calculator.convertWindDirection(Math.PI, 'compass')).toBe('S');
       expect(calculator.convertWindDirection((3 * Math.PI) / 2, 'compass')).toBe('W');
       expect(calculator.convertWindDirection(Math.PI / 4, 'compass')).toBe('NE');
+    });
+
+    it('should handle negative angles (port-tack apparent wind)', () => {
+      // Negative radians are legitimate for port-tack apparent wind angles
+      expect(calculator.convertWindDirection(-Math.PI / 2, 'compass')).toBe('W');
+      expect(calculator.convertWindDirection(-Math.PI / 4, 'compass')).toBe('NW');
+      expect(calculator.convertWindDirection(-Math.PI, 'compass')).toBe('S');
+      // Just slightly past 0 negative should still be N
+      expect(calculator.convertWindDirection(-0.01, 'compass')).toBe('N');
     });
 
     it('should calculate relative wind direction', () => {

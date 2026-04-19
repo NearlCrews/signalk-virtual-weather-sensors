@@ -5,6 +5,60 @@ All notable changes to the signalk-virtual-weather-sensors project will be docum
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.2] - 2026-04-19
+
+Audit-driven patch release: a 5-expert review pass caught a number of Signal K spec violations, security gaps, and correctness bugs. All findings landed; no public configuration changes.
+
+### Fixed -- Signal K spec compliance
+
+- **`environment.wind.angleTrueWater` no longer fabricated** -- was incorrectly emitted equal to `apparentWindAngle`. They are different physical quantities; downstream consumers (chartplotters, emitters) were publishing false true-wind. Only `angleApparent` is emitted now.
+- **Precipitation now in SI units** -- `precipitationLastHour` is meters (was `mm`) and `precipitationCurrent` is m/s (was `mm/h`), per Signal K spec. Consumers reading these as SI were off by 1000×.
+- **Duplicate humidity path removed** -- was emitting both `environment.outside.humidity` and `environment.outside.relativeHumidity` with identical values; only the schema-standard `humidity` path remains.
+- **`environment.outside.pressureTendency` no longer emitted** as a free-text string on a numeric path. Dropped pending proper PGN 130311 tendency-code mapping.
+- **Explicit `source` literal removed from delta** -- `app.handleMessage(pluginId, …)` already stamps `$source` from the pluginId; the redundant `source: { label, type: 'Plugin' }` also used a non-standard `type` value.
+- **Delta `meta` no longer stripped silently** -- meta was being computed then thrown away by the value mapper. Single-allocation delta build (also eliminates per-tick double allocation).
+
+### Fixed -- correctness, security, reliability
+
+- **Logger now routes errors to `app.error`** -- previously every level (including error/warn) went through `app.debug()`, making errors invisible in production unless debug mode was on.
+- **Stale observation timestamp** -- emission delta now stamps `updates[0].timestamp` with the current emission time per tick, not the original AccuWeather observation time. Added a max-staleness guard (2× update interval) that calls `app.setPluginError` and skips emission when the upstream is stale, so API outages show as data gaps instead of stale data flowing forever.
+- **Negative wind angles map correctly** -- `convertWindDirection('compass')` was silently returning `'N'` for port-tack negative radians (negative array index). Now wraps modulo correctly.
+- **`calculateWindChill` returns `temperatureK` on bad input** -- previously returned literal `0` K (~ −273 °C), inconsistent with sibling fallbacks.
+- **AccuWeather response validation wired up** -- `validateAccuWeatherResponse()` (already in the codebase but unused) now runs before the cast in `getCurrentConditions` and `searchLocation`. Schema drift or MITM injection no longer reaches downstream transforms unchecked.
+- **AccuWeather response body capped at 1 MiB** -- pre-checks `Content-Length`, then re-checks after read; prevents silent OOM on constrained devices (Raspberry Pi).
+- **`locationKey` URL-injection guard** -- keys returned by AccuWeather are now regex-validated (`^[a-zA-Z0-9_-]+$`) before interpolation into URL paths or caching.
+- **429/503 double-delay fixed** -- `handleApiError` no longer sleeps internally; the caller's retry loop owns backoff. Previously each retry incurred 2× the configured delay.
+- **`Retry-After` header still honored** -- restored after the double-delay fix; the retry loop now prefers the header value when present, falls back to linear backoff otherwise.
+- **Type guards require `Number.isFinite`** -- `isCompleteWeatherData` and `isCompleteNavigationData` previously checked `!== undefined`; NaN slipped through and propagated into downstream math.
+
+### Changed
+
+- **`WeatherService` is now DI-friendly** -- constructor accepts optional `accuWeatherService` and `signalKService` params (defaults preserved). Mirrors the existing `WindCalculator` injection pattern.
+- **`WeatherServiceStatus` interface exported** -- replaces inline `ReturnType<…>` leaks of internal service shapes from `getServiceStatus()`.
+- **Type-cast cleanups** -- `cachedDelta` typed as `Delta` from `@signalk/server-api`; `cachedWeatherDataRef` typed as `WeatherData | null`; intermediate `Record<string, unknown>` config cast removed.
+- **`isRetryableError`** -- lowercased error-code substrings precomputed as a module-level frozen `Set` instead of being recomputed per call.
+- **Hot-path debug log on emission tick** -- replaced 4× filter+length passes with a one-line summary.
+- **esbuild `legalComments: 'none'`** -- strips license headers from the production bundle.
+
+### Added
+
+- **`PGN.HUMIDITY` (130313) and `PGN.ACTUAL_PRESSURE` (130314) constants** -- replace magic numbers in mapper.
+- **`ERROR_CODES.NETWORK.API_INVALID_RESPONSE` and `RESPONSE_TOO_LARGE`** for the new validation paths.
+- **Schema metadata** -- `title` and `description` on the schema root for admin UI labeling; `minLength: 20` on the API key field.
+- **NMEA2000 instance maps moved into `constants/index.ts`** -- were file-local in mapper.
+- **101 new utility tests** -- `src/__tests__/utils/conversions.test.ts` (48 tests) and `src/__tests__/utils/validation.test.ts` (53 tests). Total tests: **241** (was 149).
+
+### Removed
+
+- **`es-toolkit` dependency** -- was unused in `src/`. Production `dependencies` is now empty.
+- **`statusMessage()` method on the Plugin object** -- `app.setPluginStatus()` is the actively-used path. Note: per-tick dynamic status updates (which previously used this) are no longer pushed; status is set at lifecycle transitions only.
+- **Dead constants**: `LOGGING`, `FEATURE_FLAGS`, `SignalKPath` union, `SignalKSource` type.
+- **Dead public methods on `NMEA2000PathMapper`**: `getSupportedPGNs`, `getTemperatureInstanceMap`, `getHumidityInstanceMap`, `getPathStatistics`, `validateWeatherDataForMapping` -- all were test-only.
+
+### Coverage
+
+- Statements 81.9%, Branches 78.06%, Functions 90.75%, Lines 81.87% -- branches just below the 80% threshold (concentrated in `WeatherService.ts` error paths) but the Vitest threshold is currently advisory.
+
 ## [1.2.0] - 2026-04-08
 
 ### Fixed

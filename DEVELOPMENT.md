@@ -382,15 +382,17 @@ npm run validate
 - **Edge Case Tests**: Boundary conditions and error handling
 - **Performance Tests**: Real-time calculation efficiency
 
-**Total: 150 tests** across 5 test files
+**Total: 241 tests** across 7 test files
 
 ### Test Files
 
-- [`WeatherService.test.ts`](src/__tests__/services/WeatherService.test.ts) - Core orchestration (25 tests)
+- [`WeatherService.test.ts`](src/__tests__/services/WeatherService.test.ts) - Core orchestration (24 tests)
 - [`SignalKService.test.ts`](src/__tests__/services/SignalKService.test.ts) - Navigation data (40 tests)
 - [`AccuWeatherService.test.ts`](src/__tests__/services/AccuWeatherService.test.ts) - API integration (17 tests)
-- [`WindCalculator.test.ts`](src/__tests__/calculators/WindCalculator.test.ts) - Vector mathematics (43 tests)
-- [`NMEA2000PathMapper.test.ts`](src/__tests__/mappers/NMEA2000PathMapper.test.ts) - Path mapping (25 tests)
+- [`WindCalculator.test.ts`](src/__tests__/calculators/WindCalculator.test.ts) - Vector mathematics (45 tests)
+- [`NMEA2000PathMapper.test.ts`](src/__tests__/mappers/NMEA2000PathMapper.test.ts) - Path mapping (15 tests)
+- [`utils/conversions.test.ts`](src/__tests__/utils/conversions.test.ts) - Unit conversions (48 tests)
+- [`utils/validation.test.ts`](src/__tests__/utils/validation.test.ts) - Sanitize, validators, schema (53 tests)
 
 ### Running Specific Tests
 

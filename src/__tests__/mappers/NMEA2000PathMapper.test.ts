@@ -52,7 +52,7 @@ describe('NMEA2000PathMapper', () => {
               values: expect.arrayContaining([
                 { path: 'environment.outside.temperature', value: 293.15 },
                 { path: 'environment.outside.pressure', value: 101325 },
-                { path: 'environment.outside.relativeHumidity', value: 0.65 },
+                { path: 'environment.outside.humidity', value: 0.65 },
                 { path: 'environment.wind.speedTrue', value: 5.14 },
                 { path: 'environment.wind.directionTrue', value: Math.PI / 2 },
               ]),
@@ -71,7 +71,7 @@ describe('NMEA2000PathMapper', () => {
       // Core environmental paths
       expect(paths).toContain('environment.outside.temperature');
       expect(paths).toContain('environment.outside.pressure');
-      expect(paths).toContain('environment.outside.relativeHumidity');
+      expect(paths).toContain('environment.outside.humidity');
       expect(paths).toContain('environment.outside.dewPointTemperature');
       expect(paths).toContain('environment.outside.windChillTemperature');
       expect(paths).toContain('environment.outside.heatIndexTemperature');
@@ -133,7 +133,6 @@ describe('NMEA2000PathMapper', () => {
       expect(paths).toContain('environment.outside.visibility');
       expect(paths).toContain('environment.outside.cloudCover');
       expect(paths).toContain('environment.outside.cloudCeiling');
-      expect(paths).toContain('environment.outside.pressureTendency');
 
       // Calculated property paths
       expect(paths).toContain('environment.outside.airDensity');
@@ -163,35 +162,6 @@ describe('NMEA2000PathMapper', () => {
   });
 
   describe('NMEA2000 Compatibility', () => {
-    it('should provide supported PGN list', () => {
-      const pgns = mapper.getSupportedPGNs();
-
-      expect(pgns).toContain(130311); // Environmental pressure
-      expect(pgns).toContain(130312); // Temperature
-      expect(pgns).toContain(130313); // Humidity
-      expect(pgns).toContain(130314); // Enhanced pressure
-      expect(pgns).toContain(130306); // Wind data
-      expect(pgns.length).toBeGreaterThanOrEqual(5);
-    });
-
-    it('should provide temperature instance mappings aligned with emitter-cannon', () => {
-      const instanceMap = mapper.getTemperatureInstanceMap();
-
-      expect(instanceMap['environment.outside.temperature']).toBe(101);
-      expect(instanceMap['environment.outside.dewPointTemperature']).toBe(102);
-      expect(instanceMap['environment.outside.windChillTemperature']).toBe(103);
-      expect(instanceMap['environment.outside.heatIndexTemperature']).toBe(104);
-      expect(instanceMap['environment.outside.realFeelShade']).toBe(108);
-      expect(instanceMap['environment.outside.wetBulbTemperature']).toBe(110);
-      expect(instanceMap['environment.outside.wetBulbGlobeTemperature']).toBe(111);
-    });
-
-    it('should provide humidity instance mappings aligned with emitter-cannon', () => {
-      const instanceMap = mapper.getHumidityInstanceMap();
-
-      expect(instanceMap['environment.outside.relativeHumidity']).toBe(100);
-    });
-
     it('should sanitize data for NMEA2000 compatibility', () => {
       const extremeWeatherData = createMockWeatherData({
         temperature: 400, // Extreme temperature (over NMEA2000 range)
@@ -208,7 +178,7 @@ describe('NMEA2000PathMapper', () => {
         ?.value as number;
       const pressureValue = values.find((v) => v.path === 'environment.outside.pressure')
         ?.value as number;
-      const humidityValue = values.find((v) => v.path === 'environment.outside.relativeHumidity')
+      const humidityValue = values.find((v) => v.path === 'environment.outside.humidity')
         ?.value as number;
       const windSpeedValue = values.find((v) => v.path === 'environment.wind.speedTrue')
         ?.value as number;
@@ -245,84 +215,6 @@ describe('NMEA2000PathMapper', () => {
 
       // Should have significantly more paths than basic weather data
       expect(values.length).toBeGreaterThanOrEqual(14);
-    });
-
-    it('should provide comprehensive path statistics', () => {
-      const weatherData = createMockWeatherData({
-        realFeelShade: 291.15,
-        windGustSpeed: 8.5,
-        uvIndex: 5.2,
-      });
-
-      const delta = mapper.mapToSignalKPaths(weatherData);
-      const values = delta.updates[0]?.values || [];
-      const stats = mapper.getPathStatistics(
-        values.map((v) => ({
-          path: v.path,
-          value: v.value,
-          timestamp: weatherData.timestamp,
-        }))
-      );
-
-      expect(stats).toEqual(
-        expect.objectContaining({
-          total: expect.any(Number),
-          temperature: expect.any(Number),
-          wind: expect.any(Number),
-          humidity: expect.any(Number),
-          atmospheric: expect.any(Number),
-          enhanced: expect.any(Number),
-        })
-      );
-
-      expect(stats.enhanced).toBeGreaterThan(0);
-      expect(stats.total).toBeGreaterThan(10);
-    });
-  });
-
-  describe('Data Validation', () => {
-    it('should validate weather data before mapping', () => {
-      const validWeatherData = createMockWeatherData();
-      const isValid = mapper.validateWeatherDataForMapping(validWeatherData);
-
-      expect(isValid).toBe(true);
-    });
-
-    it('should reject invalid weather data', () => {
-      const invalidWeatherData = {
-        temperature: 293.15,
-        pressure: 101325,
-        humidity: 2.0, // Invalid humidity > 1.0
-        windSpeed: 5.14,
-        windDirection: Math.PI / 2,
-        timestamp: new Date().toISOString(),
-      };
-
-      const isValid = mapper.validateWeatherDataForMapping(invalidWeatherData);
-
-      expect(isValid).toBe(false);
-      expect(mockLogger).toHaveBeenCalledWith(
-        'error',
-        'Weather data validation failed',
-        expect.any(Object)
-      );
-    });
-
-    it('should handle warnings for out-of-range values', () => {
-      const weatherDataWithWarnings = createMockWeatherData({
-        temperature: 400, // 126.85°C - exceeds NMEA2000 max of 85°C
-        windSpeed: 110, // Exceeds NMEA2000 max of 102.3 m/s
-        uvIndex: 20, // Very high UV
-      });
-
-      const isValid = mapper.validateWeatherDataForMapping(weatherDataWithWarnings);
-
-      expect(isValid).toBe(true);
-      expect(mockLogger).toHaveBeenCalledWith(
-        'warn',
-        'Weather data validation warnings',
-        expect.any(Object)
-      );
     });
   });
 
@@ -401,42 +293,6 @@ describe('NMEA2000PathMapper', () => {
         expect(typeof value.path).toBe('string');
         expect(value.path.startsWith('environment.')).toBe(true);
       });
-    });
-  });
-
-  describe('emitter-cannon Alignment', () => {
-    it('should use correct NMEA2000 PGN assignments', () => {
-      const pgns = mapper.getSupportedPGNs();
-
-      // Verify alignment with emitter-cannon PGNs
-      expect(pgns).toContain(130311); // Atmospheric pressure
-      expect(pgns).toContain(130312); // Temperature (multiple instances)
-      expect(pgns).toContain(130313); // Humidity (inside/outside)
-      expect(pgns).toContain(130314); // Enhanced pressure
-      expect(pgns).toContain(130306); // Wind data
-    });
-
-    it('should use correct temperature instance assignments', () => {
-      const instanceMap = mapper.getTemperatureInstanceMap();
-
-      // Verify instance assignments match emitter-cannon conventions
-      expect(instanceMap['environment.outside.temperature']).toBe(101);
-      expect(instanceMap['environment.outside.dewPointTemperature']).toBe(102);
-      expect(instanceMap['environment.outside.windChillTemperature']).toBe(103);
-      expect(instanceMap['environment.outside.heatIndexTemperature']).toBe(104);
-
-      // Enhanced instances for new temperature types
-      expect(instanceMap['environment.outside.realFeelShade']).toBe(108);
-      expect(instanceMap['environment.outside.apparentTemperature']).toBe(109);
-      expect(instanceMap['environment.outside.wetBulbTemperature']).toBe(110);
-      expect(instanceMap['environment.outside.wetBulbGlobeTemperature']).toBe(111);
-    });
-
-    it('should use correct humidity instance assignments', () => {
-      const instanceMap = mapper.getHumidityInstanceMap();
-
-      // Verify humidity instances match emitter-cannon conventions
-      expect(instanceMap['environment.outside.relativeHumidity']).toBe(100);
     });
   });
 

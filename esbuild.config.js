@@ -18,7 +18,7 @@ const config = {
   treeShaking: true,
   splitting: false,
   metafile: true,
-  legalComments: 'inline',
+  legalComments: 'none',
 
   // External dependencies - don't bundle these
   external: [

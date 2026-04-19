@@ -24,6 +24,25 @@ import {
   calculateAirDensity,
   calculateBeaufortScale,
 } from '../utils/conversions.js';
+import { validateAccuWeatherResponse } from '../utils/validation.js';
+
+/** Maximum allowed response body size in bytes (1 MiB) */
+const MAX_RESPONSE_BYTES = 1_048_576;
+
+/** Validation pattern for AccuWeather location keys (URL path segment). */
+const LOCATION_KEY_PATTERN = /^[a-zA-Z0-9_-]+$/;
+
+/**
+ * Lowercased retryable error code substrings — computed once at module load
+ * so isRetryableError doesn't recompute on every retry classification.
+ */
+const RETRYABLE_ERROR_SUBSTRINGS: ReadonlySet<string> = new Set([
+  ERROR_CODES.NETWORK.API_RATE_LIMIT.toLowerCase(),
+  ERROR_CODES.NETWORK.NETWORK_ERROR.toLowerCase(),
+  'timeout',
+  'econnreset',
+  'enotfound',
+]);
 
 /**
  * AccuWeather API client for weather data operations
@@ -353,9 +372,16 @@ export class AccuWeatherService {
 
     const response = await this.makeApiRequest<AccuWeatherLocation>(url);
 
-    if (!response.data) {
+    if (!response.data || typeof response.data !== 'object') {
       throw new Error(
         `${ERROR_CODES.DATA.INVALID_WEATHER_DATA}: No location found for coordinates`
+      );
+    }
+
+    const locationKey = (response.data as { Key?: unknown }).Key;
+    if (typeof locationKey !== 'string' || !LOCATION_KEY_PATTERN.test(locationKey)) {
+      throw new Error(
+        `${ERROR_CODES.NETWORK.API_INVALID_RESPONSE}: AccuWeather location key has unexpected format`
       );
     }
 
@@ -367,6 +393,14 @@ export class AccuWeatherService {
    * @private
    */
   private async getCurrentConditions(locationKey: string): Promise<AccuWeatherCurrentConditions[]> {
+    if (!LOCATION_KEY_PATTERN.test(locationKey)) {
+      // Defense-in-depth: searchLocation already validates, but the cache could
+      // theoretically be poisoned if its invariants ever drift.
+      throw new Error(
+        `${ERROR_CODES.NETWORK.API_INVALID_RESPONSE}: refusing to use malformed location key in URL path`
+      );
+    }
+
     const url = new URL(
       `${ACCUWEATHER.BASE_URL}${ACCUWEATHER.ENDPOINTS.CURRENT_CONDITIONS}/${locationKey}`
     );
@@ -379,6 +413,13 @@ export class AccuWeatherService {
     if (!response.data || !Array.isArray(response.data) || response.data.length === 0) {
       throw new Error(
         `${ERROR_CODES.DATA.INVALID_WEATHER_DATA}: No current conditions data available`
+      );
+    }
+
+    const validation = validateAccuWeatherResponse(response.data);
+    if (!validation.isValid) {
+      throw new Error(
+        `${ERROR_CODES.NETWORK.API_INVALID_RESPONSE}: AccuWeather response failed validation - ${validation.errors.join('; ')}`
       );
     }
 
@@ -415,7 +456,7 @@ export class AccuWeatherService {
         await this.handleApiError(response, attempt);
       }
 
-      const data = (await response.json()) as T;
+      const data = await this.readBoundedJson<T>(response);
 
       return {
         data,
@@ -439,15 +480,56 @@ export class AccuWeatherService {
       }
 
       if (attempt < this.config.retryAttempts && this.isRetryableError(error)) {
+        const retryAfterMs = (error as { retryAfterMs?: number | null }).retryAfterMs;
+        const delayMs = retryAfterMs ?? this.config.retryDelay * attempt;
         this.logger('warn', 'Retryable error, attempting retry', {
           attempt,
+          delayMs,
+          honoredRetryAfter: retryAfterMs != null,
           error: error instanceof Error ? error.message : String(error),
         });
-        await this.delay(this.config.retryDelay * attempt);
+        await this.delay(delayMs);
         return this.makeApiRequest<T>(url, attempt + 1);
       }
 
       throw error;
+    }
+  }
+
+  /**
+   * Read a Response body as JSON with a maximum byte cap.
+   * Prevents a malicious or runaway upstream from forcing us to buffer huge
+   * payloads in memory before the JSON parser ever sees them.
+   * @private
+   */
+  private async readBoundedJson<T>(response: Response): Promise<T> {
+    const contentLength = response.headers.get('content-length');
+    if (contentLength !== null) {
+      const declared = Number.parseInt(contentLength, 10);
+      if (Number.isFinite(declared) && declared > MAX_RESPONSE_BYTES) {
+        throw new Error(
+          `${ERROR_CODES.NETWORK.RESPONSE_TOO_LARGE}: AccuWeather response is ${declared} bytes (max ${MAX_RESPONSE_BYTES})`
+        );
+      }
+    }
+
+    // Always read as text with a length check — Content-Length may be missing
+    // (chunked encoding) or lie about the body size.
+    const text = await response.text();
+    if (text.length > MAX_RESPONSE_BYTES) {
+      throw new Error(
+        `${ERROR_CODES.NETWORK.RESPONSE_TOO_LARGE}: AccuWeather response is ${text.length} bytes (max ${MAX_RESPONSE_BYTES})`
+      );
+    }
+
+    try {
+      return JSON.parse(text) as T;
+    } catch (error) {
+      throw new Error(
+        `${ERROR_CODES.NETWORK.API_INVALID_RESPONSE}: failed to parse AccuWeather response as JSON - ${
+          error instanceof Error ? error.message : String(error)
+        }`
+      );
     }
   }
 
@@ -478,8 +560,10 @@ export class AccuWeatherService {
   }
 
   /**
-   * Handle API error responses
-   * Respects Retry-After header when present for rate limiting
+   * Handle API error responses by classifying the status and throwing a
+   * tagged error. Backoff is owned by the caller (`makeApiRequest`'s retry
+   * loop) so this method must not sleep — sleeping here previously caused
+   * 2× backoff per retry attempt.
    * @private
    */
   private async handleApiError(response: Response, attempt: number): Promise<never> {
@@ -505,32 +589,30 @@ export class AccuWeatherService {
           `${ERROR_CODES.DATA.INVALID_WEATHER_DATA}: Location not found - ${message}`
         );
       case 429:
-        // Rate limited - use Retry-After header or exponential backoff
         if (attempt < this.config.retryAttempts) {
-          const delayMs = retryAfterMs || this.config.retryDelay * 2 ** (attempt - 1);
-          this.logger('warn', 'Rate limited by API, waiting before retry', {
+          this.logger('warn', 'Rate limited by API, will retry', {
             attempt,
-            delayMs,
+            retryAfterMs,
             retryAfterHeader: !!retryAfterMs,
           });
-          await this.delay(delayMs);
-          throw new Error(
-            `${ERROR_CODES.NETWORK.API_RATE_LIMIT}: Rate limited, retrying - ${message}`
+          throw Object.assign(
+            new Error(`${ERROR_CODES.NETWORK.API_RATE_LIMIT}: Rate limited, retrying - ${message}`),
+            { retryAfterMs }
           );
         }
         throw new Error(`${ERROR_CODES.NETWORK.API_RATE_LIMIT}: Rate limit exceeded - ${message}`);
       case 503:
         if (attempt < this.config.retryAttempts) {
-          // Service temporarily unavailable - use Retry-After or exponential backoff
-          const delayMs = retryAfterMs || this.config.retryDelay * 2 ** (attempt - 1);
-          this.logger('warn', 'Service unavailable, waiting before retry', {
+          this.logger('warn', 'Service unavailable, will retry', {
             attempt,
-            delayMs,
+            retryAfterMs,
             retryAfterHeader: !!retryAfterMs,
           });
-          await this.delay(delayMs);
-          throw new Error(
-            `${ERROR_CODES.NETWORK.NETWORK_ERROR}: Service temporarily unavailable, retrying - ${message}`
+          throw Object.assign(
+            new Error(
+              `${ERROR_CODES.NETWORK.NETWORK_ERROR}: Service temporarily unavailable, retrying - ${message}`
+            ),
+            { retryAfterMs }
           );
         }
         throw new Error(`${ERROR_CODES.NETWORK.NETWORK_ERROR}: Service unavailable - ${message}`);
@@ -656,15 +738,10 @@ export class AccuWeatherService {
   private isRetryableError(error: unknown): boolean {
     if (error instanceof Error) {
       const message = error.message.toLowerCase();
-      // Match on the error codes handleApiError emits for transient failures,
-      // plus common network-layer error names
-      return (
-        message.includes(ERROR_CODES.NETWORK.API_RATE_LIMIT.toLowerCase()) ||
-        message.includes(ERROR_CODES.NETWORK.NETWORK_ERROR.toLowerCase()) ||
-        message.includes('timeout') ||
-        message.includes('econnreset') ||
-        message.includes('enotfound')
-      );
+      // Module-level Set avoids recomputing toLowerCase() on every retry decision.
+      for (const needle of RETRYABLE_ERROR_SUBSTRINGS) {
+        if (message.includes(needle)) return true;
+      }
     }
     return false;
   }

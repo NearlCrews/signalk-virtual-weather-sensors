@@ -116,7 +116,7 @@ export class WindCalculator {
   public calculateWindChill(temperatureK: number, windSpeedMs: number): number {
     if (!Number.isFinite(temperatureK) || !Number.isFinite(windSpeedMs)) {
       this.logger('warn', 'Invalid wind chill inputs', { temperatureK, windSpeedMs });
-      return 0;
+      return temperatureK || 0;
     }
 
     const tempC = temperatureK - UNITS.TEMPERATURE.CELSIUS_TO_KELVIN;
@@ -313,7 +313,9 @@ export class WindCalculator {
       'NW',
       'NNW',
     ];
-    const index = Math.round(degrees / 22.5) % 16;
+    // Normalize for negative degrees (e.g. port-tack apparent wind angles).
+    // Plain `% 16` returns negative values which would index out of the array.
+    const index = ((Math.round(degrees / 22.5) % 16) + 16) % 16;
     return compassDirections[index] || 'N';
   }
 

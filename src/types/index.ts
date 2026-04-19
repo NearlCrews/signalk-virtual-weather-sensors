@@ -179,7 +179,6 @@ export interface NMEA2000Message {
 export interface SignalKDelta {
   readonly context: string;
   readonly updates: ReadonlyArray<{
-    readonly source?: SignalKSource;
     readonly timestamp: string;
     readonly values: ReadonlyArray<{
       readonly path: string;
@@ -187,32 +186,6 @@ export interface SignalKDelta {
     }>;
   }>;
 }
-
-/**
- * Signal K data source identifier
- */
-export interface SignalKSource {
-  readonly label: string;
-  readonly type: string;
-  readonly bus?: string;
-  readonly src?: string;
-}
-
-/**
- * Signal K path mapping for environment data
- * Maps weather measurements to standardized Signal K paths
- */
-export type SignalKPath =
-  | `environment.outside.temperature`
-  | `environment.outside.pressure`
-  | `environment.outside.humidity`
-  | `environment.outside.dewPoint`
-  | `environment.outside.heatIndexTemperature`
-  | `environment.outside.windChillTemperature`
-  | `environment.wind.speedTrue`
-  | `environment.wind.angleTrue`
-  | `environment.wind.speedApparent`
-  | `environment.wind.angleApparent`;
 
 // ===============================
 // Utility & Helper Types
@@ -486,11 +459,11 @@ export interface AccuWeatherLocation {
  */
 export function isCompleteWeatherData(data: Partial<WeatherData>): data is WeatherData {
   return !!(
-    data.temperature !== undefined &&
-    data.pressure !== undefined &&
-    data.humidity !== undefined &&
-    data.windSpeed !== undefined &&
-    data.windDirection !== undefined &&
+    Number.isFinite(data.temperature) &&
+    Number.isFinite(data.pressure) &&
+    Number.isFinite(data.humidity) &&
+    Number.isFinite(data.windSpeed) &&
+    Number.isFinite(data.windDirection) &&
     data.timestamp
   );
 }
@@ -503,8 +476,8 @@ export function isCompleteNavigationData(
 ): data is Required<Pick<VesselNavigationData, 'speedOverGround' | 'courseOverGroundTrue'>> &
   VesselNavigationData {
   return !!(
-    data.speedOverGround !== undefined &&
-    data.courseOverGroundTrue !== undefined &&
+    Number.isFinite(data.speedOverGround) &&
+    Number.isFinite(data.courseOverGroundTrue) &&
     data.isComplete === true
   );
 }

@@ -6,11 +6,17 @@
  * Uses official @signalk/server-api types for maximum compatibility
  */
 
-import type { Plugin, ServerAPI } from '@signalk/server-api';
+import type { Delta, Plugin, ServerAPI } from '@signalk/server-api';
 import { DEFAULT_CONFIG, ERROR_CODES, PLUGIN } from './constants/index.js';
 import { NMEA2000PathMapper } from './mappers/NMEA2000PathMapper.js';
 import { WeatherService } from './services/WeatherService.js';
-import type { Logger, PluginConfiguration, PluginState } from './types/index.js';
+import type {
+  Logger,
+  LogLevel,
+  PluginConfiguration,
+  PluginState,
+  WeatherData,
+} from './types/index.js';
 import { ConfigurationValidator } from './utils/validation.js';
 
 /**
@@ -24,8 +30,8 @@ interface PluginInstance {
   startTime: Date | null;
   logger: Logger;
   /** Cached delta to avoid rebuilding on every emission tick */
-  cachedDelta: ReturnType<NMEA2000PathMapper['mapToSignalKPaths']> | null;
-  cachedWeatherDataRef: unknown;
+  cachedDelta: Delta | null;
+  cachedWeatherDataRef: WeatherData | null;
 }
 
 /**
@@ -121,12 +127,15 @@ export default function createPlugin(app: ServerAPI): Plugin {
      */
     schema: () => ({
       type: 'object',
+      title: 'Virtual Weather Sensors',
+      description: 'AccuWeather → Signal K with NMEA2000-compatible environmental measurements.',
       properties: {
         accuWeatherApiKey: {
           type: 'string',
           title: 'AccuWeather API Key',
           description: 'Get your API key at https://developer.accuweather.com/',
           default: '',
+          minLength: 20,
         },
         updateFrequency: {
           type: 'number',
@@ -163,22 +172,6 @@ export default function createPlugin(app: ServerAPI): Plugin {
         'ui:widget': 'updown',
       },
     }),
-
-    /**
-     * Returns a status message for the plugin
-     * Implements Plugin.statusMessage from @signalk/server-api
-     */
-    statusMessage: (): string | undefined => {
-      if (!instance.weatherService) {
-        return 'Weather service not initialized';
-      }
-
-      const status = instance.weatherService.getServiceStatus();
-      if (status.hasWeatherData) {
-        return `Running - ${ENHANCED_FIELD_COUNT} data points, ${status.updateCount} updates`;
-      }
-      return `Waiting for weather data...`;
-    },
   };
 
   return plugin;
@@ -301,25 +294,11 @@ function setupEnhancedEmissionSystem(
   app: ServerAPI
 ): void {
   const emissionInterval = config.emissionInterval * 1000; // Convert seconds to milliseconds
+  const maxStalenessMs = 2 * config.updateFrequency * 60_000;
 
-  // Setup interval-based emission (NMEA2000 compatibility)
   instance.emissionTimer = setInterval(() => {
     try {
-      const weatherData = instance.weatherService?.getCurrentWeatherData();
-      if (weatherData && instance.pathMapper) {
-        // Only rebuild delta when weather data changes (reference comparison)
-        if (weatherData !== instance.cachedWeatherDataRef) {
-          instance.cachedDelta = instance.pathMapper.mapToSignalKPaths(weatherData);
-          instance.cachedWeatherDataRef = weatherData;
-        }
-
-        if (instance.cachedDelta) {
-          app.handleMessage(
-            PLUGIN.NAME,
-            instance.cachedDelta as Parameters<ServerAPI['handleMessage']>[1]
-          );
-        }
-      }
+      emitWeatherTick(instance, app, maxStalenessMs);
     } catch (error) {
       instance.logger('error', 'Error in emission timer', {
         error: error instanceof Error ? error.message : String(error),
@@ -330,6 +309,67 @@ function setupEnhancedEmissionSystem(
   instance.logger('info', 'Emission system configured', {
     intervalSeconds: config.emissionInterval,
   });
+}
+
+/**
+ * Single emission tick: refreshes the cached delta when weather data has
+ * changed, rewrites the timestamp so consumers see the actual emission time
+ * (not the cached observation time), and skips emission entirely when upstream
+ * data has gone stale beyond `maxStalenessMs`.
+ * @private
+ */
+function emitWeatherTick(instance: PluginInstance, app: ServerAPI, maxStalenessMs: number): void {
+  const weatherData = instance.weatherService?.getCurrentWeatherData();
+  if (!weatherData || !instance.pathMapper) {
+    return;
+  }
+
+  const lastUpdate = instance.weatherService?.getServiceStatus().lastUpdate;
+  if (lastUpdate && Date.now() - lastUpdate.getTime() > maxStalenessMs) {
+    const minutesAgo = Math.round((Date.now() - lastUpdate.getTime()) / 60_000);
+    if (app.setPluginError) {
+      app.setPluginError(`Weather data stale: last update ${minutesAgo} minutes ago`);
+    }
+    return;
+  }
+
+  // Only rebuild delta when weather data changes (reference comparison).
+  // TODO: NMEA2000PathMapper returns a custom SignalKDelta whose plain string
+  // fields don't satisfy the branded Path/Context/Timestamp types in
+  // @signalk/server-api. Aligning the mapper to return Delta directly would
+  // let us drop this cast.
+  if (weatherData !== instance.cachedWeatherDataRef) {
+    instance.cachedDelta = instance.pathMapper.mapToSignalKPaths(weatherData) as unknown as Delta;
+    instance.cachedWeatherDataRef = weatherData;
+  }
+
+  if (!instance.cachedDelta) {
+    return;
+  }
+
+  app.handleMessage(PLUGIN.NAME, withEmissionTimestamp(instance.cachedDelta));
+}
+
+/**
+ * Returns a delta clone whose first update carries the current wall-clock
+ * timestamp, leaving the cached value structure untouched for reuse.
+ * @private
+ */
+function withEmissionTimestamp(cached: Delta): Delta {
+  const [firstUpdate, ...restUpdates] = cached.updates;
+  if (!firstUpdate) {
+    return cached;
+  }
+  return {
+    ...cached,
+    updates: [
+      {
+        ...firstUpdate,
+        timestamp: new Date().toISOString() as unknown as NonNullable<typeof firstUpdate.timestamp>,
+      },
+      ...restUpdates,
+    ],
+  };
 }
 
 /**
@@ -373,8 +413,7 @@ function validateAndNormalizeSettings(settings: unknown, logger: Logger): Plugin
 
   const rawSettings = settings as Record<string, unknown>;
 
-  // Create mutable configuration object
-  const configBuilder: Record<string, unknown> = {
+  const partialConfig: Partial<PluginConfiguration> = {
     accuWeatherApiKey:
       typeof rawSettings.accuWeatherApiKey === 'string' ? rawSettings.accuWeatherApiKey : '',
     updateFrequency:
@@ -386,8 +425,6 @@ function validateAndNormalizeSettings(settings: unknown, logger: Logger): Plugin
         ? rawSettings.emissionInterval
         : DEFAULT_CONFIG.EMISSION_INTERVAL,
   };
-
-  const partialConfig = configBuilder as Partial<PluginConfiguration>;
 
   // Validate configuration
   const validation = ConfigurationValidator.validateConfiguration(partialConfig);
@@ -422,29 +459,36 @@ function validateAndNormalizeSettings(settings: unknown, logger: Logger): Plugin
  * Uses appropriate Signal K server logging methods for each level
  * @private
  */
-function createLogger(app: ServerAPI): Logger {
-  return (level, message, metadata) => {
-    const logMessage = `[${PLUGIN.NAME}] ${message}`;
-    // Only sanitize metadata for warn/error (may contain config with API keys)
-    // Skip for debug/info hot paths to avoid overhead
-    const shouldSanitize = (level === 'warn' || level === 'error') && metadata;
-    const finalMetadata = shouldSanitize ? sanitizeLogMetadata(metadata) : metadata;
-    const logMetadata = finalMetadata ? ` | ${JSON.stringify(finalMetadata)}` : '';
+const LOG_PREFIX: Record<LogLevel, string> = {
+  debug: '',
+  info: '[INFO] ',
+  warn: '[WARN] ',
+  error: '',
+};
 
-    switch (level) {
-      case 'debug':
-        app.debug(`${logMessage}${logMetadata}`);
-        break;
-      case 'info':
-        app.debug(`INFO: ${logMessage}${logMetadata}`);
-        break;
-      case 'warn':
-        app.debug(`WARN: ${logMessage}${logMetadata}`);
-        break;
-      case 'error':
-        app.debug(`ERROR: ${logMessage}${logMetadata}`);
-        break;
-    }
+function createLogger(app: ServerAPI): Logger {
+  const errorFn = typeof app.error === 'function' ? app.error.bind(app) : null;
+  // Routes warn/error to app.error when available, else falls back to app.debug
+  // with a level prefix so messages remain visible in production logs.
+  const levelEmit: Record<LogLevel, (line: string) => void> = {
+    debug: (line) => app.debug(line),
+    info: (line) => app.debug(line),
+    warn: errorFn ? (line) => errorFn(line) : (line) => app.debug(`[WARN] ${line}`),
+    error: errorFn ? (line) => errorFn(line) : (line) => app.debug(`[ERROR] ${line}`),
+  };
+
+  return (level, message, metadata) => {
+    const hasMetadata =
+      metadata !== undefined && metadata !== null && Object.keys(metadata).length > 0;
+    // Only sanitize metadata for warn/error (may contain config with API keys);
+    // skip for debug/info hot paths to avoid overhead.
+    const finalMetadata =
+      hasMetadata && (level === 'warn' || level === 'error')
+        ? sanitizeLogMetadata(metadata as Record<string, unknown>)
+        : metadata;
+    const logMetadata = hasMetadata ? ` | ${JSON.stringify(finalMetadata)}` : '';
+    const line = `${LOG_PREFIX[level]}[${PLUGIN.NAME}] ${message}${logMetadata}`;
+    levelEmit[level](line);
   };
 }
 

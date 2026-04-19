@@ -12,6 +12,25 @@ import { createMockAccuWeatherResponse } from '../setup.js';
 // Mock fetch globally
 global.fetch = vi.fn();
 
+/**
+ * Build a Fetch-API-shaped mock response with the headers + text() methods
+ * that AccuWeatherService.readBoundedJson() needs (in addition to .json()).
+ */
+const mockResponse = (
+  data: unknown,
+  init: { ok?: boolean; status?: number; statusText?: string } = {}
+) => {
+  const text = JSON.stringify(data);
+  return {
+    ok: init.ok ?? true,
+    status: init.status ?? 200,
+    statusText: init.statusText ?? 'OK',
+    headers: new Headers({ 'content-length': String(text.length) }),
+    text: () => Promise.resolve(text),
+    json: () => Promise.resolve(data),
+  };
+};
+
 describe('AccuWeatherService', () => {
   let service: AccuWeatherService;
   let mockLogger: ReturnType<typeof vi.fn>;
@@ -100,14 +119,8 @@ describe('AccuWeatherService', () => {
       });
 
       (global.fetch as Mock)
-        .mockResolvedValueOnce({
-          ok: true,
-          json: () => Promise.resolve(locationResponse),
-        })
-        .mockResolvedValueOnce({
-          ok: true,
-          json: () => Promise.resolve(conditionsResponse),
-        });
+        .mockResolvedValueOnce(mockResponse(locationResponse))
+        .mockResolvedValueOnce(mockResponse(conditionsResponse));
 
       const weatherData = await service.fetchCurrentWeather(testLocation);
 
@@ -200,25 +213,17 @@ describe('AccuWeatherService', () => {
 
       // Setup fresh mocks for first call
       (global.fetch as Mock)
-        .mockResolvedValueOnce({
-          ok: true,
-          json: () =>
-            Promise.resolve({
-              Key: '2628204',
-              LocalizedName: 'San Francisco',
-              Country: { ID: 'US', LocalizedName: 'United States' },
-              AdministrativeArea: { ID: 'CA', LocalizedName: 'California' },
-              GeoPosition: { Latitude: 37.7749, Longitude: -122.4194 },
-            }),
-        })
-        .mockResolvedValueOnce({
-          ok: true,
-          json: () => Promise.resolve(createMockAccuWeatherResponse()),
-        })
-        .mockResolvedValueOnce({
-          ok: true,
-          json: () => Promise.resolve(createMockAccuWeatherResponse()),
-        });
+        .mockResolvedValueOnce(
+          mockResponse({
+            Key: '2628204',
+            LocalizedName: 'San Francisco',
+            Country: { ID: 'US', LocalizedName: 'United States' },
+            AdministrativeArea: { ID: 'CA', LocalizedName: 'California' },
+            GeoPosition: { Latitude: 37.7749, Longitude: -122.4194 },
+          })
+        )
+        .mockResolvedValueOnce(mockResponse(createMockAccuWeatherResponse()))
+        .mockResolvedValueOnce(mockResponse(createMockAccuWeatherResponse()));
 
       // First call
       await service.fetchCurrentWeather(testLocation);
@@ -236,21 +241,16 @@ describe('AccuWeatherService', () => {
       vi.mocked(global.fetch).mockClear();
 
       (global.fetch as Mock)
-        .mockResolvedValueOnce({
-          ok: true,
-          json: () =>
-            Promise.resolve({
-              Key: '2628204',
-              LocalizedName: 'San Francisco',
-              Country: { ID: 'US', LocalizedName: 'United States' },
-              AdministrativeArea: { ID: 'CA', LocalizedName: 'California' },
-              GeoPosition: { Latitude: 37.7749, Longitude: -122.4194 },
-            }),
-        })
-        .mockResolvedValueOnce({
-          ok: true,
-          json: () => Promise.resolve(createMockAccuWeatherResponse()),
-        });
+        .mockResolvedValueOnce(
+          mockResponse({
+            Key: '2628204',
+            LocalizedName: 'San Francisco',
+            Country: { ID: 'US', LocalizedName: 'United States' },
+            AdministrativeArea: { ID: 'CA', LocalizedName: 'California' },
+            GeoPosition: { Latitude: 37.7749, Longitude: -122.4194 },
+          })
+        )
+        .mockResolvedValueOnce(mockResponse(createMockAccuWeatherResponse()));
 
       const weatherData = await service.fetchCurrentWeather(testLocation);
 
@@ -305,14 +305,8 @@ describe('AccuWeatherService', () => {
       vi.mocked(global.fetch).mockClear();
 
       (global.fetch as Mock)
-        .mockResolvedValueOnce({
-          ok: true,
-          json: () => Promise.resolve({ Key: 'test' }),
-        })
-        .mockResolvedValueOnce({
-          ok: true,
-          json: () => Promise.resolve([]), // Empty array
-        });
+        .mockResolvedValueOnce(mockResponse({ Key: 'test' }))
+        .mockResolvedValueOnce(mockResponse([])); // Empty array
 
       await expect(
         service.fetchCurrentWeather({ latitude: 0, longitude: 0, isValid: true })
@@ -327,18 +321,8 @@ describe('AccuWeatherService', () => {
       vi.mocked(global.fetch).mockClear();
 
       (global.fetch as Mock)
-        .mockResolvedValueOnce({
-          ok: true,
-          json: () =>
-            Promise.resolve({
-              Key: '2628204',
-              LocalizedName: 'San Francisco',
-            }),
-        })
-        .mockResolvedValueOnce({
-          ok: true,
-          json: () => Promise.resolve(createMockAccuWeatherResponse()),
-        });
+        .mockResolvedValueOnce(mockResponse({ Key: '2628204', LocalizedName: 'San Francisco' }))
+        .mockResolvedValueOnce(mockResponse(createMockAccuWeatherResponse()));
 
       const weatherData = await service.fetchCurrentWeather({
         latitude: 37.7749,
@@ -368,18 +352,8 @@ describe('AccuWeatherService', () => {
       vi.mocked(global.fetch).mockClear();
 
       (global.fetch as Mock)
-        .mockResolvedValueOnce({
-          ok: true,
-          json: () =>
-            Promise.resolve({
-              Key: '2628204',
-              LocalizedName: 'San Francisco',
-            }),
-        })
-        .mockResolvedValueOnce({
-          ok: true,
-          json: () => Promise.resolve(createMockAccuWeatherResponse()),
-        });
+        .mockResolvedValueOnce(mockResponse({ Key: '2628204', LocalizedName: 'San Francisco' }))
+        .mockResolvedValueOnce(mockResponse(createMockAccuWeatherResponse()));
 
       const weatherData = await service.fetchCurrentWeather({
         latitude: 37.7749,
@@ -410,18 +384,8 @@ describe('AccuWeatherService', () => {
       vi.mocked(global.fetch).mockClear();
 
       (global.fetch as Mock)
-        .mockResolvedValueOnce({
-          ok: true,
-          json: () =>
-            Promise.resolve({
-              Key: '2628204',
-              LocalizedName: 'San Francisco',
-            }),
-        })
-        .mockResolvedValueOnce({
-          ok: true,
-          json: () => Promise.resolve(createMockAccuWeatherResponse()),
-        });
+        .mockResolvedValueOnce(mockResponse({ Key: '2628204', LocalizedName: 'San Francisco' }))
+        .mockResolvedValueOnce(mockResponse(createMockAccuWeatherResponse()));
 
       const weatherData = await service.fetchCurrentWeather({
         latitude: 37.7749,
@@ -447,8 +411,8 @@ describe('AccuWeatherService', () => {
       });
 
       (global.fetch as Mock)
-        .mockResolvedValueOnce({ ok: true, json: () => Promise.resolve({ Key: 'test' }) })
-        .mockResolvedValueOnce({ ok: true, json: () => Promise.resolve(richResponse) });
+        .mockResolvedValueOnce(mockResponse({ Key: 'test' }))
+        .mockResolvedValueOnce(mockResponse(richResponse));
 
       const weatherData = await service.fetchCurrentWeather({
         latitude: 37.7749,

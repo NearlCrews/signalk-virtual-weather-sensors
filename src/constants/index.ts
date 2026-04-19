@@ -48,8 +48,32 @@ export const PGN = {
   /** Environmental Parameters - Temperature */
   ENVIRONMENTAL_TEMPERATURE: 130312,
 
+  /** Humidity */
+  HUMIDITY: 130313,
+
+  /** Actual Pressure (enhanced) */
+  ACTUAL_PRESSURE: 130314,
+
   /** Wind Data */
   WIND_DATA: 130306,
+} as const;
+
+/** NMEA2000 temperature instance assignments (aligned with emitter-cannon) */
+export const TEMPERATURE_INSTANCES = {
+  OUTSIDE: 101,
+  DEW_POINT: 102,
+  WIND_CHILL: 103,
+  HEAT_INDEX: 104,
+  REAL_FEEL_SHADE: 108,
+  APPARENT: 109,
+  WET_BULB: 110,
+  WET_BULB_GLOBE: 111,
+} as const;
+
+/** NMEA2000 humidity instance assignments (aligned with emitter-cannon) */
+export const HUMIDITY_INSTANCES = {
+  OUTSIDE: 100,
+  INSIDE: 101,
 } as const;
 
 /** NMEA2000 message priority levels */
@@ -260,6 +284,8 @@ export const ERROR_CODES = {
     API_RATE_LIMIT: 'API_RATE_LIMIT',
     API_UNAUTHORIZED: 'API_UNAUTHORIZED',
     API_FORBIDDEN: 'API_FORBIDDEN',
+    API_INVALID_RESPONSE: 'API_INVALID_RESPONSE',
+    RESPONSE_TOO_LARGE: 'RESPONSE_TOO_LARGE',
     NETWORK_ERROR: 'NETWORK_ERROR',
   },
 
@@ -273,26 +299,6 @@ export const ERROR_CODES = {
     PLUGIN_START_FAILED: 'PLUGIN_START_FAILED',
     PLUGIN_STOP_FAILED: 'PLUGIN_STOP_FAILED',
     MEMORY_LIMIT: 'MEMORY_LIMIT',
-  },
-} as const;
-
-/** Logging configuration */
-export const LOGGING = {
-  LEVELS: {
-    DEBUG: 0,
-    INFO: 1,
-    WARN: 2,
-    ERROR: 3,
-  },
-
-  MAX_LOG_SIZE: 10 * 1024 * 1024, // 10MB
-  MAX_LOG_FILES: 5,
-
-  STRUCTURED_FORMAT: {
-    TIMESTAMP: true,
-    LEVEL: true,
-    MESSAGE: true,
-    METADATA: true,
   },
 } as const;
 
@@ -371,19 +377,6 @@ export const PERFORMANCE = {
     MEMORY_CHECK: 300000, // 5 minutes
     CLEANUP: 3600000, // 1 hour
   },
-} as const;
-
-// ===============================
-// Feature Flags
-// ===============================
-
-/** Feature toggles for development and testing */
-export const FEATURE_FLAGS = {
-  ENABLE_METRICS_COLLECTION: true,
-  ENABLE_HEALTH_MONITORING: true,
-  ENABLE_PERFORMANCE_PROFILING: false,
-  ENABLE_DEBUG_EMISSION_LOGS: false,
-  ENABLE_WIND_CALCULATION_FALLBACK: true,
 } as const;
 
 // ===============================
