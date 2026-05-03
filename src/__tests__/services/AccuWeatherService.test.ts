@@ -202,7 +202,7 @@ describe('AccuWeatherService', () => {
       };
 
       await expect(service.fetchCurrentWeather(invalidLocation)).rejects.toThrow(
-        'Latitude must be between -90 and 90 degrees'
+        /INVALID_COORDINATES.*lat 91/
       );
     });
 

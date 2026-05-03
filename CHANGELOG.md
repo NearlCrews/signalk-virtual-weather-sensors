@@ -5,6 +5,80 @@ All notable changes to the signalk-virtual-weather-sensors project will be docum
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.3] - 2026-05-03
+
+12-agent code-review pass with no public-API changes. Findings spanned reuse, code quality, efficiency, security, reliability, and the test suite; everything actionable landed (including low-priority items).
+
+### Fixed -- correctness, reliability
+
+- **Apparent wind angle no longer emitted as absolute bearing when no heading is available.** `calculateApparentWindAngleFromHeading` previously returned the absolute true-wind direction (e.g. 3.14 rad = 180°) and emitted it under `environment.wind.angleApparent`, looking like a valid bow-relative angle to consumers. Now returns `null` and the path is omitted from the delta until heading is available.
+- **In-flight `updateWeatherData` no longer writes to torn-down state.** A `stop()` call during a fetch left the resolved promise to assign `currentWeatherData`/`lastUpdate` against a service whose timers had been cleared. Post-fetch assignments now early-return when state is no longer `running`/`starting`.
+- **`WindCalculator.normalizeAngle` is finite-safe.** Delegated to `normalizeAnglePiToPi` which guards `Number.isFinite`; previously a `NaN` input fell straight through into deltas.
+- **`isCompleteWeatherData` type guard now actually verifies completeness.** Added missing `dewPoint`/`windChill`/`heatIndex` checks; the guard previously asserted `WeatherData` for objects missing required fields.
+- **`VesselNavigationData.dataAge` units corrected** -- typed comment claimed milliseconds but `validateDataAge` compared against seconds.
+
+### Fixed -- Signal K spec / NMEA2000
+
+- **Stripped duplicate `SIGNALK_PATHS.ENVIRONMENT.OUTSIDE.DEW_POINT`** -- only `DEW_POINT_TEMPERATURE` ever reaches the bus; the orphan key was a maintenance trap.
+- **Removed `NMEA2000_DESTINATION.NULL` alias** -- was identical to `GLOBAL: 255` and would have silently diverged.
+- **Capped descriptive AccuWeather strings** (`WeatherText`, `PressureTendency.LocalizedText`, `LocalObservationDateTime`) and stripped control characters, in case future consumers log them.
+
+### Fixed -- security
+
+- **`EpochTime` validated with `Number.isFinite` in quality scoring** -- previously a `NaN`/`Infinity` value silently kept `quality = 1.0`.
+
+### Changed -- efficiency (Raspberry Pi-class hosts)
+
+- **O(1) angle normalization** in `normalizeAngle0To2Pi`/`normalizeAnglePiToPi` (and via them, `WindCalculator`) -- `while`-loop forms were O(N) for any value out of range or accumulated drift.
+- **Per-tick emission no longer spreads the cached delta** -- `withEmissionTimestamp` cloned the entire 24-field delta on every 5-second tick. Replaced with in-place timestamp mutation; the delta is private to the plugin instance.
+- **`Date.now()` captured once** in the staleness guard hot path.
+- **`WeatherService.getLastUpdate()`** added so the emission tick reads one field instead of constructing the full `WeatherServiceStatus` (which itself triggers `signalKService.getHealthStatus()`) every 5 seconds.
+- **Cached one-time computation hoisted in `WindCalculator.calculateWindChill`** -- `windKmh ** 0.16` was evaluated twice (`Math.pow` under the hood).
+- **Hoisted module-level constants:**
+  - `SENSITIVE_LOG_KEYS` (was rebuilt per warn/error log call)
+  - `EXCLUDED_SOURCE_LABELS` (SignalKService excluded-source check)
+  - `API_KEY_PLACEHOLDER_PATTERNS` (was 6 `RegExp` literals constructed per `validateApiKey` call)
+  - `ENHANCED_PATHS` Set in `NMEA2000PathMapper.countEnhancedFields` -- replaced O(N×M) substring scan with O(1) Set lookup, and the substring heuristic also missed/mismatched several real paths.
+
+### Changed -- reuse / consolidation
+
+- **`AccuWeatherService.transformWeatherData` now uses helpers** -- `celsiusToKelvin()` (8 sites), `percentageToRatio()` for humidity and cloud cover (adds defensive clamp), and `isValidCoordinates`/`isValidTemperature`/`isValidPressure`/`isValidHumidity`/`isValidWindSpeed` in the validators.
+- **`SignalKService` deduplicated** -- private `isValidGeoLocation`, `msToKnots`, `radToDegrees` removed in favour of the existing `conversions.ts` exports; `getVesselHeadingTrue`/`getVesselHeadingMagnetic` collapsed onto a shared `getHeading(path)` helper.
+- **`WindCalculator` angle helpers** delegate to the canonical `conversions.ts` functions instead of three separate while-loop implementations.
+- **`sanitizeForNMEA2000` and `validateNMEA2000Ranges`** read from new `NMEA2000_LIMITS` constants instead of inline `-40`/`85`/`80000`/`102.3` magic numbers in three places.
+- **`CourseOverGround` validator** uses `VALIDATION_LIMITS.WIND_DIRECTION.MAX` instead of inline `2 * Math.PI`.
+- **`WeatherService.updateWeatherData`** fetches navigation data once and reuses the position from it (removed the duplicate `getVesselPosition()` call per cycle).
+
+### Removed (dead code)
+
+- `NMEA2000_DESTINATION.NULL` (alias of `GLOBAL`).
+- `SIGNALK_PATHS.ENVIRONMENT.OUTSIDE.DEW_POINT` (duplicate of `DEW_POINT_TEMPERATURE`).
+- `ACCUWEATHER.API_VERSION` (orphan -- version embedded in endpoints).
+- `ConstantKeys` / `ConstantValues` / `ExtractSignalKPath` utility types (unused).
+- Empty `try/catch` swallowing branch in `calculateHeatStressIndex` (pure arithmetic, can't throw).
+- Module-level `ENHANCED_FIELD_COUNT` literal in `index.ts` -- moved to `PLUGIN.ENHANCED_FIELD_COUNT`.
+- Trivial `getWeatherPosition()` passthrough in `WeatherService`.
+- Stale "Check if error is retryable" JSDoc orphan in `AccuWeatherService`.
+- Dead `_warnings` parameter on `validateHumidityField`.
+
+### Added
+
+- `PLUGIN.STATUS` constants (`RUNNING`, `STOPPED`, `SERVICE_RUNNING`, `SERVICE_STOPPED`) -- replaces scattered string literals in `index.ts` and `WeatherService.ts`.
+- `PLUGIN.INITIAL_UPDATE_DELAY_MS` -- replaces the magic `5000` in the start-up timer.
+- `NMEA2000_LIMITS`, `UV_INDEX_LIMITS`, `VISIBILITY_LIMITS_M`, `BEAUFORT_LIMITS` -- single source of truth for spec ranges.
+- `ACCUWEATHER.MAX_DESCRIPTION_LENGTH` / `MAX_LABEL_LENGTH` for string capping.
+- `WeatherService.getLastUpdate()` (lightweight accessor for the emission tick).
+- `capString(value, max)` helper in `AccuWeatherService` (strips control chars + truncates).
+
+### Tests
+
+- Fixed brittle exact-string assertions on init log messages (now `expect.stringContaining('initialized')`).
+- Fixed humidity assertion that compared a 0-1 ratio against `≤100` (always passed; never caught regressions). Now asserts `≤1` per Signal K spec.
+- Replaced the misleading "concurrent mapping requests" test (was wrapping a synchronous call in `Promise.resolve`) with a real "no state leakage across calls" check that verifies distinct payloads round-trip.
+- Updated `validateLocation` error-message assertion to match the new (more informative) error text.
+
+All 241 tests pass; type-check clean; biome clean.
+
 ## [1.2.2] - 2026-04-19
 
 Audit-driven patch release: a 5-expert review pass caught a number of Signal K spec violations, security gaps, and correctness bugs. All findings landed; no public configuration changes.

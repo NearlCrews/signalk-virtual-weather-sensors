@@ -124,7 +124,7 @@ export interface VesselNavigationData {
   /** Indicates if all required fields are present for calculations */
   readonly isComplete: boolean;
 
-  /** Age of navigation data in milliseconds */
+  /** Age of navigation data in seconds */
   readonly dataAge?: number | undefined;
 }
 
@@ -464,6 +464,9 @@ export function isCompleteWeatherData(data: Partial<WeatherData>): data is Weath
     Number.isFinite(data.humidity) &&
     Number.isFinite(data.windSpeed) &&
     Number.isFinite(data.windDirection) &&
+    Number.isFinite(data.dewPoint) &&
+    Number.isFinite(data.windChill) &&
+    Number.isFinite(data.heatIndex) &&
     data.timestamp
   );
 }

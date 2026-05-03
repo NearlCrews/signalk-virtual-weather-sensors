@@ -5,7 +5,11 @@
 
 import { UNITS, VALIDATION_LIMITS } from '../constants/index.js';
 import type { Logger, WindCalculationResult } from '../types/index.js';
-import { calculateBeaufortScale as calculateBeaufortScaleUtil } from '../utils/conversions.js';
+import {
+  calculateBeaufortScale as calculateBeaufortScaleUtil,
+  normalizeAngle0To2Pi,
+  normalizeAnglePiToPi,
+} from '../utils/conversions.js';
 
 export class WindCalculator {
   private readonly logger: Logger;
@@ -127,8 +131,8 @@ export class WindCalculator {
       return temperatureK;
     }
 
-    const windChill =
-      13.12 + 0.6215 * tempC - 11.37 * windKmh ** 0.16 + 0.3965 * tempC * windKmh ** 0.16;
+    const windFactor = windKmh ** 0.16;
+    const windChill = 13.12 + 0.6215 * tempC + windFactor * (0.3965 * tempC - 11.37);
 
     const result = windChill + UNITS.TEMPERATURE.CELSIUS_TO_KELVIN;
 
@@ -222,10 +226,7 @@ export class WindCalculator {
    * @returns Wind direction as absolute heading in radians (0-2π)
    */
   public calculateWindDirectionHeading(vesselHeading: number, apparentWindAngle: number): number {
-    let windHeading = vesselHeading + apparentWindAngle;
-    while (windHeading > Math.PI * 2) windHeading -= Math.PI * 2;
-    while (windHeading < 0) windHeading += Math.PI * 2;
-    return windHeading;
+    return normalizeAngle0To2Pi(vesselHeading + apparentWindAngle);
   }
 
   /**
@@ -236,11 +237,7 @@ export class WindCalculator {
     if (!Number.isFinite(directionTrue) || !Number.isFinite(magneticVariation)) {
       return directionTrue;
     }
-
-    let directionMagnetic = directionTrue - magneticVariation;
-    while (directionMagnetic < 0) directionMagnetic += Math.PI * 2;
-    while (directionMagnetic > Math.PI * 2) directionMagnetic -= Math.PI * 2;
-    return directionMagnetic;
+    return normalizeAngle0To2Pi(directionTrue - magneticVariation);
   }
 
   public validateWindInputs(
@@ -266,10 +263,7 @@ export class WindCalculator {
   }
 
   public normalizeAngle(radians: number): number {
-    let angle = radians;
-    while (angle > Math.PI) angle -= 2 * Math.PI;
-    while (angle <= -Math.PI) angle += 2 * Math.PI;
-    return angle;
+    return normalizeAnglePiToPi(radians);
   }
 
   public convertWindSpeed(speedMs: number, targetUnit: 'kmh' | 'knots' | 'mph'): number {

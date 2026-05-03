@@ -21,10 +21,7 @@ describe('NMEA2000PathMapper', () => {
     it('should initialize with logger', () => {
       // Create new mapper to trigger logger call
       new NMEA2000PathMapper(mockLogger);
-      expect(mockLogger).toHaveBeenCalledWith(
-        'info',
-        'NMEA2000PathMapper initialized with enhanced emitter-cannon alignment'
-      );
+      expect(mockLogger).toHaveBeenCalledWith('info', expect.stringContaining('initialized'));
     });
 
     it('should work with default logger', () => {
@@ -185,7 +182,7 @@ describe('NMEA2000PathMapper', () => {
 
       expect(tempValue).toBeLessThanOrEqual(358.15); // 85°C max
       expect(pressureValue).toBeLessThanOrEqual(120000); // Reasonable atmospheric max
-      expect(humidityValue).toBeLessThanOrEqual(100); // Valid humidity percentage
+      expect(humidityValue).toBeLessThanOrEqual(1); // Signal K spec: humidity is a 0-1 ratio
       expect(windSpeedValue).toBeLessThanOrEqual(102.3); // NMEA2000 wind speed max
     });
   });
@@ -378,23 +375,22 @@ describe('NMEA2000PathMapper', () => {
       expect(duration).toBeLessThan(1000); // Should complete in < 1 second
     });
 
-    it('should handle concurrent mapping requests', async () => {
+    it('should handle repeated mapping calls without state leakage', () => {
       const weatherData1 = createMockWeatherData({ temperature: 293.15 });
       const weatherData2 = createMockWeatherData({ temperature: 298.15 });
       const weatherData3 = createMockWeatherData({ temperature: 288.15 });
 
-      const promises = [
-        Promise.resolve(mapper.mapToSignalKPaths(weatherData1)),
-        Promise.resolve(mapper.mapToSignalKPaths(weatherData2)),
-        Promise.resolve(mapper.mapToSignalKPaths(weatherData3)),
+      const results = [
+        mapper.mapToSignalKPaths(weatherData1),
+        mapper.mapToSignalKPaths(weatherData2),
+        mapper.mapToSignalKPaths(weatherData3),
       ];
 
-      const results = await Promise.all(promises);
-
       expect(results).toHaveLength(3);
-      results.forEach((delta) => {
-        expect(delta.updates[0]?.values.length).toBeGreaterThanOrEqual(8);
-      });
+      const tempPaths = results.map(
+        (d) => d.updates[0]?.values.find((v) => v.path === 'environment.outside.temperature')?.value
+      );
+      expect(tempPaths).toEqual([293.15, 298.15, 288.15]);
     });
   });
 });

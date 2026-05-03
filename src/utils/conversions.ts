@@ -1,11 +1,7 @@
-/**
- * Weather Unit Conversion Utilities
- * Modern TypeScript implementation of unit conversions and weather calculations
- * Consolidates conversion logic with comprehensive type safety and validation
- */
-
 import { UNITS, VALIDATION_LIMITS } from '../constants/index.js';
 import type { TemperatureUnit } from '../types/index.js';
+
+const TWO_PI = 2 * Math.PI;
 
 /**
  * Temperature conversion utilities
@@ -195,25 +191,22 @@ export function radiansToDegrees(radians: number): number {
 }
 
 /**
- * Normalize angle to 0-2π range
+ * Normalize angle to [0, 2π) range
  */
 export function normalizeAngle0To2Pi(radians: number): number {
   if (!Number.isFinite(radians)) return 0;
-  let angle = radians;
-  while (angle < 0) angle += 2 * Math.PI;
-  while (angle >= 2 * Math.PI) angle -= 2 * Math.PI;
-  return angle;
+  return ((radians % TWO_PI) + TWO_PI) % TWO_PI;
 }
 
 /**
- * Normalize angle to -π to π range
+ * Normalize angle to (-π, π] range
  */
 export function normalizeAnglePiToPi(radians: number): number {
   if (!Number.isFinite(radians)) return 0;
-  let angle = radians;
-  while (angle > Math.PI) angle -= 2 * Math.PI;
-  while (angle < -Math.PI) angle += 2 * Math.PI;
-  return angle;
+  const wrapped = (((radians + Math.PI) % TWO_PI) + TWO_PI) % TWO_PI;
+  // wrapped is in [0, 2π); shift to (-π, π]. Map exact 0 → π so behavior matches the
+  // legacy while-loop form which never returned -π.
+  return wrapped === 0 ? Math.PI : wrapped - Math.PI;
 }
 
 /**

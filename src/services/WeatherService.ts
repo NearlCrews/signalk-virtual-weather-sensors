@@ -6,9 +6,8 @@
 
 import type { ServerAPI } from '@signalk/server-api';
 import { WindCalculator } from '../calculators/WindCalculator.js';
-import { ERROR_CODES, PERFORMANCE } from '../constants/index.js';
+import { ERROR_CODES, PERFORMANCE, PLUGIN } from '../constants/index.js';
 import type {
-  GeoLocation,
   Logger,
   PluginConfiguration,
   PluginState,
@@ -124,13 +123,13 @@ export class WeatherService {
             error: error instanceof Error ? error.message : String(error),
           });
         });
-      }, 5000);
+      }, PLUGIN.INITIAL_UPDATE_DELAY_MS);
 
       this.state = 'running';
       this.logger('info', 'WeatherService started successfully');
 
       if (this.app.setPluginStatus) {
-        this.app.setPluginStatus('Weather service running');
+        this.app.setPluginStatus(PLUGIN.STATUS.SERVICE_RUNNING);
       }
     } catch (error) {
       this.state = 'error';
@@ -188,7 +187,7 @@ export class WeatherService {
       });
 
       if (this.app.setPluginStatus) {
-        this.app.setPluginStatus('Weather service stopped');
+        this.app.setPluginStatus(PLUGIN.STATUS.SERVICE_STOPPED);
       }
     } catch (error) {
       this.state = 'error';
@@ -207,6 +206,14 @@ export class WeatherService {
    */
   public getCurrentWeatherData(): WeatherData | null {
     return this.currentWeatherData;
+  }
+
+  /**
+   * Cheap accessor for the emission timer's stale-data check, so it doesn't
+   * have to construct the full WeatherServiceStatus on every tick.
+   */
+  public getLastUpdate(): Date | null {
+    return this.lastUpdate;
   }
 
   /**
@@ -326,22 +333,32 @@ export class WeatherService {
     try {
       this.logger('debug', 'Starting weather data update');
 
-      // Get position for weather lookup
-      const position = this.getWeatherPosition();
+      // Single navigation read also yields position — avoids fetching twice.
+      const vesselData = this.signalKService.getVesselNavigationData();
+      const position = vesselData.position
+        ? {
+            latitude: vesselData.position.latitude,
+            longitude: vesselData.position.longitude,
+            isValid: true,
+          }
+        : this.signalKService.getVesselPosition();
       if (!position) {
         throw new Error('No position available for weather data');
       }
 
-      // Fetch weather data from AccuWeather
       const weatherData = await this.accuWeatherService.fetchCurrentWeather(position);
 
-      // Get current vessel navigation data
-      const vesselData = this.signalKService.getVesselNavigationData();
-
-      // Calculate enhanced weather values
       const enhancedWeatherData = this.enhanceWeatherData(weatherData, vesselData);
 
-      // Update current data (emission handled by index.ts via NMEA2000PathMapper)
+      // Drop the result if stop() ran while the fetch was in flight; otherwise we'd
+      // resurrect state on a torn-down service and race a subsequent start().
+      if (this.state !== 'running' && this.state !== 'starting') {
+        this.logger('debug', 'Discarding weather update — service no longer running', {
+          state: this.state,
+        });
+        return;
+      }
+
       this.currentWeatherData = enhancedWeatherData;
       this.lastUpdate = new Date();
       this.updateCount++;
@@ -438,12 +455,10 @@ export class WeatherService {
     weatherData: WeatherData,
     vesselData: VesselNavigationData
   ): { apparentWindSpeed?: number; apparentWindAngle?: number } {
-    const speedOverGround = vesselData.speedOverGround;
-    const courseOverGroundTrue = vesselData.courseOverGroundTrue;
-
-    if (speedOverGround === undefined || courseOverGroundTrue === undefined) {
-      return this.calculateApparentWindFallback(weatherData, vesselData);
-    }
+    // Caller (calculateApparentWindData) only invokes this when vesselData.isComplete
+    // is true and both fields are truthy, so they're guaranteed defined here.
+    const speedOverGround = vesselData.speedOverGround as number;
+    const courseOverGroundTrue = vesselData.courseOverGroundTrue as number;
 
     try {
       const apparentWindSpeed = this.windCalculator.calculateApparentWindSpeed(
@@ -500,33 +515,26 @@ export class WeatherService {
       vesselData
     );
 
-    return { apparentWindSpeed, apparentWindAngle };
+    return apparentWindAngle === null
+      ? { apparentWindSpeed }
+      : { apparentWindSpeed, apparentWindAngle };
   }
 
   /**
-   * Calculate apparent wind angle from vessel heading
+   * Calculate apparent wind angle from vessel heading. Returns null when no heading
+   * is available — callers must omit the apparentWindAngle path entirely rather than
+   * emitting an absolute bearing as if it were a bow-relative angle.
    * @private
    */
   private calculateApparentWindAngleFromHeading(
     windDirection: number,
     vesselData: VesselNavigationData
-  ): number {
+  ): number | null {
     const vesselHeading = vesselData.headingTrue ?? vesselData.courseOverGroundTrue;
-
-    if (vesselHeading !== undefined && vesselHeading !== null) {
-      return this.windCalculator.normalizeAngle(windDirection - vesselHeading);
+    if (vesselHeading === undefined || vesselHeading === null) {
+      return null;
     }
-
-    // No heading available - use true wind direction as absolute angle
-    return windDirection;
-  }
-
-  /**
-   * Get position for weather data lookup
-   * @private
-   */
-  private getWeatherPosition(): GeoLocation | null {
-    return this.signalKService.getVesselPosition();
+    return this.windCalculator.normalizeAngle(windDirection - vesselHeading);
   }
 
   /**

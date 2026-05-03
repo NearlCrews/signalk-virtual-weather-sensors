@@ -5,8 +5,12 @@
  */
 
 import type { ServerAPI } from '@signalk/server-api';
-import { UNITS, VALIDATION_LIMITS } from '../constants/index.js';
+import { VALIDATION_LIMITS } from '../constants/index.js';
 import type { GeoLocation, Logger, PluginState, VesselNavigationData } from '../types/index.js';
+import { isValidCoordinates, msToKnots, radiansToDegrees } from '../utils/conversions.js';
+
+/** Source labels (lowercased) whose data we deliberately ignore to avoid feedback loops. */
+const EXCLUDED_SOURCE_LABELS: ReadonlyArray<string> = ['signalk-node-red', 'node-red'];
 
 /**
  * SignalK data value structure
@@ -146,21 +150,19 @@ export class SignalKService {
         return null;
       }
 
+      if (!isValidCoordinates(value.latitude, value.longitude)) {
+        this.logger('warn', 'Invalid position coordinates', {
+          latitude: value.latitude,
+          longitude: value.longitude,
+        });
+        return null;
+      }
+
       const position: GeoLocation = {
         latitude: value.latitude,
         longitude: value.longitude,
         isValid: true,
       };
-
-      // Validate coordinates
-      if (!this.isValidGeoLocation(position)) {
-        this.logger('warn', 'Invalid position coordinates', {
-          latitude: position.latitude,
-          longitude: position.longitude,
-          isValid: position.isValid,
-        });
-        return null;
-      }
 
       this.logger('debug', 'Retrieved vessel position', {
         latitude: position.latitude,
@@ -211,7 +213,7 @@ export class SignalKService {
 
       this.logger('debug', 'Retrieved vessel speed over ground', {
         speed,
-        speedKnots: this.msToKnots(speed).toFixed(1),
+        speedKnots: msToKnots(speed).toFixed(1),
         source: speedData.source?.label,
       });
 
@@ -259,14 +261,14 @@ export class SignalKService {
         if (!this.isValidCourse(course)) {
           this.logger('warn', `Invalid ${path} value`, {
             course,
-            courseDegrees: this.radToDegrees(course),
+            courseDegrees: radiansToDegrees(course),
           });
           continue;
         }
 
         this.logger('debug', `Retrieved vessel course from ${path}`, {
           course,
-          courseDegrees: this.radToDegrees(course).toFixed(1),
+          courseDegrees: radiansToDegrees(course).toFixed(1),
           source: courseData.source?.label,
         });
 
@@ -287,30 +289,7 @@ export class SignalKService {
    * @returns Heading in radians or null if not available
    */
   public getVesselHeadingTrue(): number | null {
-    try {
-      const headingData = this.app.getSelfPath('navigation.headingTrue');
-
-      if (!this.isValidSignalKData(headingData) || typeof headingData.value !== 'number') {
-        return null;
-      }
-
-      if (this.isExcludedSource(headingData)) {
-        return null;
-      }
-
-      const heading = headingData.value;
-
-      if (!this.isValidCourse(heading)) {
-        return null;
-      }
-
-      return heading;
-    } catch (error) {
-      this.logger('error', 'Error retrieving vessel heading true', {
-        error: error instanceof Error ? error.message : String(error),
-      });
-      return null;
-    }
+    return this.getHeading('navigation.headingTrue');
   }
 
   /**
@@ -318,26 +297,26 @@ export class SignalKService {
    * @returns Heading in radians or null if not available
    */
   public getVesselHeadingMagnetic(): number | null {
-    try {
-      const headingData = this.app.getSelfPath('navigation.headingMagnetic');
+    return this.getHeading('navigation.headingMagnetic');
+  }
 
+  /**
+   * Shared heading getter for true/magnetic. Validates source, type, and 0-2π range.
+   * @private
+   */
+  private getHeading(path: 'navigation.headingTrue' | 'navigation.headingMagnetic'): number | null {
+    try {
+      const headingData = this.app.getSelfPath(path);
       if (!this.isValidSignalKData(headingData) || typeof headingData.value !== 'number') {
         return null;
       }
-
       if (this.isExcludedSource(headingData)) {
         return null;
       }
-
       const heading = headingData.value;
-
-      if (!this.isValidCourse(heading)) {
-        return null;
-      }
-
-      return heading;
+      return this.isValidCourse(heading) ? heading : null;
     } catch (error) {
-      this.logger('error', 'Error retrieving vessel heading magnetic', {
+      this.logger('error', `Error retrieving ${path}`, {
         error: error instanceof Error ? error.message : String(error),
       });
       return null;
@@ -464,55 +443,31 @@ export class SignalKService {
   }
 
   /**
-   * Check if data source should be excluded (e.g., node-red sources)
+   * Check if data source should be excluded (e.g., node-red sources to avoid feedback loops).
+   * 'signalk-node-red' is a substring of 'node-red' is true, so a single check
+   * against 'node-red' covers both — the explicit list keeps intent obvious.
    * @private
    */
   private isExcludedSource(data: SignalKDataValue): boolean {
-    if (!data.source || !data.source.label) {
-      return false;
-    }
-
+    if (!data.source?.label) return false;
     const source = data.source.label.toLowerCase();
-    return source.includes('signalk-node-red') || source.includes('node-red');
+    for (const excluded of EXCLUDED_SOURCE_LABELS) {
+      if (source.includes(excluded)) return true;
+    }
+    return false;
   }
 
   /**
-   * Validate geographic coordinates
-   * @private
-   */
-  private isValidGeoLocation(location: GeoLocation): boolean {
-    return (
-      location.latitude >= VALIDATION_LIMITS.COORDINATES.LATITUDE.MIN &&
-      location.latitude <= VALIDATION_LIMITS.COORDINATES.LATITUDE.MAX &&
-      location.longitude >= VALIDATION_LIMITS.COORDINATES.LONGITUDE.MIN &&
-      location.longitude <= VALIDATION_LIMITS.COORDINATES.LONGITUDE.MAX
-    );
-  }
-
-  /**
-   * Validate course/heading value in radians
+   * Validate course/heading value in radians (0 to 2π)
    * @private
    */
   private isValidCourse(course: number): boolean {
     return (
-      typeof course === 'number' && !Number.isNaN(course) && course >= 0 && course <= 2 * Math.PI
+      typeof course === 'number' &&
+      !Number.isNaN(course) &&
+      course >= VALIDATION_LIMITS.WIND_DIRECTION.MIN &&
+      course <= VALIDATION_LIMITS.WIND_DIRECTION.MAX
     );
-  }
-
-  /**
-   * Convert speed from m/s to knots for logging
-   * @private
-   */
-  private msToKnots(speedMs: number): number {
-    return speedMs / UNITS.WIND_SPEED.KNOTS_TO_MS;
-  }
-
-  /**
-   * Convert course/heading from radians to degrees for logging
-   * @private
-   */
-  private radToDegrees(courseRad: number): number {
-    return courseRad * UNITS.ANGLE.RADIANS_TO_DEGREES;
   }
 
   /**

@@ -253,20 +253,36 @@ export class NMEA2000PathMapper {
   }
 
   private countEnhancedFields(values: PathValue[]): number {
-    const enhancedPaths = [
-      'realFeelShade',
-      'wetBulbTemperature',
-      'wetBulbGlobeTemperature',
-      'windGust',
-      'uvIndex',
-      'visibility',
-      'cloudCover',
-      'beaufortScale',
-      'absoluteHumidity',
-      'airDensity',
-      'heatStress',
-    ];
-
-    return values.filter((v) => enhancedPaths.some((enhanced) => v.path.includes(enhanced))).length;
+    let count = 0;
+    for (const v of values) {
+      if (ENHANCED_PATHS.has(v.path)) count++;
+    }
+    return count;
   }
 }
+
+/**
+ * Set of Signal K paths that count as "enhanced" fields (beyond the core
+ * temperature/pressure/humidity/wind set). Used by debug logging.
+ */
+const ENHANCED_PATHS: ReadonlySet<string> = new Set([
+  SIGNALK_PATHS.ENVIRONMENT.OUTSIDE.REAL_FEEL_SHADE,
+  SIGNALK_PATHS.ENVIRONMENT.OUTSIDE.WET_BULB_TEMPERATURE,
+  SIGNALK_PATHS.ENVIRONMENT.OUTSIDE.WET_BULB_GLOBE_TEMPERATURE,
+  SIGNALK_PATHS.ENVIRONMENT.OUTSIDE.APPARENT_TEMPERATURE,
+  SIGNALK_PATHS.ENVIRONMENT.OUTSIDE.UV_INDEX,
+  SIGNALK_PATHS.ENVIRONMENT.OUTSIDE.VISIBILITY,
+  SIGNALK_PATHS.ENVIRONMENT.OUTSIDE.CLOUD_COVER,
+  SIGNALK_PATHS.ENVIRONMENT.OUTSIDE.CLOUD_CEILING,
+  SIGNALK_PATHS.ENVIRONMENT.OUTSIDE.ABSOLUTE_HUMIDITY,
+  SIGNALK_PATHS.ENVIRONMENT.OUTSIDE.AIR_DENSITY,
+  SIGNALK_PATHS.ENVIRONMENT.OUTSIDE.HEAT_STRESS_INDEX,
+  SIGNALK_PATHS.ENVIRONMENT.OUTSIDE.TEMPERATURE_DEPARTURE_24H,
+  SIGNALK_PATHS.ENVIRONMENT.OUTSIDE.PRECIPITATION_LAST_HOUR,
+  SIGNALK_PATHS.ENVIRONMENT.OUTSIDE.PRECIPITATION_CURRENT,
+  SIGNALK_PATHS.ENVIRONMENT.WIND.SPEED_GUST,
+  SIGNALK_PATHS.ENVIRONMENT.WIND.GUST_FACTOR,
+  SIGNALK_PATHS.ENVIRONMENT.WIND.BEAUFORT_SCALE,
+  SIGNALK_PATHS.ENVIRONMENT.WIND.SPEED_APPARENT,
+  SIGNALK_PATHS.ENVIRONMENT.WIND.ANGLE_APPARENT,
+]);

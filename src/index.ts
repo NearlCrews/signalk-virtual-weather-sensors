@@ -101,7 +101,7 @@ export default function createPlugin(app: ServerAPI): Plugin {
         instance.startTime = null;
 
         if (app.setPluginStatus) {
-          app.setPluginStatus('SK to N2K Weather stopped');
+          app.setPluginStatus(PLUGIN.STATUS.STOPPED);
         }
 
         instance.logger('info', 'signalk-virtual-weather-sensors plugin stopped successfully', {
@@ -245,12 +245,12 @@ function finalizePluginStart(
 
   if (app.setPluginStatus) {
     app.setPluginStatus(
-      `SK to N2K Weather running - Enhanced with ${ENHANCED_FIELD_COUNT} data points`
+      `${PLUGIN.STATUS.RUNNING} - Enhanced with ${PLUGIN.ENHANCED_FIELD_COUNT} data points`
     );
   }
 
   instance.logger('info', 'signalk-virtual-weather-sensors plugin started successfully', {
-    enhancedFields: ENHANCED_FIELD_COUNT,
+    enhancedFields: PLUGIN.ENHANCED_FIELD_COUNT,
     emissionInterval: config.emissionInterval,
     updateFrequency: config.updateFrequency,
     hybridMode: true,
@@ -324,13 +324,17 @@ function emitWeatherTick(instance: PluginInstance, app: ServerAPI, maxStalenessM
     return;
   }
 
-  const lastUpdate = instance.weatherService?.getServiceStatus().lastUpdate;
-  if (lastUpdate && Date.now() - lastUpdate.getTime() > maxStalenessMs) {
-    const minutesAgo = Math.round((Date.now() - lastUpdate.getTime()) / 60_000);
-    if (app.setPluginError) {
-      app.setPluginError(`Weather data stale: last update ${minutesAgo} minutes ago`);
+  const lastUpdate = instance.weatherService?.getLastUpdate();
+  if (lastUpdate) {
+    const ageMs = Date.now() - lastUpdate.getTime();
+    if (ageMs > maxStalenessMs) {
+      if (app.setPluginError) {
+        app.setPluginError(
+          `Weather data stale: last update ${Math.round(ageMs / 60_000)} minutes ago`
+        );
+      }
+      return;
     }
-    return;
   }
 
   // Only rebuild delta when weather data changes (reference comparison).
@@ -347,29 +351,22 @@ function emitWeatherTick(instance: PluginInstance, app: ServerAPI, maxStalenessM
     return;
   }
 
-  app.handleMessage(PLUGIN.NAME, withEmissionTimestamp(instance.cachedDelta));
+  // Mutate the cached delta's first-update timestamp in place. The delta is private
+  // to this plugin instance and is rebuilt whenever weatherData changes, so mutation
+  // here doesn't surprise any other consumer — and avoids a 24-field spread per tick.
+  stampEmissionTimestamp(instance.cachedDelta);
+  app.handleMessage(PLUGIN.NAME, instance.cachedDelta);
 }
 
 /**
- * Returns a delta clone whose first update carries the current wall-clock
- * timestamp, leaving the cached value structure untouched for reuse.
+ * Sets the first update's timestamp to now in place. No-op if the delta has no updates.
  * @private
  */
-function withEmissionTimestamp(cached: Delta): Delta {
-  const [firstUpdate, ...restUpdates] = cached.updates;
-  if (!firstUpdate) {
-    return cached;
-  }
-  return {
-    ...cached,
-    updates: [
-      {
-        ...firstUpdate,
-        timestamp: new Date().toISOString() as unknown as NonNullable<typeof firstUpdate.timestamp>,
-      },
-      ...restUpdates,
-    ],
-  };
+function stampEmissionTimestamp(cached: Delta): void {
+  const firstUpdate = cached.updates[0];
+  if (!firstUpdate) return;
+  (firstUpdate as { timestamp: typeof firstUpdate.timestamp }).timestamp =
+    new Date().toISOString() as unknown as typeof firstUpdate.timestamp;
 }
 
 /**
@@ -492,31 +489,34 @@ function createLogger(app: ServerAPI): Logger {
   };
 }
 
+/** Substrings that flag a metadata key as sensitive and trigger redaction. */
+const SENSITIVE_LOG_KEYS: ReadonlyArray<string> = [
+  'apikey',
+  'api_key',
+  'accuweatherapikey',
+  'password',
+  'secret',
+  'token',
+];
+
 /**
  * Sanitize log metadata to remove sensitive information
  * @private
  */
 function sanitizeLogMetadata(metadata: Record<string, unknown>): Record<string, unknown> {
-  const sensitiveKeys = ['apikey', 'api_key', 'accuweatherapikey', 'password', 'secret', 'token'];
   const sanitized: Record<string, unknown> = {};
-
   for (const [key, value] of Object.entries(metadata)) {
     const lowerKey = key.toLowerCase();
-    if (sensitiveKeys.some((sensitive) => lowerKey.includes(sensitive))) {
+    if (SENSITIVE_LOG_KEYS.some((sensitive) => lowerKey.includes(sensitive))) {
       sanitized[key] = '[REDACTED]';
     } else if (typeof value === 'object' && value !== null && !Array.isArray(value)) {
-      // Recursively sanitize nested objects
       sanitized[key] = sanitizeLogMetadata(value as Record<string, unknown>);
     } else {
       sanitized[key] = value;
     }
   }
-
   return sanitized;
 }
-
-/** Approximate count of Signal K paths emitted (core + enhanced weather fields) */
-const ENHANCED_FIELD_COUNT = 24;
 
 // Export plugin metadata for Signal K compatibility
 export const metadata = {

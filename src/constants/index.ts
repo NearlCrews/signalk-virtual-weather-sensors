@@ -15,6 +15,16 @@ export const PLUGIN = {
     'Signal K plugin providing comprehensive weather data from AccuWeather API with NMEA2000-compatible environmental measurements',
   VERSION: process.env.PKG_VERSION || '1.0.0',
   AUTHOR: 'Signal K Community',
+  STATUS: {
+    RUNNING: 'SK to N2K Weather running',
+    STOPPED: 'SK to N2K Weather stopped',
+    SERVICE_RUNNING: 'Weather service running',
+    SERVICE_STOPPED: 'Weather service stopped',
+  },
+  /** Number of Signal K paths emitted by NMEA2000PathMapper (core + always-present enhanced fields) */
+  ENHANCED_FIELD_COUNT: 24,
+  /** Delay before first weather fetch after start, in ms */
+  INITIAL_UPDATE_DELAY_MS: 5000,
 } as const;
 
 // ===============================
@@ -86,7 +96,6 @@ export const NMEA2000_PRIORITY = {
 /** NMEA2000 destination addresses */
 export const NMEA2000_DESTINATION = {
   GLOBAL: 255,
-  NULL: 255,
 } as const;
 
 // ===============================
@@ -99,7 +108,6 @@ export const SIGNALK_PATHS = {
     OUTSIDE: {
       // Core temperature paths
       TEMPERATURE: 'environment.outside.temperature',
-      DEW_POINT: 'environment.outside.dewPoint',
       HEAT_INDEX_TEMPERATURE: 'environment.outside.heatIndexTemperature',
       WIND_CHILL_TEMPERATURE: 'environment.outside.windChillTemperature',
 
@@ -207,14 +215,36 @@ export const ACCUWEATHER = {
     LOCATION_SEARCH: '/locations/v1/cities/geoposition/search',
     CURRENT_CONDITIONS: '/currentconditions/v1',
   },
-  API_VERSION: 'v1',
   DEFAULT_LANGUAGE: 'en-us',
   LOCATION_SEARCH_RADIUS: 50, // kilometers
+  /** Maximum length for descriptive strings copied verbatim from API responses into Signal K deltas */
+  MAX_DESCRIPTION_LENGTH: 128,
+  /** Maximum length for short labels (e.g. PressureTendency.LocalizedText) */
+  MAX_LABEL_LENGTH: 64,
 } as const;
 
 // ===============================
 // Data Validation Constants
 // ===============================
+
+/** NMEA2000-spec sanitization ranges. Used by sanitizeForNMEA2000 to clamp before bus emission. */
+export const NMEA2000_LIMITS = {
+  /** NMEA2000 environmental temperature range in Celsius */
+  TEMPERATURE_C: { MIN: -40, MAX: 85 },
+  /** Atmospheric pressure range in Pascals (broader than VALIDATION_LIMITS to allow extreme weather) */
+  PRESSURE_PA: { MIN: 80000, MAX: 120000 },
+  /** Maximum wind speed in m/s (200 knots, NMEA2000 max) */
+  WIND_SPEED_MAX_MS: 102.3,
+} as const;
+
+/** UV Index reasonable range for sanity warnings */
+export const UV_INDEX_LIMITS = { MIN: 0, MAX: 15 } as const;
+
+/** Visibility range in meters for sanity warnings */
+export const VISIBILITY_LIMITS_M = { MIN: 0, MAX: 50000 } as const;
+
+/** Beaufort scale range */
+export const BEAUFORT_LIMITS = { MIN: 0, MAX: 12 } as const;
 
 /** Data validation ranges and limits */
 export const VALIDATION_LIMITS = {
@@ -378,21 +408,3 @@ export const PERFORMANCE = {
     CLEANUP: 3600000, // 1 hour
   },
 } as const;
-
-// ===============================
-// Type-safe Constant Utilities
-// ===============================
-
-/** Utility type to extract keys from constant objects */
-export type ConstantKeys<T> = T extends Record<infer K, unknown> ? K : never;
-
-/** Utility type to extract values from constant objects */
-export type ConstantValues<T> = T extends Record<string, infer V> ? V : never;
-
-/** Type-safe way to get Signal K paths */
-export type ExtractSignalKPath<T extends keyof typeof SIGNALK_PATHS> =
-  (typeof SIGNALK_PATHS)[T] extends Record<string, infer U>
-    ? U extends Record<string, infer V>
-      ? V
-      : U
-    : never;

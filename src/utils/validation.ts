@@ -1,10 +1,13 @@
-/**
- * Data Validation Utilities
- * Comprehensive validation functions for weather data, coordinates, and plugin configuration
- */
-
-import { VALIDATION_LIMITS } from '../constants/index.js';
+import {
+  BEAUFORT_LIMITS,
+  NMEA2000_LIMITS,
+  UNITS,
+  UV_INDEX_LIMITS,
+  VALIDATION_LIMITS,
+  VISIBILITY_LIMITS_M,
+} from '../constants/index.js';
 import type { PluginConfiguration, VesselNavigationData, WeatherData } from '../types/index.js';
+import { clamp, normalizeAngle0To2Pi } from './conversions.js';
 
 /**
  * Weather data validation results
@@ -68,11 +71,7 @@ function validatePressureField(
 /**
  * Validate humidity field
  */
-function validateHumidityField(
-  data: Partial<WeatherData>,
-  errors: string[],
-  _warnings: string[]
-): void {
+function validateHumidityField(data: Partial<WeatherData>, errors: string[]): void {
   if (data.humidity === undefined || !Number.isFinite(data.humidity)) {
     errors.push('Humidity is required and must be a finite number');
     return;
@@ -146,20 +145,35 @@ function validateEnhancedFields(
   errors: string[],
   warnings: string[]
 ): void {
-  if (data.uvIndex !== undefined && (data.uvIndex < 0 || data.uvIndex > 15)) {
-    warnings.push(`UV Index ${data.uvIndex} is outside typical range (0-15)`);
+  if (
+    data.uvIndex !== undefined &&
+    (data.uvIndex < UV_INDEX_LIMITS.MIN || data.uvIndex > UV_INDEX_LIMITS.MAX)
+  ) {
+    warnings.push(
+      `UV Index ${data.uvIndex} is outside typical range (${UV_INDEX_LIMITS.MIN}-${UV_INDEX_LIMITS.MAX})`
+    );
   }
 
-  if (data.visibility !== undefined && (data.visibility < 0 || data.visibility > 50000)) {
-    warnings.push(`Visibility ${data.visibility}m is outside typical range (0-50000m)`);
+  if (
+    data.visibility !== undefined &&
+    (data.visibility < VISIBILITY_LIMITS_M.MIN || data.visibility > VISIBILITY_LIMITS_M.MAX)
+  ) {
+    warnings.push(
+      `Visibility ${data.visibility}m is outside typical range (${VISIBILITY_LIMITS_M.MIN}-${VISIBILITY_LIMITS_M.MAX}m)`
+    );
   }
 
   if (data.cloudCover !== undefined && (data.cloudCover < 0 || data.cloudCover > 1)) {
     errors.push(`Cloud cover ${data.cloudCover} must be between 0 and 1`);
   }
 
-  if (data.beaufortScale !== undefined && (data.beaufortScale < 0 || data.beaufortScale > 12)) {
-    warnings.push(`Beaufort scale ${data.beaufortScale} is outside valid range (0-12)`);
+  if (
+    data.beaufortScale !== undefined &&
+    (data.beaufortScale < BEAUFORT_LIMITS.MIN || data.beaufortScale > BEAUFORT_LIMITS.MAX)
+  ) {
+    warnings.push(
+      `Beaufort scale ${data.beaufortScale} is outside valid range (${BEAUFORT_LIMITS.MIN}-${BEAUFORT_LIMITS.MAX})`
+    );
   }
 }
 
@@ -172,7 +186,7 @@ export function validateWeatherData(data: Partial<WeatherData>): ValidationResul
 
   validateTemperatureField(data, errors, warnings);
   validatePressureField(data, errors, warnings);
-  validateHumidityField(data, errors, warnings);
+  validateHumidityField(data, errors);
   validateWindFields(data, errors, warnings);
   validateTimestampField(data, errors);
   validateEnhancedFields(data, errors, warnings);
@@ -274,7 +288,10 @@ function validateCourseOverGround(
     return;
   }
 
-  if (data.courseOverGroundTrue < 0 || data.courseOverGroundTrue > 2 * Math.PI) {
+  if (
+    data.courseOverGroundTrue < VALIDATION_LIMITS.WIND_DIRECTION.MIN ||
+    data.courseOverGroundTrue > VALIDATION_LIMITS.WIND_DIRECTION.MAX
+  ) {
     warnings.push(
       `Course over ground ${data.courseOverGroundTrue} rad should be normalized to 0-2π range`
     );
@@ -340,6 +357,16 @@ export function isCompleteForWindCalculations(data: Partial<VesselNavigationData
  */
 const ACCUWEATHER_API_KEY_PATTERN = /^[a-zA-Z0-9]{20,40}$/;
 
+/** Common placeholder strings users paste before adding their real key */
+const API_KEY_PLACEHOLDER_PATTERNS: ReadonlyArray<RegExp> = [
+  /^your[_-]?api[_-]?key$/i,
+  /^api[_-]?key[_-]?here$/i,
+  /^xxx+$/i,
+  /^test+$/i,
+  /^demo+$/i,
+  /^sample+$/i,
+];
+
 /**
  * Validate API key field
  * AccuWeather API keys are typically 32 alphanumeric characters
@@ -379,17 +406,7 @@ function validateApiKey(
     );
   }
 
-  // Check for common placeholder patterns
-  const placeholderPatterns = [
-    /^your[_-]?api[_-]?key$/i,
-    /^api[_-]?key[_-]?here$/i,
-    /^xxx+$/i,
-    /^test+$/i,
-    /^demo+$/i,
-    /^sample+$/i,
-  ];
-
-  if (placeholderPatterns.some((pattern) => pattern.test(trimmedKey))) {
+  if (API_KEY_PLACEHOLDER_PATTERNS.some((pattern) => pattern.test(trimmedKey))) {
     errors.push(
       'AccuWeather API key appears to be a placeholder. Please enter your actual API key.'
     );
@@ -575,33 +592,38 @@ export function validateNMEA2000Ranges(data: Partial<WeatherData>): ValidationRe
   const errors: string[] = [];
   const warnings: string[] = [];
 
-  // Temperature range: -40°C to +85°C (NMEA2000 spec)
   if (data.temperature !== undefined) {
-    const tempC = data.temperature - 273.15;
-    if (tempC < -40 || tempC > 85) {
-      warnings.push(`Temperature ${tempC.toFixed(1)}°C is outside NMEA2000 range (-40°C to +85°C)`);
-    }
-  }
-
-  // Pressure range: reasonable atmospheric range
-  if (data.pressure !== undefined) {
-    if (data.pressure < 80000 || data.pressure > 120000) {
+    const tempC = data.temperature - UNITS.TEMPERATURE.CELSIUS_TO_KELVIN;
+    if (tempC < NMEA2000_LIMITS.TEMPERATURE_C.MIN || tempC > NMEA2000_LIMITS.TEMPERATURE_C.MAX) {
       warnings.push(
-        `Pressure ${data.pressure}Pa is outside typical atmospheric range (80000-120000Pa)`
+        `Temperature ${tempC.toFixed(1)}°C is outside NMEA2000 range (${NMEA2000_LIMITS.TEMPERATURE_C.MIN}°C to +${NMEA2000_LIMITS.TEMPERATURE_C.MAX}°C)`
       );
     }
   }
 
-  // Wind speed range: 0 to 102.3 m/s (0-200 knots, NMEA2000 max)
-  if (data.windSpeed !== undefined && data.windSpeed > 102.3) {
-    warnings.push(`Wind speed ${data.windSpeed}m/s exceeds NMEA2000 maximum (102.3m/s)`);
+  if (data.pressure !== undefined) {
+    if (
+      data.pressure < NMEA2000_LIMITS.PRESSURE_PA.MIN ||
+      data.pressure > NMEA2000_LIMITS.PRESSURE_PA.MAX
+    ) {
+      warnings.push(
+        `Pressure ${data.pressure}Pa is outside typical atmospheric range (${NMEA2000_LIMITS.PRESSURE_PA.MIN}-${NMEA2000_LIMITS.PRESSURE_PA.MAX}Pa)`
+      );
+    }
   }
 
-  if (data.windGustSpeed !== undefined && data.windGustSpeed > 102.3) {
-    warnings.push(`Wind gust speed ${data.windGustSpeed}m/s exceeds NMEA2000 maximum (102.3m/s)`);
+  if (data.windSpeed !== undefined && data.windSpeed > NMEA2000_LIMITS.WIND_SPEED_MAX_MS) {
+    warnings.push(
+      `Wind speed ${data.windSpeed}m/s exceeds NMEA2000 maximum (${NMEA2000_LIMITS.WIND_SPEED_MAX_MS}m/s)`
+    );
   }
 
-  // Humidity must be valid ratio (0-1)
+  if (data.windGustSpeed !== undefined && data.windGustSpeed > NMEA2000_LIMITS.WIND_SPEED_MAX_MS) {
+    warnings.push(
+      `Wind gust speed ${data.windGustSpeed}m/s exceeds NMEA2000 maximum (${NMEA2000_LIMITS.WIND_SPEED_MAX_MS}m/s)`
+    );
+  }
+
   if (data.humidity !== undefined && (data.humidity < 0 || data.humidity > 1)) {
     errors.push(`Humidity ${data.humidity} must be between 0 and 1 (ratio)`);
   }
@@ -619,36 +641,42 @@ export function validateNMEA2000Ranges(data: Partial<WeatherData>): ValidationRe
 export function sanitizeForNMEA2000(data: WeatherData): WeatherData {
   const sanitized = { ...data };
 
-  // Clamp temperature to NMEA2000 range
   if (sanitized.temperature !== undefined) {
-    const tempC = sanitized.temperature - 273.15;
-    const clampedTempC = Math.max(-40, Math.min(85, tempC));
-    sanitized.temperature = clampedTempC + 273.15;
+    const tempC = sanitized.temperature - UNITS.TEMPERATURE.CELSIUS_TO_KELVIN;
+    const clampedTempC = clamp(
+      tempC,
+      NMEA2000_LIMITS.TEMPERATURE_C.MIN,
+      NMEA2000_LIMITS.TEMPERATURE_C.MAX
+    );
+    sanitized.temperature = clampedTempC + UNITS.TEMPERATURE.CELSIUS_TO_KELVIN;
   }
 
-  // Clamp pressure to reasonable range
   if (sanitized.pressure !== undefined) {
-    sanitized.pressure = Math.max(80000, Math.min(120000, sanitized.pressure));
+    sanitized.pressure = clamp(
+      sanitized.pressure,
+      NMEA2000_LIMITS.PRESSURE_PA.MIN,
+      NMEA2000_LIMITS.PRESSURE_PA.MAX
+    );
   }
 
-  // Clamp humidity to valid ratio range (0-1)
   if (sanitized.humidity !== undefined) {
-    sanitized.humidity = Math.max(0, Math.min(1, sanitized.humidity));
+    sanitized.humidity = clamp(
+      sanitized.humidity,
+      VALIDATION_LIMITS.HUMIDITY.MIN,
+      VALIDATION_LIMITS.HUMIDITY.MAX
+    );
   }
 
-  // Clamp wind speeds to NMEA2000 maximum
   if (sanitized.windSpeed !== undefined) {
-    sanitized.windSpeed = Math.max(0, Math.min(102.3, sanitized.windSpeed));
+    sanitized.windSpeed = clamp(sanitized.windSpeed, 0, NMEA2000_LIMITS.WIND_SPEED_MAX_MS);
   }
 
   if (sanitized.windGustSpeed !== undefined) {
-    sanitized.windGustSpeed = Math.max(0, Math.min(102.3, sanitized.windGustSpeed));
+    sanitized.windGustSpeed = clamp(sanitized.windGustSpeed, 0, NMEA2000_LIMITS.WIND_SPEED_MAX_MS);
   }
 
-  // Normalize wind directions
   if (sanitized.windDirection !== undefined) {
-    sanitized.windDirection =
-      ((sanitized.windDirection % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI);
+    sanitized.windDirection = normalizeAngle0To2Pi(sanitized.windDirection);
   }
 
   return sanitized;

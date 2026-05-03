@@ -3,13 +3,7 @@
  * Modern TypeScript implementation with comprehensive error handling and enhanced field extraction
  */
 
-import {
-  ACCUWEATHER,
-  DEFAULT_CONFIG,
-  ERROR_CODES,
-  UNITS,
-  VALIDATION_LIMITS,
-} from '../constants/index.js';
+import { ACCUWEATHER, DEFAULT_CONFIG, ERROR_CODES, UNITS } from '../constants/index.js';
 import type {
   AccuWeatherConfig,
   AccuWeatherCurrentConditions,
@@ -23,6 +17,13 @@ import {
   calculateAbsoluteHumidity,
   calculateAirDensity,
   calculateBeaufortScale,
+  celsiusToKelvin,
+  isValidCoordinates,
+  isValidHumidity,
+  isValidPressure,
+  isValidTemperature,
+  isValidWindSpeed,
+  percentageToRatio,
 } from '../utils/conversions.js';
 import { validateAccuWeatherResponse } from '../utils/validation.js';
 
@@ -31,6 +32,14 @@ const MAX_RESPONSE_BYTES = 1_048_576;
 
 /** Validation pattern for AccuWeather location keys (URL path segment). */
 const LOCATION_KEY_PATTERN = /^[a-zA-Z0-9_-]+$/;
+
+/** Strip control characters and truncate a string from the API to a safe length for downstream consumers. */
+function capString(value: string, maxLength: number): string {
+  if (typeof value !== 'string') return '';
+  // biome-ignore lint/suspicious/noControlCharactersInRegex: deliberately stripping injection vectors
+  const stripped = value.replace(/[\x00-\x1f\x7f]/g, '');
+  return stripped.length > maxLength ? stripped.slice(0, maxLength) : stripped;
+}
 
 /**
  * Lowercased retryable error code substrings — computed once at module load
@@ -94,13 +103,9 @@ export class AccuWeatherService {
     this.validateLocation(location);
 
     try {
-      // Get or find location key for coordinates
       const locationKey = await this.getLocationKey(location);
-
-      // Fetch current conditions from AccuWeather
       const currentConditions = await this.getCurrentConditions(locationKey);
 
-      // Transform API response to our internal format
       const firstCondition = currentConditions[0];
       if (!firstCondition) {
         throw new Error(
@@ -117,7 +122,7 @@ export class AccuWeatherService {
         windGustSpeed: weatherData.windGustSpeed,
         uvIndex: weatherData.uvIndex,
         visibility: weatherData.visibility,
-        enhancedFieldsCount: this.countEnhancedFields(weatherData),
+        enhancedFieldsCount: countEnhancedFields(weatherData),
       });
 
       return weatherData;
@@ -135,46 +140,41 @@ export class AccuWeatherService {
    * @private
    */
   private transformWeatherData(conditions: AccuWeatherCurrentConditions): WeatherData {
-    // Core measurements (existing)
-    const temperature = conditions.Temperature.Metric.Value + UNITS.TEMPERATURE.CELSIUS_TO_KELVIN;
+    const temperature = celsiusToKelvin(conditions.Temperature.Metric.Value);
     const pressure = conditions.Pressure.Metric.Value * UNITS.PRESSURE.MILLIBAR_TO_PASCAL;
-    const humidity = conditions.RelativeHumidity / 100; // Convert percentage to ratio (0-1) per Signal K spec
+    const humidity = percentageToRatio(conditions.RelativeHumidity);
     const windSpeed = conditions.Wind.Speed.Metric.Value * UNITS.WIND_SPEED.KMH_TO_MS;
     const windDirection = conditions.Wind.Direction.Degrees * UNITS.ANGLE.DEGREES_TO_RADIANS;
-    const dewPoint = conditions.DewPoint.Metric.Value + UNITS.TEMPERATURE.CELSIUS_TO_KELVIN;
-    const windChill =
-      conditions.WindChillTemperature.Metric.Value + UNITS.TEMPERATURE.CELSIUS_TO_KELVIN;
-    const heatIndex =
-      conditions.RealFeelTemperature.Metric.Value + UNITS.TEMPERATURE.CELSIUS_TO_KELVIN;
+    const dewPoint = celsiusToKelvin(conditions.DewPoint.Metric.Value);
+    const windChill = celsiusToKelvin(conditions.WindChillTemperature.Metric.Value);
+    const heatIndex = celsiusToKelvin(conditions.RealFeelTemperature.Metric.Value);
 
     const toKelvin = (celsius: number | undefined): number | undefined =>
-      typeof celsius === 'number' ? celsius + UNITS.TEMPERATURE.CELSIUS_TO_KELVIN : undefined;
+      typeof celsius === 'number' ? celsiusToKelvin(celsius) : undefined;
 
-    // Enhanced temperature readings (new) — optional chaining because free-tier keys
-    // and partial responses can omit these fields
+    // Optional chaining: free-tier keys and partial responses may omit these
     const realFeelShade = toKelvin(conditions.RealFeelTemperatureShade?.Metric?.Value);
     const wetBulbTemperature = toKelvin(conditions.WetBulbTemperature?.Metric?.Value);
     const wetBulbGlobeTemperature = toKelvin(conditions.WetBulbGlobeTemperature?.Metric?.Value);
     const apparentTemperature = toKelvin(conditions.ApparentTemperature?.Metric?.Value);
 
-    // Enhanced wind data (new)
     const windGustSpeed = conditions.WindGust.Speed.Metric.Value * UNITS.WIND_SPEED.KMH_TO_MS;
     // undefined when wind is calm — a literal 1 would be indistinguishable from "no gust"
     const windGustFactor = windSpeed > 0 ? windGustSpeed / windSpeed : undefined;
 
-    // Atmospheric conditions (new)
     const uvIndex = conditions.UVIndexFloat;
-    const visibility = conditions.Visibility.Metric.Value * 1000; // Convert km to meters
-    const cloudCover = conditions.CloudCover / 100; // Convert percentage to ratio
-    const cloudCeiling = conditions.Ceiling.Metric.Value; // Already in meters
-    const pressureTendency = conditions.PressureTendency.LocalizedText;
+    const visibility = conditions.Visibility.Metric.Value * 1000; // km to m
+    const cloudCover = percentageToRatio(conditions.CloudCover);
+    const cloudCeiling = conditions.Ceiling.Metric.Value;
+    const pressureTendency = capString(
+      conditions.PressureTendency.LocalizedText,
+      ACCUWEATHER.MAX_LABEL_LENGTH
+    );
 
-    // Precipitation data (new)
-    const precipitationLastHour = conditions.Precip1hr.Metric.Value; // Already in mm
-    const precipitationCurrent = conditions.PrecipitationSummary.PastHour.Metric.Value; // mm in last hour
+    const precipitationLastHour = conditions.Precip1hr.Metric.Value;
+    const precipitationCurrent = conditions.PrecipitationSummary.PastHour.Metric.Value;
 
-    // Temperature trends (new)
-    const temperatureDeparture24h = conditions.Past24HourTemperatureDeparture.Metric.Value; // Keep as Celsius delta
+    const temperatureDeparture24h = conditions.Past24HourTemperatureDeparture.Metric.Value;
 
     // Calculate synthetic values (humidity is already a ratio)
     const beaufortScale = calculateBeaufortScale(windSpeed, windGustSpeed);
@@ -228,8 +228,8 @@ export class AccuWeatherService {
       ...(heatStressIndex !== undefined && { heatStressIndex }),
 
       // Metadata
-      description: conditions.WeatherText,
-      timestamp: conditions.LocalObservationDateTime,
+      description: capString(conditions.WeatherText, ACCUWEATHER.MAX_DESCRIPTION_LENGTH),
+      timestamp: capString(conditions.LocalObservationDateTime, ACCUWEATHER.MAX_LABEL_LENGTH),
       quality: this.calculateDataQuality(conditions),
     };
 
@@ -244,39 +244,13 @@ export class AccuWeatherService {
    * @private
    */
   private calculateHeatStressIndex(wetBulbGlobeTemperatureK: number): number {
-    try {
-      // Convert to Celsius for calculation
-      const wbgtC = wetBulbGlobeTemperatureK - UNITS.TEMPERATURE.CELSIUS_TO_KELVIN;
-
-      // Heat stress categories (military/marine standard)
-      if (wbgtC < 27) return 0; // No heat stress
-      if (wbgtC < 29) return 1; // Low heat stress
-      if (wbgtC < 31) return 2; // Moderate heat stress
-      if (wbgtC < 33) return 3; // High heat stress
-      return 4; // Extreme heat stress
-    } catch (error) {
-      this.logger('warn', 'Failed to calculate heat stress index', {
-        error: error instanceof Error ? error.message : String(error),
-      });
-      return 0;
-    }
-  }
-
-  /**
-   * Count enhanced fields for logging
-   * @private
-   */
-  private countEnhancedFields(weatherData: WeatherData): number {
-    let count = 0;
-    if (weatherData.realFeelShade !== undefined) count++;
-    if (weatherData.wetBulbTemperature !== undefined) count++;
-    if (weatherData.wetBulbGlobeTemperature !== undefined) count++;
-    if (weatherData.windGustSpeed !== undefined) count++;
-    if (weatherData.uvIndex !== undefined) count++;
-    if (weatherData.visibility !== undefined) count++;
-    if (weatherData.cloudCover !== undefined) count++;
-    if (weatherData.beaufortScale !== undefined) count++;
-    return count;
+    const wbgtC = wetBulbGlobeTemperatureK - UNITS.TEMPERATURE.CELSIUS_TO_KELVIN;
+    // Heat stress categories (military/marine standard)
+    if (wbgtC < 27) return 0;
+    if (wbgtC < 29) return 1;
+    if (wbgtC < 31) return 2;
+    if (wbgtC < 33) return 3;
+    return 4;
   }
 
   /**
@@ -630,19 +604,20 @@ export class AccuWeatherService {
   private calculateDataQuality(conditions: AccuWeatherCurrentConditions): number {
     let quality = 1.0;
 
-    // Reduce quality for very old observations (more than 1 hour)
-    const observationAge = Date.now() - conditions.EpochTime * 1000;
-    if (observationAge > 3600000) {
-      // 1 hour
+    // Penalize stale or missing-timestamp observations (>1h old or non-finite EpochTime).
+    if (Number.isFinite(conditions.EpochTime)) {
+      const observationAge = Date.now() - conditions.EpochTime * 1000;
+      if (observationAge > 3600000) {
+        quality -= 0.2;
+      }
+    } else {
       quality -= 0.2;
     }
 
-    // Reduce quality if critical data is missing or invalid (humidity should be 0-100%)
     if (conditions.RelativeHumidity <= 0 || conditions.RelativeHumidity > 100) {
       quality -= 0.1;
     }
 
-    // Increase quality for rich data sets
     if (conditions.WindGust.Speed.Metric.Value > 0) quality += 0.05;
     if (conditions.Visibility.Metric.Value > 0) quality += 0.05;
 
@@ -657,28 +632,14 @@ export class AccuWeatherService {
     if (!location || typeof location !== 'object') {
       throw new Error(`${ERROR_CODES.CONFIGURATION.INVALID_COORDINATES}: Invalid location object`);
     }
-
     if (typeof location.latitude !== 'number' || typeof location.longitude !== 'number') {
       throw new Error(
         `${ERROR_CODES.CONFIGURATION.INVALID_COORDINATES}: Coordinates must be numbers`
       );
     }
-
-    if (
-      location.latitude < VALIDATION_LIMITS.COORDINATES.LATITUDE.MIN ||
-      location.latitude > VALIDATION_LIMITS.COORDINATES.LATITUDE.MAX
-    ) {
+    if (!isValidCoordinates(location.latitude, location.longitude)) {
       throw new Error(
-        `${ERROR_CODES.CONFIGURATION.INVALID_COORDINATES}: Latitude must be between -90 and 90 degrees`
-      );
-    }
-
-    if (
-      location.longitude < VALIDATION_LIMITS.COORDINATES.LONGITUDE.MIN ||
-      location.longitude > VALIDATION_LIMITS.COORDINATES.LONGITUDE.MAX
-    ) {
-      throw new Error(
-        `${ERROR_CODES.CONFIGURATION.INVALID_COORDINATES}: Longitude must be between -180 and 180 degrees`
+        `${ERROR_CODES.CONFIGURATION.INVALID_COORDINATES}: Coordinates out of range (lat ${location.latitude}, lon ${location.longitude})`
       );
     }
   }
@@ -688,39 +649,20 @@ export class AccuWeatherService {
    * @private
    */
   private validateWeatherData(data: WeatherData): void {
-    if (
-      data.temperature < VALIDATION_LIMITS.TEMPERATURE.MIN ||
-      data.temperature > VALIDATION_LIMITS.TEMPERATURE.MAX
-    ) {
+    if (!isValidTemperature(data.temperature)) {
       this.logger('warn', 'Temperature outside expected range', { temperature: data.temperature });
     }
-
-    if (
-      data.pressure < VALIDATION_LIMITS.PRESSURE.MIN ||
-      data.pressure > VALIDATION_LIMITS.PRESSURE.MAX
-    ) {
+    if (!isValidPressure(data.pressure)) {
       this.logger('warn', 'Pressure outside expected range', { pressure: data.pressure });
     }
-
-    if (
-      data.humidity < VALIDATION_LIMITS.HUMIDITY.MIN ||
-      data.humidity > VALIDATION_LIMITS.HUMIDITY.MAX
-    ) {
+    if (!isValidHumidity(data.humidity)) {
       this.logger('warn', 'Humidity outside expected range', { humidity: data.humidity });
     }
-
-    if (
-      data.windSpeed < VALIDATION_LIMITS.WIND_SPEED.MIN ||
-      data.windSpeed > VALIDATION_LIMITS.WIND_SPEED.MAX
-    ) {
+    if (!isValidWindSpeed(data.windSpeed)) {
       this.logger('warn', 'Wind speed outside expected range', { windSpeed: data.windSpeed });
     }
   }
 
-  /**
-   * Check if error is retryable
-   * @private
-   */
   /**
    * Return URL string with the apikey query parameter stripped so it's safe to log.
    * Debug-level logs are not passed through sanitizeLogMetadata, so we must strip
@@ -770,4 +712,17 @@ export class AccuWeatherService {
       size: this.locationCache.size,
     };
   }
+}
+
+function countEnhancedFields(weatherData: WeatherData): number {
+  let count = 0;
+  if (weatherData.realFeelShade !== undefined) count++;
+  if (weatherData.wetBulbTemperature !== undefined) count++;
+  if (weatherData.wetBulbGlobeTemperature !== undefined) count++;
+  if (weatherData.windGustSpeed !== undefined) count++;
+  if (weatherData.uvIndex !== undefined) count++;
+  if (weatherData.visibility !== undefined) count++;
+  if (weatherData.cloudCover !== undefined) count++;
+  if (weatherData.beaufortScale !== undefined) count++;
+  return count;
 }
