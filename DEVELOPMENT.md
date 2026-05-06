@@ -24,12 +24,12 @@ The development process involved several key prompt categories:
 
 **Initial Setup Prompts:**
 - "Create a modern TypeScript Signal K plugin for weather data with NMEA2000 compatibility"
-- "Set up comprehensive build tooling with esbuild, TypeScript 5.9+, and modern testing"
+- "Set up comprehensive build tooling with esbuild, TypeScript 6, and modern testing"
 - "Configure Biome for linting/formatting to replace ESLint + Prettier"
 
 **Architecture Prompts:**
 - "Design service-oriented architecture with dependency injection for testability"
-- "Implement NMEA2000 path mapping aligned with emitter-cannon conventions"
+- "Implement NMEA2000 path mapping aligned with `signalk-nmea2000-emitter-cannon` conventions"
 - "Create comprehensive validation framework for marine data integrity"
 
 **Feature Development Prompts:**
@@ -68,7 +68,7 @@ While AI-assisted, this project maintains human oversight for:
 
 ### Core Technologies
 
-#### TypeScript 5.9+
+#### TypeScript 6.0+
 - **Purpose**: Primary development language with strict type safety
 - **Configuration**: [`tsconfig.json`](tsconfig.json)
 - **Features Used**:
@@ -86,24 +86,26 @@ While AI-assisted, this project maintains human oversight for:
   "strict": true,
   "noImplicitAny": true,
   "exactOptionalPropertyTypes": true,
-  "noUncheckedIndexedAccess": true
+  "noUncheckedIndexedAccess": true,
+  "verbatimModuleSyntax": true,
+  "types": ["node"]
 }
 ```
 
-#### Node.js 20+
+#### Node.js 20.18+
 - **Purpose**: Runtime environment for Signal K server plugin
-- **Version**: 20.0.0+ (specified in [`.node-version`](.node-version))
+- **Version**: 20.18+ (specified in [`.node-version`](.node-version) and `package.json#engines`)
 - **Module System**: Pure ESM (no CommonJS)
 - **Features Used**:
   - Native ESM support with `import`/`export`
-  - Node.js 20+ performance improvements
-  - Built-in fetch API support
+  - Built-in `fetch`, `AbortController`, and `URL` from the Node 20 LTS line
 
-#### @signalk/server-api 2.10+
+#### @signalk/server-api 2.24+
 - **Purpose**: Official Signal K type definitions for plugins
 - **Features Used**:
   - `Plugin` interface for plugin structure compliance
   - `ServerAPI` interface for type-safe server interaction
+  - Branded `Delta`, `Path`, `Context`, `Timestamp` types: the path mapper returns `Delta` directly to avoid double-cast workarounds in `index.ts`
   - Proper typing for `handleMessage()`, `getSelfPath()`, etc.
 
 **Plugin Implementation Pattern:**
@@ -124,10 +126,10 @@ export default function createPlugin(app: ServerAPI): Plugin {
 
 ### Build and Bundling
 
-#### esbuild
+#### esbuild 0.28+
 - **Purpose**: Fast, modern JavaScript bundler
 - **Configuration**: [`esbuild.config.js`](esbuild.config.js)
-- **Performance**: ~109KB bundle in ~16ms build time
+- **Performance**: ~64 KB bundle in ~20 ms build time
 - **Features**:
   - ES2023 target compilation
   - Source map generation
@@ -136,13 +138,13 @@ export default function createPlugin(app: ServerAPI): Plugin {
   - Banner injection for plugin metadata
 
 **Build Outputs:**
-- `dist/signalk-virtual-weather-sensors/index.js` - Main bundle
-- `dist/signalk-virtual-weather-sensors/index.js.map` - Source maps
-- `dist/signalk-virtual-weather-sensors/*.d.ts` - TypeScript declarations
+- `dist/index.js` -- Main bundle (~64 KB)
+- `dist/index.js.map` -- Source map
+- `dist/index.d.ts` and per-source `*.d.ts` -- TypeScript declarations
 
 ### Code Quality
 
-#### Biome 2.3+
+#### Biome 2.4+
 - **Purpose**: Modern, fast linting and formatting (replaces ESLint + Prettier)
 - **Configuration**: [`biome.json`](biome.json)
 - **Features**:
@@ -287,7 +289,7 @@ cd signalk-virtual-weather-sensors
 # Install dependencies (automatically sets up husky hooks)
 npm install
 
-# Verify Node.js version (20.0.0+)
+# Verify Node.js version (20.18+)
 node --version
 ```
 
@@ -382,7 +384,7 @@ npm run validate
 - **Edge Case Tests**: Boundary conditions and error handling
 - **Performance Tests**: Real-time calculation efficiency
 
-**Total: 241 tests** across 7 test files
+**Total: 243 tests** across 7 test files
 
 ### Test Files
 
@@ -392,7 +394,7 @@ npm run validate
 - [`WindCalculator.test.ts`](src/__tests__/calculators/WindCalculator.test.ts) - Vector mathematics (45 tests)
 - [`NMEA2000PathMapper.test.ts`](src/__tests__/mappers/NMEA2000PathMapper.test.ts) - Path mapping (15 tests)
 - [`utils/conversions.test.ts`](src/__tests__/utils/conversions.test.ts) - Unit conversions (48 tests)
-- [`utils/validation.test.ts`](src/__tests__/utils/validation.test.ts) - Sanitize, validators, schema (53 tests)
+- [`utils/validation.test.ts`](src/__tests__/utils/validation.test.ts) - Sanitize, validators, schema (54 tests)
 
 ### Running Specific Tests
 
@@ -467,18 +469,11 @@ This plugin adheres to official Signal K development standards with one intentio
 | Source Metadata | ✅ | Proper label and type fields |
 | Status Reporting | ✅ | setPluginStatus/Error implemented |
 
-### Known Deviation: Humidity Format
+### Humidity Format
 
-**Location**: [`src/mappers/NMEA2000PathMapper.ts:165`](src/mappers/NMEA2000PathMapper.ts:165)
+**Location**: [`src/mappers/NMEA2000PathMapper.ts`](src/mappers/NMEA2000PathMapper.ts)
 
-**Signal K Standard**: Humidity as ratio (0-1)
-**Our Implementation**: Humidity as percentage (0-100)
-
-**Rationale**: Garmin marine displays and most NMEA2000 devices expect percentage format. This trade-off prioritizes real-world hardware compatibility over strict specification compliance.
-
-**Impact**: Minor display issues possible in some Signal K clients, but correct display on physical marine electronics.
-
-**Future Consideration**: Could add configuration option to choose format based on client requirements.
+The plugin emits `environment.outside.humidity` as a ratio in `[0, 1]` per the Signal K spec. AccuWeather returns relative humidity as a percentage; the value is converted to a ratio in `AccuWeatherService.transformWeatherData` via `percentageToRatio()` before reaching the mapper. The companion `signalk-nmea2000-emitter-cannon` plugin handles the conversion to the percentage format expected on the NMEA2000 wire (PGN 130313), so callers do not need to opt in to a non-standard representation here.
 
 For complete compliance documentation and TODO items, see [`TODO.md`](TODO.md).
 

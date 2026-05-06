@@ -49,9 +49,6 @@ export const DEFAULT_CONFIG = {
 
 /** NMEA2000 Parameter Group Numbers for environmental data */
 export const PGN = {
-  /** Environmental Parameters - Temperature, pressure, humidity */
-  ENVIRONMENTAL_PARAMETERS: 130310,
-
   /** Environmental Parameters - Pressure */
   ENVIRONMENTAL_PRESSURE: 130311,
 
@@ -61,41 +58,8 @@ export const PGN = {
   /** Humidity */
   HUMIDITY: 130313,
 
-  /** Actual Pressure (enhanced) */
-  ACTUAL_PRESSURE: 130314,
-
   /** Wind Data */
   WIND_DATA: 130306,
-} as const;
-
-/** NMEA2000 temperature instance assignments (aligned with emitter-cannon) */
-export const TEMPERATURE_INSTANCES = {
-  OUTSIDE: 101,
-  DEW_POINT: 102,
-  WIND_CHILL: 103,
-  HEAT_INDEX: 104,
-  REAL_FEEL_SHADE: 108,
-  APPARENT: 109,
-  WET_BULB: 110,
-  WET_BULB_GLOBE: 111,
-} as const;
-
-/** NMEA2000 humidity instance assignments (aligned with emitter-cannon) */
-export const HUMIDITY_INSTANCES = {
-  OUTSIDE: 100,
-  INSIDE: 101,
-} as const;
-
-/** NMEA2000 message priority levels */
-export const NMEA2000_PRIORITY = {
-  HIGH: 2,
-  NORMAL: 6,
-  LOW: 7,
-} as const;
-
-/** NMEA2000 destination addresses */
-export const NMEA2000_DESTINATION = {
-  GLOBAL: 255,
 } as const;
 
 // ===============================
@@ -117,12 +81,10 @@ export const SIGNALK_PATHS = {
       REAL_FEEL_SHADE: 'environment.outside.realFeelShade',
       WET_BULB_TEMPERATURE: 'environment.outside.wetBulbTemperature',
       WET_BULB_GLOBE_TEMPERATURE: 'environment.outside.wetBulbGlobeTemperature',
-      THEORETICAL_WIND_CHILL_TEMPERATURE: 'environment.outside.theoreticalWindChillTemperature',
 
       // Core atmospheric paths
       PRESSURE: 'environment.outside.pressure',
       HUMIDITY: 'environment.outside.humidity',
-      RELATIVE_HUMIDITY: 'environment.outside.relativeHumidity',
 
       // Enhanced atmospheric paths (new from AccuWeather)
       ABSOLUTE_HUMIDITY: 'environment.outside.absoluteHumidity',
@@ -144,28 +106,18 @@ export const SIGNALK_PATHS = {
       HEAT_STRESS_INDEX: 'environment.outside.heatStressIndex',
     },
 
-    INSIDE: {
-      // Indoor environment (new from AccuWeather)
-      RELATIVE_HUMIDITY: 'environment.inside.relativeHumidity',
-      TEMPERATURE: 'environment.inside.temperature',
-    },
-
     WIND: {
       // Core wind paths
       SPEED_TRUE: 'environment.wind.speedTrue',
-      ANGLE_TRUE: 'environment.wind.angleTrue',
       DIRECTION_TRUE: 'environment.wind.directionTrue',
-      DIRECTION_MAGNETIC: 'environment.wind.directionMagnetic',
       SPEED_APPARENT: 'environment.wind.speedApparent',
       ANGLE_APPARENT: 'environment.wind.angleApparent',
-      DIRECTION_APPARENT: 'environment.wind.directionApparent',
 
       // Enhanced wind paths (new from AccuWeather)
       SPEED_GUST: 'environment.wind.speedGust',
       GUST_FACTOR: 'environment.wind.gustFactor',
       BEAUFORT_SCALE: 'environment.wind.beaufortScale',
       SPEED_OVER_GROUND: 'environment.wind.speedOverGround',
-      ANGLE_TRUE_WATER: 'environment.wind.angleTrueWater',
     },
   },
 } as const;
@@ -336,75 +288,9 @@ export const ERROR_CODES = {
 // Performance and Timing Constants
 // ===============================
 
-/**
- * Performance monitoring and timing configurations
- *
- * These thresholds are based on:
- * - Real-time marine navigation requirements (sub-second response needed)
- * - AccuWeather API typical response times (1-3 seconds)
- * - NMEA2000 network emission requirements
- * - Signal K server resource constraints
- */
+/** Maximum allowed weather-update processing time in ms before logging a slow-update warning. */
 export const PERFORMANCE = {
-  /**
-   * Maximum allowed processing times in milliseconds
-   *
-   * WEATHER_UPDATE: 5000ms (5 seconds)
-   *   - AccuWeather API calls typically complete in 1-3 seconds
-   *   - Allows for network latency and retry logic
-   *   - Exceeding this indicates network issues or API problems
-   *
-   * WIND_CALCULATION: 100ms
-   *   - Vector calculations should complete in <10ms
-   *   - 100ms threshold allows for JS engine variations
-   *   - Exceeding this indicates computational issues
-   *
-   * DATA_EMISSION: 1000ms (1 second)
-   *   - Delta message creation and Signal K emission
-   *   - Should complete in <100ms normally
-   *   - 1 second allows for large delta messages
-   */
   MAX_PROCESSING_TIME: {
     WEATHER_UPDATE: 5000,
-    WIND_CALCULATION: 100,
-    DATA_EMISSION: 1000,
-  },
-
-  /**
-   * Memory usage thresholds in bytes
-   *
-   * WARNING: 50MB
-   *   - Plugins should typically use <20MB
-   *   - 50MB indicates possible memory leak or excessive caching
-   *   - Triggers warning log for investigation
-   *
-   * CRITICAL: 100MB
-   *   - Approaching Node.js heap limits on constrained devices
-   *   - Triggers error log and potential mitigation actions
-   */
-  MEMORY_THRESHOLDS: {
-    WARNING: 50 * 1024 * 1024, // 50MB
-    CRITICAL: 100 * 1024 * 1024, // 100MB
-  },
-
-  /**
-   * Timing intervals in milliseconds for background tasks
-   *
-   * HEALTH_CHECK: 60000ms (1 minute)
-   *   - Frequency for checking service health status
-   *   - Balances monitoring granularity with CPU usage
-   *
-   * MEMORY_CHECK: 300000ms (5 minutes)
-   *   - Memory usage monitoring interval
-   *   - Less frequent to reduce overhead
-   *
-   * CLEANUP: 3600000ms (1 hour)
-   *   - Cache cleanup and resource reclamation
-   *   - Hourly cleanup prevents gradual memory growth
-   */
-  INTERVALS: {
-    HEALTH_CHECK: 60000, // 1 minute
-    MEMORY_CHECK: 300000, // 5 minutes
-    CLEANUP: 3600000, // 1 hour
   },
 } as const;

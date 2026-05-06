@@ -158,40 +158,25 @@ describe('AccuWeatherService', () => {
       expect(weatherData.cloudCover).toBeCloseTo(0.75, 2); // 75% as ratio
     });
 
-    it.skip('should handle API errors gracefully', async () => {
-      // Note: Skipped due to vitest mock isolation issues with global.fetch
-      // Error handling for API errors is covered by 'should handle malformed API responses' test
-      // Create fresh mock for this test
-      const mockFetch = vi.fn();
-      global.fetch = mockFetch as unknown as typeof fetch;
-
-      // Create service with new mock
-      const testService = new AccuWeatherService('test-api-key', mockLogger);
-
-      // Mock location search first (required step)
-      mockFetch.mockResolvedValueOnce({
-        ok: true,
-        json: () =>
-          Promise.resolve({
+    it('should throw API_UNAUTHORIZED on a 401 response', async () => {
+      vi.mocked(global.fetch)
+        .mockResolvedValueOnce(
+          mockResponse({
             Key: '2628204',
             LocalizedName: 'San Francisco',
             Country: { ID: 'US', LocalizedName: 'United States' },
             AdministrativeArea: { ID: 'CA', LocalizedName: 'California' },
             GeoPosition: { Latitude: 37.7749, Longitude: -122.4194 },
-          }),
-      });
+          }) as never
+        )
+        .mockResolvedValueOnce(
+          mockResponse(
+            { message: 'Invalid API key' },
+            { ok: false, status: 401, statusText: 'Unauthorized' }
+          ) as never
+        );
 
-      // Then mock the error on conditions call
-      mockFetch.mockResolvedValueOnce({
-        ok: false,
-        status: 401,
-        statusText: 'Unauthorized',
-        json: () => Promise.resolve({ message: 'Invalid API key' }),
-      });
-
-      await expect(testService.fetchCurrentWeather(testLocation)).rejects.toThrow(
-        'Invalid API key'
-      );
+      await expect(service.fetchCurrentWeather(testLocation)).rejects.toThrow(/API_UNAUTHORIZED/);
     });
 
     it('should validate location coordinates', async () => {

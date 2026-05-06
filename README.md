@@ -11,7 +11,7 @@ A Signal K plugin that fetches weather data from the AccuWeather API and emits i
 
 - **24+ weather data points** from AccuWeather: temperatures (7 types), wind (speed, gusts, direction, Beaufort), atmospheric conditions (pressure, humidity, UV, visibility, clouds), and precipitation
 - **Apparent wind calculation** from true wind + vessel motion vectors
-- **NMEA2000 alignment** with [emitter-cannon](https://github.com/NearlCrews/signalk-nmea2000-emitter-cannon) PGN conventions (130306, 130311, 130312, 130313)
+- **NMEA2000 alignment** with [`signalk-nmea2000-emitter-cannon`](https://github.com/NearlCrews/signalk-nmea2000-emitter-cannon) PGN conventions (130306, 130311, 130312, 130313)
 - **Interval-based emission** (default 5s) for reliable NMEA2000 network recognition
 - **Delta caching** -- only rebuilds the Signal K delta when weather data actually changes
 - **Rate limit handling** with Retry-After header support and linear backoff fallback
@@ -79,9 +79,7 @@ ln -s "$(pwd)" ~/.signalk/node_modules/signalk-virtual-weather-sensors
 | `environment.wind.directionTrue` | rad | True wind direction |
 | `environment.wind.speedOverGround` | m/s | Wind speed over ground (mirrors speedTrue) |
 | `environment.wind.speedApparent` | m/s | Apparent wind speed (calculated) |
-| `environment.wind.angleApparent` | rad | Apparent wind angle relative to bow |
-| `environment.wind.directionApparent` | rad | Apparent wind direction (absolute) |
-| `environment.wind.directionMagnetic` | rad | Wind direction (magnetic) |
+| `environment.wind.angleApparent` | rad | Apparent wind angle relative to bow (omitted when no heading is available) |
 | `environment.wind.speedGust` | m/s | Gust speed |
 | `environment.wind.gustFactor` | ratio | Gust / sustained ratio |
 | `environment.wind.beaufortScale` | 0--12 | Beaufort scale |
@@ -103,29 +101,16 @@ ln -s "$(pwd)" ~/.signalk/node_modules/signalk-virtual-weather-sensors
 
 ## NMEA2000 Integration
 
-This plugin outputs Signal K deltas. To bridge them onto a physical NMEA2000 bus, pair with an emitter plugin such as [emitter-cannon](https://github.com/NearlCrews/signalk-nmea2000-emitter-cannon).
+This plugin outputs Signal K deltas only. To bridge them onto a physical NMEA2000 bus, pair with an emitter plugin such as [`signalk-nmea2000-emitter-cannon`](https://github.com/NearlCrews/signalk-nmea2000-emitter-cannon). Instance numbers and PGN priority are assigned by the emitter; this plugin does not embed them in the deltas it produces.
 
-### PGN Support
+### PGN Coverage (when paired with `signalk-nmea2000-emitter-cannon`)
 
-| PGN | Description | Data |
-|-----|-------------|------|
-| 130306 | Wind Data | Speed, direction, gusts |
-| 130311 | Environmental Parameters | Atmospheric pressure |
-| 130312 | Temperature | 8 instances (101--111) |
-| 130313 | Humidity | Outside (100) |
-
-### Temperature Instance Assignments
-
-| Instance | Measurement |
-|----------|------------|
-| 101 | Outside air temperature |
-| 102 | Dew point |
-| 103 | Wind chill |
-| 104 | Heat index |
-| 108 | RealFeel shade |
-| 109 | Apparent temperature |
-| 110 | Wet bulb |
-| 111 | Wet bulb globe |
+| PGN | Description | Source paths emitted by this plugin |
+|-----|-------------|-------------------------------------|
+| 130306 | Wind Data | `environment.wind.speedTrue`, `directionTrue`, `speedOverGround`, `speedApparent`, `angleApparent`, `speedGust` |
+| 130311 | Environmental Parameters | `environment.outside.pressure` |
+| 130312 | Temperature | `environment.outside.temperature`, `dewPointTemperature`, `windChillTemperature`, `heatIndexTemperature`, `realFeelShade`, `wetBulbTemperature`, `wetBulbGlobeTemperature`, `apparentTemperature` |
+| 130313 | Humidity | `environment.outside.humidity` |
 
 ## Data Flow
 
@@ -158,12 +143,12 @@ npm run validate       # Type-check + lint + tests (runs on pre-commit)
 
 ### Tech Stack
 
-- TypeScript 5.9+ (strict, ES2023, ESM)
-- Node.js 20+
-- @signalk/server-api 2.10+
-- esbuild for bundling
-- Biome for linting/formatting
-- Vitest for testing (241 tests)
+- TypeScript 6.0 (strict, ES2023, ESM)
+- Node.js 20.18+
+- `@signalk/server-api` 2.24+
+- esbuild 0.28 for bundling
+- Biome 2.4 for linting/formatting
+- Vitest 4.1 for testing (243 tests)
 - Husky + lint-staged for pre-commit hooks
 
 ## License

@@ -3,14 +3,25 @@
  * Maps comprehensive weather data to standardized NMEA2000 Signal K paths.
  */
 
+import type { Context, Delta, Path, PathValue, Timestamp } from '@signalk/server-api';
 import { SIGNALK_PATHS } from '../constants/index.js';
-import type { Logger, SignalKDelta, WeatherData } from '../types/index.js';
+import type { Logger, WeatherData } from '../types/index.js';
 import { NMEA2000Validator } from '../utils/validation.js';
 
-interface PathValue {
-  readonly path: string;
-  readonly value: unknown;
-}
+const SELF_CONTEXT = 'vessels.self' as Context;
+
+const asTimestamp = (ts: string): Timestamp => ts as Timestamp;
+
+/** Build a Signal K PathValue, casting the plain string path to the branded Path type. */
+const pv = (path: string, value: unknown): PathValue => ({
+  path: path as Path,
+  value: value as PathValue['value'],
+});
+
+/** Millimeters to meters (Signal K precipitation depth uses meters). */
+const MM_TO_M = 1 / 1000;
+/** Millimeters per hour to meters per second (Signal K precipitation rate uses m/s). */
+const MMH_TO_MS = 1 / (1000 * 3600);
 
 /**
  * NMEA2000 Path Mapper Service
@@ -21,7 +32,7 @@ export class NMEA2000PathMapper {
 
   constructor(logger: Logger = () => {}) {
     this.logger = logger;
-    this.logger('info', 'NMEA2000PathMapper initialized with enhanced emitter-cannon alignment');
+    this.logger('info', 'NMEA2000PathMapper initialized');
   }
 
   /**
@@ -29,9 +40,9 @@ export class NMEA2000PathMapper {
    * @param weatherData Enhanced weather data from AccuWeather
    * @returns Signal K delta message with complete NMEA2000 mappings
    */
-  public mapToSignalKPaths(weatherData: WeatherData): SignalKDelta {
+  public mapToSignalKPaths(weatherData: WeatherData): Delta {
     const sanitizedData = NMEA2000Validator.sanitizeForNMEA2000(weatherData);
-    const timestamp = sanitizedData.timestamp || new Date().toISOString();
+    const timestamp = asTimestamp(sanitizedData.timestamp || new Date().toISOString());
     const values: PathValue[] = [];
 
     this.addCoreEnvironmentalPaths(values, sanitizedData);
@@ -49,7 +60,7 @@ export class NMEA2000PathMapper {
     });
 
     return {
-      context: 'vessels.self',
+      context: SELF_CONTEXT,
       updates: [
         {
           timestamp,
@@ -59,196 +70,142 @@ export class NMEA2000PathMapper {
     };
   }
 
-  /**
-   * Add core environmental measurement paths (PGN 130311, 130312 base)
-   */
   private addCoreEnvironmentalPaths(values: PathValue[], data: WeatherData): void {
     values.push(
-      { path: SIGNALK_PATHS.ENVIRONMENT.OUTSIDE.TEMPERATURE, value: data.temperature },
-      { path: SIGNALK_PATHS.ENVIRONMENT.OUTSIDE.PRESSURE, value: data.pressure },
+      pv(SIGNALK_PATHS.ENVIRONMENT.OUTSIDE.TEMPERATURE, data.temperature),
+      pv(SIGNALK_PATHS.ENVIRONMENT.OUTSIDE.PRESSURE, data.pressure),
       // Signal K spec: ratio (0-1)
-      { path: SIGNALK_PATHS.ENVIRONMENT.OUTSIDE.HUMIDITY, value: data.humidity }
+      pv(SIGNALK_PATHS.ENVIRONMENT.OUTSIDE.HUMIDITY, data.humidity)
     );
   }
 
-  /**
-   * Add enhanced temperature readings (multiple PGN 130312 instances)
-   */
   private addEnhancedTemperaturePaths(values: PathValue[], data: WeatherData): void {
     values.push(
-      { path: SIGNALK_PATHS.ENVIRONMENT.OUTSIDE.DEW_POINT_TEMPERATURE, value: data.dewPoint },
-      {
-        path: SIGNALK_PATHS.ENVIRONMENT.OUTSIDE.WIND_CHILL_TEMPERATURE,
-        value: data.windChill,
-      },
-      {
-        path: SIGNALK_PATHS.ENVIRONMENT.OUTSIDE.HEAT_INDEX_TEMPERATURE,
-        value: data.heatIndex,
-      }
+      pv(SIGNALK_PATHS.ENVIRONMENT.OUTSIDE.DEW_POINT_TEMPERATURE, data.dewPoint),
+      pv(SIGNALK_PATHS.ENVIRONMENT.OUTSIDE.WIND_CHILL_TEMPERATURE, data.windChill),
+      pv(SIGNALK_PATHS.ENVIRONMENT.OUTSIDE.HEAT_INDEX_TEMPERATURE, data.heatIndex)
     );
 
     if (data.realFeelShade !== undefined) {
-      values.push({
-        path: SIGNALK_PATHS.ENVIRONMENT.OUTSIDE.REAL_FEEL_SHADE,
-        value: data.realFeelShade,
-      });
+      values.push(pv(SIGNALK_PATHS.ENVIRONMENT.OUTSIDE.REAL_FEEL_SHADE, data.realFeelShade));
     }
 
     if (data.wetBulbTemperature !== undefined) {
-      values.push({
-        path: SIGNALK_PATHS.ENVIRONMENT.OUTSIDE.WET_BULB_TEMPERATURE,
-        value: data.wetBulbTemperature,
-      });
+      values.push(
+        pv(SIGNALK_PATHS.ENVIRONMENT.OUTSIDE.WET_BULB_TEMPERATURE, data.wetBulbTemperature)
+      );
     }
 
     if (data.wetBulbGlobeTemperature !== undefined) {
-      values.push({
-        path: SIGNALK_PATHS.ENVIRONMENT.OUTSIDE.WET_BULB_GLOBE_TEMPERATURE,
-        value: data.wetBulbGlobeTemperature,
-      });
+      values.push(
+        pv(
+          SIGNALK_PATHS.ENVIRONMENT.OUTSIDE.WET_BULB_GLOBE_TEMPERATURE,
+          data.wetBulbGlobeTemperature
+        )
+      );
     }
 
     if (data.apparentTemperature !== undefined) {
-      values.push({
-        path: SIGNALK_PATHS.ENVIRONMENT.OUTSIDE.APPARENT_TEMPERATURE,
-        value: data.apparentTemperature,
-      });
+      values.push(
+        pv(SIGNALK_PATHS.ENVIRONMENT.OUTSIDE.APPARENT_TEMPERATURE, data.apparentTemperature)
+      );
     }
   }
 
-  /**
-   * Add humidity measurements (PGN 130313 instances)
-   */
   private addHumidityPaths(values: PathValue[], data: WeatherData): void {
     if (data.absoluteHumidity !== undefined) {
-      values.push({
-        path: SIGNALK_PATHS.ENVIRONMENT.OUTSIDE.ABSOLUTE_HUMIDITY,
-        value: data.absoluteHumidity,
-      });
+      values.push(pv(SIGNALK_PATHS.ENVIRONMENT.OUTSIDE.ABSOLUTE_HUMIDITY, data.absoluteHumidity));
     }
   }
 
-  /**
-   * Add comprehensive wind data (enhanced PGN 130306)
-   */
   private addWindPaths(values: PathValue[], data: WeatherData): void {
     values.push(
-      { path: SIGNALK_PATHS.ENVIRONMENT.WIND.SPEED_TRUE, value: data.windSpeed },
-      { path: SIGNALK_PATHS.ENVIRONMENT.WIND.DIRECTION_TRUE, value: data.windDirection },
-      // speedOverGround mirrors speedTrue for weather API data
-      // Required by emitter-cannon WIND_TRUE_GROUND PGN generator
-      { path: SIGNALK_PATHS.ENVIRONMENT.WIND.SPEED_OVER_GROUND, value: data.windSpeed }
+      pv(SIGNALK_PATHS.ENVIRONMENT.WIND.SPEED_TRUE, data.windSpeed),
+      pv(SIGNALK_PATHS.ENVIRONMENT.WIND.DIRECTION_TRUE, data.windDirection),
+      // speedOverGround mirrors speedTrue for weather API data;
+      // required by signalk-nmea2000-emitter-cannon's WIND_TRUE_GROUND PGN generator.
+      pv(SIGNALK_PATHS.ENVIRONMENT.WIND.SPEED_OVER_GROUND, data.windSpeed)
     );
 
     if (data.windGustSpeed !== undefined) {
-      values.push({
-        path: SIGNALK_PATHS.ENVIRONMENT.WIND.SPEED_GUST,
-        value: data.windGustSpeed,
-      });
+      values.push(pv(SIGNALK_PATHS.ENVIRONMENT.WIND.SPEED_GUST, data.windGustSpeed));
     }
 
     if (data.windGustFactor !== undefined) {
-      values.push({
-        path: SIGNALK_PATHS.ENVIRONMENT.WIND.GUST_FACTOR,
-        value: data.windGustFactor,
-      });
+      values.push(pv(SIGNALK_PATHS.ENVIRONMENT.WIND.GUST_FACTOR, data.windGustFactor));
     }
 
     if (data.beaufortScale !== undefined) {
-      values.push({
-        path: SIGNALK_PATHS.ENVIRONMENT.WIND.BEAUFORT_SCALE,
-        value: data.beaufortScale,
-      });
+      values.push(pv(SIGNALK_PATHS.ENVIRONMENT.WIND.BEAUFORT_SCALE, data.beaufortScale));
     }
 
     if (data.apparentWindSpeed !== undefined) {
-      values.push({
-        path: SIGNALK_PATHS.ENVIRONMENT.WIND.SPEED_APPARENT,
-        value: data.apparentWindSpeed,
-      });
+      values.push(pv(SIGNALK_PATHS.ENVIRONMENT.WIND.SPEED_APPARENT, data.apparentWindSpeed));
     }
 
     if (data.apparentWindAngle !== undefined) {
-      values.push({
-        path: SIGNALK_PATHS.ENVIRONMENT.WIND.ANGLE_APPARENT,
-        value: data.apparentWindAngle,
-      });
+      values.push(pv(SIGNALK_PATHS.ENVIRONMENT.WIND.ANGLE_APPARENT, data.apparentWindAngle));
     }
   }
 
-  /**
-   * Add atmospheric conditions and visibility data
-   */
   private addAtmosphericPaths(values: PathValue[], data: WeatherData): void {
     if (data.uvIndex !== undefined) {
-      values.push({ path: SIGNALK_PATHS.ENVIRONMENT.OUTSIDE.UV_INDEX, value: data.uvIndex });
+      values.push(pv(SIGNALK_PATHS.ENVIRONMENT.OUTSIDE.UV_INDEX, data.uvIndex));
     }
 
     if (data.visibility !== undefined) {
-      values.push({ path: SIGNALK_PATHS.ENVIRONMENT.OUTSIDE.VISIBILITY, value: data.visibility });
+      values.push(pv(SIGNALK_PATHS.ENVIRONMENT.OUTSIDE.VISIBILITY, data.visibility));
     }
 
     if (data.cloudCover !== undefined) {
-      values.push({ path: SIGNALK_PATHS.ENVIRONMENT.OUTSIDE.CLOUD_COVER, value: data.cloudCover });
+      values.push(pv(SIGNALK_PATHS.ENVIRONMENT.OUTSIDE.CLOUD_COVER, data.cloudCover));
     }
 
     if (data.cloudCeiling !== undefined) {
-      values.push({
-        path: SIGNALK_PATHS.ENVIRONMENT.OUTSIDE.CLOUD_CEILING,
-        value: data.cloudCeiling,
-      });
+      values.push(pv(SIGNALK_PATHS.ENVIRONMENT.OUTSIDE.CLOUD_CEILING, data.cloudCeiling));
     }
   }
 
-  /**
-   * Add calculated atmospheric properties
-   */
   private addCalculatedPaths(values: PathValue[], data: WeatherData): void {
     if (data.airDensityEnhanced !== undefined) {
-      values.push({
-        path: SIGNALK_PATHS.ENVIRONMENT.OUTSIDE.AIR_DENSITY,
-        value: data.airDensityEnhanced,
-      });
+      values.push(pv(SIGNALK_PATHS.ENVIRONMENT.OUTSIDE.AIR_DENSITY, data.airDensityEnhanced));
     }
   }
 
-  /**
-   * Add precipitation data paths
-   */
   private addPrecipitationPaths(values: PathValue[], data: WeatherData): void {
     // Signal K expects precipitation depth in meters (source is mm).
     if (data.precipitationLastHour !== undefined) {
-      values.push({
-        path: SIGNALK_PATHS.ENVIRONMENT.OUTSIDE.PRECIPITATION_LAST_HOUR,
-        value: data.precipitationLastHour / 1000,
-      });
+      values.push(
+        pv(
+          SIGNALK_PATHS.ENVIRONMENT.OUTSIDE.PRECIPITATION_LAST_HOUR,
+          data.precipitationLastHour * MM_TO_M
+        )
+      );
     }
 
     // Signal K expects precipitation rate in m/s (source is mm/h).
     if (data.precipitationCurrent !== undefined) {
-      values.push({
-        path: SIGNALK_PATHS.ENVIRONMENT.OUTSIDE.PRECIPITATION_CURRENT,
-        value: data.precipitationCurrent / (1000 * 3600),
-      });
+      values.push(
+        pv(
+          SIGNALK_PATHS.ENVIRONMENT.OUTSIDE.PRECIPITATION_CURRENT,
+          data.precipitationCurrent * MMH_TO_MS
+        )
+      );
     }
   }
 
-  /**
-   * Add marine safety and comfort indices
-   */
   private addSafetyPaths(values: PathValue[], data: WeatherData): void {
     if (data.heatStressIndex !== undefined) {
-      values.push({
-        path: SIGNALK_PATHS.ENVIRONMENT.OUTSIDE.HEAT_STRESS_INDEX,
-        value: data.heatStressIndex,
-      });
+      values.push(pv(SIGNALK_PATHS.ENVIRONMENT.OUTSIDE.HEAT_STRESS_INDEX, data.heatStressIndex));
     }
 
     if (data.temperatureDeparture24h !== undefined) {
-      values.push({
-        path: SIGNALK_PATHS.ENVIRONMENT.OUTSIDE.TEMPERATURE_DEPARTURE_24H,
-        value: data.temperatureDeparture24h,
-      });
+      values.push(
+        pv(
+          SIGNALK_PATHS.ENVIRONMENT.OUTSIDE.TEMPERATURE_DEPARTURE_24H,
+          data.temperatureDeparture24h
+        )
+      );
     }
   }
 

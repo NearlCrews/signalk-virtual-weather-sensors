@@ -35,8 +35,8 @@ _None as of v1.2.2._ The previous percentage-vs-ratio humidity deviation was res
   - ✅ WindCalculator tests (45 tests) - vector math, edge cases (negative angles, NaN)
   - ✅ NMEA2000PathMapper tests (15 tests) - delta build, sanitization
   - ✅ utils/conversions tests (48 tests) - all conversions + edge cases *(new in v1.2.2)*
-  - ✅ utils/validation tests (53 tests) - sanitize, validators, response schema *(new in v1.2.2)*
-  - ✅ Total: 241 tests across 7 test files (coverage: 81.9% stmts, 90.75% funcs)
+  - ✅ utils/validation tests (54 tests) - sanitize, validators, response schema *(new in v1.2.2)*
+  - ✅ Total: 243 tests across 7 test files (coverage: 81.9% stmts, 90.75% funcs)
 
 - [ ] **Add delta message format validation tests**
   - Unit tests to verify proper Signal K delta structure
@@ -187,7 +187,7 @@ _None as of v1.2.2._ The previous percentage-vs-ratio humidity deviation was res
   - Regular dependency reviews
 
 - [x] **Code quality improvements** *(v1.1.0, expanded v1.2.2)*
-  - ✅ Increased test coverage (241 tests; 81.9% stmts, 90.75% funcs)
+  - ✅ Increased test coverage (243 tests; 81.9% stmts, 90.75% funcs)
   - ✅ Enhanced logger with Signal K UI integration; errors now route to `app.error`
   - ✅ Logger sanitizes API keys at all levels
   - [ ] Increase branch coverage above 80% (currently 78.06%, gaps in WeatherService error paths)

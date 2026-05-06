@@ -7,12 +7,13 @@
 import type { ServerAPI } from '@signalk/server-api';
 import { WindCalculator } from '../calculators/WindCalculator.js';
 import { ERROR_CODES, PERFORMANCE, PLUGIN } from '../constants/index.js';
-import type {
-  Logger,
-  PluginConfiguration,
-  PluginState,
-  VesselNavigationData,
-  WeatherData,
+import {
+  isCompleteNavigationData,
+  type Logger,
+  type PluginConfiguration,
+  type PluginState,
+  type VesselNavigationData,
+  type WeatherData,
 } from '../types/index.js';
 import { AccuWeatherService } from './AccuWeatherService.js';
 import { SignalKService } from './SignalKService.js';
@@ -75,22 +76,17 @@ export class WeatherService {
     this.logger = logger;
 
     this.logger('info', 'WeatherService initializing', {
-      pluginName: 'signalk-virtual-weather-sensors',
+      pluginName: PLUGIN.NAME,
       updateFrequency: this.config.updateFrequency,
       emissionInterval: this.config.emissionInterval,
       enableEventDriven: true,
       useVesselPosition: true,
     });
 
-    // Initialize services — accept injected instances for testability while
-    // defaulting to real implementations to keep existing call sites working.
     this.accuWeatherService =
       accuWeatherService ?? new AccuWeatherService(this.config.accuWeatherApiKey, this.logger);
-
     this.signalKService = signalKService ?? new SignalKService(this.app, this.logger);
-
-    // Use provided wind calculator or create a basic one
-    this.windCalculator = windCalculator || this.createBasicWindCalculator();
+    this.windCalculator = windCalculator ?? this.createBasicWindCalculator();
 
     this.logger('info', 'WeatherService initialized successfully');
   }
@@ -259,8 +255,7 @@ export class WeatherService {
       quality: 0.5, // Mock data has lower quality
     };
 
-    // Calculate apparent wind if we have vessel data
-    if (vesselData.isComplete && vesselData.speedOverGround && vesselData.courseOverGroundTrue) {
+    if (isCompleteNavigationData(vesselData)) {
       const apparentWindSpeed = this.windCalculator.calculateApparentWindSpeed(
         baseWeatherData.windSpeed,
         vesselData.speedOverGround,
@@ -333,7 +328,7 @@ export class WeatherService {
     try {
       this.logger('debug', 'Starting weather data update');
 
-      // Single navigation read also yields position — avoids fetching twice.
+      // Single navigation read also yields position: avoids fetching twice.
       const vesselData = this.signalKService.getVesselNavigationData();
       const position = vesselData.position
         ? {
@@ -353,7 +348,7 @@ export class WeatherService {
       // Drop the result if stop() ran while the fetch was in flight; otherwise we'd
       // resurrect state on a torn-down service and race a subsequent start().
       if (this.state !== 'running' && this.state !== 'starting') {
-        this.logger('debug', 'Discarding weather update — service no longer running', {
+        this.logger('debug', 'Discarding weather update: service no longer running', {
           state: this.state,
         });
         return;
@@ -440,7 +435,7 @@ export class WeatherService {
     weatherData: WeatherData,
     vesselData: VesselNavigationData
   ): { apparentWindSpeed?: number; apparentWindAngle?: number } {
-    if (vesselData.isComplete && vesselData.speedOverGround && vesselData.courseOverGroundTrue) {
+    if (isCompleteNavigationData(vesselData)) {
       return this.calculateApparentWindWithCompleteData(weatherData, vesselData);
     }
 
@@ -453,12 +448,12 @@ export class WeatherService {
    */
   private calculateApparentWindWithCompleteData(
     weatherData: WeatherData,
-    vesselData: VesselNavigationData
+    vesselData: VesselNavigationData & {
+      readonly speedOverGround: number;
+      readonly courseOverGroundTrue: number;
+    }
   ): { apparentWindSpeed?: number; apparentWindAngle?: number } {
-    // Caller (calculateApparentWindData) only invokes this when vesselData.isComplete
-    // is true and both fields are truthy, so they're guaranteed defined here.
-    const speedOverGround = vesselData.speedOverGround as number;
-    const courseOverGroundTrue = vesselData.courseOverGroundTrue as number;
+    const { speedOverGround, courseOverGroundTrue } = vesselData;
 
     try {
       const apparentWindSpeed = this.windCalculator.calculateApparentWindSpeed(
@@ -522,7 +517,7 @@ export class WeatherService {
 
   /**
    * Calculate apparent wind angle from vessel heading. Returns null when no heading
-   * is available — callers must omit the apparentWindAngle path entirely rather than
+   * is available: callers must omit the apparentWindAngle path entirely rather than
    * emitting an absolute bearing as if it were a bow-relative angle.
    * @private
    */

@@ -1,7 +1,6 @@
 /**
- * SignalK Data Service
- * Modern TypeScript implementation for vessel navigation data retrieval
- * Provides type-safe interface to SignalK server with comprehensive fallback logic
+ * SignalK navigation-data accessor with caching and source-exclusion logic.
+ * Wraps `getSelfPath` calls so the rest of the plugin sees normalized values.
  */
 
 import type { ServerAPI } from '@signalk/server-api';
@@ -12,10 +11,6 @@ import { isValidCoordinates, msToKnots, radiansToDegrees } from '../utils/conver
 /** Source labels (lowercased) whose data we deliberately ignore to avoid feedback loops. */
 const EXCLUDED_SOURCE_LABELS: ReadonlyArray<string> = ['signalk-node-red', 'node-red'];
 
-/**
- * SignalK data value structure
- * Used to type the response from getSelfPath
- */
 interface SignalKDataValue {
   value: unknown;
   timestamp?: string;
@@ -27,22 +22,16 @@ interface SignalKDataValue {
   };
 }
 
-/**
- * Cached vessel data structure
- */
 interface CachedVesselData {
   position: GeoLocation | null;
   speedOverGround: number | null;
   courseOverGroundTrue: number | null;
   headingTrue: number | null;
   headingMagnetic: number | null;
-  lastUpdate: Date | null;
+  /** Wall-clock millisecond timestamp of the most recent cache write (null when never written). */
+  lastUpdateMs: number | null;
 }
 
-/**
- * SignalK Service for vessel navigation data operations
- * Provides comprehensive vessel data retrieval with fallback logic and caching
- */
 export class SignalKService {
   private readonly app: ServerAPI;
   private readonly logger: Logger;
@@ -54,7 +43,7 @@ export class SignalKService {
     courseOverGroundTrue: null,
     headingTrue: null,
     headingMagnetic: null,
-    lastUpdate: null,
+    lastUpdateMs: null,
   };
 
   constructor(app: ServerAPI, logger: Logger = () => {}) {
@@ -66,10 +55,6 @@ export class SignalKService {
     });
   }
 
-  /**
-   * Get comprehensive vessel navigation data
-   * @returns Complete vessel navigation data with validity indicators
-   */
   public getVesselNavigationData(): VesselNavigationData {
     const position = this.getVesselPosition();
     const speedOverGround = this.getVesselSpeedOverGround();
@@ -79,17 +64,15 @@ export class SignalKService {
     const magneticVariation = this.getMagneticVariation();
     const dataAge = this.getDataAge();
 
-    // Update cache
     this.cachedData = {
       position,
       speedOverGround,
       courseOverGroundTrue,
       headingTrue,
       headingMagnetic,
-      lastUpdate: new Date(),
+      lastUpdateMs: Date.now(),
     };
 
-    // Determine if we have complete data for wind calculations
     const isComplete = !!(
       position &&
       typeof speedOverGround === 'number' &&
@@ -135,7 +118,6 @@ export class SignalKService {
         return null;
       }
 
-      // Filter out data from excluded sources
       if (this.isExcludedSource(positionData)) {
         this.logger('debug', 'Ignoring position data from excluded source', {
           source: positionData.source,
@@ -192,7 +174,6 @@ export class SignalKService {
         return null;
       }
 
-      // Filter out data from excluded sources
       if (this.isExcludedSource(speedData)) {
         this.logger('debug', 'Ignoring speed data from excluded source', {
           source: speedData.source,
@@ -202,7 +183,6 @@ export class SignalKService {
 
       const speed = speedData.value;
 
-      // Validate speed (should be non-negative and within reasonable limits)
       if (
         speed < VALIDATION_LIMITS.VESSEL_SPEED.MIN ||
         speed > VALIDATION_LIMITS.VESSEL_SPEED.MAX
@@ -227,11 +207,10 @@ export class SignalKService {
   }
 
   /**
-   * Get vessel course over ground (true) with intelligent fallbacks
-   * @returns Course in radians or null if not available
+   * Returns the best-available course/heading in radians, falling back through
+   * COG-true, COG-magnetic, heading-true, heading-magnetic in order.
    */
   public getVesselCourseOverGroundTrue(): number | null {
-    // Define fallback order for course/heading sources
     const fallbackPaths = [
       'navigation.courseOverGroundTrue',
       'navigation.courseOverGroundMagnetic',
@@ -247,7 +226,6 @@ export class SignalKService {
           continue;
         }
 
-        // Filter out data from excluded sources
         if (this.isExcludedSource(courseData)) {
           this.logger('debug', `Ignoring ${path} data from excluded source`, {
             source: courseData.source,
@@ -257,7 +235,6 @@ export class SignalKService {
 
         const course = courseData.value;
 
-        // Validate course/heading (should be 0-2π radians)
         if (!this.isValidCourse(course)) {
           this.logger('warn', `Invalid ${path} value`, {
             course,
@@ -388,7 +365,7 @@ export class SignalKService {
    * @returns True if vessel speed exceeds threshold
    */
   public isVesselMoving(threshold = VALIDATION_LIMITS.VESSEL_MOVING_THRESHOLD): boolean {
-    const speed = this.getVesselSpeedOverGround();
+    const speed = this.cachedData.speedOverGround ?? this.getVesselSpeedOverGround();
     return speed !== null && speed > threshold;
   }
 
@@ -397,11 +374,11 @@ export class SignalKService {
    * @returns Age in seconds or null if no cached data
    */
   public getDataAge(): number | null {
-    if (!this.cachedData.lastUpdate) {
+    const lastUpdateMs = this.cachedData.lastUpdateMs;
+    if (lastUpdateMs === null) {
       return null;
     }
-
-    return Math.floor((Date.now() - this.cachedData.lastUpdate.getTime()) / 1000);
+    return Math.floor((Date.now() - lastUpdateMs) / 1000);
   }
 
   /**
@@ -423,7 +400,7 @@ export class SignalKService {
       courseOverGroundTrue: null,
       headingTrue: null,
       headingMagnetic: null,
-      lastUpdate: null,
+      lastUpdateMs: null,
     };
     this.logger('debug', 'SignalK data cache cleared');
   }
@@ -432,20 +409,20 @@ export class SignalKService {
    * Validate SignalK data structure
    * @private
    */
-  private isValidSignalKData(data: SignalKDataValue | null | undefined): data is SignalKDataValue {
+  private isValidSignalKData(data: unknown): data is SignalKDataValue {
     return !!(
       data &&
       typeof data === 'object' &&
       'value' in data &&
-      data.value !== null &&
-      data.value !== undefined
+      (data as { value: unknown }).value !== null &&
+      (data as { value: unknown }).value !== undefined
     );
   }
 
   /**
    * Check if data source should be excluded (e.g., node-red sources to avoid feedback loops).
    * 'signalk-node-red' is a substring of 'node-red' is true, so a single check
-   * against 'node-red' covers both — the explicit list keeps intent obvious.
+   * against 'node-red' covers both. The explicit list keeps intent obvious.
    * @private
    */
   private isExcludedSource(data: SignalKDataValue): boolean {
@@ -457,14 +434,9 @@ export class SignalKService {
     return false;
   }
 
-  /**
-   * Validate course/heading value in radians (0 to 2π)
-   * @private
-   */
   private isValidCourse(course: number): boolean {
     return (
-      typeof course === 'number' &&
-      !Number.isNaN(course) &&
+      Number.isFinite(course) &&
       course >= VALIDATION_LIMITS.WIND_DIRECTION.MIN &&
       course <= VALIDATION_LIMITS.WIND_DIRECTION.MAX
     );
@@ -480,7 +452,7 @@ export class SignalKService {
     hasComplete: boolean;
   } {
     const dataAge = this.getDataAge();
-    const isStale = this.isDataStale();
+    const isStale = dataAge !== null && dataAge > this.maxDataAge;
     const cachedData = this.getCachedNavigationData();
 
     return {

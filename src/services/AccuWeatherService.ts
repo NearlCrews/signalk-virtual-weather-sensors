@@ -3,12 +3,11 @@
  * Modern TypeScript implementation with comprehensive error handling and enhanced field extraction
  */
 
-import { ACCUWEATHER, DEFAULT_CONFIG, ERROR_CODES, UNITS } from '../constants/index.js';
+import { ACCUWEATHER, DEFAULT_CONFIG, ERROR_CODES, PLUGIN, UNITS } from '../constants/index.js';
 import type {
   AccuWeatherConfig,
   AccuWeatherCurrentConditions,
   AccuWeatherLocation,
-  ApiResponse,
   GeoLocation,
   Logger,
   WeatherData,
@@ -18,14 +17,19 @@ import {
   calculateAirDensity,
   calculateBeaufortScale,
   celsiusToKelvin,
+  clamp,
   isValidCoordinates,
   isValidHumidity,
   isValidPressure,
   isValidTemperature,
   isValidWindSpeed,
+  kelvinToCelsius,
   percentageToRatio,
 } from '../utils/conversions.js';
 import { validateAccuWeatherResponse } from '../utils/validation.js';
+
+/** Kilometers to meters (AccuWeather visibility comes in km). */
+const KM_TO_M = 1000;
 
 /** Maximum allowed response body size in bytes (1 MiB) */
 const MAX_RESPONSE_BYTES = 1_048_576;
@@ -42,7 +46,7 @@ function capString(value: string, maxLength: number): string {
 }
 
 /**
- * Lowercased retryable error code substrings — computed once at module load
+ * Lowercased retryable error code substrings, computed once at module load
  * so isRetryableError doesn't recompute on every retry classification.
  */
 const RETRYABLE_ERROR_SUBSTRINGS: ReadonlySet<string> = new Set([
@@ -62,6 +66,12 @@ const MAX_CACHE_SIZE = 100;
 
 /** Maximum age in milliseconds for cache entries (2 hours) */
 const CACHE_MAX_AGE_MS = 2 * 60 * 60 * 1000;
+
+/** How often the location cache prune sweep runs (5 minutes). */
+const CACHE_PRUNE_INTERVAL_MS = 5 * 60 * 1000;
+
+/** Upper bound on Retry-After delays we honor, regardless of header value. */
+const MAX_RETRY_AFTER_MS = 60_000;
 
 export class AccuWeatherService {
   private readonly config: AccuWeatherConfig;
@@ -159,11 +169,11 @@ export class AccuWeatherService {
     const apparentTemperature = toKelvin(conditions.ApparentTemperature?.Metric?.Value);
 
     const windGustSpeed = conditions.WindGust.Speed.Metric.Value * UNITS.WIND_SPEED.KMH_TO_MS;
-    // undefined when wind is calm — a literal 1 would be indistinguishable from "no gust"
+    // undefined when wind is calm: a literal 1 would be indistinguishable from "no gust"
     const windGustFactor = windSpeed > 0 ? windGustSpeed / windSpeed : undefined;
 
     const uvIndex = conditions.UVIndexFloat;
-    const visibility = conditions.Visibility.Metric.Value * 1000; // km to m
+    const visibility = conditions.Visibility.Metric.Value * KM_TO_M;
     const cloudCover = percentageToRatio(conditions.CloudCover);
     const cloudCeiling = conditions.Ceiling.Metric.Value;
     const pressureTendency = capString(
@@ -196,7 +206,7 @@ export class AccuWeatherService {
       windChill,
       heatIndex,
 
-      // Enhanced temperature readings — conditional spread so we never assign
+      // Enhanced temperature readings: conditional spread so we never assign
       // explicit `undefined` under exactOptionalPropertyTypes
       ...(realFeelShade !== undefined && { realFeelShade }),
       ...(wetBulbTemperature !== undefined && { wetBulbTemperature }),
@@ -244,7 +254,7 @@ export class AccuWeatherService {
    * @private
    */
   private calculateHeatStressIndex(wetBulbGlobeTemperatureK: number): number {
-    const wbgtC = wetBulbGlobeTemperatureK - UNITS.TEMPERATURE.CELSIUS_TO_KELVIN;
+    const wbgtC = kelvinToCelsius(wetBulbGlobeTemperatureK);
     // Heat stress categories (military/marine standard)
     if (wbgtC < 27) return 0;
     if (wbgtC < 29) return 1;
@@ -260,8 +270,7 @@ export class AccuWeatherService {
   private pruneLocationCache(): void {
     const now = Date.now();
 
-    // Only prune every 5 minutes to avoid overhead
-    if (now - this.lastCachePrune < 5 * 60 * 1000) {
+    if (now - this.lastCachePrune < CACHE_PRUNE_INTERVAL_MS) {
       return;
     }
 
@@ -306,21 +315,19 @@ export class AccuWeatherService {
     this.pruneLocationCache();
 
     const cacheKey = `${location.latitude.toFixed(4)},${location.longitude.toFixed(4)}`;
+    const now = Date.now();
 
-    // Check cache first
     const cached = this.locationCache.get(cacheKey);
-    if (cached && Date.now() - cached.timestamp < this.config.locationCacheTimeout * 1000) {
+    if (cached && now - cached.timestamp < this.config.locationCacheTimeout * 1000) {
       this.logger('debug', 'Using cached location key', { cacheKey });
       return cached.location.Key;
     }
 
-    // Fetch location data from API
     const locationData = await this.searchLocation(location);
 
-    // Cache the result
     this.locationCache.set(cacheKey, {
       location: locationData,
-      timestamp: Date.now(),
+      timestamp: now,
     });
 
     this.logger('debug', 'Location key retrieved and cached', {
@@ -344,22 +351,22 @@ export class AccuWeatherService {
     url.searchParams.set('language', ACCUWEATHER.DEFAULT_LANGUAGE);
     url.searchParams.set('details', 'true');
 
-    const response = await this.makeApiRequest<AccuWeatherLocation>(url);
+    const data = await this.makeApiRequest<AccuWeatherLocation>(url);
 
-    if (!response.data || typeof response.data !== 'object') {
+    if (!data || typeof data !== 'object') {
       throw new Error(
         `${ERROR_CODES.DATA.INVALID_WEATHER_DATA}: No location found for coordinates`
       );
     }
 
-    const locationKey = (response.data as { Key?: unknown }).Key;
+    const locationKey = (data as { Key?: unknown }).Key;
     if (typeof locationKey !== 'string' || !LOCATION_KEY_PATTERN.test(locationKey)) {
       throw new Error(
         `${ERROR_CODES.NETWORK.API_INVALID_RESPONSE}: AccuWeather location key has unexpected format`
       );
     }
 
-    return response.data;
+    return data;
   }
 
   /**
@@ -382,29 +389,29 @@ export class AccuWeatherService {
     url.searchParams.set('language', ACCUWEATHER.DEFAULT_LANGUAGE);
     url.searchParams.set('details', 'true');
 
-    const response = await this.makeApiRequest<AccuWeatherCurrentConditions[]>(url);
+    const data = await this.makeApiRequest<AccuWeatherCurrentConditions[]>(url);
 
-    if (!response.data || !Array.isArray(response.data) || response.data.length === 0) {
+    if (!data || !Array.isArray(data) || data.length === 0) {
       throw new Error(
         `${ERROR_CODES.DATA.INVALID_WEATHER_DATA}: No current conditions data available`
       );
     }
 
-    const validation = validateAccuWeatherResponse(response.data);
+    const validation = validateAccuWeatherResponse(data);
     if (!validation.isValid) {
       throw new Error(
         `${ERROR_CODES.NETWORK.API_INVALID_RESPONSE}: AccuWeather response failed validation - ${validation.errors.join('; ')}`
       );
     }
 
-    return response.data;
+    return data;
   }
 
   /**
    * Make API request with retry logic and error handling
    * @private
    */
-  private async makeApiRequest<T>(url: URL, attempt = 1): Promise<ApiResponse<T>> {
+  private async makeApiRequest<T>(url: URL, attempt = 1): Promise<T> {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), this.config.requestTimeout);
 
@@ -419,7 +426,7 @@ export class AccuWeatherService {
         method: 'GET',
         headers: {
           Accept: 'application/json',
-          'User-Agent': 'signalk-virtual-weather-sensors/1.0.0',
+          'User-Agent': `${PLUGIN.NAME}/${PLUGIN.VERSION}`,
         },
         signal: controller.signal,
       });
@@ -430,12 +437,7 @@ export class AccuWeatherService {
         await this.handleApiError(response, attempt);
       }
 
-      const data = await this.readBoundedJson<T>(response);
-
-      return {
-        data,
-        timestamp: new Date().toISOString(),
-      };
+      return await this.readBoundedJson<T>(response);
     } catch (error) {
       clearTimeout(timeout);
 
@@ -487,7 +489,7 @@ export class AccuWeatherService {
       }
     }
 
-    // Always read as text with a length check — Content-Length may be missing
+    // Always read as text with a length check: Content-Length may be missing
     // (chunked encoding) or lie about the body size.
     const text = await response.text();
     if (text.length > MAX_RESPONSE_BYTES) {
@@ -518,7 +520,7 @@ export class AccuWeatherService {
     // Try parsing as seconds (integer)
     const seconds = Number.parseInt(retryAfter, 10);
     if (!Number.isNaN(seconds) && seconds > 0) {
-      return Math.min(seconds * 1000, 60000); // Cap at 60 seconds
+      return Math.min(seconds * 1000, MAX_RETRY_AFTER_MS);
     }
 
     // Try parsing as HTTP date
@@ -526,7 +528,7 @@ export class AccuWeatherService {
     if (!Number.isNaN(retryDate.getTime())) {
       const delayMs = retryDate.getTime() - Date.now();
       if (delayMs > 0) {
-        return Math.min(delayMs, 60000); // Cap at 60 seconds
+        return Math.min(delayMs, MAX_RETRY_AFTER_MS);
       }
     }
 
@@ -536,7 +538,7 @@ export class AccuWeatherService {
   /**
    * Handle API error responses by classifying the status and throwing a
    * tagged error. Backoff is owned by the caller (`makeApiRequest`'s retry
-   * loop) so this method must not sleep — sleeping here previously caused
+   * loop) so this method must not sleep. Sleeping here previously caused
    * 2× backoff per retry attempt.
    * @private
    */
@@ -548,8 +550,11 @@ export class AccuWeatherService {
     try {
       const errorData = (await response.json()) as { message?: string };
       message = errorData.message || response.statusText;
-    } catch {
-      // JSON parse failed, use statusText
+    } catch (parseError) {
+      this.logger('debug', 'API error response was not JSON, falling back to statusText', {
+        status: response.status,
+        parseError: parseError instanceof Error ? parseError.message : String(parseError),
+      });
     }
 
     switch (statusCode) {
@@ -621,7 +626,7 @@ export class AccuWeatherService {
     if (conditions.WindGust.Speed.Metric.Value > 0) quality += 0.05;
     if (conditions.Visibility.Metric.Value > 0) quality += 0.05;
 
-    return Math.max(0, Math.min(1, quality));
+    return clamp(quality, 0, 1);
   }
 
   /**
@@ -670,7 +675,7 @@ export class AccuWeatherService {
    * @private
    */
   private sanitizeUrlForLogging(url: URL): string {
-    const safe = new URL(url.toString());
+    const safe = new URL(url);
     if (safe.searchParams.has('apikey')) {
       safe.searchParams.set('apikey', '***');
     }

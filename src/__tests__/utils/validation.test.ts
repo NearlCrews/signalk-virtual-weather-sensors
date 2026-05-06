@@ -237,11 +237,19 @@ describe('validateConfiguration / sanitizeConfiguration', () => {
     expect(result.isValid).toBe(false);
   });
 
-  it('warns when API key has unexpected characters', () => {
+  it('warns when API key contains whitespace or control characters', () => {
     const result = validateConfiguration({
-      accuWeatherApiKey: 'abc123!@#$%^&*()abcdef1234567890',
+      accuWeatherApiKey: 'abc123def456 ghi789jkl012mnop3456',
     });
-    expect(result.warnings.some((w) => w.includes('unexpected characters'))).toBe(true);
+    expect(result.warnings.some((w) => w.includes('whitespace or control characters'))).toBe(true);
+  });
+
+  it('does not warn on punctuation in API keys (some legacy keys contain them)', () => {
+    const result = validateConfiguration({
+      accuWeatherApiKey: 'abc123-def456_ghi789.jkl012-mnop',
+    });
+    expect(result.warnings.some((w) => w.includes('whitespace or control'))).toBe(false);
+    expect(result.warnings.some((w) => w.includes('unexpected'))).toBe(false);
   });
 
   it('errors on bad updateFrequency / emissionInterval', () => {

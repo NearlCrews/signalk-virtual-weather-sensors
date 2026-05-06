@@ -376,43 +376,6 @@ export function createOrderedMock() {
   };
 }
 
-/**
- * Utility to test error conditions
- */
-export function expectToThrow<T extends Error>(
-  fn: () => void | Promise<void>,
-  errorType?: new () => T,
-  message?: string | RegExp
-) {
-  if (errorType) {
-    expect(fn).toThrow(errorType);
-  } else {
-    expect(fn).toThrow();
-  }
-
-  if (message) {
-    expect(fn).toThrow(message);
-  }
-}
-
-/**
- * Utility for testing with different time zones
- */
-export function withTimeZone<T>(timeZone: string, fn: () => T): T {
-  const originalTZ = process.env.TZ;
-  process.env.TZ = timeZone;
-
-  try {
-    return fn();
-  } finally {
-    if (originalTZ) {
-      process.env.TZ = originalTZ;
-    } else {
-      process.env.TZ = undefined;
-    }
-  }
-}
-
 // ===============================
 // Custom Matchers
 // ===============================

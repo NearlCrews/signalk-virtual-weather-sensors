@@ -1,13 +1,27 @@
 import {
   BEAUFORT_LIMITS,
+  DEFAULT_CONFIG,
   NMEA2000_LIMITS,
-  UNITS,
   UV_INDEX_LIMITS,
   VALIDATION_LIMITS,
   VISIBILITY_LIMITS_M,
 } from '../constants/index.js';
 import type { PluginConfiguration, VesselNavigationData, WeatherData } from '../types/index.js';
-import { clamp, normalizeAngle0To2Pi } from './conversions.js';
+import { celsiusToKelvin, clamp, kelvinToCelsius, normalizeAngle0To2Pi } from './conversions.js';
+
+/** NMEA2000 temperature bounds expressed in Kelvin (precomputed to avoid C↔K work on the hot path). */
+const NMEA2000_TEMP_K_MIN = celsiusToKelvin(NMEA2000_LIMITS.TEMPERATURE_C.MIN);
+const NMEA2000_TEMP_K_MAX = celsiusToKelvin(NMEA2000_LIMITS.TEMPERATURE_C.MAX);
+
+/** Field names required on every AccuWeather current-conditions response. */
+const REQUIRED_ACCUWEATHER_FIELDS: ReadonlyArray<string> = [
+  'LocalObservationDateTime',
+  'Temperature',
+  'RelativeHumidity',
+  'Wind',
+  'Pressure',
+  'DewPoint',
+];
 
 /**
  * Weather data validation results
@@ -205,19 +219,19 @@ export function validateTemperatureConsistency(data: Partial<WeatherData>): Vali
   const errors: string[] = [];
   const warnings: string[] = [];
 
-  if (data.temperature && data.dewPoint) {
+  if (data.temperature !== undefined && data.dewPoint !== undefined) {
     if (data.dewPoint > data.temperature) {
       errors.push('Dew point cannot be higher than air temperature');
     }
   }
 
-  if (data.temperature && data.windChill) {
-    if (data.windChill > data.temperature && data.windSpeed && data.windSpeed > 1) {
+  if (data.temperature !== undefined && data.windChill !== undefined) {
+    if (data.windChill > data.temperature && data.windSpeed !== undefined && data.windSpeed > 1) {
       warnings.push('Wind chill is higher than air temperature despite wind presence');
     }
   }
 
-  if (data.wetBulbTemperature && data.temperature) {
+  if (data.wetBulbTemperature !== undefined && data.temperature !== undefined) {
     if (data.wetBulbTemperature > data.temperature) {
       errors.push('Wet bulb temperature cannot exceed dry bulb temperature');
     }
@@ -263,10 +277,12 @@ function validateSpeedOverGround(
     return;
   }
 
-  if (data.speedOverGround < 0) {
+  if (data.speedOverGround < VALIDATION_LIMITS.VESSEL_SPEED.MIN) {
     errors.push('Speed over ground cannot be negative');
-  } else if (data.speedOverGround > 100) {
-    warnings.push(`Speed over ground ${data.speedOverGround}m/s seems unusually high (>100m/s)`);
+  } else if (data.speedOverGround > VALIDATION_LIMITS.VESSEL_SPEED.MAX) {
+    warnings.push(
+      `Speed over ground ${data.speedOverGround}m/s seems unusually high (>${VALIDATION_LIMITS.VESSEL_SPEED.MAX}m/s)`
+    );
   }
 }
 
@@ -351,11 +367,13 @@ export function isCompleteForWindCalculations(data: Partial<VesselNavigationData
  * Plugin Configuration Validation Functions
  */
 
-/**
- * AccuWeather API key format validation
- * AccuWeather API keys are typically 32 alphanumeric characters
- */
-const ACCUWEATHER_API_KEY_PATTERN = /^[a-zA-Z0-9]{20,40}$/;
+/** Minimum length for any plausible AccuWeather API key. */
+const API_KEY_MIN_LENGTH = 20;
+/** Length above which an AccuWeather API key is unusually long. */
+const API_KEY_MAX_REASONABLE_LENGTH = 40;
+/** Disallowed control/whitespace characters in API keys (catches paste mistakes). */
+// biome-ignore lint/suspicious/noControlCharactersInRegex: deliberately matching paste-error control chars
+const API_KEY_INVALID_CHARS = /[\s\x00-\x1f\x7f]/;
 
 /** Common placeholder strings users paste before adding their real key */
 const API_KEY_PLACEHOLDER_PATTERNS: ReadonlyArray<RegExp> = [
@@ -367,10 +385,6 @@ const API_KEY_PLACEHOLDER_PATTERNS: ReadonlyArray<RegExp> = [
   /^sample+$/i,
 ];
 
-/**
- * Validate API key field
- * AccuWeather API keys are typically 32 alphanumeric characters
- */
 function validateApiKey(
   config: Partial<PluginConfiguration>,
   errors: string[],
@@ -388,21 +402,22 @@ function validateApiKey(
     return;
   }
 
-  // Check minimum length
-  if (trimmedKey.length < 20) {
+  if (trimmedKey.length < API_KEY_MIN_LENGTH) {
     errors.push(
-      'AccuWeather API key is too short (minimum 20 characters). Get your key at https://developer.accuweather.com/'
+      `AccuWeather API key is too short (minimum ${API_KEY_MIN_LENGTH} characters). Get your key at https://developer.accuweather.com/`
     );
     return;
   }
 
-  // Check maximum reasonable length
-  if (trimmedKey.length > 40) {
+  if (trimmedKey.length > API_KEY_MAX_REASONABLE_LENGTH) {
     warnings.push('AccuWeather API key is longer than expected (typically 32 characters)');
-  } else if (!ACCUWEATHER_API_KEY_PATTERN.test(trimmedKey)) {
-    // Only check format if length is in expected range (regex enforces {20,40})
+  }
+
+  // Catch paste errors: spaces, tabs, control characters. Don't whitelist alphanumeric:
+  // legitimate keys vary in character set across AccuWeather generations.
+  if (API_KEY_INVALID_CHARS.test(trimmedKey)) {
     warnings.push(
-      'AccuWeather API key contains unexpected characters (should be alphanumeric). Please verify your key is correct.'
+      'AccuWeather API key contains whitespace or control characters. Please verify your key is correct.'
     );
   }
 
@@ -481,8 +496,8 @@ export function validateConfiguration(config: Partial<PluginConfiguration>): Val
 export function sanitizeConfiguration(config: Partial<PluginConfiguration>): PluginConfiguration {
   return {
     accuWeatherApiKey: config.accuWeatherApiKey?.trim() || '',
-    updateFrequency: Math.max(1, Math.min(60, config.updateFrequency || 5)),
-    emissionInterval: Math.max(1, Math.min(60, config.emissionInterval || 5)),
+    updateFrequency: clamp(config.updateFrequency || DEFAULT_CONFIG.UPDATE_FREQUENCY, 1, 60),
+    emissionInterval: clamp(config.emissionInterval || DEFAULT_CONFIG.EMISSION_INTERVAL, 1, 60),
   };
 }
 
@@ -511,16 +526,7 @@ function validateResponseIsArray(response: unknown, errors: string[]): response 
  * Validate required fields in response
  */
 function validateRequiredFields(data: Record<string, unknown>, errors: string[]): void {
-  const requiredFields = [
-    'LocalObservationDateTime',
-    'Temperature',
-    'RelativeHumidity',
-    'Wind',
-    'Pressure',
-    'DewPoint',
-  ];
-
-  for (const field of requiredFields) {
+  for (const field of REQUIRED_ACCUWEATHER_FIELDS) {
     if (!(field in data)) {
       errors.push(`Missing required field: ${field}`);
     }
@@ -593,7 +599,7 @@ export function validateNMEA2000Ranges(data: Partial<WeatherData>): ValidationRe
   const warnings: string[] = [];
 
   if (data.temperature !== undefined) {
-    const tempC = data.temperature - UNITS.TEMPERATURE.CELSIUS_TO_KELVIN;
+    const tempC = kelvinToCelsius(data.temperature);
     if (tempC < NMEA2000_LIMITS.TEMPERATURE_C.MIN || tempC > NMEA2000_LIMITS.TEMPERATURE_C.MAX) {
       warnings.push(
         `Temperature ${tempC.toFixed(1)}°C is outside NMEA2000 range (${NMEA2000_LIMITS.TEMPERATURE_C.MIN}°C to +${NMEA2000_LIMITS.TEMPERATURE_C.MAX}°C)`
@@ -635,22 +641,36 @@ export function validateNMEA2000Ranges(data: Partial<WeatherData>): ValidationRe
   };
 }
 
+/** Returns true when no field of `data` would be modified by NMEA2000 clamping. */
+function isWithinNMEA2000Ranges(data: WeatherData): boolean {
+  const inRange = (value: number | undefined, min: number, max: number): boolean =>
+    value === undefined || (value >= min && value <= max);
+
+  return (
+    inRange(data.temperature, NMEA2000_TEMP_K_MIN, NMEA2000_TEMP_K_MAX) &&
+    inRange(data.pressure, NMEA2000_LIMITS.PRESSURE_PA.MIN, NMEA2000_LIMITS.PRESSURE_PA.MAX) &&
+    inRange(data.humidity, VALIDATION_LIMITS.HUMIDITY.MIN, VALIDATION_LIMITS.HUMIDITY.MAX) &&
+    inRange(data.windSpeed, 0, NMEA2000_LIMITS.WIND_SPEED_MAX_MS) &&
+    inRange(data.windGustSpeed, 0, NMEA2000_LIMITS.WIND_SPEED_MAX_MS) &&
+    (data.windDirection === undefined ||
+      (data.windDirection >= 0 && data.windDirection < 2 * Math.PI))
+  );
+}
+
 /**
- * Sanitize data to fit NMEA2000 ranges
+ * Clamp every field to its NMEA2000-emission range. When all fields already fit, the
+ * original object reference is returned to avoid a 24-field shallow copy on the hot path.
  */
 export function sanitizeForNMEA2000(data: WeatherData): WeatherData {
+  if (isWithinNMEA2000Ranges(data)) {
+    return data;
+  }
+
   const sanitized = { ...data };
 
   if (sanitized.temperature !== undefined) {
-    const tempC = sanitized.temperature - UNITS.TEMPERATURE.CELSIUS_TO_KELVIN;
-    const clampedTempC = clamp(
-      tempC,
-      NMEA2000_LIMITS.TEMPERATURE_C.MIN,
-      NMEA2000_LIMITS.TEMPERATURE_C.MAX
-    );
-    sanitized.temperature = clampedTempC + UNITS.TEMPERATURE.CELSIUS_TO_KELVIN;
+    sanitized.temperature = clamp(sanitized.temperature, NMEA2000_TEMP_K_MIN, NMEA2000_TEMP_K_MAX);
   }
-
   if (sanitized.pressure !== undefined) {
     sanitized.pressure = clamp(
       sanitized.pressure,
@@ -658,7 +678,6 @@ export function sanitizeForNMEA2000(data: WeatherData): WeatherData {
       NMEA2000_LIMITS.PRESSURE_PA.MAX
     );
   }
-
   if (sanitized.humidity !== undefined) {
     sanitized.humidity = clamp(
       sanitized.humidity,
@@ -666,15 +685,12 @@ export function sanitizeForNMEA2000(data: WeatherData): WeatherData {
       VALIDATION_LIMITS.HUMIDITY.MAX
     );
   }
-
   if (sanitized.windSpeed !== undefined) {
     sanitized.windSpeed = clamp(sanitized.windSpeed, 0, NMEA2000_LIMITS.WIND_SPEED_MAX_MS);
   }
-
   if (sanitized.windGustSpeed !== undefined) {
     sanitized.windGustSpeed = clamp(sanitized.windGustSpeed, 0, NMEA2000_LIMITS.WIND_SPEED_MAX_MS);
   }
-
   if (sanitized.windDirection !== undefined) {
     sanitized.windDirection = normalizeAngle0To2Pi(sanitized.windDirection);
   }

@@ -58,7 +58,7 @@ const config = {
   // Better error reporting
   logLevel: 'info',
   color: true,
-  
+
   // Performance optimizations
   charset: 'utf8',
   keepNames: false,
@@ -67,7 +67,7 @@ const config = {
 try {
   console.log('🏗️  Building Signal K Virtual Weather Sensors plugin...');
   console.log(`Target: ${config.target} | Format: ${config.format}`);
-  
+
   const result = await build(config);
 
   if (result.errors.length > 0) {

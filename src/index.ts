@@ -1,9 +1,7 @@
 /**
- * Signal K Virtual Weather Sensors - Main Entry Point
- * Modern TypeScript Signal K plugin providing comprehensive AccuWeather integration
- * with enhanced NMEA2000 environmental measurements and emitter-cannon alignment
- *
- * Uses official @signalk/server-api types for maximum compatibility
+ * Signal K Virtual Weather Sensors plugin entry point.
+ * Polls AccuWeather, calculates apparent wind, and emits NMEA2000-compatible
+ * Signal K deltas on a fixed interval.
  */
 
 import type { Delta, Plugin, ServerAPI } from '@signalk/server-api';
@@ -52,18 +50,11 @@ export default function createPlugin(app: ServerAPI): Plugin {
     cachedWeatherDataRef: null,
   };
 
-  /**
-   * Plugin interface implementation
-   * Conforms to @signalk/server-api Plugin interface
-   */
   const plugin: Plugin = {
     id: PLUGIN.NAME,
     name: PLUGIN.DISPLAY_NAME,
     description: PLUGIN.DESCRIPTION,
 
-    /**
-     * Start the plugin with provided configuration
-     */
     start: async (
       settings: object,
       _restartPlugin: (newConfiguration: object) => void
@@ -84,9 +75,6 @@ export default function createPlugin(app: ServerAPI): Plugin {
       }
     },
 
-    /**
-     * Stop the plugin and cleanup resources
-     */
     stop: async (): Promise<void> => {
       try {
         instance.logger('info', 'Stopping signalk-virtual-weather-sensors plugin');
@@ -189,12 +177,11 @@ function logPluginStarting(instance: PluginInstance, settings: unknown): void {
 }
 
 /**
- * Check if plugin is already running
- * @private
+ * Returns true (and logs a warning) when start() is invoked while a previous
+ * start is still in flight or already completed. The 'starting' check guards
+ * against duplicate timers when the server calls start() concurrently.
  */
 function isPluginAlreadyRunning(instance: PluginInstance): boolean {
-  // Guard both 'running' and 'starting' to avoid duplicate timers/services
-  // when the server calls start() again while a previous start is in flight
   if (instance.state === 'running' || instance.state === 'starting') {
     instance.logger('warn', 'Plugin already running', { state: instance.state });
     return true;
@@ -202,40 +189,23 @@ function isPluginAlreadyRunning(instance: PluginInstance): boolean {
   return false;
 }
 
-/**
- * Initialize plugin and validate configuration
- * @private
- */
 function initializePlugin(instance: PluginInstance, settings: unknown): PluginConfiguration {
   instance.state = 'starting';
   instance.startTime = new Date();
   return validateAndNormalizeSettings(settings, instance.logger);
 }
 
-/**
- * Start services and setup emission system
- * @private
- */
 async function startServices(
   instance: PluginInstance,
   config: PluginConfiguration,
   app: ServerAPI
 ): Promise<void> {
-  // Initialize services
   instance.weatherService = new WeatherService(app, config, instance.logger);
   instance.pathMapper = new NMEA2000PathMapper(instance.logger);
-
-  // Start weather service
   await instance.weatherService.start();
-
-  // Setup enhanced emission system
   setupEnhancedEmissionSystem(instance, config, app);
 }
 
-/**
- * Finalize plugin start and update status
- * @private
- */
 function finalizePluginStart(
   instance: PluginInstance,
   config: PluginConfiguration,
@@ -257,10 +227,6 @@ function finalizePluginStart(
   });
 }
 
-/**
- * Handle startup errors
- * @private
- */
 async function handleStartupError(
   instance: PluginInstance,
   error: unknown,
@@ -270,7 +236,6 @@ async function handleStartupError(
   instance.state = 'error';
   const errorMessage = error instanceof Error ? error.message : String(error);
 
-  // Log error without exposing sensitive settings
   instance.logger('error', 'Failed to start plugin', {
     error: errorMessage,
     settingsProvided: typeof settings === 'object' && settings !== null,
@@ -284,16 +249,12 @@ async function handleStartupError(
   await cleanup(instance);
 }
 
-/**
- * Setup enhanced emission system with hybrid event-driven + interval approach
- * @private
- */
 function setupEnhancedEmissionSystem(
   instance: PluginInstance,
   config: PluginConfiguration,
   app: ServerAPI
 ): void {
-  const emissionInterval = config.emissionInterval * 1000; // Convert seconds to milliseconds
+  const emissionInterval = config.emissionInterval * 1000;
   const maxStalenessMs = 2 * config.updateFrequency * 60_000;
 
   instance.emissionTimer = setInterval(() => {
@@ -338,12 +299,8 @@ function emitWeatherTick(instance: PluginInstance, app: ServerAPI, maxStalenessM
   }
 
   // Only rebuild delta when weather data changes (reference comparison).
-  // TODO: NMEA2000PathMapper returns a custom SignalKDelta whose plain string
-  // fields don't satisfy the branded Path/Context/Timestamp types in
-  // @signalk/server-api. Aligning the mapper to return Delta directly would
-  // let us drop this cast.
   if (weatherData !== instance.cachedWeatherDataRef) {
-    instance.cachedDelta = instance.pathMapper.mapToSignalKPaths(weatherData) as unknown as Delta;
+    instance.cachedDelta = instance.pathMapper.mapToSignalKPaths(weatherData);
     instance.cachedWeatherDataRef = weatherData;
   }
 
@@ -353,7 +310,7 @@ function emitWeatherTick(instance: PluginInstance, app: ServerAPI, maxStalenessM
 
   // Mutate the cached delta's first-update timestamp in place. The delta is private
   // to this plugin instance and is rebuilt whenever weatherData changes, so mutation
-  // here doesn't surprise any other consumer — and avoids a 24-field spread per tick.
+  // here doesn't surprise any other consumer, and avoids a 24-field spread per tick.
   stampEmissionTimestamp(instance.cachedDelta);
   app.handleMessage(PLUGIN.NAME, instance.cachedDelta);
 }
@@ -366,7 +323,7 @@ function stampEmissionTimestamp(cached: Delta): void {
   const firstUpdate = cached.updates[0];
   if (!firstUpdate) return;
   (firstUpdate as { timestamp: typeof firstUpdate.timestamp }).timestamp =
-    new Date().toISOString() as unknown as typeof firstUpdate.timestamp;
+    new Date().toISOString() as typeof firstUpdate.timestamp;
 }
 
 /**
@@ -451,27 +408,24 @@ function validateAndNormalizeSettings(settings: unknown, logger: Logger): Plugin
   return finalConfig;
 }
 
-/**
- * Create structured logger with plugin context
- * Uses appropriate Signal K server logging methods for each level
- * @private
- */
+/** Level marker prepended to every log line so all four levels are distinguishable. */
 const LOG_PREFIX: Record<LogLevel, string> = {
-  debug: '',
+  debug: '[DEBUG] ',
   info: '[INFO] ',
   warn: '[WARN] ',
-  error: '',
+  error: '[ERROR] ',
 };
 
 function createLogger(app: ServerAPI): Logger {
   const errorFn = typeof app.error === 'function' ? app.error.bind(app) : null;
-  // Routes warn/error to app.error when available, else falls back to app.debug
-  // with a level prefix so messages remain visible in production logs.
+  // Routes warn/error to app.error when available; otherwise falls back to app.debug.
+  // Either way the line itself carries the level prefix from LOG_PREFIX.
+  const emitWarnError = errorFn ?? app.debug.bind(app);
   const levelEmit: Record<LogLevel, (line: string) => void> = {
     debug: (line) => app.debug(line),
     info: (line) => app.debug(line),
-    warn: errorFn ? (line) => errorFn(line) : (line) => app.debug(`[WARN] ${line}`),
-    error: errorFn ? (line) => errorFn(line) : (line) => app.debug(`[ERROR] ${line}`),
+    warn: emitWarnError,
+    error: emitWarnError,
   };
 
   return (level, message, metadata) => {
@@ -484,20 +438,12 @@ function createLogger(app: ServerAPI): Logger {
         ? sanitizeLogMetadata(metadata as Record<string, unknown>)
         : metadata;
     const logMetadata = hasMetadata ? ` | ${JSON.stringify(finalMetadata)}` : '';
-    const line = `${LOG_PREFIX[level]}[${PLUGIN.NAME}] ${message}${logMetadata}`;
-    levelEmit[level](line);
+    levelEmit[level](`${LOG_PREFIX[level]}[${PLUGIN.NAME}] ${message}${logMetadata}`);
   };
 }
 
-/** Substrings that flag a metadata key as sensitive and trigger redaction. */
-const SENSITIVE_LOG_KEYS: ReadonlyArray<string> = [
-  'apikey',
-  'api_key',
-  'accuweatherapikey',
-  'password',
-  'secret',
-  'token',
-];
+/** Single regex that matches any sensitive key substring (faster than 6× String.includes). */
+const SENSITIVE_LOG_KEY_PATTERN = /apikey|api_key|accuweatherapikey|password|secret|token/;
 
 /**
  * Sanitize log metadata to remove sensitive information
@@ -506,8 +452,7 @@ const SENSITIVE_LOG_KEYS: ReadonlyArray<string> = [
 function sanitizeLogMetadata(metadata: Record<string, unknown>): Record<string, unknown> {
   const sanitized: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(metadata)) {
-    const lowerKey = key.toLowerCase();
-    if (SENSITIVE_LOG_KEYS.some((sensitive) => lowerKey.includes(sensitive))) {
+    if (SENSITIVE_LOG_KEY_PATTERN.test(key.toLowerCase())) {
       sanitized[key] = '[REDACTED]';
     } else if (typeof value === 'object' && value !== null && !Array.isArray(value)) {
       sanitized[key] = sanitizeLogMetadata(value as Record<string, unknown>);
@@ -517,21 +462,3 @@ function sanitizeLogMetadata(metadata: Record<string, unknown>): Record<string, 
   }
   return sanitized;
 }
-
-// Export plugin metadata for Signal K compatibility
-export const metadata = {
-  id: PLUGIN.NAME,
-  name: PLUGIN.DISPLAY_NAME,
-  version: PLUGIN.VERSION,
-  description: PLUGIN.DESCRIPTION,
-  author: PLUGIN.AUTHOR,
-  keywords: [
-    'signalk-node-server-plugin',
-    'signalk-category-weather',
-    'nmea2000',
-    'weather',
-    'accuweather',
-    'typescript',
-    'enhanced',
-  ],
-} as const;

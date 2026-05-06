@@ -1,6 +1,7 @@
 /**
  * NMEA2000PathMapper Test Suite
- * Testing enhanced weather data mapping to emitter-cannon compatible paths
+ * Testing enhanced weather data mapping to paths consumed by
+ * signalk-nmea2000-emitter-cannon for NMEA2000 bus emission.
  */
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';

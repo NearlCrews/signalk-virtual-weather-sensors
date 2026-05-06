@@ -159,19 +159,8 @@ export interface AccuWeatherConfig {
 }
 
 // ===============================
-// NMEA2000 & Signal K Types
+// Signal K Types
 // ===============================
-
-/**
- * NMEA2000 message structure for environmental data
- * Aligns with PGN 130310, 130311, 130312 specifications
- */
-export interface NMEA2000Message {
-  readonly pgn: number;
-  readonly prio: number;
-  readonly dst: number;
-  readonly fields: Record<string, unknown>;
-}
 
 /**
  * Signal K delta message format for real-time data updates
@@ -190,11 +179,6 @@ export interface SignalKDelta {
 // ===============================
 // Utility & Helper Types
 // ===============================
-
-/**
- * Supported weather data sources
- */
-export type WeatherSource = 'accuweather';
 
 /**
  * Temperature unit types for conversions
@@ -221,19 +205,6 @@ export interface GeoLocation {
 }
 
 /**
- * API response wrapper with error handling
- */
-export interface ApiResponse<T> {
-  readonly data?: T;
-  readonly error?: {
-    readonly message: string;
-    readonly code: string;
-    readonly statusCode?: number;
-  };
-  readonly timestamp: string;
-}
-
-/**
  * Plugin lifecycle states
  */
 export type PluginState = 'stopped' | 'starting' | 'running' | 'stopping' | 'error';
@@ -248,14 +219,21 @@ export type LogLevel = 'debug' | 'info' | 'warn' | 'error';
  */
 export type Logger = (level: LogLevel, message: string, metadata?: Record<string, unknown>) => void;
 
-/**
- * Error severity classification
- */
-export type ErrorSeverity = 'low' | 'medium' | 'high' | 'critical';
-
 // ===============================
 // External API Types
 // ===============================
+
+/** AccuWeather metric/imperial measurement pair */
+type AcwMeasurement = { readonly Value: number; readonly Unit: string };
+/** AccuWeather measurement that includes a phrase for "RealFeel" responses */
+type AcwPhrasedMeasurement = AcwMeasurement & { readonly Phrase: string };
+/** Bilingual measurement pair returned by AccuWeather */
+type AcwMetricPair = { readonly Metric: AcwMeasurement; readonly Imperial: AcwMeasurement };
+/** Min/max temperature range for a time window */
+type AcwTempRange = {
+  readonly Minimum: AcwMetricPair;
+  readonly Maximum: AcwMetricPair;
+};
 
 /**
  * AccuWeather API current conditions response (enhanced with all available fields)
@@ -270,40 +248,22 @@ export interface AccuWeatherCurrentConditions {
   readonly IsDayTime: boolean;
 
   // Core temperature data
-  readonly Temperature: {
-    readonly Metric: { readonly Value: number; readonly Unit: string };
-    readonly Imperial: { readonly Value: number; readonly Unit: string };
-  };
+  readonly Temperature: AcwMetricPair;
 
   // Enhanced temperature readings
   readonly RealFeelTemperature: {
-    readonly Metric: { readonly Value: number; readonly Unit: string; readonly Phrase: string };
-    readonly Imperial: { readonly Value: number; readonly Unit: string; readonly Phrase: string };
+    readonly Metric: AcwPhrasedMeasurement;
+    readonly Imperial: AcwPhrasedMeasurement;
   };
   readonly RealFeelTemperatureShade: {
-    readonly Metric: { readonly Value: number; readonly Unit: string; readonly Phrase: string };
-    readonly Imperial: { readonly Value: number; readonly Unit: string; readonly Phrase: string };
+    readonly Metric: AcwPhrasedMeasurement;
+    readonly Imperial: AcwPhrasedMeasurement;
   };
-  readonly ApparentTemperature: {
-    readonly Metric: { readonly Value: number; readonly Unit: string };
-    readonly Imperial: { readonly Value: number; readonly Unit: string };
-  };
-  readonly WindChillTemperature: {
-    readonly Metric: { readonly Value: number; readonly Unit: string };
-    readonly Imperial: { readonly Value: number; readonly Unit: string };
-  };
-  readonly WetBulbTemperature: {
-    readonly Metric: { readonly Value: number; readonly Unit: string };
-    readonly Imperial: { readonly Value: number; readonly Unit: string };
-  };
-  readonly WetBulbGlobeTemperature: {
-    readonly Metric: { readonly Value: number; readonly Unit: string };
-    readonly Imperial: { readonly Value: number; readonly Unit: string };
-  };
-  readonly DewPoint: {
-    readonly Metric: { readonly Value: number; readonly Unit: string };
-    readonly Imperial: { readonly Value: number; readonly Unit: string };
-  };
+  readonly ApparentTemperature: AcwMetricPair;
+  readonly WindChillTemperature: AcwMetricPair;
+  readonly WetBulbTemperature: AcwMetricPair;
+  readonly WetBulbGlobeTemperature: AcwMetricPair;
+  readonly DewPoint: AcwMetricPair;
 
   // Humidity data (outside and inside)
   readonly RelativeHumidity: number;
@@ -311,10 +271,7 @@ export interface AccuWeatherCurrentConditions {
 
   // Enhanced wind data
   readonly Wind: {
-    readonly Speed: {
-      readonly Metric: { readonly Value: number; readonly Unit: string };
-      readonly Imperial: { readonly Value: number; readonly Unit: string };
-    };
+    readonly Speed: AcwMetricPair;
     readonly Direction: {
       readonly Degrees: number;
       readonly Localized: string;
@@ -322,17 +279,11 @@ export interface AccuWeatherCurrentConditions {
     };
   };
   readonly WindGust: {
-    readonly Speed: {
-      readonly Metric: { readonly Value: number; readonly Unit: string };
-      readonly Imperial: { readonly Value: number; readonly Unit: string };
-    };
+    readonly Speed: AcwMetricPair;
   };
 
   // Pressure data
-  readonly Pressure: {
-    readonly Metric: { readonly Value: number; readonly Unit: string };
-    readonly Imperial: { readonly Value: number; readonly Unit: string };
-  };
+  readonly Pressure: AcwMetricPair;
   readonly PressureTendency: {
     readonly LocalizedText: string;
     readonly Code: string;
@@ -342,87 +293,30 @@ export interface AccuWeatherCurrentConditions {
   readonly UVIndex: number;
   readonly UVIndexFloat: number;
   readonly UVIndexText: string;
-  readonly Visibility: {
-    readonly Metric: { readonly Value: number; readonly Unit: string };
-    readonly Imperial: { readonly Value: number; readonly Unit: string };
-  };
+  readonly Visibility: AcwMetricPair;
   readonly CloudCover: number;
-  readonly Ceiling: {
-    readonly Metric: { readonly Value: number; readonly Unit: string };
-    readonly Imperial: { readonly Value: number; readonly Unit: string };
-  };
+  readonly Ceiling: AcwMetricPair;
   readonly ObstructionsToVisibility: string;
 
   // Temperature trends
-  readonly Past24HourTemperatureDeparture: {
-    readonly Metric: { readonly Value: number; readonly Unit: string };
-    readonly Imperial: { readonly Value: number; readonly Unit: string };
-  };
+  readonly Past24HourTemperatureDeparture: AcwMetricPair;
 
   // Precipitation data
-  readonly Precip1hr: {
-    readonly Metric: { readonly Value: number; readonly Unit: string };
-    readonly Imperial: { readonly Value: number; readonly Unit: string };
-  };
+  readonly Precip1hr: AcwMetricPair;
   readonly PrecipitationSummary: {
-    readonly Precipitation: {
-      readonly Metric: { readonly Value: number; readonly Unit: string };
-      readonly Imperial: { readonly Value: number; readonly Unit: string };
-    };
-    readonly PastHour: {
-      readonly Metric: { readonly Value: number; readonly Unit: string };
-      readonly Imperial: { readonly Value: number; readonly Unit: string };
-    };
-    readonly Past3Hours: {
-      readonly Metric: { readonly Value: number; readonly Unit: string };
-      readonly Imperial: { readonly Value: number; readonly Unit: string };
-    };
-    readonly Past6Hours: {
-      readonly Metric: { readonly Value: number; readonly Unit: string };
-      readonly Imperial: { readonly Value: number; readonly Unit: string };
-    };
-    readonly Past12Hours: {
-      readonly Metric: { readonly Value: number; readonly Unit: string };
-      readonly Imperial: { readonly Value: number; readonly Unit: string };
-    };
-    readonly Past24Hours: {
-      readonly Metric: { readonly Value: number; readonly Unit: string };
-      readonly Imperial: { readonly Value: number; readonly Unit: string };
-    };
+    readonly Precipitation: AcwMetricPair;
+    readonly PastHour: AcwMetricPair;
+    readonly Past3Hours: AcwMetricPair;
+    readonly Past6Hours: AcwMetricPair;
+    readonly Past12Hours: AcwMetricPair;
+    readonly Past24Hours: AcwMetricPair;
   };
 
   // Temperature ranges
   readonly TemperatureSummary: {
-    readonly Past6HourRange: {
-      readonly Minimum: {
-        readonly Metric: { readonly Value: number; readonly Unit: string };
-        readonly Imperial: { readonly Value: number; readonly Unit: string };
-      };
-      readonly Maximum: {
-        readonly Metric: { readonly Value: number; readonly Unit: string };
-        readonly Imperial: { readonly Value: number; readonly Unit: string };
-      };
-    };
-    readonly Past12HourRange: {
-      readonly Minimum: {
-        readonly Metric: { readonly Value: number; readonly Unit: string };
-        readonly Imperial: { readonly Value: number; readonly Unit: string };
-      };
-      readonly Maximum: {
-        readonly Metric: { readonly Value: number; readonly Unit: string };
-        readonly Imperial: { readonly Value: number; readonly Unit: string };
-      };
-    };
-    readonly Past24HourRange: {
-      readonly Minimum: {
-        readonly Metric: { readonly Value: number; readonly Unit: string };
-        readonly Imperial: { readonly Value: number; readonly Unit: string };
-      };
-      readonly Maximum: {
-        readonly Metric: { readonly Value: number; readonly Unit: string };
-        readonly Imperial: { readonly Value: number; readonly Unit: string };
-      };
-    };
+    readonly Past6HourRange: AcwTempRange;
+    readonly Past12HourRange: AcwTempRange;
+    readonly Past24HourRange: AcwTempRange;
   };
 
   // Links
@@ -455,32 +349,18 @@ export interface AccuWeatherLocation {
 // ===============================
 
 /**
- * Type guard for checking if weather data is complete
- */
-export function isCompleteWeatherData(data: Partial<WeatherData>): data is WeatherData {
-  return !!(
-    Number.isFinite(data.temperature) &&
-    Number.isFinite(data.pressure) &&
-    Number.isFinite(data.humidity) &&
-    Number.isFinite(data.windSpeed) &&
-    Number.isFinite(data.windDirection) &&
-    Number.isFinite(data.dewPoint) &&
-    Number.isFinite(data.windChill) &&
-    Number.isFinite(data.heatIndex) &&
-    data.timestamp
-  );
-}
-
-/**
- * Type guard for checking if vessel navigation data is sufficient for calculations
+ * Returns true when navigation data carries the speed and course required for
+ * apparent-wind calculations and is flagged complete by the producer.
  */
 export function isCompleteNavigationData(
-  data: Partial<VesselNavigationData>
-): data is Required<Pick<VesselNavigationData, 'speedOverGround' | 'courseOverGroundTrue'>> &
-  VesselNavigationData {
+  data: VesselNavigationData
+): data is VesselNavigationData & {
+  readonly speedOverGround: number;
+  readonly courseOverGroundTrue: number;
+} {
   return !!(
+    data.isComplete &&
     Number.isFinite(data.speedOverGround) &&
-    Number.isFinite(data.courseOverGroundTrue) &&
-    data.isComplete === true
+    Number.isFinite(data.courseOverGroundTrue)
   );
 }

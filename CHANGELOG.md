@@ -5,6 +5,66 @@ All notable changes to the signalk-virtual-weather-sensors project will be docum
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.0] - 2026-05-05
+
+Toolchain modernization plus a 12-agent simplify pass. No breaking runtime behavior; configuration shape is unchanged. Minor-version bump because the toolchain floor (TypeScript 6, Node 20.18) and the Signal K paths emitted have both shifted in observable ways.
+
+### Changed -- toolchain
+
+- **TypeScript 5.9 → 6.0.3.** Removed the now-deprecated `downlevelIteration` compiler option, added `"types": ["node"]` and `"rootDir": "./src"` (TS 6 stricter emit rules), and accepted the `unknown` return from `app.getSelfPath` introduced in `@signalk/server-api` 2.24.
+- **`@signalk/server-api` 2.10 → 2.24.0.** `NMEA2000PathMapper.mapToSignalKPaths` now returns the official `Delta` type from `@signalk/server-api` directly (was a custom `SignalKDelta` interface that required a double-cast at the consumer). Internal `pv()` helper performs the single boundary cast from plain string to the branded `Path` type.
+- **esbuild 0.27 → 0.28.0**, **Vitest 4.0 → 4.1.5**, **Biome 2.3 → 2.4.14**, **lint-staged 16.2 → 16.4**, **`@types/node` 25.0 → 25.6**.
+- **Engine floor raised to Node `>=20.18`** (was `>=20.0.0`) to match the `signalk-nmea2000-emitter-cannon` companion plugin.
+- **Build/release script alignment with `signalk-nmea2000-emitter-cannon`:** added `prepack`, `typecheck` alias, `check` alias, `create-release`, and `release` scripts. Tightened `prepublishOnly` to run validate + build.
+
+### Fixed -- spec / behavior
+
+- **API key validator no longer false-positives on legacy keys.** The old `^[a-zA-Z0-9]{20,40}$` regex warned on any AccuWeather key containing punctuation (hyphens, underscores, dots), which can appear in older keys. Replaced with a whitespace/control-character check so paste mistakes still warn but valid non-alphanumeric keys do not.
+- **Logger level prefix is now consistent across all four levels.** `LOG_PREFIX` had empty strings for `debug` and `error` and a duplicate `[WARN]` in the fallback path, so error-level lines were indistinguishable from debug-level lines in production logs unless `app.error` was available. Now every level emits a visible `[DEBUG]`/`[INFO]`/`[WARN]`/`[ERROR]` marker.
+- **Signal K `Delta` cast hardening.** Dropped two `as unknown as` double-casts in `index.ts` (the mapper now returns a properly-typed `Delta`).
+
+### Removed -- dead code
+
+Confirmed unused via grep across the entire `src/` tree:
+
+- Types: `NMEA2000Message`, `WeatherSource`, `ErrorSeverity`, `ApiResponse`, `isCompleteWeatherData`, `metadata` named export from `index.ts`.
+- Constants: `TEMPERATURE_INSTANCES`, `HUMIDITY_INSTANCES`, `NMEA2000_PRIORITY`, `NMEA2000_DESTINATION`, `PGN.ENVIRONMENTAL_PARAMETERS`, `PGN.ACTUAL_PRESSURE`.
+- Signal K paths in `SIGNALK_PATHS.ENVIRONMENT.OUTSIDE`: `THEORETICAL_WIND_CHILL_TEMPERATURE`, `RELATIVE_HUMIDITY`. Section: `INSIDE.*`.
+- Signal K paths in `SIGNALK_PATHS.ENVIRONMENT.WIND`: `ANGLE_TRUE`, `DIRECTION_MAGNETIC`, `DIRECTION_APPARENT`, `ANGLE_TRUE_WATER`. The README previously documented `directionApparent` and `directionMagnetic` as emitted; that was inaccurate (they were never in any push path).
+- `PERFORMANCE.MEMORY_THRESHOLDS`, `PERFORMANCE.INTERVALS`, `PERFORMANCE.MAX_PROCESSING_TIME.{WIND_CALCULATION,DATA_EMISSION}`. Only `MAX_PROCESSING_TIME.WEATHER_UPDATE` was actually read.
+- Test helpers: `expectToThrow` and `withTimeZone` (zero call sites; `withTimeZone` also had a `process.env.TZ = undefined` bug that would have set the env var to the literal string `"undefined"`).
+
+### Changed -- code reuse
+
+- `AccuWeatherService`: `clamp(quality, 0, 1)` instead of nested `Math.max(0, Math.min(1, …))`. `kelvinToCelsius()` instead of inline subtraction. `User-Agent` header now derives from `PLUGIN.NAME` and `PLUGIN.VERSION` (was a hard-coded `signalk-virtual-weather-sensors/1.0.0` that silently went stale at every release). Named `KM_TO_M`, `MAX_RETRY_AFTER_MS`, `CACHE_PRUNE_INTERVAL_MS` constants instead of inline magic numbers.
+- `WeatherService`: uses `isCompleteNavigationData` type guard (which itself was tightened to actually narrow `speedOverGround`/`courseOverGroundTrue` to non-undefined). `??` instead of `||` for the wind-calculator injection (matches the other two services). Drops two duplicated guard blocks.
+- `WindCalculator`: uses `kelvinToCelsius`, `celsiusToKelvin`, `kelvinToFahrenheit`, `fahrenheitToKelvin`, `msToKMH`, `msToKnots`, `msToMPH`, `radiansToDegrees`, `clamp` instead of recomputing the same conversions inline. Named threshold constants for the Wind Chill (Environment Canada) and Heat Index (Rothfusz) regression boundaries.
+- `validation.ts`: `kelvinToCelsius`/`celsiusToKelvin` for NMEA2000 sanitization. `VESSEL_SPEED.MAX` and `DEFAULT_CONFIG.UPDATE_FREQUENCY/EMISSION_INTERVAL` constants instead of inline literals. Required-fields list hoisted to module scope. Truthiness `if (a && b)` checks for `number | undefined` properties replaced with explicit `!== undefined`, so a legitimate `0` value no longer silently skips the consistency checks.
+- `NMEA2000PathMapper`: 19 inline `{ path: ..., value: ... }` literals consolidated through a single `pv(path, value)` helper.
+
+### Changed -- efficiency
+
+- `sanitizeForNMEA2000` now returns the input reference unchanged when every field is in range, skipping the 24-field shallow copy on the common per-tick path. Pre-computed Kelvin range constants avoid a C↔K round-trip per tick.
+- `WindCalculator.calculateWindAnalysis` computes the four shared trig terms once and derives both apparent speed and angle from them (was 8 trig calls per analysis: 4 in `calculateApparentWindSpeed`, 4 in `calculateApparentWindAngle`).
+- Hoisted module-level constants: `COMPASS_DIRECTIONS`, `REQUIRED_ACCUWEATHER_FIELDS`. `Date.now()` captured once per `getLocationKey` call. `new URL(url)` instead of `new URL(url.toString())` in `sanitizeUrlForLogging`.
+- `SignalKService.cachedData.lastUpdate: Date` → `lastUpdateMs: number` (skips a `Date` allocation per `getVesselNavigationData` call). `getHealthStatus` derives `isStale` from `dataAge` directly instead of calling `getDataAge` twice. `isVesselMoving` prefers cached speed over a fresh `getSelfPath` call.
+- `SENSITIVE_LOG_KEYS` array of 6 `String.includes` calls replaced with one regex (`SENSITIVE_LOG_KEY_PATTERN`).
+
+### Removed -- runtime
+
+- `ApiResponse<T>` wrapper. `makeApiRequest<T>` now returns `Promise<T>` directly (the wrapper's `timestamp` field was never read; the `error` discriminator was never set because errors were thrown).
+- `LOG_PREFIX` empty-string entries that produced ambiguous log output.
+
+### Tests
+
+- 243 tests passing, 0 skipped (was 241 + 1 skipped). The previously-skipped `should handle API errors gracefully` test was un-skipped and now actually exercises the 401/`API_UNAUTHORIZED` path through the existing `mockResponse` helper.
+- New test: `does not warn on punctuation in API keys (some legacy keys contain them)` covers the relaxed validator.
+
+### Documentation
+
+- README path tables corrected: dropped `environment.wind.directionApparent` and `environment.wind.directionMagnetic` (never emitted). Tech-stack versions updated. Test count corrected to 243. References to `signalk-nmea2000-emitter-cannon` use the full package name.
+- Em-dashes purged from comments and runtime log strings (was 11 occurrences across 5 files).
+
 ## [1.2.3] - 2026-05-03
 
 12-agent code-review pass with no public-API changes. Findings spanned reuse, code quality, efficiency, security, reliability, and the test suite; everything actionable landed (including low-priority items).
@@ -245,12 +305,12 @@ First production release of signalk-virtual-weather-sensors - a comprehensive we
 - **Absolute Humidity** precision calculations for atmospheric analysis
 - **Wind Gust Factor** analysis for wind safety assessment
 
-#### NMEA2000 & emitter-cannon Alignment
-- **Perfect PGN alignment** with emitter-cannon conventions
+#### NMEA2000 & `signalk-nmea2000-emitter-cannon` Alignment
+- **Perfect PGN alignment** with `signalk-nmea2000-emitter-cannon` conventions
 - **Multiple temperature instances** (101-111) for comprehensive temperature monitoring
 - **Enhanced humidity support** with inside/outside instances (100/101)
 - **Improved wind data** with gust integration in PGN 130306
-- **Proper instance assignments** following emitter-cannon standards
+- **Proper instance assignments** following `signalk-nmea2000-emitter-cannon` standards
 
 #### Modern Architecture
 - **Complete TypeScript 5.9+** conversion with strict mode compliance
@@ -277,7 +337,7 @@ First production release of signalk-virtual-weather-sensors - a comprehensive we
 
 #### Enhanced Features
 - **Data coverage**: 8 basic fields → 25+ comprehensive environmental measurements
-- **Path mappings**: Enhanced to align with emitter-cannon path structure
+- **Path mappings**: Enhanced to align with `signalk-nmea2000-emitter-cannon` path structure
 - **Wind calculations**: Improved vector mathematics with comprehensive validation
 - **Error handling**: Production-ready with structured error codes and recovery
 - **Performance**: Significantly improved with TypeScript optimizations

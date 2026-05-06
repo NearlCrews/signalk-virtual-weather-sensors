@@ -3,13 +3,50 @@
  * Vector calculations for apparent wind, wind chill, heat index, and dew point
  */
 
-import { UNITS, VALIDATION_LIMITS } from '../constants/index.js';
+import { VALIDATION_LIMITS } from '../constants/index.js';
 import type { Logger, WindCalculationResult } from '../types/index.js';
 import {
   calculateBeaufortScale as calculateBeaufortScaleUtil,
+  celsiusToKelvin,
+  clamp,
+  fahrenheitToKelvin,
+  kelvinToCelsius,
+  kelvinToFahrenheit,
+  msToKMH,
+  msToKnots,
+  msToMPH,
   normalizeAngle0To2Pi,
   normalizeAnglePiToPi,
+  radiansToDegrees,
 } from '../utils/conversions.js';
+
+const COMPASS_DIRECTIONS = [
+  'N',
+  'NNE',
+  'NE',
+  'ENE',
+  'E',
+  'ESE',
+  'SE',
+  'SSE',
+  'S',
+  'SSW',
+  'SW',
+  'WSW',
+  'W',
+  'WNW',
+  'NW',
+  'NNW',
+] as const;
+
+/** Wind chill is only meaningful below this temperature (Environment Canada). */
+const WIND_CHILL_MAX_TEMP_C = 10;
+/** Wind chill is only meaningful above this wind speed (Environment Canada). */
+const WIND_CHILL_MIN_SPEED_KMH = 4.8;
+/** Heat index requires the temperature to be above this value (Rothfusz regression). */
+const HEAT_INDEX_MIN_TEMP_F = 80;
+/** Heat index requires humidity to be above this value (percentage). */
+const HEAT_INDEX_MIN_HUMIDITY_PCT = 40;
 
 export class WindCalculator {
   private readonly logger: Logger;
@@ -79,7 +116,9 @@ export class WindCalculator {
   }
 
   /**
-   * Calculate comprehensive wind analysis including validation
+   * Calculate comprehensive wind analysis including validation. Computes the
+   * shared trig terms once and derives both apparent speed and angle from them
+   * to avoid duplicating four sin/cos calls every emission tick.
    */
   public calculateWindAnalysis(
     trueWindSpeed: number,
@@ -96,19 +135,22 @@ export class WindCalculator {
       };
     }
 
+    const cosWind = Math.cos(trueWindDirection);
+    const sinWind = Math.sin(trueWindDirection);
+    const cosHeading = Math.cos(vesselHeading);
+    const sinHeading = Math.sin(vesselHeading);
+
+    const apparentWindX = trueWindSpeed * cosWind + vesselSpeed * cosHeading;
+    const apparentWindY = trueWindSpeed * sinWind + vesselSpeed * sinHeading;
+
+    const apparentSpeed = Math.sqrt(apparentWindX * apparentWindX + apparentWindY * apparentWindY);
+    const apparentAngle = this.normalizeAngle(
+      Math.atan2(apparentWindY, apparentWindX) - vesselHeading
+    );
+
     return {
-      apparentWindSpeed: this.calculateApparentWindSpeed(
-        trueWindSpeed,
-        vesselSpeed,
-        vesselHeading,
-        trueWindDirection
-      ),
-      apparentWindAngle: this.calculateApparentWindAngle(
-        trueWindSpeed,
-        vesselSpeed,
-        vesselHeading,
-        trueWindDirection
-      ),
+      apparentWindSpeed: Number.isFinite(apparentSpeed) ? apparentSpeed : trueWindSpeed,
+      apparentWindAngle: apparentAngle,
       isValid: true,
     };
   }
@@ -123,18 +165,16 @@ export class WindCalculator {
       return temperatureK || 0;
     }
 
-    const tempC = temperatureK - UNITS.TEMPERATURE.CELSIUS_TO_KELVIN;
-    const windKmh = windSpeedMs / UNITS.WIND_SPEED.KMH_TO_MS;
+    const tempC = kelvinToCelsius(temperatureK);
+    const windKmh = msToKMH(windSpeedMs);
 
-    // Wind chill only meaningful below 10°C and above 4.8 km/h
-    if (tempC >= 10 || windKmh < 4.8) {
+    if (tempC >= WIND_CHILL_MAX_TEMP_C || windKmh < WIND_CHILL_MIN_SPEED_KMH) {
       return temperatureK;
     }
 
     const windFactor = windKmh ** 0.16;
-    const windChill = 13.12 + 0.6215 * tempC + windFactor * (0.3965 * tempC - 11.37);
-
-    const result = windChill + UNITS.TEMPERATURE.CELSIUS_TO_KELVIN;
+    const windChillC = 13.12 + 0.6215 * tempC + windFactor * (0.3965 * tempC - 11.37);
+    const result = celsiusToKelvin(windChillC);
 
     return Number.isFinite(result) ? result : temperatureK;
   }
@@ -149,11 +189,10 @@ export class WindCalculator {
       return temperatureK;
     }
 
-    const tempF = ((temperatureK - UNITS.TEMPERATURE.CELSIUS_TO_KELVIN) * 9) / 5 + 32;
-    const rhPercent = Math.max(0, Math.min(100, relativeHumidity * 100));
+    const tempF = kelvinToFahrenheit(temperatureK);
+    const rhPercent = clamp(relativeHumidity * 100, 0, 100);
 
-    // Heat index only meaningful above 80°F and 40% humidity
-    if (tempF < 80 || rhPercent < 40) {
+    if (tempF < HEAT_INDEX_MIN_TEMP_F || rhPercent < HEAT_INDEX_MIN_HUMIDITY_PCT) {
       return temperatureK;
     }
 
@@ -178,7 +217,7 @@ export class WindCalculator {
       heatIndex += ((r - 85) / 10) * ((87 - t) / 5);
     }
 
-    const result = ((heatIndex - 32) * 5) / 9 + UNITS.TEMPERATURE.CELSIUS_TO_KELVIN;
+    const result = fahrenheitToKelvin(heatIndex);
 
     return Number.isFinite(result) ? result : temperatureK;
   }
@@ -193,14 +232,14 @@ export class WindCalculator {
       return temperatureK - 5;
     }
 
-    const tempC = temperatureK - UNITS.TEMPERATURE.CELSIUS_TO_KELVIN;
-    const rh = Math.max(0.01, Math.min(0.99, relativeHumidity));
+    const tempC = kelvinToCelsius(temperatureK);
+    const rh = clamp(relativeHumidity, 0.01, 0.99);
 
     const a = 17.625;
     const b = 243.04;
     const gamma = (a * tempC) / (b + tempC) + Math.log(rh);
     const dewPointC = (b * gamma) / (a - gamma);
-    const result = dewPointC + UNITS.TEMPERATURE.CELSIUS_TO_KELVIN;
+    const result = celsiusToKelvin(dewPointC);
 
     if (!Number.isFinite(result) || result > temperatureK) {
       return temperatureK - 5;
@@ -269,11 +308,11 @@ export class WindCalculator {
   public convertWindSpeed(speedMs: number, targetUnit: 'kmh' | 'knots' | 'mph'): number {
     switch (targetUnit) {
       case 'kmh':
-        return speedMs / UNITS.WIND_SPEED.KMH_TO_MS;
+        return msToKMH(speedMs);
       case 'knots':
-        return speedMs / UNITS.WIND_SPEED.KNOTS_TO_MS;
+        return msToKnots(speedMs);
       case 'mph':
-        return speedMs / UNITS.WIND_SPEED.MPH_TO_MS;
+        return msToMPH(speedMs);
       default:
         return speedMs;
     }
@@ -283,34 +322,16 @@ export class WindCalculator {
     radiansDirection: number,
     format: 'degrees' | 'compass'
   ): string | number {
-    const degrees = radiansDirection * UNITS.ANGLE.RADIANS_TO_DEGREES;
+    const degrees = radiansToDegrees(radiansDirection);
 
     if (format === 'degrees') {
       return Math.round(degrees);
     }
 
-    const compassDirections = [
-      'N',
-      'NNE',
-      'NE',
-      'ENE',
-      'E',
-      'ESE',
-      'SE',
-      'SSE',
-      'S',
-      'SSW',
-      'SW',
-      'WSW',
-      'W',
-      'WNW',
-      'NW',
-      'NNW',
-    ];
-    // Normalize for negative degrees (e.g. port-tack apparent wind angles).
-    // Plain `% 16` returns negative values which would index out of the array.
+    // Plain `% 16` returns negative values for port-tack apparent angles, which
+    // would index out of the table. The double-modulo wraps them back into 0-15.
     const index = ((Math.round(degrees / 22.5) % 16) + 16) % 16;
-    return compassDirections[index] || 'N';
+    return COMPASS_DIRECTIONS[index] ?? 'N';
   }
 
   public getWindSummary(

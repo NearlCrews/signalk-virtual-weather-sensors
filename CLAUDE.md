@@ -70,7 +70,7 @@ The plugin uses interval-based emission (default 5 seconds) for NMEA2000 network
 - **Official SignalK Types**: Uses `Plugin` and `ServerAPI` from `@signalk/server-api`
 - **Dependency Injection**: Services accept logger as constructor parameter
 - **Readonly Interfaces**: All public interfaces use `readonly` properties
-- **Type Guards**: `isCompleteWeatherData()`, `isCompleteNavigationData()` for narrowing
+- **Type Guards**: `isCompleteNavigationData()` for narrowing vessel-data branches
 - **Centralized Constants**: Validation limits, PGN numbers, and paths in constants/index.ts
 - **SI Units**: All calculations use m/s for speed, radians for angles, Kelvin for temperature
 
@@ -85,16 +85,15 @@ Test configuration in `vitest.config.ts` includes path aliases (`@/`, `@/service
 
 ## NMEA2000 Compliance
 
-- **PGNs**: 130311 (pressure), 130312 (temperatures), 130313 (humidity), 130306 (wind)
-- **Instance assignments**: Temperatures 101-111, Humidity 100-101
-- **Humidity**: Output as ratio (0-1) per Signal K spec
+- **PGNs**: 130311 (pressure), 130312 (temperatures), 130313 (humidity), 130306 (wind). Instance numbers and bus priority are assigned by the companion `signalk-nmea2000-emitter-cannon` plugin, not embedded in the deltas this plugin produces.
+- **Humidity**: Output as ratio (0-1) per Signal K spec.
 
 ## Technology Stack
 
-- TypeScript 5.9+ (strict mode, ES2023 target)
-- Node.js 20+ (ESM only)
-- @signalk/server-api 2.10+ for official Plugin/ServerAPI types
-- esbuild 0.27+ for bundling
-- Biome 2.3+ for linting/formatting
-- Vitest 4.x for testing
+- TypeScript 6.0+ (strict mode, ES2023 target)
+- Node.js 20.18+ (ESM only)
+- `@signalk/server-api` 2.24+ for official Plugin/ServerAPI/Delta types
+- esbuild 0.28+ for bundling
+- Biome 2.4+ for linting/formatting
+- Vitest 4.1+ for testing
 - Husky + lint-staged for pre-commit hooks
