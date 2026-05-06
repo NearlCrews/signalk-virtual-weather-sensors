@@ -369,8 +369,6 @@ export function isCompleteForWindCalculations(data: Partial<VesselNavigationData
 
 /** Minimum length for any plausible AccuWeather API key. */
 const API_KEY_MIN_LENGTH = 20;
-/** Length above which an AccuWeather API key is unusually long. */
-const API_KEY_MAX_REASONABLE_LENGTH = 40;
 /** Disallowed control/whitespace characters in API keys (catches paste mistakes). */
 // biome-ignore lint/suspicious/noControlCharactersInRegex: deliberately matching paste-error control chars
 const API_KEY_INVALID_CHARS = /[\s\x00-\x1f\x7f]/;
@@ -407,10 +405,6 @@ function validateApiKey(
       `AccuWeather API key is too short (minimum ${API_KEY_MIN_LENGTH} characters). Get your key at https://developer.accuweather.com/`
     );
     return;
-  }
-
-  if (trimmedKey.length > API_KEY_MAX_REASONABLE_LENGTH) {
-    warnings.push('AccuWeather API key is longer than expected (typically 32 characters)');
   }
 
   // Catch paste errors: spaces, tabs, control characters. Don't whitelist alphanumeric:

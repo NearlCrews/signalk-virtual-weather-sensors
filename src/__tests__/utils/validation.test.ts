@@ -215,13 +215,6 @@ describe('validateConfiguration / sanitizeConfiguration', () => {
     expect(result.isValid).toBe(false);
   });
 
-  it('warns when API key length is over expected', () => {
-    const result = validateConfiguration({
-      accuWeatherApiKey: 'a'.repeat(45),
-    });
-    expect(result.warnings.length).toBeGreaterThan(0);
-  });
-
   it('passes for a sensible 32-char key', () => {
     const result = validateConfiguration({
       accuWeatherApiKey: 'A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6',
@@ -230,6 +223,20 @@ describe('validateConfiguration / sanitizeConfiguration', () => {
     });
     expect(result.isValid).toBe(true);
     expect(result.errors).toHaveLength(0);
+  });
+
+  // Modern AccuWeather (Zuplo) keys are ~49 chars. Use a synthetic 50-char
+  // fixture that does not match the Zuplo prefix to avoid secret-scanner
+  // false positives.
+  it('passes for keys longer than 40 characters without warnings', () => {
+    const result = validateConfiguration({
+      accuWeatherApiKey: 'fictional-long-fixture-key-no-real-secret-AAAAAAAA',
+      updateFrequency: 5,
+      emissionInterval: 5,
+    });
+    expect(result.isValid).toBe(true);
+    expect(result.errors).toHaveLength(0);
+    expect(result.warnings).toHaveLength(0);
   });
 
   it('rejects placeholder keys', () => {
