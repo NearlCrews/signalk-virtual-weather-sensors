@@ -124,9 +124,7 @@ export class WeatherService {
       this.state = 'running';
       this.logger('info', 'WeatherService started successfully');
 
-      if (this.app.setPluginStatus) {
-        this.app.setPluginStatus(PLUGIN.STATUS.SERVICE_RUNNING);
-      }
+      this.app.setPluginStatus(PLUGIN.STATUS.SERVICE_RUNNING);
     } catch (error) {
       this.state = 'error';
       const errorMessage = error instanceof Error ? error.message : String(error);
@@ -135,9 +133,7 @@ export class WeatherService {
         error: errorMessage,
       });
 
-      if (this.app.setPluginError) {
-        this.app.setPluginError(`Weather service startup failed: ${errorMessage}`);
-      }
+      this.app.setPluginError(`Weather service startup failed: ${errorMessage}`);
 
       throw new Error(`${ERROR_CODES.SYSTEM.PLUGIN_START_FAILED}: ${errorMessage}`);
     }
@@ -182,9 +178,7 @@ export class WeatherService {
         errorCount: this.errorCount,
       });
 
-      if (this.app.setPluginStatus) {
-        this.app.setPluginStatus(PLUGIN.STATUS.SERVICE_STOPPED);
-      }
+      this.app.setPluginStatus(PLUGIN.STATUS.SERVICE_STOPPED);
     } catch (error) {
       this.state = 'error';
       const errorMessage = error instanceof Error ? error.message : String(error);

@@ -24,22 +24,18 @@
   "signalk-plugin-enabled-by-default": false,
   "signalk": {
     "displayName": "Signal K Virtual Weather Sensors",
-    "supportedVersions": "^2.0.0",
+    "supportedVersions": [
+      ">=2.0.0"
+    ],
     "compatibility": {
       "nmea2000": true,
-      "signalkVersion": "^2.0.0"
+      "signalkVersion": ">=2.0.0"
     }
   },
   "appstore": {
     "id": "signalk-virtual-weather-sensors",
     "category": "weather",
-    "screenshots": [],
-    "compatibility": {
-      "signalkVersion": "^2.0.0",
-      "node": ">=20.0.0"
-    },
-    "tier": "free",
-    "verified": false
+    "screenshots": []
   },
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -65,9 +61,12 @@
     "node": ">=20.18"
   },
   "type": "module",
+  "peerDependencies": {
+    "@signalk/server-api": ">=2.24.0"
+  },
   "devDependencies": {
     "@biomejs/biome": "^2.3.11",
-    "@signalk/server-api": "^2.10.2",
+    "@signalk/server-api": "^2.24.0",
     "@types/node": "^25.0.9",
     "@vitest/coverage-v8": "^4.0.17",
     "@vitest/ui": "^4.0.17",

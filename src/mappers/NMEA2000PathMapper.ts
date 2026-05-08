@@ -3,12 +3,22 @@
  * Maps comprehensive weather data to standardized NMEA2000 Signal K paths.
  */
 
-import type { Context, Delta, Path, PathValue, Timestamp } from '@signalk/server-api';
-import { SIGNALK_PATHS } from '../constants/index.js';
+import type {
+  Context,
+  Delta,
+  Meta,
+  MetaValue,
+  Path,
+  PathValue,
+  SourceRef,
+  Timestamp,
+} from '@signalk/server-api';
+import { PLUGIN, SIGNALK_PATHS, UNITS } from '../constants/index.js';
 import type { Logger, WeatherData } from '../types/index.js';
 import { NMEA2000Validator } from '../utils/validation.js';
 
 const SELF_CONTEXT = 'vessels.self' as Context;
+const ACCUWEATHER_SOURCE = PLUGIN.SOURCE_REF as SourceRef;
 
 const asTimestamp = (ts: string): Timestamp => ts as Timestamp;
 
@@ -18,10 +28,75 @@ const pv = (path: string, value: unknown): PathValue => ({
   value: value as PathValue['value'],
 });
 
-/** Millimeters to meters (Signal K precipitation depth uses meters). */
-const MM_TO_M = 1 / 1000;
-/** Millimeters per hour to meters per second (Signal K precipitation rate uses m/s). */
-const MMH_TO_MS = 1 / (1000 * 3600);
+/** Build a Signal K Meta entry, casting the plain string path to the branded Path type. */
+const me = (path: string, value: MetaValue): Meta => ({ path: path as Path, value });
+
+/**
+ * Static meta block for paths outside the 1.8.2 vocabulary so the Admin UI
+ * and Instrument Panel can render them with units and labels. Shipped once per
+ * mapper instance via {@link NMEA2000PathMapper.buildMetaDelta}.
+ */
+const NON_CANONICAL_META: ReadonlyArray<Meta> = [
+  // De facto convention paths (widely used but not in 1.8.2)
+  me(SIGNALK_PATHS.ENVIRONMENT.OUTSIDE.REAL_FEEL_SHADE, {
+    units: 'K',
+    displayName: 'RealFeel (shade)',
+  }),
+  me(SIGNALK_PATHS.ENVIRONMENT.OUTSIDE.WET_BULB_TEMPERATURE, {
+    units: 'K',
+    displayName: 'Wet bulb temperature',
+  }),
+  me(SIGNALK_PATHS.ENVIRONMENT.OUTSIDE.WET_BULB_GLOBE_TEMPERATURE, {
+    units: 'K',
+    displayName: 'Wet bulb globe temperature',
+  }),
+  me(SIGNALK_PATHS.ENVIRONMENT.OUTSIDE.APPARENT_TEMPERATURE, {
+    units: 'K',
+    displayName: 'Apparent temperature',
+  }),
+  me(SIGNALK_PATHS.ENVIRONMENT.OUTSIDE.ABSOLUTE_HUMIDITY, {
+    units: 'kg/m3',
+    displayName: 'Absolute humidity',
+  }),
+  me(SIGNALK_PATHS.ENVIRONMENT.OUTSIDE.UV_INDEX, {
+    displayName: 'UV index',
+    description: '0..15+ solar UV scale',
+  }),
+  me(SIGNALK_PATHS.ENVIRONMENT.OUTSIDE.VISIBILITY, { units: 'm', displayName: 'Visibility' }),
+  me(SIGNALK_PATHS.ENVIRONMENT.OUTSIDE.CLOUD_COVER, { units: 'ratio', displayName: 'Cloud cover' }),
+  me(SIGNALK_PATHS.ENVIRONMENT.OUTSIDE.CLOUD_CEILING, { units: 'm', displayName: 'Cloud ceiling' }),
+  me(SIGNALK_PATHS.ENVIRONMENT.OUTSIDE.AIR_DENSITY, {
+    units: 'kg/m3',
+    displayName: 'Air density',
+  }),
+  me(SIGNALK_PATHS.ENVIRONMENT.OUTSIDE.PRECIPITATION_LAST_HOUR, {
+    units: 'm',
+    displayName: 'Precipitation, last hour',
+  }),
+  me(SIGNALK_PATHS.ENVIRONMENT.OUTSIDE.PRECIPITATION_CURRENT, {
+    units: 'm/s',
+    displayName: 'Precipitation rate',
+  }),
+  me(SIGNALK_PATHS.ENVIRONMENT.OUTSIDE.TEMPERATURE_DEPARTURE_24H, {
+    units: 'K',
+    displayName: '24h temperature departure',
+  }),
+  me(SIGNALK_PATHS.ENVIRONMENT.WIND.SPEED_GUST, { units: 'm/s', displayName: 'Wind gust speed' }),
+  // Plugin-derived categorical/ratio values under .derived.
+  me(SIGNALK_PATHS.ENVIRONMENT.OUTSIDE.HEAT_STRESS_INDEX, {
+    displayName: 'Heat stress index',
+    description: '0..4 categorical (derived from WBGT)',
+  }),
+  me(SIGNALK_PATHS.ENVIRONMENT.WIND.GUST_FACTOR, {
+    units: 'ratio',
+    displayName: 'Wind gust factor',
+    description: 'gust/sustained ratio',
+  }),
+  me(SIGNALK_PATHS.ENVIRONMENT.WIND.BEAUFORT_SCALE, {
+    displayName: 'Beaufort scale',
+    description: '0..12 wind force category',
+  }),
+];
 
 /**
  * NMEA2000 Path Mapper Service
@@ -36,9 +111,9 @@ export class NMEA2000PathMapper {
   }
 
   /**
-   * Map comprehensive weather data to NMEA2000 Signal K paths
-   * @param weatherData Enhanced weather data from AccuWeather
-   * @returns Signal K delta message with complete NMEA2000 mappings
+   * Map comprehensive weather data to a values-only Signal K delta. Meta for
+   * non-canonical paths is emitted separately via {@link buildMetaDelta} so it
+   * is shipped only when it changes (Signal K spec data_model.html).
    */
   public mapToSignalKPaths(weatherData: WeatherData): Delta {
     const sanitizedData = NMEA2000Validator.sanitizeForNMEA2000(weatherData);
@@ -61,10 +136,23 @@ export class NMEA2000PathMapper {
 
     return {
       context: SELF_CONTEXT,
+      updates: [{ $source: ACCUWEATHER_SOURCE, timestamp, values }],
+    };
+  }
+
+  /**
+   * One-shot meta delta describing every non-canonical path this plugin
+   * emits. Caller is responsible for sending it exactly once per mapper
+   * instance.
+   */
+  public buildMetaDelta(): Delta {
+    return {
+      context: SELF_CONTEXT,
       updates: [
         {
-          timestamp,
-          values,
+          $source: ACCUWEATHER_SOURCE,
+          timestamp: asTimestamp(new Date().toISOString()),
+          meta: [...NON_CANONICAL_META],
         },
       ],
     };
@@ -74,15 +162,14 @@ export class NMEA2000PathMapper {
     values.push(
       pv(SIGNALK_PATHS.ENVIRONMENT.OUTSIDE.TEMPERATURE, data.temperature),
       pv(SIGNALK_PATHS.ENVIRONMENT.OUTSIDE.PRESSURE, data.pressure),
-      // Signal K spec: ratio (0-1)
-      pv(SIGNALK_PATHS.ENVIRONMENT.OUTSIDE.HUMIDITY, data.humidity)
+      pv(SIGNALK_PATHS.ENVIRONMENT.OUTSIDE.RELATIVE_HUMIDITY, data.humidity)
     );
   }
 
   private addEnhancedTemperaturePaths(values: PathValue[], data: WeatherData): void {
     values.push(
       pv(SIGNALK_PATHS.ENVIRONMENT.OUTSIDE.DEW_POINT_TEMPERATURE, data.dewPoint),
-      pv(SIGNALK_PATHS.ENVIRONMENT.OUTSIDE.WIND_CHILL_TEMPERATURE, data.windChill),
+      pv(SIGNALK_PATHS.ENVIRONMENT.OUTSIDE.APPARENT_WIND_CHILL_TEMPERATURE, data.windChill),
       pv(SIGNALK_PATHS.ENVIRONMENT.OUTSIDE.HEAT_INDEX_TEMPERATURE, data.heatIndex)
     );
 
@@ -119,12 +206,14 @@ export class NMEA2000PathMapper {
   }
 
   private addWindPaths(values: PathValue[], data: WeatherData): void {
+    // AccuWeather wind is ground-referenced. We emit only to speedOverGround
+    // and directionTrue. speedTrue (water-referenced) would diverge from this
+    // value on any moving vessel and would clobber a real anemometer feed,
+    // so we deliberately do not emit it. Consumers (or this plugin's apparent
+    // wind calculator) derive water-referenced wind from speedOverGround.
     values.push(
-      pv(SIGNALK_PATHS.ENVIRONMENT.WIND.SPEED_TRUE, data.windSpeed),
-      pv(SIGNALK_PATHS.ENVIRONMENT.WIND.DIRECTION_TRUE, data.windDirection),
-      // speedOverGround mirrors speedTrue for weather API data;
-      // required by signalk-nmea2000-emitter-cannon's WIND_TRUE_GROUND PGN generator.
-      pv(SIGNALK_PATHS.ENVIRONMENT.WIND.SPEED_OVER_GROUND, data.windSpeed)
+      pv(SIGNALK_PATHS.ENVIRONMENT.WIND.SPEED_OVER_GROUND, data.windSpeed),
+      pv(SIGNALK_PATHS.ENVIRONMENT.WIND.DIRECTION_TRUE, data.windDirection)
     );
 
     if (data.windGustSpeed !== undefined) {
@@ -173,22 +262,20 @@ export class NMEA2000PathMapper {
   }
 
   private addPrecipitationPaths(values: PathValue[], data: WeatherData): void {
-    // Signal K expects precipitation depth in meters (source is mm).
     if (data.precipitationLastHour !== undefined) {
       values.push(
         pv(
           SIGNALK_PATHS.ENVIRONMENT.OUTSIDE.PRECIPITATION_LAST_HOUR,
-          data.precipitationLastHour * MM_TO_M
+          data.precipitationLastHour * UNITS.PRECIPITATION.MM_TO_M
         )
       );
     }
 
-    // Signal K expects precipitation rate in m/s (source is mm/h).
     if (data.precipitationCurrent !== undefined) {
       values.push(
         pv(
           SIGNALK_PATHS.ENVIRONMENT.OUTSIDE.PRECIPITATION_CURRENT,
-          data.precipitationCurrent * MMH_TO_MS
+          data.precipitationCurrent * UNITS.PRECIPITATION.MMH_TO_MS
         )
       );
     }

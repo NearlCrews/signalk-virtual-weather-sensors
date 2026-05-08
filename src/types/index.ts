@@ -55,8 +55,6 @@ export interface WeatherData {
   readonly cloudCover?: number;
   /** Cloud ceiling height in meters */
   readonly cloudCeiling?: number;
-  /** Pressure tendency indicator */
-  readonly pressureTendency?: string;
 
   // Precipitation data (new from AccuWeather)
   /** Precipitation in last hour in mm */
@@ -156,24 +154,6 @@ export interface AccuWeatherConfig {
   readonly requestTimeout: number;
   readonly retryAttempts: number;
   readonly retryDelay: number;
-}
-
-// ===============================
-// Signal K Types
-// ===============================
-
-/**
- * Signal K delta message format for real-time data updates
- */
-export interface SignalKDelta {
-  readonly context: string;
-  readonly updates: ReadonlyArray<{
-    readonly timestamp: string;
-    readonly values: ReadonlyArray<{
-      readonly path: string;
-      readonly value: unknown;
-    }>;
-  }>;
 }
 
 // ===============================

@@ -4,7 +4,7 @@
  * Signal K deltas on a fixed interval.
  */
 
-import type { Delta, Plugin, ServerAPI } from '@signalk/server-api';
+import { type Delta, type Plugin, type ServerAPI, SKVersion } from '@signalk/server-api';
 import { DEFAULT_CONFIG, ERROR_CODES, PLUGIN } from './constants/index.js';
 import { NMEA2000PathMapper } from './mappers/NMEA2000PathMapper.js';
 import { WeatherService } from './services/WeatherService.js';
@@ -30,6 +30,10 @@ interface PluginInstance {
   /** Cached delta to avoid rebuilding on every emission tick */
   cachedDelta: Delta | null;
   cachedWeatherDataRef: WeatherData | null;
+  /** True once the one-shot meta delta has been shipped to the server. */
+  metaEmitted: boolean;
+  /** True between setPluginError(stale) and the next successful clear. */
+  staleErrorActive: boolean;
 }
 
 /**
@@ -48,6 +52,8 @@ export default function createPlugin(app: ServerAPI): Plugin {
     logger: createLogger(app),
     cachedDelta: null,
     cachedWeatherDataRef: null,
+    metaEmitted: false,
+    staleErrorActive: false,
   };
 
   const plugin: Plugin = {
@@ -70,8 +76,10 @@ export default function createPlugin(app: ServerAPI): Plugin {
         await startServices(instance, config, app);
         finalizePluginStart(instance, config, app);
       } catch (error) {
+        // The Signal K plugin contract reports startup failures via
+        // setPluginError; rethrowing here would surface as an unhandled
+        // promise rejection because signalk-server doesn't await start().
         await handleStartupError(instance, error, settings, app);
-        throw error;
       }
     },
 
@@ -88,9 +96,7 @@ export default function createPlugin(app: ServerAPI): Plugin {
         instance.state = 'stopped';
         instance.startTime = null;
 
-        if (app.setPluginStatus) {
-          app.setPluginStatus(PLUGIN.STATUS.STOPPED);
-        }
+        app.setPluginStatus(PLUGIN.STATUS.STOPPED);
 
         instance.logger('info', 'signalk-virtual-weather-sensors plugin stopped successfully', {
           uptimeMs: uptime,
@@ -104,9 +110,7 @@ export default function createPlugin(app: ServerAPI): Plugin {
           error: errorMessage,
         });
 
-        if (app.setPluginError) {
-          app.setPluginError(`signalk-virtual-weather-sensors stop failed: ${errorMessage}`);
-        }
+        app.setPluginError(`signalk-virtual-weather-sensors stop failed: ${errorMessage}`);
       }
     },
 
@@ -213,11 +217,9 @@ function finalizePluginStart(
 ): void {
   instance.state = 'running';
 
-  if (app.setPluginStatus) {
-    app.setPluginStatus(
-      `${PLUGIN.STATUS.RUNNING} - Enhanced with ${PLUGIN.ENHANCED_FIELD_COUNT} data points`
-    );
-  }
+  app.setPluginStatus(
+    `${PLUGIN.STATUS.RUNNING} - Enhanced with ${PLUGIN.ENHANCED_FIELD_COUNT} data points`
+  );
 
   instance.logger('info', 'signalk-virtual-weather-sensors plugin started successfully', {
     enhancedFields: PLUGIN.ENHANCED_FIELD_COUNT,
@@ -242,9 +244,7 @@ async function handleStartupError(
     settingsKeys: typeof settings === 'object' && settings !== null ? Object.keys(settings) : [],
   });
 
-  if (app.setPluginError) {
-    app.setPluginError(`signalk-virtual-weather-sensors startup failed: ${errorMessage}`);
-  }
+  app.setPluginError(`signalk-virtual-weather-sensors startup failed: ${errorMessage}`);
 
   await cleanup(instance);
 }
@@ -289,13 +289,20 @@ function emitWeatherTick(instance: PluginInstance, app: ServerAPI, maxStalenessM
   if (lastUpdate) {
     const ageMs = Date.now() - lastUpdate.getTime();
     if (ageMs > maxStalenessMs) {
-      if (app.setPluginError) {
-        app.setPluginError(
-          `Weather data stale: last update ${Math.round(ageMs / 60_000)} minutes ago`
-        );
-      }
+      app.setPluginError(
+        `Weather data stale: last update ${Math.round(ageMs / 60_000)} minutes ago`
+      );
+      instance.staleErrorActive = true;
       return;
     }
+  }
+
+  // Fresh data path: clear the stale-data banner if one was set.
+  if (instance.staleErrorActive) {
+    app.setPluginStatus(
+      `${PLUGIN.STATUS.RUNNING} - Enhanced with ${PLUGIN.ENHANCED_FIELD_COUNT} data points`
+    );
+    instance.staleErrorActive = false;
   }
 
   // Only rebuild delta when weather data changes (reference comparison).
@@ -308,22 +315,31 @@ function emitWeatherTick(instance: PluginInstance, app: ServerAPI, maxStalenessM
     return;
   }
 
-  // Mutate the cached delta's first-update timestamp in place. The delta is private
-  // to this plugin instance and is rebuilt whenever weatherData changes, so mutation
-  // here doesn't surprise any other consumer, and avoids a 24-field spread per tick.
+  // Ship the static meta block once per plugin lifetime so consumers can
+  // render units/labels for non-canonical paths. The Signal K spec recommends
+  // emitting meta only when it changes; this plugin's meta is fully static.
+  if (!instance.metaEmitted) {
+    app.handleMessage(PLUGIN.NAME, instance.pathMapper.buildMetaDelta(), SKVersion.v1);
+    instance.metaEmitted = true;
+  }
+
+  // Stamp the cached delta's update timestamps in place. The delta is private
+  // to this plugin instance and is rebuilt whenever weatherData changes, so
+  // mutation here doesn't surprise any other consumer.
   stampEmissionTimestamp(instance.cachedDelta);
-  app.handleMessage(PLUGIN.NAME, instance.cachedDelta);
+  app.handleMessage(PLUGIN.NAME, instance.cachedDelta, SKVersion.v1);
 }
 
 /**
- * Sets the first update's timestamp to now in place. No-op if the delta has no updates.
+ * Stamps every update entry in the cached delta with the current emission
+ * time. No-op if the delta has no updates.
  * @private
  */
 function stampEmissionTimestamp(cached: Delta): void {
-  const firstUpdate = cached.updates[0];
-  if (!firstUpdate) return;
-  (firstUpdate as { timestamp: typeof firstUpdate.timestamp }).timestamp =
-    new Date().toISOString() as typeof firstUpdate.timestamp;
+  const now = new Date().toISOString();
+  for (const update of cached.updates) {
+    (update as { timestamp: typeof update.timestamp }).timestamp = now as typeof update.timestamp;
+  }
 }
 
 /**
@@ -353,6 +369,8 @@ async function cleanup(instance: PluginInstance): Promise<void> {
   instance.pathMapper = null;
   instance.cachedDelta = null;
   instance.cachedWeatherDataRef = null;
+  instance.metaEmitted = false;
+  instance.staleErrorActive = false;
 }
 
 /**
@@ -417,17 +435,11 @@ const LOG_PREFIX: Record<LogLevel, string> = {
 };
 
 function createLogger(app: ServerAPI): Logger {
-  const errorFn = typeof app.error === 'function' ? app.error.bind(app) : null;
-  // Routes warn/error to app.error when available; otherwise falls back to app.debug.
-  // Either way the line itself carries the level prefix from LOG_PREFIX.
-  const emitWarnError = errorFn ?? app.debug.bind(app);
-  const levelEmit: Record<LogLevel, (line: string) => void> = {
-    debug: (line) => app.debug(line),
-    info: (line) => app.debug(line),
-    warn: emitWarnError,
-    error: emitWarnError,
-  };
-
+  // All four levels go through app.debug per the official plugin docs
+  // (https://demo.signalk.org/documentation/Developing/Plugins.html). The
+  // line itself carries a level prefix from LOG_PREFIX so verbosity is still
+  // distinguishable in the log output. Plugin-level error STATUS (the
+  // Admin UI banner) is reported separately via app.setPluginError.
   return (level, message, metadata) => {
     const hasMetadata =
       metadata !== undefined && metadata !== null && Object.keys(metadata).length > 0;
@@ -438,7 +450,7 @@ function createLogger(app: ServerAPI): Logger {
         ? sanitizeLogMetadata(metadata as Record<string, unknown>)
         : metadata;
     const logMetadata = hasMetadata ? ` | ${JSON.stringify(finalMetadata)}` : '';
-    levelEmit[level](`${LOG_PREFIX[level]}[${PLUGIN.NAME}] ${message}${logMetadata}`);
+    app.debug(`${LOG_PREFIX[level]}[${PLUGIN.NAME}] ${message}${logMetadata}`);
   };
 }
 

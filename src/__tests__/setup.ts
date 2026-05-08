@@ -239,33 +239,6 @@ export function createMockAccuWeatherResponse(
   ];
 }
 
-/**
- * Generate mock Signal K delta message for testing
- */
-export function createMockSignalKDelta(
-  overrides: Partial<import('../types/index.js').SignalKDelta> = {}
-): import('../types/index.js').SignalKDelta {
-  return {
-    context: 'vessels.self',
-    updates: [
-      {
-        source: {
-          label: 'Signal K Virtual Weather Sensors',
-          type: 'plugin',
-          bus: '/dev/actisense',
-        },
-        timestamp: new Date().toISOString(),
-        values: [
-          { path: 'environment.outside.temperature', value: 293.15 },
-          { path: 'environment.outside.pressure', value: 101325 },
-          { path: 'environment.outside.relativeHumidity', value: 65 },
-        ],
-      },
-    ],
-    ...overrides,
-  };
-}
-
 // ===============================
 // Mock Implementations
 // ===============================

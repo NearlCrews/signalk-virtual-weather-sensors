@@ -15,6 +15,12 @@ export const PLUGIN = {
     'Signal K plugin providing comprehensive weather data from AccuWeather API with NMEA2000-compatible environmental measurements',
   VERSION: process.env.PKG_VERSION || '1.0.0',
   AUTHOR: 'Signal K Community',
+  /**
+   * Stable Signal K $source ref for every delta this plugin emits, so users
+   * can configure source priorities to prefer real onboard sensors over the
+   * AccuWeather feed.
+   */
+  SOURCE_REF: 'accuweather',
   STATUS: {
     RUNNING: 'SK to N2K Weather running',
     STOPPED: 'SK to N2K Weather stopped',
@@ -66,58 +72,58 @@ export const PGN = {
 // Signal K Path Constants
 // ===============================
 
-/** Standardized Signal K paths for environmental data (enhanced) */
+/**
+ * Signal K paths emitted by this plugin. See
+ * https://signalk.org/specification/1.8.2/doc/vesselsBranch.html for canonical
+ * vocabulary. Inline labels below tag each subgroup.
+ */
 export const SIGNALK_PATHS = {
   ENVIRONMENT: {
     OUTSIDE: {
-      // Core temperature paths
+      // Canonical temperature paths (1.8.2)
       TEMPERATURE: 'environment.outside.temperature',
       HEAT_INDEX_TEMPERATURE: 'environment.outside.heatIndexTemperature',
-      WIND_CHILL_TEMPERATURE: 'environment.outside.windChillTemperature',
-
-      // Enhanced temperature paths (new from AccuWeather)
+      APPARENT_WIND_CHILL_TEMPERATURE: 'environment.outside.apparentWindChillTemperature',
       DEW_POINT_TEMPERATURE: 'environment.outside.dewPointTemperature',
+
+      // De facto convention paths (widely used by ecosystem plugins; not in 1.8.2 vocabulary)
       APPARENT_TEMPERATURE: 'environment.outside.apparentTemperature',
       REAL_FEEL_SHADE: 'environment.outside.realFeelShade',
       WET_BULB_TEMPERATURE: 'environment.outside.wetBulbTemperature',
       WET_BULB_GLOBE_TEMPERATURE: 'environment.outside.wetBulbGlobeTemperature',
 
-      // Core atmospheric paths
+      // Canonical atmospheric paths (1.8.2)
       PRESSURE: 'environment.outside.pressure',
-      HUMIDITY: 'environment.outside.humidity',
+      RELATIVE_HUMIDITY: 'environment.outside.relativeHumidity',
 
-      // Enhanced atmospheric paths (new from AccuWeather)
+      // De facto convention paths
       ABSOLUTE_HUMIDITY: 'environment.outside.absoluteHumidity',
       UV_INDEX: 'environment.outside.uvIndex',
       VISIBILITY: 'environment.outside.visibility',
       CLOUD_COVER: 'environment.outside.cloudCover',
       CLOUD_CEILING: 'environment.outside.cloudCeiling',
-      PRESSURE_TENDENCY: 'environment.outside.pressureTendency',
       AIR_DENSITY: 'environment.outside.airDensity',
-
-      // Precipitation paths (new from AccuWeather)
       PRECIPITATION_LAST_HOUR: 'environment.outside.precipitationLastHour',
       PRECIPITATION_CURRENT: 'environment.outside.precipitationCurrent',
-
-      // Temperature trends (new from AccuWeather)
       TEMPERATURE_DEPARTURE_24H: 'environment.outside.temperatureDeparture24h',
 
-      // Heat stress assessment (new calculated)
-      HEAT_STRESS_INDEX: 'environment.outside.heatStressIndex',
+      // Plugin-derived categorical, namespaced under .derived.
+      HEAT_STRESS_INDEX: 'environment.outside.derived.heatStressIndex',
     },
 
     WIND: {
-      // Core wind paths
-      SPEED_TRUE: 'environment.wind.speedTrue',
+      // Canonical wind paths (1.8.2)
       DIRECTION_TRUE: 'environment.wind.directionTrue',
       SPEED_APPARENT: 'environment.wind.speedApparent',
       ANGLE_APPARENT: 'environment.wind.angleApparent',
-
-      // Enhanced wind paths (new from AccuWeather)
-      SPEED_GUST: 'environment.wind.speedGust',
-      GUST_FACTOR: 'environment.wind.gustFactor',
-      BEAUFORT_SCALE: 'environment.wind.beaufortScale',
       SPEED_OVER_GROUND: 'environment.wind.speedOverGround',
+
+      // De facto convention paths
+      SPEED_GUST: 'environment.wind.speedGust',
+
+      // Plugin-derived, namespaced under .derived.
+      GUST_FACTOR: 'environment.wind.derived.gustFactor',
+      BEAUFORT_SCALE: 'environment.wind.derived.beaufortScale',
     },
   },
 } as const;
@@ -153,6 +159,14 @@ export const UNITS = {
   ANGLE: {
     DEGREES_TO_RADIANS: Math.PI / 180,
     RADIANS_TO_DEGREES: 180 / Math.PI,
+  },
+
+  /** Precipitation conversions: Signal K uses meters for depth and m/s for rate. */
+  PRECIPITATION: {
+    /** Millimeters to meters (depth). */
+    MM_TO_M: 1 / 1000,
+    /** Millimeters per hour to meters per second (rate). */
+    MMH_TO_MS: 1 / (1000 * 3600),
   },
 } as const;
 

@@ -176,10 +176,6 @@ export class AccuWeatherService {
     const visibility = conditions.Visibility.Metric.Value * KM_TO_M;
     const cloudCover = percentageToRatio(conditions.CloudCover);
     const cloudCeiling = conditions.Ceiling.Metric.Value;
-    const pressureTendency = capString(
-      conditions.PressureTendency.LocalizedText,
-      ACCUWEATHER.MAX_LABEL_LENGTH
-    );
 
     const precipitationLastHour = conditions.Precip1hr.Metric.Value;
     const precipitationCurrent = conditions.PrecipitationSummary.PastHour.Metric.Value;
@@ -222,7 +218,6 @@ export class AccuWeatherService {
       visibility,
       cloudCover,
       cloudCeiling,
-      pressureTendency,
 
       // Precipitation
       precipitationLastHour,

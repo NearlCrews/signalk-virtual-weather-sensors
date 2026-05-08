@@ -4,9 +4,16 @@
  * signalk-nmea2000-emitter-cannon for NMEA2000 bus emission.
  */
 
+import type { Delta, PathValue } from '@signalk/server-api';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { NMEA2000PathMapper } from '../../mappers/NMEA2000PathMapper.js';
 import { createMockWeatherData } from '../setup.js';
+
+/** Pull the values array out of the first values-bearing update in a delta. */
+function getValues(delta: Delta): PathValue[] {
+  const update = delta.updates.find((u) => 'values' in u);
+  return update && 'values' in update ? update.values : [];
+}
 
 describe('NMEA2000PathMapper', () => {
   let mapper: NMEA2000PathMapper;
@@ -47,11 +54,12 @@ describe('NMEA2000PathMapper', () => {
           context: 'vessels.self',
           updates: expect.arrayContaining([
             expect.objectContaining({
+              $source: 'accuweather',
               values: expect.arrayContaining([
                 { path: 'environment.outside.temperature', value: 293.15 },
                 { path: 'environment.outside.pressure', value: 101325 },
-                { path: 'environment.outside.humidity', value: 0.65 },
-                { path: 'environment.wind.speedTrue', value: 5.14 },
+                { path: 'environment.outside.relativeHumidity', value: 0.65 },
+                { path: 'environment.wind.speedOverGround', value: 5.14 },
                 { path: 'environment.wind.directionTrue', value: Math.PI / 2 },
               ]),
             }),
@@ -63,20 +71,21 @@ describe('NMEA2000PathMapper', () => {
     it('should include all required core paths', () => {
       const weatherData = createMockWeatherData();
       const delta = mapper.mapToSignalKPaths(weatherData);
-      const values = delta.updates[0]?.values || [];
+      const values = getValues(delta);
       const paths = values.map((v) => v.path);
 
-      // Core environmental paths
+      // Core environmental paths (Signal K 1.8.2 vocabulary)
       expect(paths).toContain('environment.outside.temperature');
       expect(paths).toContain('environment.outside.pressure');
-      expect(paths).toContain('environment.outside.humidity');
+      expect(paths).toContain('environment.outside.relativeHumidity');
       expect(paths).toContain('environment.outside.dewPointTemperature');
-      expect(paths).toContain('environment.outside.windChillTemperature');
+      expect(paths).toContain('environment.outside.apparentWindChillTemperature');
       expect(paths).toContain('environment.outside.heatIndexTemperature');
 
-      // Core wind paths
-      expect(paths).toContain('environment.wind.speedTrue');
+      // Wind: ground-referenced only (AccuWeather is not water-referenced)
+      expect(paths).toContain('environment.wind.speedOverGround');
       expect(paths).toContain('environment.wind.directionTrue');
+      expect(paths).not.toContain('environment.wind.speedTrue');
     });
   });
 
@@ -99,7 +108,6 @@ describe('NMEA2000PathMapper', () => {
         visibility: 15000,
         cloudCover: 0.8,
         cloudCeiling: 1200,
-        pressureTendency: 'Rising',
 
         // Calculated values
         absoluteHumidity: 0.012,
@@ -109,7 +117,7 @@ describe('NMEA2000PathMapper', () => {
       });
 
       const delta = mapper.mapToSignalKPaths(enhancedWeatherData);
-      const values = delta.updates[0]?.values || [];
+      const values = getValues(delta);
       const paths = values.map((v) => v.path);
 
       // Enhanced temperature paths
@@ -121,10 +129,11 @@ describe('NMEA2000PathMapper', () => {
       // Enhanced humidity paths
       expect(paths).toContain('environment.outside.absoluteHumidity');
 
-      // Enhanced wind paths
+      // Wind: speedGust is de facto convention; gustFactor and beaufortScale
+      // are plugin-derived and namespaced under .derived.
       expect(paths).toContain('environment.wind.speedGust');
-      expect(paths).toContain('environment.wind.gustFactor');
-      expect(paths).toContain('environment.wind.beaufortScale');
+      expect(paths).toContain('environment.wind.derived.gustFactor');
+      expect(paths).toContain('environment.wind.derived.beaufortScale');
 
       // Atmospheric condition paths
       expect(paths).toContain('environment.outside.uvIndex');
@@ -132,9 +141,9 @@ describe('NMEA2000PathMapper', () => {
       expect(paths).toContain('environment.outside.cloudCover');
       expect(paths).toContain('environment.outside.cloudCeiling');
 
-      // Calculated property paths
+      // Calculated property paths (heatStressIndex is plugin-derived)
       expect(paths).toContain('environment.outside.airDensity');
-      expect(paths).toContain('environment.outside.heatStressIndex');
+      expect(paths).toContain('environment.outside.derived.heatStressIndex');
       expect(paths).toContain('environment.outside.temperatureDeparture24h');
     });
 
@@ -148,7 +157,7 @@ describe('NMEA2000PathMapper', () => {
       });
 
       const delta = mapper.mapToSignalKPaths(basicWeatherData);
-      const values = delta.updates[0]?.values || [];
+      const values = getValues(delta);
       const paths = values.map((v) => v.path);
 
       // Enhanced paths should not be included when values are undefined
@@ -171,14 +180,14 @@ describe('NMEA2000PathMapper', () => {
       const delta = mapper.mapToSignalKPaths(extremeWeatherData);
 
       // Data should be sanitized to NMEA2000 ranges
-      const values = delta.updates[0]?.values || [];
+      const values = getValues(delta);
       const tempValue = values.find((v) => v.path === 'environment.outside.temperature')
         ?.value as number;
       const pressureValue = values.find((v) => v.path === 'environment.outside.pressure')
         ?.value as number;
-      const humidityValue = values.find((v) => v.path === 'environment.outside.humidity')
+      const humidityValue = values.find((v) => v.path === 'environment.outside.relativeHumidity')
         ?.value as number;
-      const windSpeedValue = values.find((v) => v.path === 'environment.wind.speedTrue')
+      const windSpeedValue = values.find((v) => v.path === 'environment.wind.speedOverGround')
         ?.value as number;
 
       expect(tempValue).toBeLessThanOrEqual(358.15); // 85°C max
@@ -200,7 +209,7 @@ describe('NMEA2000PathMapper', () => {
       });
 
       const delta = mapper.mapToSignalKPaths(enhancedWeatherData);
-      const values = delta.updates[0]?.values || [];
+      const values = getValues(delta);
 
       expect(mockLogger).toHaveBeenCalledWith(
         'debug',
@@ -240,7 +249,6 @@ describe('NMEA2000PathMapper', () => {
         visibility: 15000,
         cloudCover: 0.8,
         cloudCeiling: 1200,
-        pressureTendency: 'Rising',
 
         // Precipitation
         precipitationLastHour: 2.5,
@@ -253,7 +261,7 @@ describe('NMEA2000PathMapper', () => {
       });
 
       const delta = mapper.mapToSignalKPaths(fullWeatherData);
-      const values = delta.updates[0]?.values || [];
+      const values = getValues(delta);
 
       // Should have 20+ paths for comprehensive dataset
       expect(values.length).toBeGreaterThan(20);
@@ -263,17 +271,16 @@ describe('NMEA2000PathMapper', () => {
       expect(paths).toContain('environment.outside.realFeelShade');
       expect(paths).toContain('environment.outside.wetBulbGlobeTemperature');
       expect(paths).toContain('environment.wind.speedGust');
-      expect(paths).toContain('environment.wind.beaufortScale');
+      expect(paths).toContain('environment.wind.derived.beaufortScale');
       expect(paths).toContain('environment.outside.uvIndex');
       expect(paths).toContain('environment.outside.visibility');
-      expect(paths).toContain('environment.outside.heatStressIndex');
+      expect(paths).toContain('environment.outside.derived.heatStressIndex');
     });
 
     it('should maintain Signal K delta structure integrity', () => {
       const weatherData = createMockWeatherData();
       const delta = mapper.mapToSignalKPaths(weatherData);
 
-      // Verify Signal K delta structure
       expect(delta).toHaveProperty('context');
       expect(delta).toHaveProperty('updates');
       expect(Array.isArray(delta.updates)).toBe(true);
@@ -281,16 +288,31 @@ describe('NMEA2000PathMapper', () => {
 
       const update = delta.updates[0];
       expect(update).toHaveProperty('timestamp');
-      expect(update).toHaveProperty('values');
-      expect(Array.isArray(update.values)).toBe(true);
+      expect(update).toHaveProperty('$source', 'accuweather');
+      const values = getValues(delta);
+      expect(Array.isArray(values)).toBe(true);
 
-      // Verify each value has required structure
-      update.values.forEach((value) => {
+      // Every value entry has the canonical {path, value} shape under environment.*
+      values.forEach((value) => {
         expect(value).toHaveProperty('path');
         expect(value).toHaveProperty('value');
         expect(typeof value.path).toBe('string');
         expect(value.path.startsWith('environment.')).toBe(true);
       });
+    });
+
+    it('should expose a one-shot meta delta describing non-canonical paths', () => {
+      const metaDelta = mapper.buildMetaDelta();
+      expect(metaDelta.updates).toHaveLength(1);
+      const update = metaDelta.updates[0];
+      expect(update).toHaveProperty('$source', 'accuweather');
+      expect(update && 'meta' in update).toBe(true);
+      const meta = update && 'meta' in update ? update.meta : [];
+      expect(meta.length).toBeGreaterThan(0);
+      // Meta entries describe non-canonical paths (derived or de-facto convention)
+      const metaPaths = meta.map((m) => m.path);
+      expect(metaPaths).toContain('environment.wind.derived.beaufortScale');
+      expect(metaPaths).toContain('environment.outside.derived.heatStressIndex');
     });
   });
 
@@ -302,7 +324,7 @@ describe('NMEA2000PathMapper', () => {
       });
 
       const delta = mapper.mapToSignalKPaths(weatherDataWithApparentWind);
-      const values = delta.updates[0]?.values || [];
+      const values = getValues(delta);
       const paths = values.map((v) => v.path);
 
       expect(paths).toContain('environment.wind.speedApparent');
@@ -322,7 +344,7 @@ describe('NMEA2000PathMapper', () => {
       });
 
       const delta = mapper.mapToSignalKPaths(weatherDataWithoutApparentWind);
-      const values = delta.updates[0]?.values || [];
+      const values = getValues(delta);
       const paths = values.map((v) => v.path);
 
       expect(paths).not.toContain('environment.wind.speedApparent');
@@ -340,18 +362,22 @@ describe('NMEA2000PathMapper', () => {
       });
 
       const delta = mapper.mapToSignalKPaths(safetyWeatherData);
-      const values = delta.updates[0]?.values || [];
+      const values = getValues(delta);
       const paths = values.map((v) => v.path);
 
-      // Verify safety-critical paths are included
-      expect(paths).toContain('environment.outside.heatStressIndex');
-      expect(paths).toContain('environment.wind.beaufortScale');
+      // Verify safety-critical paths are included (derived ones namespaced)
+      expect(paths).toContain('environment.outside.derived.heatStressIndex');
+      expect(paths).toContain('environment.wind.derived.beaufortScale');
       expect(paths).toContain('environment.outside.uvIndex');
       expect(paths).toContain('environment.outside.visibility');
 
       // Verify values are correctly mapped
-      expect(values.find((v) => v.path === 'environment.outside.heatStressIndex')?.value).toBe(3);
-      expect(values.find((v) => v.path === 'environment.wind.beaufortScale')?.value).toBe(8);
+      expect(
+        values.find((v) => v.path === 'environment.outside.derived.heatStressIndex')?.value
+      ).toBe(3);
+      expect(values.find((v) => v.path === 'environment.wind.derived.beaufortScale')?.value).toBe(
+        8
+      );
       expect(values.find((v) => v.path === 'environment.outside.uvIndex')?.value).toBe(9.5);
       expect(values.find((v) => v.path === 'environment.outside.visibility')?.value).toBe(500);
     });
