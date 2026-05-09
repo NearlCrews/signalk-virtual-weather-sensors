@@ -15,7 +15,6 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write # Required for repos.updateRelease in notification steps
-      id-token: write # Required for npm provenance
     
     steps:
       - name: Checkout code
@@ -50,8 +49,12 @@ jobs:
         if: github.event_name == 'workflow_dispatch' && github.event.inputs.version != ''
         run: npm version ${{ github.event.inputs.version }} --no-git-tag-version
       
-      - name: Publish to npm (with provenance)
-        run: npm publish --provenance --access public
+      - name: Publish to npm
+        # Provenance is intentionally not enabled: it is rejected by npm with a
+        # 404 unless this repo+workflow is registered as a Trusted Publisher
+        # on the package settings. Switch to `--provenance` once that is set up
+        # on npmjs.com and restore the `id-token: write` permission above.
+        run: npm publish --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
       
@@ -77,7 +80,9 @@ jobs:
               release_id: release.id,
               body: `${release.body || ''}${note}`,
             });
-            if (!succeeded) core.setFailed('Publish workflow failed');
+            // Don't call core.setFailed here: the failing publish step has
+            // already set the job status. Marking this step failed too would
+            // misleadingly imply the release-body update itself failed.
 
   verify-publish:
     needs: publish

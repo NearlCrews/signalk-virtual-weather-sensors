@@ -5,7 +5,7 @@ All notable changes to the signalk-virtual-weather-sensors project will be docum
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [1.3.1] - 2026-05-08
+## [1.3.1] - 2026-05-09
 
 Signal K 1.8.2 spec compliance + ServerAPI hygiene pass. Driven by a 3-agent audit (spec / plugin lifecycle / signalk-server runtime) plus a 3-agent `/simplify` review. **Includes path renames that change the wire output**, so consumers reading the previous path strings must update.
 
