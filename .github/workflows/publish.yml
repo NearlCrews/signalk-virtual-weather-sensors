@@ -15,7 +15,6 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write # Required for repos.updateRelease in notification steps
-      id-token: write # Required for npm OIDC + provenance attestation
     
     steps:
       - name: Checkout code
@@ -62,11 +61,15 @@ jobs:
         if: github.event_name == 'workflow_dispatch' && github.event.inputs.version != ''
         run: npm version ${{ github.event.inputs.version }} --no-git-tag-version
       
-      - name: Publish to npm (with provenance)
-        # Requires this repo + workflow to be registered as an OIDC Trusted
-        # Publisher on https://www.npmjs.com/package/signalk-virtual-weather-sensors/access
-        # otherwise npm rejects the PUT with a misleading E404.
-        run: npm publish --provenance --access public
+      - name: Publish to npm
+        # Provenance is currently disabled because npm rejects this repo's
+        # OIDC publish identity with a misleading E404. To re-enable:
+        #   1. Register this repo + .github/workflows/publish.yml as an OIDC
+        #      Trusted Publisher at
+        #      https://www.npmjs.com/package/signalk-virtual-weather-sensors/access
+        #   2. Add `id-token: write` back to the permissions block above.
+        #   3. Restore `--provenance` to the publish command below.
+        run: npm publish --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
       
