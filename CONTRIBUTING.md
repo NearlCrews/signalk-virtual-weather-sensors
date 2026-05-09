@@ -243,10 +243,11 @@ Closes #123
 ```
 
 ```
-fix(mapper): correct humidity format for NMEA2000 compatibility
+fix(mapper): rename humidity path to relativeHumidity per Signal K 1.8.2
 
-Changed humidity output from ratio (0-1) to percentage (0-100) to
-ensure proper display on Garmin marine devices.
+The 1.8.2 vocabulary defines environment.outside.relativeHumidity, not
+.humidity. Consumers and PGN 130313 routing only bind to the canonical
+name.
 
 Fixes #456
 ```

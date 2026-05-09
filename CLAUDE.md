@@ -83,17 +83,21 @@ npx vitest run src/__tests__/calculators/WindCalculator.test.ts
 
 Test configuration in `vitest.config.ts` includes path aliases (`@/`, `@/services/`, etc.).
 
-## NMEA2000 Compliance
+## Signal K Spec Compliance (1.8.2)
 
-- **PGNs**: 130311 (pressure), 130312 (temperatures), 130313 (humidity), 130306 (wind). Instance numbers and bus priority are assigned by the companion `signalk-nmea2000-emitter-cannon` plugin, not embedded in the deltas this plugin produces.
-- **Humidity**: Output as ratio (0-1) per Signal K spec.
+- **Canonical paths**: `environment.outside.{temperature,pressure,relativeHumidity,dewPointTemperature,apparentWindChillTemperature,heatIndexTemperature}`, `environment.wind.{speedOverGround,directionTrue,speedApparent,angleApparent}`. Per the 1.8.2 vocabulary.
+- **AccuWeather wind is ground-referenced**, so the plugin emits `speedOverGround` only. It does NOT emit `speedTrue` (which is water-referenced and would clobber a real anemometer feed on a moving vessel).
+- **Plugin-derived non-spec values** (Beaufort scale, gust factor, heat stress index) live under `environment.{outside,wind}.derived.*` so they don't squat on canonical-looking slots.
+- **`$source: 'accuweather'`** is set on every delta (constant lives in `PLUGIN.SOURCE_REF`) so users can configure source priorities to prefer real onboard sensors.
+- **Meta delta**: `NMEA2000PathMapper.buildMetaDelta()` returns a one-shot meta delta describing units/labels/descriptions for every non-canonical path. `index.ts` ships it exactly once per plugin lifetime via `app.handleMessage(..., SKVersion.v1)`.
+- **PGNs** (when paired with `signalk-nmea2000-emitter-cannon`): 130311 (pressure), 130312 (temperatures via fixed enum slots: temperature, dewPoint, apparentWindChill, heatIndex), 130313 (relativeHumidity), 130306 (wind). Instance numbers and bus priority are assigned by the companion plugin, not embedded in the deltas this plugin produces.
 
 ## Technology Stack
 
 - TypeScript 6.0+ (strict mode, ES2023 target)
 - Node.js 20.18+ (ESM only)
-- `@signalk/server-api` 2.24+ for official Plugin/ServerAPI/Delta types
-- esbuild 0.28+ for bundling
+- `@signalk/server-api` 2.24+ as a `peerDependency` (the Signal K server provides it at runtime; not bundled). Used for `Plugin`, `ServerAPI`, `Delta`, `PathValue`, `Meta`, `MetaValue`, `SourceRef`, and `SKVersion` types.
+- esbuild 0.28+ for bundling (current bundle ~66 KB)
 - Biome 2.4+ for linting/formatting
-- Vitest 4.1+ for testing
+- Vitest 4.1+ for testing (244 tests across 7 files)
 - Husky + lint-staged for pre-commit hooks

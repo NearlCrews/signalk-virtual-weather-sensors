@@ -102,22 +102,25 @@ While AI-assisted, this project maintains human oversight for:
 
 #### @signalk/server-api 2.24+
 - **Purpose**: Official Signal K type definitions for plugins
+- **Declared as `peerDependency`**: the Signal K server provides it at runtime, so esbuild externalizes it instead of bundling. (Bundling it pulls the whole package in, since `SKVersion` is an enum value, not a type.)
 - **Features Used**:
   - `Plugin` interface for plugin structure compliance
   - `ServerAPI` interface for type-safe server interaction
-  - Branded `Delta`, `Path`, `Context`, `Timestamp` types: the path mapper returns `Delta` directly to avoid double-cast workarounds in `index.ts`
-  - Proper typing for `handleMessage()`, `getSelfPath()`, etc.
+  - Branded `Delta`, `Path`, `Context`, `Timestamp`, `SourceRef` types: the path mapper returns `Delta` directly to avoid double-cast workarounds in `index.ts`
+  - `Meta`, `MetaValue` for the one-shot meta delta describing non-canonical paths
+  - `SKVersion` (enum) passed to `app.handleMessage(...)` so v1/v2 routing is explicit
+  - Proper typing for `handleMessage()`, `getSelfPath()`, `setPluginStatus()`, `setPluginError()`
 
 **Plugin Implementation Pattern:**
 ```typescript
-import type { Plugin, ServerAPI } from '@signalk/server-api';
+import { type Plugin, type ServerAPI, SKVersion } from '@signalk/server-api';
 
 export default function createPlugin(app: ServerAPI): Plugin {
   const plugin: Plugin = {
     id: 'my-plugin',
     name: 'My Plugin',
-    start: (config, restart) => { /* ... */ },
-    stop: () => { /* ... */ },
+    start: async (config, restart) => { /* ... */ },
+    stop: async () => { /* ... */ },
     schema: () => ({ /* ... */ }),
   };
   return plugin;
@@ -129,16 +132,16 @@ export default function createPlugin(app: ServerAPI): Plugin {
 #### esbuild 0.28+
 - **Purpose**: Fast, modern JavaScript bundler
 - **Configuration**: [`esbuild.config.js`](esbuild.config.js)
-- **Performance**: ~64 KB bundle in ~20 ms build time
+- **Performance**: ~66 KB bundle in ~20 ms build time
 - **Features**:
   - ES2023 target compilation
   - Source map generation
   - Tree shaking for optimal bundle size
-  - External dependency handling
+  - External dependency handling: declared `dependencies` and `peerDependencies` (including `@signalk/server-api`) are excluded from the bundle
   - Banner injection for plugin metadata
 
 **Build Outputs:**
-- `dist/index.js` -- Main bundle (~64 KB)
+- `dist/index.js` -- Main bundle (~66 KB)
 - `dist/index.js.map` -- Source map
 - `dist/index.d.ts` and per-source `*.d.ts` -- TypeScript declarations
 
@@ -384,7 +387,7 @@ npm run validate
 - **Edge Case Tests**: Boundary conditions and error handling
 - **Performance Tests**: Real-time calculation efficiency
 
-**Total: 243 tests** across 7 test files
+**Total: 244 tests** across 7 test files (latest coverage: 84.33% statements, 91.47% functions, 84.15% lines, 78.86% branches)
 
 ### Test Files
 
@@ -392,7 +395,7 @@ npm run validate
 - [`SignalKService.test.ts`](src/__tests__/services/SignalKService.test.ts) - Navigation data (40 tests)
 - [`AccuWeatherService.test.ts`](src/__tests__/services/AccuWeatherService.test.ts) - API integration (17 tests)
 - [`WindCalculator.test.ts`](src/__tests__/calculators/WindCalculator.test.ts) - Vector mathematics (45 tests)
-- [`NMEA2000PathMapper.test.ts`](src/__tests__/mappers/NMEA2000PathMapper.test.ts) - Path mapping (15 tests)
+- [`NMEA2000PathMapper.test.ts`](src/__tests__/mappers/NMEA2000PathMapper.test.ts) - Path mapping + one-shot meta delta (16 tests)
 - [`utils/conversions.test.ts`](src/__tests__/utils/conversions.test.ts) - Unit conversions (48 tests)
 - [`utils/validation.test.ts`](src/__tests__/utils/validation.test.ts) - Sanitize, validators, schema (54 tests)
 
@@ -448,12 +451,11 @@ npm outdated
 
 ## 📋 Signal K Standards Compliance
 
-### Compliance Status: 95% ✅
-
-This plugin adheres to official Signal K development standards with one intentional deviation for hardware compatibility.
+This plugin adheres to the [Signal K 1.8.2 specification](https://signalk.org/specification/1.8.2/doc/) and the official plugin developer guide.
 
 ### Standards References
 
+- **Specification**: [Signal K 1.8.2 vocabulary](https://signalk.org/specification/1.8.2/doc/vesselsBranch.html) and [data model](https://signalk.org/specification/1.8.2/doc/data_model.html)
 - **Plugin Development**: [Signal K Plugin Guidelines](https://demo.signalk.org/documentation/Developing/Plugins.html)
 - **Configuration**: [Configuration Schema Standards](https://demo.signalk.org/documentation/Developing/Plugins/Configuration.html)
 - **Weather Providers**: [Weather Provider Patterns](https://demo.signalk.org/documentation/Developing/Plugins/Weather_Providers.html)
@@ -462,18 +464,26 @@ This plugin adheres to official Signal K development standards with one intentio
 
 | Requirement | Status | Implementation |
 |-------------|--------|----------------|
-| Plugin Structure | ✅ | Default export, start/stop methods |
-| Configuration Schema | ✅ | JSON Schema with validation |
-| Delta Message Format | ✅ | Proper context and updates array |
-| Signal K Paths | ✅ | Standard environment.* conventions |
-| Source Metadata | ✅ | Proper label and type fields |
-| Status Reporting | ✅ | setPluginStatus/Error implemented |
+| Plugin Structure | ✅ | Default export, async `start`/`stop` methods, schema/uiSchema |
+| Configuration Schema | ✅ | JSON Schema with validation in `index.ts` `schema()` |
+| Delta Message Format | ✅ | `Delta` type from `@signalk/server-api`; `Update` is XOR `values \| meta`, so meta rides in a separate update entry |
+| Signal K Paths (canonical) | ✅ | 1.8.2 vocabulary: `relativeHumidity`, `apparentWindChillTemperature`, `speedOverGround`, `directionTrue`, etc. |
+| Signal K Paths (non-canonical) | ✅ | Plugin-derived values namespaced under `environment.{outside,wind}.derived.*` so they don't squat on canonical-looking slots |
+| Source Metadata | ✅ | Explicit `$source: 'accuweather'` (`SourceRef` brand) on every update; configurable via `PLUGIN.SOURCE_REF` |
+| Meta | ✅ | One-shot meta delta on plugin start (`NMEA2000PathMapper.buildMetaDelta()`) describing units and labels for non-canonical paths |
+| Status Reporting | ✅ | `app.setPluginStatus` / `app.setPluginError` (called unconditionally; both are required members of `ServerAPI` 2.x). Stale-data error is cleared on the next successful tick via `instance.staleErrorActive` flag in `emitWeatherTick` |
+| `handleMessage` versioning | ✅ | `app.handleMessage(id, delta, SKVersion.v1)` |
+| Logging channel separation | ✅ | All log levels go through `app.debug`. `app.setPluginError` is reserved for the Admin UI status banner, separate from log output |
+
+### Wind Semantics
+
+AccuWeather wind data is **ground-referenced**. The plugin emits it only to `environment.wind.speedOverGround` and `environment.wind.directionTrue`. It does NOT emit `speedTrue` (which is water-referenced per the 1.8.2 vocabulary), because doing so would diverge from a real anemometer feed on any moving vessel. Consumers that need water-referenced wind should derive it from `speedOverGround` and the vessel's water-track speed.
 
 ### Humidity Format
 
 **Location**: [`src/mappers/NMEA2000PathMapper.ts`](src/mappers/NMEA2000PathMapper.ts)
 
-The plugin emits `environment.outside.humidity` as a ratio in `[0, 1]` per the Signal K spec. AccuWeather returns relative humidity as a percentage; the value is converted to a ratio in `AccuWeatherService.transformWeatherData` via `percentageToRatio()` before reaching the mapper. The companion `signalk-nmea2000-emitter-cannon` plugin handles the conversion to the percentage format expected on the NMEA2000 wire (PGN 130313), so callers do not need to opt in to a non-standard representation here.
+The plugin emits `environment.outside.relativeHumidity` (the canonical 1.8.2 path) as a ratio in `[0, 1]`. AccuWeather returns relative humidity as a percentage; the value is converted to a ratio in `AccuWeatherService.transformWeatherData` via `percentageToRatio()` before reaching the mapper. The companion `signalk-nmea2000-emitter-cannon` plugin handles the conversion to the percentage format expected on the NMEA2000 wire (PGN 130313).
 
 For complete compliance documentation and TODO items, see [`TODO.md`](TODO.md).
 

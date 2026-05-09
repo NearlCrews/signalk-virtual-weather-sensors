@@ -4,25 +4,29 @@ This file tracks remaining tasks, known issues, and future enhancements for the 
 
 ## 🔄 Signal K Standards Compliance
 
-### Status: 100% Compliant ✅
+### Status: Aligned with Signal K 1.8.2
 
-The plugin uses official `@signalk/server-api` types and follows Signal K plugin standards as documented at:
-- https://demo.signalk.org/documentation/Developing/Plugins.html
+The plugin uses official `@signalk/server-api` 2.24+ types and follows Signal K plugin standards as documented at:
+- https://signalk.org/specification/1.8.2/doc/ (data model and vocabulary)
+- https://demo.signalk.org/documentation/Developing/Plugins.html (plugin developer guide)
 - https://demo.signalk.org/documentation/Developing/Plugins/Configuration.html
 - https://demo.signalk.org/documentation/Developing/Plugins/Weather_Providers.html
 
 ### ✅ Compliant Areas
-- [x] **Official Types**: Uses `Plugin` and `ServerAPI` from `@signalk/server-api`
+- [x] **Official Types**: Uses `Plugin`, `ServerAPI`, `Delta`, `PathValue`, `Meta`, `MetaValue`, `SourceRef`, `SKVersion` from `@signalk/server-api` 2.24+
 - [x] Plugin structure (default export, start/stop methods)
 - [x] Configuration schema (JSON Schema with validation)
-- [x] Delta message format (proper context and updates array)
-- [x] Signal K path conventions (environment.outside.*, environment.wind.*)
-- [x] Source metadata -- stamped automatically via `app.handleMessage(pluginId, …)` (no explicit `source` literal)
-- [x] Status reporting (setPluginStatus / setPluginError)
+- [x] Delta message format (proper context, updates array, values/meta XOR)
+- [x] **Canonical Signal K paths** per the 1.8.2 vocabulary: `relativeHumidity`, `apparentWindChillTemperature`, `speedOverGround`, etc.
+- [x] **Plugin-derived non-spec values** namespaced under `environment.{outside,wind}.derived.*` (Beaufort scale, gust factor, heat stress index)
+- [x] **Explicit `$source: 'accuweather'`** on every update so users can configure source priorities to prefer real onboard sensors
+- [x] **One-shot meta delta** on plugin start so the Admin UI / Instrument Panel can render units and labels for non-canonical paths
+- [x] **`SKVersion.v1`** passed to `app.handleMessage` so v1/v2 routing is explicit
+- [x] Status reporting (`setPluginStatus` / `setPluginError`) with stale-data recovery flag in `emitWeatherTick`
 
 ### ⚠️ Known Deviations
 
-_None as of v1.2.2._ The previous percentage-vs-ratio humidity deviation was resolved in v1.2.2: `environment.outside.humidity` is now emitted as a ratio (0--1) per Signal K spec, with the duplicate `relativeHumidity` path removed.
+None tracked.
 
 ## 📋 Enhancement Backlog
 
@@ -33,10 +37,10 @@ _None as of v1.2.2._ The previous percentage-vs-ratio humidity deviation was res
   - ✅ SignalKService tests (40 tests) - position, speed, course, heading, caching
   - ✅ AccuWeatherService tests (17 tests, +1 skipped) - API integration, retry, validation
   - ✅ WindCalculator tests (45 tests) - vector math, edge cases (negative angles, NaN)
-  - ✅ NMEA2000PathMapper tests (15 tests) - delta build, sanitization
+  - ✅ NMEA2000PathMapper tests (16 tests) - delta build, sanitization, one-shot meta delta
   - ✅ utils/conversions tests (48 tests) - all conversions + edge cases *(new in v1.2.2)*
   - ✅ utils/validation tests (54 tests) - sanitize, validators, response schema *(new in v1.2.2)*
-  - ✅ Total: 243 tests across 7 test files (coverage: 81.9% stmts, 90.75% funcs)
+  - ✅ Total: 244 tests across 7 test files
 
 - [ ] **Add delta message format validation tests**
   - Unit tests to verify proper Signal K delta structure
@@ -116,7 +120,7 @@ _None as of v1.2.2._ The previous percentage-vs-ratio humidity deviation was res
 
 ## 🐛 Known Issues
 
-- **Branch coverage at 78.06%** -- below the documented 80% threshold (concentrated in `WeatherService.ts` error paths). Vitest currently treats the threshold as advisory; tightening the test suite is tracked under "Code quality improvements" below.
+- **Branch coverage below the 80% threshold** (currently 78.86% per the latest `npm run test:coverage`, concentrated in `AccuWeatherService.ts` and `WeatherService.ts` error paths). Vitest treats the threshold as advisory; tightening the test suite is tracked under "Code quality improvements" below.
 
 ## 🔐 Security
 
@@ -186,11 +190,11 @@ _None as of v1.2.2._ The previous percentage-vs-ratio humidity deviation was res
   - Automate security patches
   - Regular dependency reviews
 
-- [x] **Code quality improvements** *(v1.1.0, expanded v1.2.2)*
-  - ✅ Increased test coverage (243 tests; 81.9% stmts, 90.75% funcs)
-  - ✅ Enhanced logger with Signal K UI integration; errors now route to `app.error`
+- [x] **Code quality improvements** *(v1.1.0 onwards)*
+  - ✅ Test coverage at 244 tests
+  - ✅ All log levels (debug/info/warn/error) route through `app.debug`. Plugin-level error STATUS goes to `app.setPluginError` separately, per the Signal K plugin developer docs.
   - ✅ Logger sanitizes API keys at all levels
-  - [ ] Increase branch coverage above 80% (currently 78.06%, gaps in WeatherService error paths)
+  - [ ] Increase branch coverage above 80% (gaps in `WeatherService.ts` error paths)
   - [ ] Add mutation testing
 
 ---
@@ -218,7 +222,7 @@ _None as of v1.2.2._ The previous percentage-vs-ratio humidity deviation was res
 
 ---
 
-**Last Updated**: 2026-04-19
+**Last Updated**: 2026-05-08
 
 **Maintainer**: Signal K Community
 

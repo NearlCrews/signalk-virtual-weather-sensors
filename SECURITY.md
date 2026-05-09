@@ -2,12 +2,12 @@
 
 ## Supported Versions
 
-We release patches for security vulnerabilities. Which versions are eligible for receiving such patches depends on the severity of the vulnerability.
+We release patches for security vulnerabilities. Only the latest minor release line is supported with security updates.
 
 | Version | Supported          |
 | ------- | ------------------ |
-| 1.0.x   | :white_check_mark: |
-| < 1.0   | :x:                |
+| 1.3.x   | :white_check_mark: |
+| < 1.3   | :x:                |
 
 ## Reporting a Vulnerability
 
@@ -177,6 +177,6 @@ If you have questions about this security policy or need clarification, please:
 
 ---
 
-**Last Updated**: 2026-01-20
+**Last Updated**: 2026-05-08
 
 Thank you for helping keep Signal K Virtual Weather Sensors and its users safe!

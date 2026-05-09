@@ -5,6 +5,67 @@ All notable changes to the signalk-virtual-weather-sensors project will be docum
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.1] - 2026-05-08
+
+Signal K 1.8.2 spec compliance + ServerAPI hygiene pass. Driven by a 3-agent audit (spec / plugin lifecycle / signalk-server runtime) plus a 3-agent `/simplify` review. **Includes path renames that change the wire output**, so consumers reading the previous path strings must update.
+
+### Changed -- Signal K paths (breaking)
+
+- `environment.outside.humidity` → `environment.outside.relativeHumidity` (1.8.2 vocabulary). The value remains a ratio in `[0, 1]`.
+- `environment.outside.windChillTemperature` → `environment.outside.apparentWindChillTemperature` (1.8.2 vocabulary; AccuWeather's `WindChillTemperature` is computed from observed wind, so it is "apparent" by spec definition).
+- `environment.wind.beaufortScale` → `environment.wind.derived.beaufortScale` (not in 1.8.2 vocabulary, namespaced under `.derived.`).
+- `environment.wind.gustFactor` → `environment.wind.derived.gustFactor` (same rationale).
+- `environment.outside.heatStressIndex` → `environment.outside.derived.heatStressIndex` (same rationale).
+- **`environment.wind.speedTrue` is no longer emitted.** AccuWeather wind is ground-referenced; emitting it as `speedTrue` (water-referenced per the 1.8.2 vocabulary) clobbered any real anemometer feed on a moving vessel. The plugin now emits ground-referenced wind to `environment.wind.speedOverGround` only. Consumers needing water-referenced wind should derive it from `speedOverGround` and the vessel's water-track speed.
+
+### Added -- delta envelope
+
+- **Explicit `$source: 'accuweather'`** on every update (constant lives in `PLUGIN.SOURCE_REF`). Lets users configure source priorities to prefer real onboard sensors over the API feed when both are present.
+- **One-shot meta delta** at plugin start. `NMEA2000PathMapper.buildMetaDelta()` returns a `Delta` with a `meta` update entry describing units, displayName, and description for every non-canonical path. `index.ts` ships it exactly once per plugin lifetime (Signal K spec recommends emitting meta only when it changes; this plugin's meta is fully static). Lets the Admin UI / Instrument Panel render units and labels for the non-canonical paths.
+
+### Fixed -- plugin lifecycle / ServerAPI
+
+- **Logger no longer routes warn/error to `app.error`.** `app.error` is the Admin UI status channel per the official plugin developer docs, not a logging API. All four log levels now go through `app.debug` (with a `[DEBUG]`/`[INFO]`/`[WARN]`/`[ERROR]` prefix on each line). Plugin-level error STATUS is reported separately via `app.setPluginError`.
+- **`start()` no longer rethrows from its catch.** The Signal K plugin contract reports startup failures via `setPluginError`; rethrowing surfaced as an unhandled rejection because signalk-server does not await `start()`.
+- **Stale-data recovery flag** in `emitWeatherTick`. When the staleness check fires `setPluginError`, an `instance.staleErrorActive` flag is set; the next successful tick clears the Admin UI banner via `setPluginStatus`. Previously the banner persisted indefinitely after recovery.
+- **`SKVersion.v1`** is now passed to `app.handleMessage(id, delta, SKVersion.v1)`, making v1/v2 routing explicit per the `@signalk/server-api` 2.24 contract.
+- **Removed `if (app.setPluginStatus)` / `if (app.setPluginError)` existence guards** (7 sites across `index.ts` and `WeatherService.ts`). Both methods are required members of `ServerAPI` 2.x; the guards contradicted the declared types and were dead code.
+
+### Changed -- package metadata
+
+- `signalk.supportedVersions` is now an array (`[">=2.0.0"]`) per the Signal K plugin registry convention. Was a bare string `"^2.0.0"` which the registry treats as a literal version, not a semver range.
+- `signalk.compatibility.signalkVersion` changed from `^2.0.0` to `>=2.0.0` to match.
+- Dropped `appstore.tier`, `appstore.verified`, and the duplicate `appstore.compatibility` block (none of these fields are part of the official app store metadata schema).
+- `@signalk/server-api` declared range bumped from `^2.10.2` to `^2.24.0`.
+- `@signalk/server-api` moved to `peerDependencies`. The Signal K server provides it at runtime; this also restores the bundle from 161 KB back to ~66 KB (the bundle bloated when `SKVersion` became a value import, since esbuild only externalizes declared `dependencies` and `peerDependencies`).
+
+### Removed -- dead code
+
+- `WeatherData.pressureTendency` (`string` field). It was extracted from the AccuWeather response in `AccuWeatherService.transformWeatherData` but never reached the delta wire because the path was a free-text label on a numeric path slot. AccuWeatherService.ts also dropped the `capString` / `LocalizedText` extraction.
+- `SignalKDelta` interface in `src/types/index.ts`. Dead since the mapper switched to returning the `@signalk/server-api` `Delta` brand directly. The matching `createMockSignalKDelta` helper in `__tests__/setup.ts` was also removed.
+- `SIGNALK_PATHS.ENVIRONMENT.OUTSIDE.PRESSURE_TENDENCY` constant.
+- The cast `'vessels.self' as Context` was kept (server accepts both this literal and `undefined`); the `'as ReadonlyArray<string>'` cast on the mapper's `ENHANCED_PATHS` set was dropped (no narrowing benefit).
+
+### Changed -- code reuse
+
+- `'accuweather'` source ref consolidated into `PLUGIN.SOURCE_REF`.
+- `MM_TO_M` and `MMH_TO_MS` (precipitation conversions) consolidated into `UNITS.PRECIPITATION`.
+- `NMEA2000PathMapper` gained a `me(path, value)` helper that mirrors the existing `pv(path, value)` helper, eliminating 17 inline `as Path` casts in the meta block.
+- Test helper `getValues(delta)` in `NMEA2000PathMapper.test.ts` replaces 9 duplicated `delta.updates.find((u) => 'values' in u)` extractions.
+- `index.ts` mapper meta clone removed: the meta delta is built once per plugin lifetime instead of cloning the static meta array on every delta rebuild.
+
+### Tests
+
+- 244 tests passing across 7 files (was 243). One new test added for the one-shot `buildMetaDelta()` API.
+- Mapper test rewritten to extract values via `getValues(delta)` helper and assert the new path names + `$source` field.
+
+### Documentation
+
+- README path tables, PGN tables, and Features section updated to reflect the new path names, `$source` semantics, meta delta, and 8-temperature path count (was incorrectly listed as 7).
+- DEVELOPMENT.md compliance section reorganized; bundle size and test counts refreshed; humidity-format section updated to reference `relativeHumidity`.
+- TODO.md compliance summary updated; the inaccurate "errors route to `app.error`" claim corrected.
+- CLAUDE.md NMEA2000-compliance section expanded into a Signal K 1.8.2 compliance section covering canonical paths, `.derived.` namespace, `$source`, meta, and PGN routing.
+
 ## [1.3.0] - 2026-05-05
 
 Toolchain modernization plus a 12-agent simplify pass. No breaking runtime behavior; configuration shape is unchanged. Minor-version bump because the toolchain floor (TypeScript 6, Node 20.18) and the Signal K paths emitted have both shifted in observable ways.
