@@ -36,7 +36,7 @@ This project adheres to a Code of Conduct that all contributors are expected to 
 
 ### Prerequisites
 
-- Node.js 20.0.0 or higher
+- Node.js 20.18 or higher
 - npm (comes with Node.js)
 - Git
 

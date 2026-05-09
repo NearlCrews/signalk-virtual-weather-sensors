@@ -27,10 +27,14 @@ export const PLUGIN = {
     SERVICE_RUNNING: 'Weather service running',
     SERVICE_STOPPED: 'Weather service stopped',
   },
-  /** Number of Signal K paths emitted by NMEA2000PathMapper (core + always-present enhanced fields) */
-  ENHANCED_FIELD_COUNT: 24,
   /** Delay before first weather fetch after start, in ms */
   INITIAL_UPDATE_DELAY_MS: 5000,
+  /**
+   * Multiplier on `updateFrequency` (minutes) used to decide when emitted
+   * weather data has gone stale. With the default 5-minute fetch cadence,
+   * data older than 10 minutes triggers a stale-data error in the Admin UI.
+   */
+  STALENESS_FACTOR: 2,
 } as const;
 
 // ===============================
@@ -47,25 +51,6 @@ export const DEFAULT_CONFIG = {
   REQUEST_TIMEOUT: 10000, // milliseconds
   RETRY_ATTEMPTS: 3,
   RETRY_DELAY: 1000, // milliseconds
-} as const;
-
-// ===============================
-// NMEA2000 PGN Specifications
-// ===============================
-
-/** NMEA2000 Parameter Group Numbers for environmental data */
-export const PGN = {
-  /** Environmental Parameters - Pressure */
-  ENVIRONMENTAL_PRESSURE: 130311,
-
-  /** Environmental Parameters - Temperature */
-  ENVIRONMENTAL_TEMPERATURE: 130312,
-
-  /** Humidity */
-  HUMIDITY: 130313,
-
-  /** Wind Data */
-  WIND_DATA: 130306,
 } as const;
 
 // ===============================
@@ -126,6 +111,20 @@ export const SIGNALK_PATHS = {
       BEAUFORT_SCALE: 'environment.wind.derived.beaufortScale',
     },
   },
+
+  /**
+   * Signal K paths this plugin READS from the vessel's `self` context via
+   * `app.getSelfPath`. Centralized so a typo in any input path becomes a
+   * type error instead of a silent runtime undefined.
+   */
+  NAVIGATION: {
+    POSITION: 'navigation.position',
+    SPEED_OVER_GROUND: 'navigation.speedOverGround',
+    COURSE_OVER_GROUND_TRUE: 'navigation.courseOverGroundTrue',
+    HEADING_TRUE: 'navigation.headingTrue',
+    HEADING_MAGNETIC: 'navigation.headingMagnetic',
+    MAGNETIC_VARIATION: 'navigation.magneticVariation',
+  },
 } as const;
 
 // ===============================
@@ -168,6 +167,27 @@ export const UNITS = {
     /** Millimeters per hour to meters per second (rate). */
     MMH_TO_MS: 1 / (1000 * 3600),
   },
+
+  /** Length conversions. */
+  LENGTH: {
+    /** Kilometers to meters. */
+    KM_TO_M: 1000,
+  },
+} as const;
+
+/**
+ * August-Roche-Magnus formula coefficients used for saturation vapour pressure
+ * and dew-point calculations. Both `WindCalculator.calculateDewPoint` and
+ * `conversions.calculateSaturationVaporPressure` reference this single source.
+ * See https://en.wikipedia.org/wiki/Arden_Buck_equation for variant context.
+ */
+export const MAGNUS = {
+  /** Multiplier on temperature in the exponent (dimensionless). */
+  A: 17.625,
+  /** Offset on temperature in the exponent (degrees Celsius). */
+  B: 243.04,
+  /** Saturation pressure at 0°C in hPa. */
+  C: 6.1094,
 } as const;
 
 // ===============================
@@ -182,7 +202,6 @@ export const ACCUWEATHER = {
     CURRENT_CONDITIONS: '/currentconditions/v1',
   },
   DEFAULT_LANGUAGE: 'en-us',
-  LOCATION_SEARCH_RADIUS: 50, // kilometers
   /** Maximum length for descriptive strings copied verbatim from API responses into Signal K deltas */
   MAX_DESCRIPTION_LENGTH: 128,
   /** Maximum length for short labels (e.g. PressureTendency.LocalizedText) */
@@ -239,6 +258,16 @@ export const VALIDATION_LIMITS = {
     MAX: 2 * Math.PI, // 0-360° in radians
   },
 
+  /**
+   * Course-over-ground (true) is in radians, same numeric range as wind
+   * direction. Defined separately so changing one bound does not silently
+   * shift the other.
+   */
+  COURSE_TRUE: {
+    MIN: 0,
+    MAX: 2 * Math.PI,
+  },
+
   COORDINATES: {
     LATITUDE: {
       MIN: -90,
@@ -256,8 +285,14 @@ export const VALIDATION_LIMITS = {
     MAX: 100,
   },
 
-  /** Navigation data age threshold (seconds) */
+  /** Navigation data age threshold (seconds) used by SignalKService cache. */
   MAX_DATA_AGE: 30,
+
+  /** Vessel-data warning threshold (seconds) used by validateVesselNavigationData. */
+  VESSEL_DATA_WARN_AGE: 60,
+
+  /** Vessel-data error threshold (seconds) used by validateVesselNavigationData. */
+  VESSEL_DATA_ERROR_AGE: 300,
 
   /** Vessel movement detection threshold (m/s) - 0.5 m/s ≈ 1 knot */
   VESSEL_MOVING_THRESHOLD: 0.5,

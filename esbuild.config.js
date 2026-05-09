@@ -11,10 +11,11 @@ const config = {
   target: 'es2023',
   format: 'esm',
   sourcemap: true,
-  minify: process.env.NODE_ENV === 'production',
+  // Whitespace and syntax minification are always on (cheap, no debug cost).
+  // Identifier mangling only in production so dev sourcemaps stay readable.
   minifyWhitespace: true,
-  minifyIdentifiers: process.env.NODE_ENV === 'production',
   minifySyntax: true,
+  minifyIdentifiers: process.env.NODE_ENV === 'production',
   treeShaking: true,
   splitting: false,
   metafile: true,

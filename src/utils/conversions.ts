@@ -1,5 +1,9 @@
-import { UNITS, VALIDATION_LIMITS } from '../constants/index.js';
-import type { TemperatureUnit } from '../types/index.js';
+import { MAGNUS, UNITS, VALIDATION_LIMITS } from '../constants/index.js';
+
+/** Extract a string message from any thrown value: `Error.message` or `String(value)`. */
+export function toErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
 
 const TWO_PI = 2 * Math.PI;
 
@@ -42,47 +46,6 @@ export function fahrenheitToKelvin(fahrenheit: number): number {
 }
 
 /**
- * Convert temperature between any units
- */
-export function convertTemperature(
-  value: number,
-  from: TemperatureUnit,
-  to: TemperatureUnit
-): number {
-  if (!Number.isFinite(value)) return 0;
-  if (from === to) return value;
-
-  // Convert to Kelvin first
-  let kelvin: number;
-  switch (from) {
-    case 'K':
-      kelvin = value;
-      break;
-    case 'C':
-      kelvin = celsiusToKelvin(value);
-      break;
-    case 'F':
-      kelvin = fahrenheitToKelvin(value);
-      break;
-    default:
-      kelvin = value; // Fallback to input value
-      break;
-  }
-
-  // Convert from Kelvin to target unit
-  switch (to) {
-    case 'K':
-      return kelvin;
-    case 'C':
-      return kelvinToCelsius(kelvin);
-    case 'F':
-      return kelvinToFahrenheit(kelvin);
-    default:
-      return kelvin; // Fallback to Kelvin
-  }
-}
-
-/**
  * Pressure conversion utilities
  */
 
@@ -100,22 +63,6 @@ export function millibarsToPA(millibars: number): number {
 export function pascalsToMillibars(pascals: number): number {
   if (!Number.isFinite(pascals)) return 0;
   return pascals / UNITS.PRESSURE.MILLIBAR_TO_PASCAL;
-}
-
-/**
- * Convert inches of mercury to Pascals
- */
-export function inchesHgToPascals(inchesHg: number): number {
-  if (!Number.isFinite(inchesHg)) return 0;
-  return inchesHg * UNITS.PRESSURE.INCHES_HG_TO_PASCAL;
-}
-
-/**
- * Convert atmospheres to Pascals
- */
-export function atmToPascals(atm: number): number {
-  if (!Number.isFinite(atm)) return 0;
-  return atm * UNITS.PRESSURE.ATM_TO_PASCAL;
 }
 
 /**
@@ -214,41 +161,21 @@ export function normalizeAnglePiToPi(radians: number): number {
  */
 
 /**
- * Convert percentage to ratio
- */
-export function percentageToRatio(percentage: number): number {
-  if (!Number.isFinite(percentage)) return 0;
-  return Math.max(0, Math.min(1, percentage / 100));
-}
-
-/**
- * Convert ratio to percentage
- */
-export function ratioToPercentage(ratio: number): number {
-  if (!Number.isFinite(ratio)) return 0;
-  return Math.max(0, Math.min(100, ratio * 100));
-}
-
-/**
- * Normalize humidity to valid ratio (0-1)
- */
-export function normalizeHumidity(humidity: number): number {
-  if (!Number.isFinite(humidity)) return 0.5;
-
-  if (humidity <= 1.0) {
-    // If humidity is <= 1.0, it's likely already a ratio
-    return Math.max(0, Math.min(1, humidity));
-  }
-  // If humidity is > 1.0, it's likely a percentage, convert to ratio
-  return percentageToRatio(humidity);
-}
-
-/**
- * Clamp a value between min and max bounds
+ * Clamp a value between min and max bounds. Non-finite input clamps to `min`.
  */
 export function clamp(value: number, min: number, max: number): number {
   if (!Number.isFinite(value)) return min;
   return Math.max(min, Math.min(max, value));
+}
+
+/** Convert percentage (0-100) to ratio (0-1). */
+export function percentageToRatio(percentage: number): number {
+  return clamp(percentage / 100, 0, 1);
+}
+
+/** Convert ratio (0-1) to percentage (0-100). */
+export function ratioToPercentage(ratio: number): number {
+  return clamp(ratio * 100, 0, 100);
 }
 
 /**
@@ -272,25 +199,6 @@ export function isValidNumber(value: unknown, min?: number, max?: number): value
     return false;
   }
   return true;
-}
-
-/**
- * Round to specified decimal places
- */
-export function roundTo(value: number, decimals: number): number {
-  if (!Number.isFinite(value)) return 0;
-  const factor = 10 ** decimals;
-  return Math.round(value * factor) / factor;
-}
-
-/**
- * Calculate percentage change between two values
- */
-export function percentageChange(oldValue: number, newValue: number): number {
-  if (!Number.isFinite(oldValue) || !Number.isFinite(newValue) || oldValue === 0) {
-    return 0;
-  }
-  return ((newValue - oldValue) / oldValue) * 100;
 }
 
 /**
@@ -363,49 +271,22 @@ export function isValidCoordinates(latitude: number, longitude: number): boolean
 }
 
 /**
- * Validate and sanitize weather data object
- */
-export function sanitizeWeatherData<T extends Record<string, unknown>>(data: T): T {
-  const sanitized = { ...data } as Record<string, unknown>;
-
-  // Sanitize temperature fields
-  Object.keys(sanitized).forEach((key) => {
-    if (key.includes('temperature') || key.includes('Temperature')) {
-      const value = sanitized[key];
-      if (typeof value === 'number' && !isValidTemperature(value)) {
-        sanitized[key] = clamp(
-          value,
-          VALIDATION_LIMITS.TEMPERATURE.MIN,
-          VALIDATION_LIMITS.TEMPERATURE.MAX
-        );
-      }
-    }
-  });
-
-  return sanitized as T;
-}
-
-/**
  * Advanced atmospheric calculations
  */
 
 /**
- * Calculate saturation vapor pressure using Magnus formula
+ * Saturation vapour pressure via the August-Roche-Magnus formula. The Magnus
+ * coefficients (`MAGNUS.A`, `MAGNUS.B`, `MAGNUS.C`) live in `constants/index.ts`
+ * so `WindCalculator.calculateDewPoint` and this function share the same
+ * physical constants.
  * @param temperatureK Temperature in Kelvin
  * @returns Saturation vapor pressure in Pascals
  */
 export function calculateSaturationVaporPressure(temperatureK: number): number {
   if (!Number.isFinite(temperatureK)) return 0;
-
   const tempC = temperatureK - UNITS.TEMPERATURE.CELSIUS_TO_KELVIN;
-
-  // Magnus formula constants
-  const a = 17.27;
-  const b = 237.7;
-
-  // Calculate saturation vapor pressure in hPa, then convert to Pascals
-  const saturationPressureHPa = 6.112 * Math.exp((a * tempC) / (b + tempC));
-  return saturationPressureHPa * 100; // Convert hPa to Pascals
+  const saturationPressureHPa = MAGNUS.C * Math.exp((MAGNUS.A * tempC) / (MAGNUS.B + tempC));
+  return saturationPressureHPa * 100;
 }
 
 /**

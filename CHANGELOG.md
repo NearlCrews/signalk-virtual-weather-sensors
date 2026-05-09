@@ -5,6 +5,65 @@ All notable changes to the signalk-virtual-weather-sensors project will be docum
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.2] - 2026-05-09
+
+12-agent codebase-wide cleanup pass following the Signal K spec compliance work in v1.3.1. No public API changes beyond the dead-export removal listed below; configuration shape unchanged. Fixes a real correctness issue (Magnus formula constant mismatch), adds defensive optional-chaining for free-tier AccuWeather responses, and bounds the error-body read previously bypassed on 4xx/5xx responses.
+
+### Fixed -- correctness, reliability
+
+- **Magnus formula constants are now a single source of truth.** `WindCalculator.calculateDewPoint` previously used `(17.625, 243.04)` while `conversions.calculateSaturationVaporPressure` used `(17.27, 237.7, 6.112)`. The two variants returned different dew-point values for the same input. Both now read from `MAGNUS.{A,B,C}` in `constants/index.ts` (August-Roche-Magnus variant). The published `calculateSaturationVaporPressure` at 20°C shifts from ~2339 Pa to ~2333 Pa (within the ~5 Pa variant tolerance).
+- **`AccuWeatherService.transformWeatherData` no longer throws on free-tier API responses.** Optional chaining added on `Precip1hr`, `PrecipitationSummary.PastHour`, and `Past24HourTemperatureDeparture` (those fields are absent on free-tier subscriptions). The corresponding `WeatherData` fields are now omitted via conditional spread when undefined, so `exactOptionalPropertyTypes` stays satisfied.
+- **Error response bodies are bounded.** `handleApiError` now reads error response bodies via `readBoundedJson` instead of unbounded `response.json()`, applying the same 1 MiB cap that already protected success paths.
+
+### Changed -- code reuse / consistency
+
+- **`toErrorMessage(error)` helper** in `utils/conversions.ts` consolidates 19 occurrences of the `error instanceof Error ? error.message : String(error)` pattern across `index.ts`, `WeatherService.ts`, `AccuWeatherService.ts`, and `SignalKService.ts`.
+- **Navigation paths are constants.** `SIGNALK_PATHS.NAVIGATION` adds canonical names for the six paths `SignalKService` reads via `app.getSelfPath` (`navigation.{position,speedOverGround,courseOverGroundTrue,headingTrue,headingMagnetic,magneticVariation}`). String literals in `SignalKService.ts` now reference the constants, so a typo in any input path becomes a type error rather than a silent runtime undefined.
+- **Magnus + length conversion constants.** New `MAGNUS` block in `constants/index.ts`. `UNITS.LENGTH.KM_TO_M` replaces the file-private `KM_TO_M` literal in `AccuWeatherService.ts`.
+- **Course-over-ground gets its own range constants.** `VALIDATION_LIMITS.COURSE_TRUE` mirrors `WIND_DIRECTION` numerically but is named for the semantic it actually validates, so changing one bound does not silently shift the other.
+- **Stale-observation threshold is named.** `STALE_OBSERVATION_THRESHOLD_MS` in `AccuWeatherService.ts` replaces the bare `3600000` magic number used by `calculateDataQuality`.
+- **Vessel-data age thresholds are named.** `VALIDATION_LIMITS.VESSEL_DATA_WARN_AGE` (60 s) and `VESSEL_DATA_ERROR_AGE` (300 s) replace inline magic numbers in `validation.ts`.
+- **`calculateApparentWindSpeed` and `calculateApparentWindAngle` delegate to `calculateWindAnalysis`.** Eliminates the duplicate four-trig-call pair that the v1.3.0 optimization already collapsed once. Net per-call: 4 sin/cos calls instead of 8.
+- **`STALENESS_FACTOR: 2` constant** in `PLUGIN` documents the implicit 2x-update-frequency threshold previously hard-coded inside `setupEnhancedEmissionSystem`.
+- **`DEW_POINT_FALLBACK_K` constant** names the previously bare `temperatureK - 5` fallback in `WindCalculator.calculateDewPoint`.
+
+### Changed -- package metadata / build
+
+- **`@signalk/server-api`** stays declared as a `peerDependency` (v1.3.1 change); restored bundle size (~65 KB).
+- **`@types/node`** pinned from `^25.0.9` down to `^20.18.0` to match the `engines.node` floor. Eliminates the silent type-vs-runtime drift where Node-25-only APIs would type-check but fail at runtime on the supported Node 20.18+.
+- **Removed `optionalDependencies`** entirely; `@rollup/rollup-win32-x64-msvc` was vestigial since the bundler is esbuild, not Rollup.
+- **Dropped duplicate `npm` script aliases** `typecheck` and `check` (kept the `type-check` and `lint` canonical names).
+- **Removed stale `signalk.compatibility` block** in `package.json` (`nmea2000: true`, `signalkVersion: ">=2.0.0"`). The block is not part of the Signal K plugin registry schema; `signalk.supportedVersions` already carries the version constraint.
+- **Removed `appstore` block** keys that the Signal K app store schema doesn't recognize. The block is gone from this version since the project's app-store metadata lives elsewhere.
+- **`files` array** dropped `DEVELOPMENT.md` and `TODO.md` from the published npm tarball; those are dev-internal docs.
+- **`tsconfig.json`** dropped the dead `ts-node` configuration block. The dev runner is `tsx`, which doesn't read `ts-node` config.
+- **`esbuild.config.js`** minify gating made coherent: `minifyWhitespace` and `minifySyntax` are always on (cheap, no debug cost); `minifyIdentifiers` only in production so dev sourcemaps stay readable.
+- **`vitest.config.ts`** bumped `hookTimeout` from 10 s to 15 s so async `beforeAll` / `afterAll` setup has more headroom than individual tests.
+- **CI workflow** added `concurrency.cancel-in-progress` to cancel duplicate runs on rapid PR pushes; bumped `codecov/codecov-action` from `@v4` to `@v5`.
+- **Dependency-updates workflow** bumped `peter-evans/create-pull-request` from `@v6` (Node 16, deprecated) to `@v7`; this was almost certainly the cause of 35 consecutive failed weekly runs.
+- **Publish workflow** added a `Verify tag matches package.json version` step (mirrors the cannon's setup) so tag/version drift is caught before npm publish.
+
+### Removed -- dead code
+
+- Conversion helpers with no production callers: `convertTemperature`, `inchesHgToPascals`, `atmToPascals`, `roundTo`, `percentageChange`, `sanitizeWeatherData`, `normalizeHumidity`. Their tests were removed alongside.
+- `TemperatureUnit` type alias (only used by the removed `convertTemperature`).
+- `PGN` constant block in `constants/index.ts`. PGN instance assignment is delegated to the companion `signalk-nmea2000-emitter-cannon` plugin per the project's stated architecture; the constant was dead and actively misleading.
+- `ACCUWEATHER.LOCATION_SEARCH_RADIUS` constant (unused).
+- `PLUGIN.ENHANCED_FIELD_COUNT` constant. The hard-coded value (24) diverged from the runtime path count and was a documentation-debt trap. Status messages no longer suffix the count.
+- Internal `countEnhancedFields` function in `AccuWeatherService.ts` (only used by one debug log; inlined or dropped).
+- Dead test infrastructure in `__tests__/setup.ts`: `createOrderedMock`, the `toBeCloseTo` override (which silently masked Vitest's native semantics), and the `toBeValidSignalKDelta` matcher (never invoked, accepted invalid deltas).
+
+### Tests / coverage
+
+- 231 tests passing across 7 files (down from 244 because the 13 tests covering removed dead-export helpers are gone).
+- Branch coverage now 81.57% (above the documented 80% threshold; previously 78.86%).
+
+### Documentation
+
+- Doc-vs-code audit fixed several stale claims: clone URL pointed at the `signalk` org instead of `NearlCrews`; `npm run build:deploy` was a phantom script; `Node.js 20.0.0 or higher` understated the actual `>=20.18` floor; AccuWeather test count claimed "+1 skipped" but no skipped tests remain.
+- Test file diagram in DEVELOPMENT.md expanded from 3 entries to all 7.
+- TODO known-issues section reset (branch coverage moved above threshold).
+
 ## [1.3.1] - 2026-05-09
 
 Signal K 1.8.2 spec compliance + ServerAPI hygiene pass. Driven by a 3-agent audit (spec / plugin lifecycle / signalk-server runtime) plus a 3-agent `/simplify` review. **Includes path renames that change the wire output**, so consumers reading the previous path strings must update.

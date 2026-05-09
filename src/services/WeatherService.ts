@@ -15,6 +15,7 @@ import {
   type VesselNavigationData,
   type WeatherData,
 } from '../types/index.js';
+import { toErrorMessage } from '../utils/conversions.js';
 import { AccuWeatherService } from './AccuWeatherService.js';
 import { SignalKService } from './SignalKService.js';
 
@@ -116,7 +117,7 @@ export class WeatherService {
         if (this.state !== 'running') return;
         this.updateWeatherData().catch((error) => {
           this.logger('error', 'Initial weather update failed', {
-            error: error instanceof Error ? error.message : String(error),
+            error: toErrorMessage(error),
           });
         });
       }, PLUGIN.INITIAL_UPDATE_DELAY_MS);
@@ -127,7 +128,7 @@ export class WeatherService {
       this.app.setPluginStatus(PLUGIN.STATUS.SERVICE_RUNNING);
     } catch (error) {
       this.state = 'error';
-      const errorMessage = error instanceof Error ? error.message : String(error);
+      const errorMessage = toErrorMessage(error);
 
       this.logger('error', 'Failed to start WeatherService', {
         error: errorMessage,
@@ -181,7 +182,7 @@ export class WeatherService {
       this.app.setPluginStatus(PLUGIN.STATUS.SERVICE_STOPPED);
     } catch (error) {
       this.state = 'error';
-      const errorMessage = error instanceof Error ? error.message : String(error);
+      const errorMessage = toErrorMessage(error);
 
       this.logger('error', 'Failed to stop WeatherService', {
         error: errorMessage,
@@ -298,7 +299,7 @@ export class WeatherService {
       this.updateWeatherData().catch((error) => {
         this.errorCount++;
         this.logger('error', 'Scheduled weather update failed', {
-          error: error instanceof Error ? error.message : String(error),
+          error: toErrorMessage(error),
           errorCount: this.errorCount,
         });
       });
@@ -373,7 +374,7 @@ export class WeatherService {
       }
     } catch (error) {
       this.errorCount++;
-      const errorMessage = error instanceof Error ? error.message : String(error);
+      const errorMessage = toErrorMessage(error);
 
       this.logger('error', 'Weather data update failed', {
         error: errorMessage,
@@ -474,7 +475,7 @@ export class WeatherService {
       return { apparentWindSpeed, apparentWindAngle };
     } catch (error) {
       this.logger('warn', 'Failed to calculate apparent wind', {
-        error: error instanceof Error ? error.message : String(error),
+        error: toErrorMessage(error),
       });
 
       return this.calculateApparentWindFallback(weatherData, vesselData);

@@ -35,12 +35,12 @@ None tracked.
 - [x] **Comprehensive unit test coverage** *(v1.2.2)*
   - ✅ WeatherService tests (24 tests) - initialization, lifecycle, data emission
   - ✅ SignalKService tests (40 tests) - position, speed, course, heading, caching
-  - ✅ AccuWeatherService tests (17 tests, +1 skipped) - API integration, retry, validation
+  - ✅ AccuWeatherService tests (17 tests) - API integration, retry, validation
   - ✅ WindCalculator tests (45 tests) - vector math, edge cases (negative angles, NaN)
   - ✅ NMEA2000PathMapper tests (16 tests) - delta build, sanitization, one-shot meta delta
   - ✅ utils/conversions tests (48 tests) - all conversions + edge cases *(new in v1.2.2)*
   - ✅ utils/validation tests (54 tests) - sanitize, validators, response schema *(new in v1.2.2)*
-  - ✅ Total: 244 tests across 7 test files
+  - ✅ Total: 231 tests across 7 test files (v1.3.2 dropped 13 tests for unused conversion helpers)
 
 - [ ] **Add delta message format validation tests**
   - Unit tests to verify proper Signal K delta structure
@@ -120,7 +120,7 @@ None tracked.
 
 ## 🐛 Known Issues
 
-- **Branch coverage below the 80% threshold** (currently 78.86% per the latest `npm run test:coverage`, concentrated in `AccuWeatherService.ts` and `WeatherService.ts` error paths). Vitest treats the threshold as advisory; tightening the test suite is tracked under "Code quality improvements" below.
+_None tracked. Branch coverage moved above the 80% threshold in v1.3.2 (currently 81.57%)._
 
 ## 🔐 Security
 
@@ -191,10 +191,10 @@ None tracked.
   - Regular dependency reviews
 
 - [x] **Code quality improvements** *(v1.1.0 onwards)*
-  - ✅ Test coverage at 244 tests
+  - ✅ Test coverage at 231 tests, branch coverage 81.57% (above the 80% threshold)
   - ✅ All log levels (debug/info/warn/error) route through `app.debug`. Plugin-level error STATUS goes to `app.setPluginError` separately, per the Signal K plugin developer docs.
   - ✅ Logger sanitizes API keys at all levels
-  - [ ] Increase branch coverage above 80% (gaps in `WeatherService.ts` error paths)
+  - ✅ `toErrorMessage(error)` helper consolidates 19 sites of `error instanceof Error ? error.message : String(error)` *(v1.3.2)*
   - [ ] Add mutation testing
 
 ---
@@ -222,7 +222,7 @@ None tracked.
 
 ---
 
-**Last Updated**: 2026-05-08
+**Last Updated**: 2026-05-09
 
 **Maintainer**: Signal K Community
 

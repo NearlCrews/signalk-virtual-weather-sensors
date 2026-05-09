@@ -3,7 +3,7 @@
  * Vector calculations for apparent wind, wind chill, heat index, and dew point
  */
 
-import { VALIDATION_LIMITS } from '../constants/index.js';
+import { MAGNUS, VALIDATION_LIMITS } from '../constants/index.js';
 import type { Logger, WindCalculationResult } from '../types/index.js';
 import {
   calculateBeaufortScale as calculateBeaufortScaleUtil,
@@ -19,6 +19,13 @@ import {
   normalizeAnglePiToPi,
   radiansToDegrees,
 } from '../utils/conversions.js';
+
+/**
+ * Conservative fallback offset (Kelvin) for dew point when inputs are
+ * non-finite or the formula yields a non-physical result. Picked because
+ * an air-dewpoint spread of ~5 K is a typical low-humidity proxy.
+ */
+const DEW_POINT_FALLBACK_K = 5;
 
 const COMPASS_DIRECTIONS = [
   'N',
@@ -57,8 +64,9 @@ export class WindCalculator {
   }
 
   /**
-   * Calculate apparent wind speed using vector addition
-   * @returns Apparent wind speed in m/s
+   * Apparent wind speed via vector addition. Delegates to
+   * {@link calculateWindAnalysis} so the four shared sin/cos calls are
+   * computed exactly once per call.
    */
   public calculateApparentWindSpeed(
     trueWindSpeed: number,
@@ -66,33 +74,14 @@ export class WindCalculator {
     vesselHeading: number,
     trueWindDirection: number
   ): number {
-    if (!this.validateWindInputs(trueWindSpeed, vesselSpeed, vesselHeading, trueWindDirection)) {
-      this.logger('warn', 'Invalid wind calculation inputs', {
-        trueWindSpeed,
-        vesselSpeed,
-        vesselHeading,
-        trueWindDirection,
-      });
-      return trueWindSpeed || 0;
-    }
-
-    const apparentWindX =
-      trueWindSpeed * Math.cos(trueWindDirection) + vesselSpeed * Math.cos(vesselHeading);
-    const apparentWindY =
-      trueWindSpeed * Math.sin(trueWindDirection) + vesselSpeed * Math.sin(vesselHeading);
-
-    const apparentWindSpeed = Math.sqrt(apparentWindX ** 2 + apparentWindY ** 2);
-
-    if (!Number.isFinite(apparentWindSpeed) || apparentWindSpeed < 0) {
-      return trueWindSpeed;
-    }
-
-    return apparentWindSpeed;
+    return this.calculateWindAnalysis(trueWindSpeed, vesselSpeed, vesselHeading, trueWindDirection)
+      .apparentWindSpeed;
   }
 
   /**
-   * Calculate apparent wind angle relative to vessel heading
-   * @returns Apparent wind angle relative to bow in radians (-π to π)
+   * Apparent wind angle relative to vessel heading, in radians (-π to π).
+   * Delegates to {@link calculateWindAnalysis} for the same reason as
+   * {@link calculateApparentWindSpeed}.
    */
   public calculateApparentWindAngle(
     trueWindSpeed: number,
@@ -100,19 +89,8 @@ export class WindCalculator {
     vesselHeading: number,
     trueWindDirection: number
   ): number {
-    if (!this.validateWindInputs(trueWindSpeed, vesselSpeed, vesselHeading, trueWindDirection)) {
-      this.logger('warn', 'Invalid wind angle calculation inputs');
-      return trueWindDirection - vesselHeading;
-    }
-
-    const apparentWindX =
-      trueWindSpeed * Math.cos(trueWindDirection) + vesselSpeed * Math.cos(vesselHeading);
-    const apparentWindY =
-      trueWindSpeed * Math.sin(trueWindDirection) + vesselSpeed * Math.sin(vesselHeading);
-
-    const apparentWindDirection = Math.atan2(apparentWindY, apparentWindX);
-
-    return this.normalizeAngle(apparentWindDirection - vesselHeading);
+    return this.calculateWindAnalysis(trueWindSpeed, vesselSpeed, vesselHeading, trueWindDirection)
+      .apparentWindAngle;
   }
 
   /**
@@ -127,6 +105,12 @@ export class WindCalculator {
     trueWindDirection: number
   ): WindCalculationResult {
     if (!this.validateWindInputs(trueWindSpeed, vesselSpeed, vesselHeading, trueWindDirection)) {
+      this.logger('warn', 'Invalid wind calculation inputs', {
+        trueWindSpeed,
+        vesselSpeed,
+        vesselHeading,
+        trueWindDirection,
+      });
       return {
         apparentWindSpeed: trueWindSpeed || 0,
         apparentWindAngle: 0,
@@ -223,26 +207,25 @@ export class WindCalculator {
   }
 
   /**
-   * Calculate dew point using Magnus formula
+   * Calculate dew point using the August-Roche-Magnus formula. Coefficients
+   * `MAGNUS.A` and `MAGNUS.B` live in `constants/index.ts` so this function
+   * and `conversions.calculateSaturationVaporPressure` share one source.
    * @param relativeHumidity Relative humidity as ratio (0-1)
    * @returns Dew point temperature in Kelvin
    */
   public calculateDewPoint(temperatureK: number, relativeHumidity: number): number {
     if (!Number.isFinite(temperatureK) || !Number.isFinite(relativeHumidity)) {
-      return temperatureK - 5;
+      return temperatureK - DEW_POINT_FALLBACK_K;
     }
 
     const tempC = kelvinToCelsius(temperatureK);
     const rh = clamp(relativeHumidity, 0.01, 0.99);
-
-    const a = 17.625;
-    const b = 243.04;
-    const gamma = (a * tempC) / (b + tempC) + Math.log(rh);
-    const dewPointC = (b * gamma) / (a - gamma);
+    const gamma = (MAGNUS.A * tempC) / (MAGNUS.B + tempC) + Math.log(rh);
+    const dewPointC = (MAGNUS.B * gamma) / (MAGNUS.A - gamma);
     const result = celsiusToKelvin(dewPointC);
 
     if (!Number.isFinite(result) || result > temperatureK) {
-      return temperatureK - 5;
+      return temperatureK - DEW_POINT_FALLBACK_K;
     }
 
     return result;

@@ -161,11 +161,6 @@ export interface AccuWeatherConfig {
 // ===============================
 
 /**
- * Temperature unit types for conversions
- */
-export type TemperatureUnit = 'K' | 'C' | 'F';
-
-/**
  * Wind calculation result with validation
  */
 export interface WindCalculationResult {

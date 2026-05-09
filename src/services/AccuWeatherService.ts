@@ -25,14 +25,15 @@ import {
   isValidWindSpeed,
   kelvinToCelsius,
   percentageToRatio,
+  toErrorMessage,
 } from '../utils/conversions.js';
 import { validateAccuWeatherResponse } from '../utils/validation.js';
 
-/** Kilometers to meters (AccuWeather visibility comes in km). */
-const KM_TO_M = 1000;
-
 /** Maximum allowed response body size in bytes (1 MiB) */
 const MAX_RESPONSE_BYTES = 1_048_576;
+
+/** Threshold above which an observation is treated as low-quality in calculateDataQuality. */
+const STALE_OBSERVATION_THRESHOLD_MS = 60 * 60 * 1000;
 
 /** Validation pattern for AccuWeather location keys (URL path segment). */
 const LOCATION_KEY_PATTERN = /^[a-zA-Z0-9_-]+$/;
@@ -132,14 +133,13 @@ export class AccuWeatherService {
         windGustSpeed: weatherData.windGustSpeed,
         uvIndex: weatherData.uvIndex,
         visibility: weatherData.visibility,
-        enhancedFieldsCount: countEnhancedFields(weatherData),
       });
 
       return weatherData;
     } catch (error) {
       this.logger('error', 'Failed to fetch weather data', {
         location: `${location.latitude},${location.longitude}`,
-        error: error instanceof Error ? error.message : String(error),
+        error: toErrorMessage(error),
       });
       throw error;
     }
@@ -173,14 +173,16 @@ export class AccuWeatherService {
     const windGustFactor = windSpeed > 0 ? windGustSpeed / windSpeed : undefined;
 
     const uvIndex = conditions.UVIndexFloat;
-    const visibility = conditions.Visibility.Metric.Value * KM_TO_M;
+    const visibility = conditions.Visibility.Metric.Value * UNITS.LENGTH.KM_TO_M;
     const cloudCover = percentageToRatio(conditions.CloudCover);
     const cloudCeiling = conditions.Ceiling.Metric.Value;
 
-    const precipitationLastHour = conditions.Precip1hr.Metric.Value;
-    const precipitationCurrent = conditions.PrecipitationSummary.PastHour.Metric.Value;
+    // Free-tier API responses can omit Precip1hr / PrecipitationSummary entirely;
+    // optional chaining keeps transformWeatherData from throwing on those payloads.
+    const precipitationLastHour = conditions.Precip1hr?.Metric?.Value;
+    const precipitationCurrent = conditions.PrecipitationSummary?.PastHour?.Metric?.Value;
 
-    const temperatureDeparture24h = conditions.Past24HourTemperatureDeparture.Metric.Value;
+    const temperatureDeparture24h = conditions.Past24HourTemperatureDeparture?.Metric?.Value;
 
     // Calculate synthetic values (humidity is already a ratio)
     const beaufortScale = calculateBeaufortScale(windSpeed, windGustSpeed);
@@ -219,12 +221,12 @@ export class AccuWeatherService {
       cloudCover,
       cloudCeiling,
 
-      // Precipitation
-      precipitationLastHour,
-      precipitationCurrent,
+      // Precipitation (omitted on free-tier responses that lack these fields)
+      ...(precipitationLastHour !== undefined && { precipitationLastHour }),
+      ...(precipitationCurrent !== undefined && { precipitationCurrent }),
 
       // Temperature trends
-      temperatureDeparture24h,
+      ...(temperatureDeparture24h !== undefined && { temperatureDeparture24h }),
 
       // Calculated synthetic values
       beaufortScale,
@@ -457,7 +459,7 @@ export class AccuWeatherService {
           attempt,
           delayMs,
           honoredRetryAfter: retryAfterMs != null,
-          error: error instanceof Error ? error.message : String(error),
+          error: toErrorMessage(error),
         });
         await this.delay(delayMs);
         return this.makeApiRequest<T>(url, attempt + 1);
@@ -497,9 +499,9 @@ export class AccuWeatherService {
       return JSON.parse(text) as T;
     } catch (error) {
       throw new Error(
-        `${ERROR_CODES.NETWORK.API_INVALID_RESPONSE}: failed to parse AccuWeather response as JSON - ${
-          error instanceof Error ? error.message : String(error)
-        }`
+        `${ERROR_CODES.NETWORK.API_INVALID_RESPONSE}: failed to parse AccuWeather response as JSON - ${toErrorMessage(
+          error
+        )}`
       );
     }
   }
@@ -543,12 +545,14 @@ export class AccuWeatherService {
 
     let message = response.statusText;
     try {
-      const errorData = (await response.json()) as { message?: string };
+      // Bound the error body too: a malicious 429/503 with an oversized body
+      // would otherwise bypass the 1 MiB cap that protects success paths.
+      const errorData = await this.readBoundedJson<{ message?: string }>(response);
       message = errorData.message || response.statusText;
     } catch (parseError) {
       this.logger('debug', 'API error response was not JSON, falling back to statusText', {
         status: response.status,
-        parseError: parseError instanceof Error ? parseError.message : String(parseError),
+        parseError: toErrorMessage(parseError),
       });
     }
 
@@ -607,7 +611,7 @@ export class AccuWeatherService {
     // Penalize stale or missing-timestamp observations (>1h old or non-finite EpochTime).
     if (Number.isFinite(conditions.EpochTime)) {
       const observationAge = Date.now() - conditions.EpochTime * 1000;
-      if (observationAge > 3600000) {
+      if (observationAge > STALE_OBSERVATION_THRESHOLD_MS) {
         quality -= 0.2;
       }
     } else {
@@ -712,17 +716,4 @@ export class AccuWeatherService {
       size: this.locationCache.size,
     };
   }
-}
-
-function countEnhancedFields(weatherData: WeatherData): number {
-  let count = 0;
-  if (weatherData.realFeelShade !== undefined) count++;
-  if (weatherData.wetBulbTemperature !== undefined) count++;
-  if (weatherData.wetBulbGlobeTemperature !== undefined) count++;
-  if (weatherData.windGustSpeed !== undefined) count++;
-  if (weatherData.uvIndex !== undefined) count++;
-  if (weatherData.visibility !== undefined) count++;
-  if (weatherData.cloudCover !== undefined) count++;
-  if (weatherData.beaufortScale !== undefined) count++;
-  return count;
 }

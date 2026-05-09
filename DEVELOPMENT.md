@@ -193,13 +193,18 @@ export default function createPlugin(app: ServerAPI): Plugin {
 **Test Structure:**
 ```
 src/__tests__/
-├── setup.ts                          # Global test configuration
+├── setup.ts                          # Global test configuration + mock factories
 ├── calculators/
-│   └── WindCalculator.test.ts       # Wind calculation tests
+│   └── WindCalculator.test.ts        # Vector wind / heat index / dew point
 ├── mappers/
-│   └── NMEA2000PathMapper.test.ts   # Path mapping tests
-└── services/
-    └── AccuWeatherService.test.ts   # API integration tests
+│   └── NMEA2000PathMapper.test.ts    # Delta build + meta delta
+├── services/
+│   ├── WeatherService.test.ts        # Orchestration / lifecycle
+│   ├── SignalKService.test.ts        # Navigation data + caching
+│   └── AccuWeatherService.test.ts    # API integration
+└── utils/
+    ├── conversions.test.ts           # Unit conversions
+    └── validation.test.ts            # Sanitization + validators
 ```
 
 ### Version Control
@@ -286,7 +291,7 @@ signalk-virtual-weather-sensors/
 
 ```bash
 # Clone repository
-git clone https://github.com/signalk/signalk-virtual-weather-sensors.git
+git clone https://github.com/NearlCrews/signalk-virtual-weather-sensors.git
 cd signalk-virtual-weather-sensors
 
 # Install dependencies (automatically sets up husky hooks)
@@ -327,8 +332,9 @@ npm run security-audit    # Check for vulnerabilities
 
 #### Deployment
 ```bash
-npm run build:deploy      # Build for deployment
-npm run prepublishOnly    # Pre-publish validation
+npm run build             # Production build (also runs via the prepack hook)
+npm run prepublishOnly    # Validate + build before publishing
+npm run release           # Tag, push, and create the GitHub release (auto-triggers npm publish workflow)
 ```
 
 ### Development Cycle
@@ -387,7 +393,7 @@ npm run validate
 - **Edge Case Tests**: Boundary conditions and error handling
 - **Performance Tests**: Real-time calculation efficiency
 
-**Total: 244 tests** across 7 test files (latest coverage: 84.33% statements, 91.47% functions, 84.15% lines, 78.86% branches)
+**Total: 231 tests** across 7 test files (latest coverage: 83.69% statements, 91.07% functions, 83.72% lines, 81.57% branches)
 
 ### Test Files
 
@@ -396,7 +402,7 @@ npm run validate
 - [`AccuWeatherService.test.ts`](src/__tests__/services/AccuWeatherService.test.ts) - API integration (17 tests)
 - [`WindCalculator.test.ts`](src/__tests__/calculators/WindCalculator.test.ts) - Vector mathematics (45 tests)
 - [`NMEA2000PathMapper.test.ts`](src/__tests__/mappers/NMEA2000PathMapper.test.ts) - Path mapping + one-shot meta delta (16 tests)
-- [`utils/conversions.test.ts`](src/__tests__/utils/conversions.test.ts) - Unit conversions (48 tests)
+- [`utils/conversions.test.ts`](src/__tests__/utils/conversions.test.ts) - Unit conversions (35 tests)
 - [`utils/validation.test.ts`](src/__tests__/utils/validation.test.ts) - Sanitize, validators, schema (54 tests)
 
 ### Running Specific Tests

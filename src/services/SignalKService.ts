@@ -4,11 +4,22 @@
  */
 
 import type { ServerAPI } from '@signalk/server-api';
-import { VALIDATION_LIMITS } from '../constants/index.js';
+import { SIGNALK_PATHS, VALIDATION_LIMITS } from '../constants/index.js';
 import type { GeoLocation, Logger, PluginState, VesselNavigationData } from '../types/index.js';
-import { isValidCoordinates, msToKnots, radiansToDegrees } from '../utils/conversions.js';
+import {
+  isValidCoordinates,
+  msToKnots,
+  radiansToDegrees,
+  toErrorMessage,
+} from '../utils/conversions.js';
 
-/** Source labels (lowercased) whose data we deliberately ignore to avoid feedback loops. */
+const NAV = SIGNALK_PATHS.NAVIGATION;
+
+/**
+ * Source labels (lowercased) whose data we deliberately ignore to avoid
+ * feedback loops. `'node-red'` matches as a substring of `'signalk-node-red'`,
+ * so the second entry is defensive against producers that use the bare label.
+ */
 const EXCLUDED_SOURCE_LABELS: ReadonlyArray<string> = ['signalk-node-red', 'node-red'];
 
 interface SignalKDataValue {
@@ -111,7 +122,7 @@ export class SignalKService {
    */
   public getVesselPosition(): GeoLocation | null {
     try {
-      const positionData = this.app.getSelfPath('navigation.position');
+      const positionData = this.app.getSelfPath(NAV.POSITION);
 
       if (!this.isValidSignalKData(positionData)) {
         this.logger('debug', 'No position data available from navigation.position');
@@ -155,7 +166,7 @@ export class SignalKService {
       return position;
     } catch (error) {
       this.logger('error', 'Error retrieving vessel position', {
-        error: error instanceof Error ? error.message : String(error),
+        error: toErrorMessage(error),
       });
       return null;
     }
@@ -167,7 +178,7 @@ export class SignalKService {
    */
   public getVesselSpeedOverGround(): number | null {
     try {
-      const speedData = this.app.getSelfPath('navigation.speedOverGround');
+      const speedData = this.app.getSelfPath(NAV.SPEED_OVER_GROUND);
 
       if (!this.isValidSignalKData(speedData) || typeof speedData.value !== 'number') {
         this.logger('debug', 'No speed over ground data available');
@@ -200,7 +211,7 @@ export class SignalKService {
       return speed;
     } catch (error) {
       this.logger('error', 'Error retrieving vessel speed over ground', {
-        error: error instanceof Error ? error.message : String(error),
+        error: toErrorMessage(error),
       });
       return null;
     }
@@ -212,10 +223,10 @@ export class SignalKService {
    */
   public getVesselCourseOverGroundTrue(): number | null {
     const fallbackPaths = [
-      'navigation.courseOverGroundTrue',
+      NAV.COURSE_OVER_GROUND_TRUE,
       'navigation.courseOverGroundMagnetic',
-      'navigation.headingTrue',
-      'navigation.headingMagnetic',
+      NAV.HEADING_TRUE,
+      NAV.HEADING_MAGNETIC,
     ] as const;
 
     for (const path of fallbackPaths) {
@@ -252,7 +263,7 @@ export class SignalKService {
         return course;
       } catch (error) {
         this.logger('error', `Error retrieving ${path}`, {
-          error: error instanceof Error ? error.message : String(error),
+          error: toErrorMessage(error),
         });
       }
     }
@@ -266,7 +277,7 @@ export class SignalKService {
    * @returns Heading in radians or null if not available
    */
   public getVesselHeadingTrue(): number | null {
-    return this.getHeading('navigation.headingTrue');
+    return this.getHeading(NAV.HEADING_TRUE);
   }
 
   /**
@@ -274,14 +285,14 @@ export class SignalKService {
    * @returns Heading in radians or null if not available
    */
   public getVesselHeadingMagnetic(): number | null {
-    return this.getHeading('navigation.headingMagnetic');
+    return this.getHeading(NAV.HEADING_MAGNETIC);
   }
 
   /**
    * Shared heading getter for true/magnetic. Validates source, type, and 0-2π range.
    * @private
    */
-  private getHeading(path: 'navigation.headingTrue' | 'navigation.headingMagnetic'): number | null {
+  private getHeading(path: typeof NAV.HEADING_TRUE | typeof NAV.HEADING_MAGNETIC): number | null {
     try {
       const headingData = this.app.getSelfPath(path);
       if (!this.isValidSignalKData(headingData) || typeof headingData.value !== 'number') {
@@ -294,7 +305,7 @@ export class SignalKService {
       return this.isValidCourse(heading) ? heading : null;
     } catch (error) {
       this.logger('error', `Error retrieving ${path}`, {
-        error: error instanceof Error ? error.message : String(error),
+        error: toErrorMessage(error),
       });
       return null;
     }
@@ -306,7 +317,7 @@ export class SignalKService {
    */
   public getMagneticVariation(): number | null {
     try {
-      const variationData = this.app.getSelfPath('navigation.magneticVariation');
+      const variationData = this.app.getSelfPath(NAV.MAGNETIC_VARIATION);
 
       if (!this.isValidSignalKData(variationData) || typeof variationData.value !== 'number') {
         return null;
@@ -326,7 +337,7 @@ export class SignalKService {
       return variation;
     } catch (error) {
       this.logger('error', 'Error retrieving magnetic variation', {
-        error: error instanceof Error ? error.message : String(error),
+        error: toErrorMessage(error),
       });
       return null;
     }

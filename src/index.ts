@@ -15,6 +15,7 @@ import type {
   PluginState,
   WeatherData,
 } from './types/index.js';
+import { toErrorMessage } from './utils/conversions.js';
 import { ConfigurationValidator } from './utils/validation.js';
 
 /**
@@ -104,7 +105,7 @@ export default function createPlugin(app: ServerAPI): Plugin {
         });
       } catch (error) {
         instance.state = 'error';
-        const errorMessage = error instanceof Error ? error.message : String(error);
+        const errorMessage = toErrorMessage(error);
 
         instance.logger('error', 'Error stopping plugin', {
           error: errorMessage,
@@ -217,15 +218,11 @@ function finalizePluginStart(
 ): void {
   instance.state = 'running';
 
-  app.setPluginStatus(
-    `${PLUGIN.STATUS.RUNNING} - Enhanced with ${PLUGIN.ENHANCED_FIELD_COUNT} data points`
-  );
+  app.setPluginStatus(PLUGIN.STATUS.RUNNING);
 
   instance.logger('info', 'signalk-virtual-weather-sensors plugin started successfully', {
-    enhancedFields: PLUGIN.ENHANCED_FIELD_COUNT,
     emissionInterval: config.emissionInterval,
     updateFrequency: config.updateFrequency,
-    hybridMode: true,
   });
 }
 
@@ -236,7 +233,7 @@ async function handleStartupError(
   app: ServerAPI
 ): Promise<void> {
   instance.state = 'error';
-  const errorMessage = error instanceof Error ? error.message : String(error);
+  const errorMessage = toErrorMessage(error);
 
   instance.logger('error', 'Failed to start plugin', {
     error: errorMessage,
@@ -262,7 +259,7 @@ function setupEnhancedEmissionSystem(
       emitWeatherTick(instance, app, maxStalenessMs);
     } catch (error) {
       instance.logger('error', 'Error in emission timer', {
-        error: error instanceof Error ? error.message : String(error),
+        error: toErrorMessage(error),
       });
     }
   }, emissionInterval);
@@ -297,11 +294,8 @@ function emitWeatherTick(instance: PluginInstance, app: ServerAPI, maxStalenessM
     }
   }
 
-  // Fresh data path: clear the stale-data banner if one was set.
   if (instance.staleErrorActive) {
-    app.setPluginStatus(
-      `${PLUGIN.STATUS.RUNNING} - Enhanced with ${PLUGIN.ENHANCED_FIELD_COUNT} data points`
-    );
+    app.setPluginStatus(PLUGIN.STATUS.RUNNING);
     instance.staleErrorActive = false;
   }
 
@@ -359,7 +353,7 @@ async function cleanup(instance: PluginInstance): Promise<void> {
       await instance.weatherService.stop();
     } catch (error) {
       instance.logger('error', 'Error stopping weather service', {
-        error: error instanceof Error ? error.message : String(error),
+        error: toErrorMessage(error),
       });
     }
     instance.weatherService = null;

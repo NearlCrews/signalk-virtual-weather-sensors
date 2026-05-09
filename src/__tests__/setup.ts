@@ -4,7 +4,7 @@
  */
 
 import type { MockedFunction } from 'vitest';
-import { afterAll, afterEach, beforeAll, expect, vi } from 'vitest';
+import { afterAll, afterEach, beforeAll, vi } from 'vitest';
 
 // ===============================
 // Global Test Setup
@@ -328,79 +328,6 @@ export async function waitForCondition(
 
   throw new Error(`Condition not met within ${timeout}ms`);
 }
-
-/**
- * Utility to create a mock that tracks call order
- */
-export function createOrderedMock() {
-  const calls: Array<{ name: string; args: unknown[] }> = [];
-
-  const createMockFn = (name: string) => {
-    const fn = vi.fn((...args: unknown[]) => {
-      calls.push({ name, args });
-    });
-    return fn;
-  };
-
-  return {
-    createMockFn,
-    getCalls: () => [...calls],
-    clearCalls: () => calls.splice(0, calls.length),
-  };
-}
-
-// ===============================
-// Custom Matchers
-// ===============================
-
-/**
- * Custom matcher for testing numeric values with tolerance
- */
-expect.extend({
-  toBeCloseTo(received: number, expected: number, precision = 2) {
-    const pass = Math.abs(received - expected) < 10 ** -precision;
-
-    if (pass) {
-      return {
-        message: () => `expected ${received} not to be close to ${expected}`,
-        pass: true,
-      };
-    }
-    return {
-      message: () => `expected ${received} to be close to ${expected}`,
-      pass: false,
-    };
-  },
-});
-
-/**
- * Custom matcher for testing Signal K delta structure
- */
-expect.extend({
-  toBeValidSignalKDelta(received: unknown) {
-    if (typeof received !== 'object' || received === null) {
-      return {
-        message: () => 'expected value to be a Signal K delta object',
-        pass: false,
-      };
-    }
-
-    const delta = received as Record<string, unknown>;
-    const hasContext = 'context' in delta && typeof delta.context === 'string';
-    const hasUpdates = 'updates' in delta && Array.isArray(delta.updates);
-
-    if (hasContext && hasUpdates) {
-      return {
-        message: () => 'expected value not to be a valid Signal K delta',
-        pass: true,
-      };
-    }
-    return {
-      message: () => 'expected value to be a valid Signal K delta with context and updates',
-      pass: false,
-    };
-  },
-});
 
 // ===============================
 // Type Exports
