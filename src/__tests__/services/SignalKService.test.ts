@@ -73,7 +73,6 @@ describe('SignalKService', () => {
       expect(position).not.toBeNull();
       expect(position?.latitude).toBe(37.7749);
       expect(position?.longitude).toBe(-122.4194);
-      expect(position?.isValid).toBe(true);
     });
 
     it('should return null when position not available', () => {

@@ -165,12 +165,12 @@ export class WeatherService {
         this.initialUpdateTimer = null;
       }
 
-      // Clear cached data
+      // Clear cached weather payload but preserve the AccuWeather location-key
+      // cache: it has a 2-hour TTL by design and refetching on every restart
+      // burns paid LOCATION_SEARCH API calls. Per-instance memory gets GC'd
+      // when the service is dropped anyway.
       this.currentWeatherData = null;
       this.lastUpdate = null;
-
-      // Clear service caches
-      this.accuWeatherService.clearLocationCache();
       this.signalKService.clearCache();
 
       this.state = 'stopped';
@@ -231,51 +231,6 @@ export class WeatherService {
   }
 
   /**
-   * Generate mock weather data for testing
-   */
-  public generateMockWeatherData(): WeatherData {
-    const vesselData = this.signalKService.getVesselNavigationData();
-
-    const baseWeatherData: WeatherData = {
-      temperature: 288.15, // 15°C in Kelvin
-      pressure: 101325, // Standard sea level pressure in Pascals
-      humidity: 0.65, // 65% as ratio (0-1)
-      windSpeed: 5.14, // 10 knots in m/s
-      windDirection: Math.PI / 2, // 90 degrees in radians (East)
-      dewPoint: 283.15, // Calculated dew point in Kelvin
-      windChill: 287.5, // Wind chill temperature in Kelvin
-      heatIndex: 289.8, // Heat index in Kelvin
-      description: 'Mock weather data for testing',
-      timestamp: new Date().toISOString(),
-      quality: 0.5, // Mock data has lower quality
-    };
-
-    if (isCompleteNavigationData(vesselData)) {
-      const apparentWindSpeed = this.windCalculator.calculateApparentWindSpeed(
-        baseWeatherData.windSpeed,
-        vesselData.speedOverGround,
-        vesselData.courseOverGroundTrue,
-        baseWeatherData.windDirection
-      );
-
-      const apparentWindAngle = this.windCalculator.calculateApparentWindAngle(
-        baseWeatherData.windSpeed,
-        vesselData.speedOverGround,
-        vesselData.courseOverGroundTrue,
-        baseWeatherData.windDirection
-      );
-
-      return {
-        ...baseWeatherData,
-        apparentWindSpeed,
-        apparentWindAngle,
-      };
-    }
-
-    return baseWeatherData;
-  }
-
-  /**
    * Calculate interval with jitter to avoid synchronized API requests
    * Adds ±10% random variation to the interval
    * @private
@@ -329,7 +284,6 @@ export class WeatherService {
         ? {
             latitude: vesselData.position.latitude,
             longitude: vesselData.position.longitude,
-            isValid: true,
           }
         : this.signalKService.getVesselPosition();
       if (!position) {
@@ -388,31 +342,26 @@ export class WeatherService {
   }
 
   /**
-   * Enhance weather data with calculated values
+   * Enhance weather data with calculated values. windChill/heatIndex/dewPoint are
+   * already populated by AccuWeatherService.transformWeatherData, so we only add
+   * apparent-wind here.
    * @private
    */
   private enhanceWeatherData(
     weatherData: WeatherData,
     vesselData: VesselNavigationData
   ): WeatherData {
-    // Only calculate derived values if not already provided by the API
-    const windChill =
-      weatherData.windChill ??
-      this.windCalculator.calculateWindChill(weatherData.temperature, weatherData.windSpeed);
-    const heatIndex =
-      weatherData.heatIndex ??
-      this.windCalculator.calculateHeatIndex(weatherData.temperature, weatherData.humidity);
-    const dewPoint =
-      weatherData.dewPoint ??
-      this.windCalculator.calculateDewPoint(weatherData.temperature, weatherData.humidity);
-
     const apparentWind = this.calculateApparentWindData(weatherData, vesselData);
+
+    if (
+      apparentWind.apparentWindSpeed === undefined &&
+      apparentWind.apparentWindAngle === undefined
+    ) {
+      return weatherData;
+    }
 
     return {
       ...weatherData,
-      windChill,
-      heatIndex,
-      dewPoint,
       ...(apparentWind.apparentWindSpeed !== undefined && {
         apparentWindSpeed: apparentWind.apparentWindSpeed,
       }),

@@ -5,6 +5,53 @@ All notable changes to the signalk-virtual-weather-sensors project will be docum
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.3] - 2026-05-09
+
+6-agent codebase-wide cleanup pass following the 12-agent pass in v1.3.2. Findings were verified against the live Signal K master schema and the installed `@signalk/server-api` 2.24 `.d.ts`, not from memory. No public Signal K path or delta-shape changes; no configuration changes.
+
+### Fixed -- correctness, reliability
+
+- **Admin dashboard status strings.** `PLUGIN.STATUS.RUNNING` / `STOPPED` were `'SK to N2K Weather running'` / `'SK to N2K Weather stopped'`, leftover from the pre-rename `signalk-n2k-weather-provider` package. Now `'Running'` / `'Stopped'`. The Signal K dashboard already shows the plugin name next to the status, so the prefix was redundant as well as stale.
+- **`stop()` no longer wipes the AccuWeather location-key cache.** The cache has a 2-hour TTL by design. Wiping it on every plugin restart (config change, error recovery) burned a fresh paid `LOCATION_SEARCH` API call on every restart. The cache now persists for the lifetime of the `AccuWeatherService` instance and is GC'd when the service is dropped.
+- **`warn` and `error` log levels now route through `app.error`** instead of `app.debug`. Per `@signalk/server-api` 2.24 `serverapi.d.ts`, `app.debug` is gated by `DEBUG=plugin-id` and is silent in production. Operators now see warnings and errors in the server log without enabling debug logging. Plugin-level Admin UI banner state still goes through `setPluginError` separately.
+- **`enhanceWeatherData` no longer recomputes `windChill`, `heatIndex`, `dewPoint`.** AccuWeather's `currentconditions` endpoint always populates these fields, so the `??` fallback to `WindCalculator.calculate*` was dead code. The function now only adds apparent-wind to the weather payload.
+
+### Changed -- code reuse
+
+- **`AccuWeatherService.transformWeatherData`** now calls the existing `millibarsToPA`, `kmhToMS`, `degreesToRadians` helpers from `utils/conversions.ts` instead of inline `* UNITS.PRESSURE.MILLIBAR_TO_PASCAL` etc. Style-matches the temperature path which already used `celsiusToKelvin`.
+- **`SignalKService` course-fallback list hoisted to a module-level `COURSE_FALLBACK_PATHS` constant** so the array isn't re-allocated every call. The path that was previously inlined as a string literal (`'navigation.courseOverGroundMagnetic'`) is now in `SIGNALK_PATHS.NAVIGATION.COURSE_OVER_GROUND_MAGNETIC`.
+- **`validation.validateDataAge` uses `VESSEL_DATA_WARN_AGE` / `VESSEL_DATA_ERROR_AGE` constants** instead of bare `60` / `300` literals.
+- **`validation.validateNMEA2000Ranges` and `validateEnhancedFields` use `VALIDATION_LIMITS.HUMIDITY` constants** for the cloud-cover and humidity range checks instead of bare `0` / `1`.
+- **`EXCLUDED_SOURCE_LABELS` deduplicated.** `'signalk-node-red'` was a substring of `'node-red'`, so the bare `'node-red'` entry already covered it.
+
+### Removed -- dead code
+
+- **Six unused public methods on `WindCalculator`:** `calculateBeaufortScale` (delegated to the standalone function in `utils/conversions.ts`), `calculateRelativeWindDirection`, `calculateWindDirectionHeading`, `calculateWindDirectionMagnetic`, `convertWindSpeed`, `convertWindDirection`, `getWindSummary`. Plus `calculateWindAnalysis`'s `validateWindInputs` is now `private` (no external callers).
+- **`generateMockWeatherData` removed from `WeatherService`.** Test-only stub on a production class. The two tests that exercised it have been removed alongside.
+- **Unused exports in `utils/conversions.ts`:** `pascalsToMillibars`, `knotsToMS`, `mphToMS`, `msToMPH`, `isValidNumber`, `calculateVaporPressureDeficit`. Their tests went too.
+- **Unused exports in `utils/validation.ts`:** `validateNavigationData`, `isCompleteForWindCalculations`, `validateCompleteWeatherData`, `validateTemperatureConsistency` (was a private dep of `validateCompleteWeatherData`), `getValidationSummary`. Their tests went too.
+- **`GeoLocation.isValid` field.** Set to `true` at every construction site, never read in production. Pure noise on the type.
+
+### Changed -- package metadata / build
+
+- **`package.json` `exports` map added** so consumers go through the typed entry point. Modern ESM convention; matches what `@signalk/server-api` itself ships.
+- **`sideEffects: false`** added so bundlers tree-shake when this plugin is consumed by a webapp build.
+- **`appstore` block dropped.** Per the canonical Signal K plugin example, the only documented `signalk` field members are `displayName` and `appIcon`. `appstore` and `signalk.supportedVersions` are not part of the documented plugin registry shape.
+- **`signalk-category-nmea-2000` keyword added** to match the spelling used by the companion `signalk-nmea2000-emitter-cannon` plugin.
+- **`.node-version` bumped from `20.0.0` to `20.18.0`** to match the `engines.node` floor; previously a `.node-version`-aware tool would install a runtime older than the declared minimum.
+
+### Changed -- linting
+
+- **Biome 2.4 `nursery.noFloatingPromises` and `noMisusedPromises` enabled.** Catches unawaited async paths that the previous ruleset missed.
+- **Biome bumped to `^2.4.15`** (latest patch). `biome.json` `$schema` URL updated to match.
+
+### Tests / coverage
+
+- 206 tests passing across 8 files.
+- New test file `src/__tests__/index.test.ts` covers the plugin entry point's meta-delta one-shot invariant and lifecycle wiring (4 cases).
+- New `HTTP Error Handling` block in `AccuWeatherService.test.ts` (5 cases): 403 → `API_FORBIDDEN`, 429 retried then succeeds, 429 exhausted → `API_RATE_LIMIT`, 503 with `Retry-After: 0` retried then succeeds, oversized `content-length` → `RESPONSE_TOO_LARGE`.
+- Tests covering removed dead exports (~30) were dropped alongside the exports.
+
 ## [1.3.2] - 2026-05-09
 
 12-agent codebase-wide cleanup pass following the Signal K spec compliance work in v1.3.1. No public API changes beyond the dead-export removal listed below; configuration shape unchanged. Fixes a real correctness issue (Magnus formula constant mismatch), adds defensive optional-chaining for free-tier AccuWeather responses, and bounds the error-body read previously bypassed on 4xx/5xx responses.

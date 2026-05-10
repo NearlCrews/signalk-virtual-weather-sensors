@@ -17,10 +17,21 @@ const NAV = SIGNALK_PATHS.NAVIGATION;
 
 /**
  * Source labels (lowercased) whose data we deliberately ignore to avoid
- * feedback loops. `'node-red'` matches as a substring of `'signalk-node-red'`,
- * so the second entry is defensive against producers that use the bare label.
+ * feedback loops. Substring match, so `'node-red'` covers `'signalk-node-red'`.
  */
-const EXCLUDED_SOURCE_LABELS: ReadonlyArray<string> = ['signalk-node-red', 'node-red'];
+const EXCLUDED_SOURCE_LABELS: ReadonlyArray<string> = ['node-red'];
+
+/**
+ * Course/heading fallback chain in priority order: COG-true, COG-magnetic,
+ * heading-true, heading-magnetic. Hoisted to module level so the array is
+ * not re-allocated on every call to `getVesselCourseOverGroundTrue`.
+ */
+const COURSE_FALLBACK_PATHS = [
+  NAV.COURSE_OVER_GROUND_TRUE,
+  NAV.COURSE_OVER_GROUND_MAGNETIC,
+  NAV.HEADING_TRUE,
+  NAV.HEADING_MAGNETIC,
+] as const;
 
 interface SignalKDataValue {
   value: unknown;
@@ -154,7 +165,6 @@ export class SignalKService {
       const position: GeoLocation = {
         latitude: value.latitude,
         longitude: value.longitude,
-        isValid: true,
       };
 
       this.logger('debug', 'Retrieved vessel position', {
@@ -222,14 +232,7 @@ export class SignalKService {
    * COG-true, COG-magnetic, heading-true, heading-magnetic in order.
    */
   public getVesselCourseOverGroundTrue(): number | null {
-    const fallbackPaths = [
-      NAV.COURSE_OVER_GROUND_TRUE,
-      'navigation.courseOverGroundMagnetic',
-      NAV.HEADING_TRUE,
-      NAV.HEADING_MAGNETIC,
-    ] as const;
-
-    for (const path of fallbackPaths) {
+    for (const path of COURSE_FALLBACK_PATHS) {
       try {
         const courseData = this.app.getSelfPath(path);
 

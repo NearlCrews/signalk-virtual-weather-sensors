@@ -6,7 +6,7 @@ import {
   VALIDATION_LIMITS,
   VISIBILITY_LIMITS_M,
 } from '../constants/index.js';
-import type { PluginConfiguration, VesselNavigationData, WeatherData } from '../types/index.js';
+import type { PluginConfiguration, WeatherData } from '../types/index.js';
 import { celsiusToKelvin, clamp, kelvinToCelsius, normalizeAngle0To2Pi } from './conversions.js';
 
 /** NMEA2000 temperature bounds expressed in Kelvin (precomputed to avoid C↔K work on the hot path). */
@@ -177,8 +177,14 @@ function validateEnhancedFields(
     );
   }
 
-  if (data.cloudCover !== undefined && (data.cloudCover < 0 || data.cloudCover > 1)) {
-    errors.push(`Cloud cover ${data.cloudCover} must be between 0 and 1`);
+  if (
+    data.cloudCover !== undefined &&
+    (data.cloudCover < VALIDATION_LIMITS.HUMIDITY.MIN ||
+      data.cloudCover > VALIDATION_LIMITS.HUMIDITY.MAX)
+  ) {
+    errors.push(
+      `Cloud cover ${data.cloudCover} must be between ${VALIDATION_LIMITS.HUMIDITY.MIN} and ${VALIDATION_LIMITS.HUMIDITY.MAX}`
+    );
   }
 
   if (
@@ -210,157 +216,6 @@ export function validateWeatherData(data: Partial<WeatherData>): ValidationResul
     errors,
     warnings,
   };
-}
-
-/**
- * Validate temperature consistency across multiple readings
- */
-export function validateTemperatureConsistency(data: Partial<WeatherData>): ValidationResult {
-  const errors: string[] = [];
-  const warnings: string[] = [];
-
-  if (data.temperature !== undefined && data.dewPoint !== undefined) {
-    if (data.dewPoint > data.temperature) {
-      errors.push('Dew point cannot be higher than air temperature');
-    }
-  }
-
-  if (data.temperature !== undefined && data.windChill !== undefined) {
-    if (data.windChill > data.temperature && data.windSpeed !== undefined && data.windSpeed > 1) {
-      warnings.push('Wind chill is higher than air temperature despite wind presence');
-    }
-  }
-
-  if (data.wetBulbTemperature !== undefined && data.temperature !== undefined) {
-    if (data.wetBulbTemperature > data.temperature) {
-      errors.push('Wet bulb temperature cannot exceed dry bulb temperature');
-    }
-  }
-
-  return {
-    isValid: errors.length === 0,
-    errors,
-    warnings,
-  };
-}
-
-/**
- * Vessel Navigation Data Validation Functions
- */
-
-/**
- * Validate position fields
- */
-function validatePositionFields(data: Partial<VesselNavigationData>, errors: string[]): void {
-  if (!data.position) return;
-
-  if (!isValidLatitude(data.position.latitude)) {
-    errors.push(`Invalid latitude: ${data.position.latitude} (must be between -90 and 90)`);
-  }
-  if (!isValidLongitude(data.position.longitude)) {
-    errors.push(`Invalid longitude: ${data.position.longitude} (must be between -180 and 180)`);
-  }
-}
-
-/**
- * Validate speed over ground field
- */
-function validateSpeedOverGround(
-  data: Partial<VesselNavigationData>,
-  errors: string[],
-  warnings: string[]
-): void {
-  if (data.speedOverGround === undefined) return;
-
-  if (typeof data.speedOverGround !== 'number' || !Number.isFinite(data.speedOverGround)) {
-    errors.push('Speed over ground must be a finite number');
-    return;
-  }
-
-  if (data.speedOverGround < VALIDATION_LIMITS.VESSEL_SPEED.MIN) {
-    errors.push('Speed over ground cannot be negative');
-  } else if (data.speedOverGround > VALIDATION_LIMITS.VESSEL_SPEED.MAX) {
-    warnings.push(
-      `Speed over ground ${data.speedOverGround}m/s seems unusually high (>${VALIDATION_LIMITS.VESSEL_SPEED.MAX}m/s)`
-    );
-  }
-}
-
-/**
- * Validate course over ground field
- */
-function validateCourseOverGround(
-  data: Partial<VesselNavigationData>,
-  errors: string[],
-  warnings: string[]
-): void {
-  if (data.courseOverGroundTrue === undefined) return;
-
-  if (
-    typeof data.courseOverGroundTrue !== 'number' ||
-    !Number.isFinite(data.courseOverGroundTrue)
-  ) {
-    errors.push('Course over ground must be a finite number');
-    return;
-  }
-
-  if (
-    data.courseOverGroundTrue < VALIDATION_LIMITS.WIND_DIRECTION.MIN ||
-    data.courseOverGroundTrue > VALIDATION_LIMITS.WIND_DIRECTION.MAX
-  ) {
-    warnings.push(
-      `Course over ground ${data.courseOverGroundTrue} rad should be normalized to 0-2π range`
-    );
-  }
-}
-
-/**
- * Validate data age field
- */
-function validateDataAge(
-  data: Partial<VesselNavigationData>,
-  errors: string[],
-  warnings: string[]
-): void {
-  if (data.dataAge === undefined) return;
-
-  if (data.dataAge > 60) {
-    warnings.push(`Vessel data is ${data.dataAge} seconds old (consider refreshing)`);
-  }
-  if (data.dataAge > 300) {
-    errors.push(`Vessel data is too old (${data.dataAge} seconds) for reliable calculations`);
-  }
-}
-
-/**
- * Validate vessel navigation data for completeness
- */
-export function validateNavigationData(data: Partial<VesselNavigationData>): ValidationResult {
-  const errors: string[] = [];
-  const warnings: string[] = [];
-
-  validatePositionFields(data, errors);
-  validateSpeedOverGround(data, errors, warnings);
-  validateCourseOverGround(data, errors, warnings);
-  validateDataAge(data, errors, warnings);
-
-  return {
-    isValid: errors.length === 0,
-    errors,
-    warnings,
-  };
-}
-
-/**
- * Check if vessel data is complete for wind calculations
- */
-export function isCompleteForWindCalculations(data: Partial<VesselNavigationData>): boolean {
-  return !!(
-    data.position &&
-    typeof data.speedOverGround === 'number' &&
-    typeof data.courseOverGroundTrue === 'number' &&
-    data.isComplete === true
-  );
 }
 
 /**
@@ -624,8 +479,14 @@ export function validateNMEA2000Ranges(data: Partial<WeatherData>): ValidationRe
     );
   }
 
-  if (data.humidity !== undefined && (data.humidity < 0 || data.humidity > 1)) {
-    errors.push(`Humidity ${data.humidity} must be between 0 and 1 (ratio)`);
+  if (
+    data.humidity !== undefined &&
+    (data.humidity < VALIDATION_LIMITS.HUMIDITY.MIN ||
+      data.humidity > VALIDATION_LIMITS.HUMIDITY.MAX)
+  ) {
+    errors.push(
+      `Humidity ${data.humidity} must be between ${VALIDATION_LIMITS.HUMIDITY.MIN} and ${VALIDATION_LIMITS.HUMIDITY.MAX} (ratio)`
+    );
   }
 
   return {
@@ -692,50 +553,7 @@ export function sanitizeForNMEA2000(data: WeatherData): WeatherData {
   return sanitized;
 }
 
-/**
- * Comprehensive Validation Functions
- */
-
-/**
- * Perform complete validation of weather data
- */
-export function validateCompleteWeatherData(data: Partial<WeatherData>): ValidationResult {
-  const basicValidation = validateWeatherData(data);
-  const consistencyValidation = validateTemperatureConsistency(data);
-  const nmea2000Validation = validateNMEA2000Ranges(data);
-
-  const allErrors = [
-    ...basicValidation.errors,
-    ...consistencyValidation.errors,
-    ...nmea2000Validation.errors,
-  ];
-
-  const allWarnings = [
-    ...basicValidation.warnings,
-    ...consistencyValidation.warnings,
-    ...nmea2000Validation.warnings,
-  ];
-
-  return {
-    isValid: allErrors.length === 0,
-    errors: allErrors,
-    warnings: allWarnings,
-  };
-}
-
-/**
- * Get validation summary for logging
- */
-export function getValidationSummary(result: ValidationResult): string {
-  if (result.isValid) {
-    return result.warnings.length > 0 ? `Valid with ${result.warnings.length} warnings` : 'Valid';
-  }
-  return `Invalid: ${result.errors.length} errors, ${result.warnings.length} warnings`;
-}
-
-/**
- * Validate latitude value
- */
+/** Validate latitude value. */
 export function isValidLatitude(latitude: number): boolean {
   return (
     typeof latitude === 'number' &&

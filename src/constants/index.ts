@@ -22,8 +22,8 @@ export const PLUGIN = {
    */
   SOURCE_REF: 'accuweather',
   STATUS: {
-    RUNNING: 'SK to N2K Weather running',
-    STOPPED: 'SK to N2K Weather stopped',
+    RUNNING: 'Running',
+    STOPPED: 'Stopped',
     SERVICE_RUNNING: 'Weather service running',
     SERVICE_STOPPED: 'Weather service stopped',
   },
@@ -121,6 +121,7 @@ export const SIGNALK_PATHS = {
     POSITION: 'navigation.position',
     SPEED_OVER_GROUND: 'navigation.speedOverGround',
     COURSE_OVER_GROUND_TRUE: 'navigation.courseOverGroundTrue',
+    COURSE_OVER_GROUND_MAGNETIC: 'navigation.courseOverGroundMagnetic',
     HEADING_TRUE: 'navigation.headingTrue',
     HEADING_MAGNETIC: 'navigation.headingMagnetic',
     MAGNETIC_VARIATION: 'navigation.magneticVariation',

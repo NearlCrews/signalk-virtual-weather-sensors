@@ -74,11 +74,7 @@ describe('WeatherService', () => {
       const mockWindCalculator = {
         calculateApparentWindSpeed: vi.fn().mockReturnValue(5),
         calculateApparentWindAngle: vi.fn().mockReturnValue(0.5),
-        calculateWindChill: vi.fn().mockReturnValue(280),
-        calculateHeatIndex: vi.fn().mockReturnValue(295),
-        calculateDewPoint: vi.fn().mockReturnValue(283),
-        calculateWindDirectionHeading: vi.fn().mockReturnValue(1.5),
-        calculateWindDirectionMagnetic: vi.fn().mockReturnValue(1.6),
+        normalizeAngle: vi.fn().mockReturnValue(0),
       };
 
       const service = new WeatherService(
@@ -223,42 +219,6 @@ describe('WeatherService', () => {
 
       expect(status.cacheStats).toBeDefined();
       expect(status.cacheStats).toHaveProperty('size');
-    });
-  });
-
-  describe('generateMockWeatherData', () => {
-    it('should generate valid mock weather data', () => {
-      const service = new WeatherService(mockApp as never, config, mockLogger);
-
-      const mockData = service.generateMockWeatherData();
-
-      expect(mockData).toBeDefined();
-      expect(mockData.temperature).toBe(288.15); // 15°C
-      expect(mockData.pressure).toBe(101325);
-      expect(mockData.humidity).toBe(0.65);
-      expect(mockData.windSpeed).toBeCloseTo(5.14, 1);
-      expect(mockData.windDirection).toBe(Math.PI / 2);
-      expect(mockData.description).toBe('Mock weather data for testing');
-      expect(mockData.quality).toBe(0.5);
-    });
-
-    it('should include timestamp in mock data', () => {
-      const service = new WeatherService(mockApp as never, config, mockLogger);
-
-      const mockData = service.generateMockWeatherData();
-
-      expect(mockData.timestamp).toBeDefined();
-      expect(() => new Date(mockData.timestamp)).not.toThrow();
-    });
-
-    it('should include calculated fields', () => {
-      const service = new WeatherService(mockApp as never, config, mockLogger);
-
-      const mockData = service.generateMockWeatherData();
-
-      expect(mockData.dewPoint).toBeDefined();
-      expect(mockData.windChill).toBeDefined();
-      expect(mockData.heatIndex).toBeDefined();
     });
   });
 

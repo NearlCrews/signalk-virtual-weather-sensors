@@ -6,18 +6,13 @@
 import { MAGNUS, VALIDATION_LIMITS } from '../constants/index.js';
 import type { Logger, WindCalculationResult } from '../types/index.js';
 import {
-  calculateBeaufortScale as calculateBeaufortScaleUtil,
   celsiusToKelvin,
   clamp,
   fahrenheitToKelvin,
   kelvinToCelsius,
   kelvinToFahrenheit,
   msToKMH,
-  msToKnots,
-  msToMPH,
-  normalizeAngle0To2Pi,
   normalizeAnglePiToPi,
-  radiansToDegrees,
 } from '../utils/conversions.js';
 
 /**
@@ -26,25 +21,6 @@ import {
  * an air-dewpoint spread of ~5 K is a typical low-humidity proxy.
  */
 const DEW_POINT_FALLBACK_K = 5;
-
-const COMPASS_DIRECTIONS = [
-  'N',
-  'NNE',
-  'NE',
-  'ENE',
-  'E',
-  'ESE',
-  'SE',
-  'SSE',
-  'S',
-  'SSW',
-  'SW',
-  'WSW',
-  'W',
-  'WNW',
-  'NW',
-  'NNW',
-] as const;
 
 /** Wind chill is only meaningful below this temperature (Environment Canada). */
 const WIND_CHILL_MAX_TEMP_C = 10;
@@ -231,38 +207,7 @@ export class WindCalculator {
     return result;
   }
 
-  public calculateBeaufortScale(windSpeed: number, gustSpeed?: number): number {
-    return calculateBeaufortScaleUtil(windSpeed, gustSpeed);
-  }
-
-  /**
-   * Calculate wind direction relative to vessel heading
-   * @returns Relative wind direction in radians (-π to π)
-   */
-  public calculateRelativeWindDirection(windDirection: number, vesselHeading: number): number {
-    return this.normalizeAngle(windDirection - vesselHeading);
-  }
-
-  /**
-   * Calculate absolute wind direction from vessel heading and apparent wind angle
-   * @returns Wind direction as absolute heading in radians (0-2π)
-   */
-  public calculateWindDirectionHeading(vesselHeading: number, apparentWindAngle: number): number {
-    return normalizeAngle0To2Pi(vesselHeading + apparentWindAngle);
-  }
-
-  /**
-   * Calculate magnetic wind direction from true direction and variation
-   * @returns Magnetic wind direction in radians (0-2π)
-   */
-  public calculateWindDirectionMagnetic(directionTrue: number, magneticVariation: number): number {
-    if (!Number.isFinite(directionTrue) || !Number.isFinite(magneticVariation)) {
-      return directionTrue;
-    }
-    return normalizeAngle0To2Pi(directionTrue - magneticVariation);
-  }
-
-  public validateWindInputs(
+  private validateWindInputs(
     trueWindSpeed: number,
     vesselSpeed: number,
     vesselHeading: number,
@@ -286,62 +231,5 @@ export class WindCalculator {
 
   public normalizeAngle(radians: number): number {
     return normalizeAnglePiToPi(radians);
-  }
-
-  public convertWindSpeed(speedMs: number, targetUnit: 'kmh' | 'knots' | 'mph'): number {
-    switch (targetUnit) {
-      case 'kmh':
-        return msToKMH(speedMs);
-      case 'knots':
-        return msToKnots(speedMs);
-      case 'mph':
-        return msToMPH(speedMs);
-      default:
-        return speedMs;
-    }
-  }
-
-  public convertWindDirection(
-    radiansDirection: number,
-    format: 'degrees' | 'compass'
-  ): string | number {
-    const degrees = radiansToDegrees(radiansDirection);
-
-    if (format === 'degrees') {
-      return Math.round(degrees);
-    }
-
-    // Plain `% 16` returns negative values for port-tack apparent angles, which
-    // would index out of the table. The double-modulo wraps them back into 0-15.
-    const index = ((Math.round(degrees / 22.5) % 16) + 16) % 16;
-    return COMPASS_DIRECTIONS[index] ?? 'N';
-  }
-
-  public getWindSummary(
-    trueWindSpeed: number,
-    vesselSpeed: number,
-    vesselHeading: number,
-    trueWindDirection: number
-  ): {
-    trueWind: { speed: number; direction: number };
-    vesselMotion: { speed: number; heading: number };
-    apparentWind: { speed: number; angle: number };
-    beaufortScale: number;
-    isValid: boolean;
-  } {
-    const analysis = this.calculateWindAnalysis(
-      trueWindSpeed,
-      vesselSpeed,
-      vesselHeading,
-      trueWindDirection
-    );
-
-    return {
-      trueWind: { speed: trueWindSpeed, direction: trueWindDirection },
-      vesselMotion: { speed: vesselSpeed, heading: vesselHeading },
-      apparentWind: { speed: analysis.apparentWindSpeed, angle: analysis.apparentWindAngle },
-      beaufortScale: this.calculateBeaufortScale(trueWindSpeed),
-      isValid: analysis.isValid,
-    };
   }
 }

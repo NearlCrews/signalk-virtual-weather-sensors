@@ -308,138 +308,6 @@ describe('WindCalculator', () => {
     });
   });
 
-  describe('Beaufort Scale Calculation', () => {
-    beforeEach(() => {
-      calculator = new WindCalculator(mockLogger);
-    });
-
-    it('should calculate correct Beaufort scale for various wind speeds', () => {
-      // Test known Beaufort scale values
-      expect(calculator.calculateBeaufortScale(0.1)).toBe(0); // Calm
-      expect(calculator.calculateBeaufortScale(1.0)).toBe(1); // Light air
-      expect(calculator.calculateBeaufortScale(3.0)).toBe(2); // Light breeze
-      expect(calculator.calculateBeaufortScale(7.0)).toBe(4); // Moderate breeze
-      expect(calculator.calculateBeaufortScale(15.0)).toBe(7); // Near gale
-      expect(calculator.calculateBeaufortScale(25.0)).toBe(10); // Storm (adjusted)
-      expect(calculator.calculateBeaufortScale(35.0)).toBe(12); // Hurricane
-    });
-
-    it('should use higher of wind or gust speed', () => {
-      const sustainedWind = 5.0; // m/s
-      const gustWind = 8.0; // m/s
-
-      const result = calculator.calculateBeaufortScale(sustainedWind, gustWind);
-      const gustOnlyResult = calculator.calculateBeaufortScale(gustWind);
-
-      expect(result).toBe(gustOnlyResult);
-    });
-
-    it('should handle extreme wind speeds', () => {
-      const extremeWind = 100; // m/s
-      const result = calculator.calculateBeaufortScale(extremeWind);
-      expect(result).toBe(12); // Maximum Beaufort scale
-    });
-  });
-
-  describe('Wind Direction Utilities', () => {
-    beforeEach(() => {
-      calculator = new WindCalculator(mockLogger);
-    });
-
-    it('should convert wind direction to degrees correctly', () => {
-      expect(calculator.convertWindDirection(0, 'degrees')).toBe(0); // North
-      expect(calculator.convertWindDirection(Math.PI / 2, 'degrees')).toBe(90); // East
-      expect(calculator.convertWindDirection(Math.PI, 'degrees')).toBe(180); // South
-      expect(calculator.convertWindDirection((3 * Math.PI) / 2, 'degrees')).toBe(270); // West
-    });
-
-    it('should convert wind direction to compass correctly', () => {
-      expect(calculator.convertWindDirection(0, 'compass')).toBe('N');
-      expect(calculator.convertWindDirection(Math.PI / 2, 'compass')).toBe('E');
-      expect(calculator.convertWindDirection(Math.PI, 'compass')).toBe('S');
-      expect(calculator.convertWindDirection((3 * Math.PI) / 2, 'compass')).toBe('W');
-      expect(calculator.convertWindDirection(Math.PI / 4, 'compass')).toBe('NE');
-    });
-
-    it('should handle negative angles (port-tack apparent wind)', () => {
-      // Negative radians are legitimate for port-tack apparent wind angles
-      expect(calculator.convertWindDirection(-Math.PI / 2, 'compass')).toBe('W');
-      expect(calculator.convertWindDirection(-Math.PI / 4, 'compass')).toBe('NW');
-      expect(calculator.convertWindDirection(-Math.PI, 'compass')).toBe('S');
-      // Just slightly past 0 negative should still be N
-      expect(calculator.convertWindDirection(-0.01, 'compass')).toBe('N');
-    });
-
-    it('should calculate relative wind direction', () => {
-      const windDirection = Math.PI / 2; // East
-      const vesselHeading = Math.PI / 4; // Northeast
-
-      const result = calculator.calculateRelativeWindDirection(windDirection, vesselHeading);
-      expect(result).toBeCloseTo(Math.PI / 4, 2); // 45° relative
-    });
-  });
-
-  describe('Wind Speed Conversions', () => {
-    beforeEach(() => {
-      calculator = new WindCalculator(mockLogger);
-    });
-
-    it('should convert wind speed to different units', () => {
-      const windSpeedMs = 10; // m/s
-
-      expect(calculator.convertWindSpeed(windSpeedMs, 'kmh')).toBeCloseTo(36, 1); // km/h
-      expect(calculator.convertWindSpeed(windSpeedMs, 'knots')).toBeCloseTo(19.44, 1); // knots
-      expect(calculator.convertWindSpeed(windSpeedMs, 'mph')).toBeCloseTo(22.37, 1); // mph
-    });
-  });
-
-  describe('Wind Summary', () => {
-    beforeEach(() => {
-      calculator = new WindCalculator(mockLogger);
-    });
-
-    it('should provide comprehensive wind analysis summary', () => {
-      const trueWindSpeed = 12;
-      const vesselSpeed = 6;
-      const vesselHeading = 0;
-      const trueWindDirection = Math.PI / 3; // 60°
-
-      const summary = calculator.getWindSummary(
-        trueWindSpeed,
-        vesselSpeed,
-        vesselHeading,
-        trueWindDirection
-      );
-
-      expect(summary).toEqual(
-        expect.objectContaining({
-          trueWind: {
-            speed: trueWindSpeed,
-            direction: trueWindDirection,
-          },
-          vesselMotion: {
-            speed: vesselSpeed,
-            heading: vesselHeading,
-          },
-          apparentWind: {
-            speed: expect.any(Number),
-            angle: expect.any(Number),
-          },
-          beaufortScale: expect.any(Number),
-          isValid: true,
-        })
-      );
-
-      expect(summary.beaufortScale).toBeGreaterThanOrEqual(0);
-      expect(summary.beaufortScale).toBeLessThanOrEqual(12);
-    });
-
-    it('should indicate invalid summary for bad inputs', () => {
-      const summary = calculator.getWindSummary(-1, 5, 0, Math.PI / 2);
-      expect(summary.isValid).toBe(false);
-    });
-  });
-
   describe('Edge Cases and Error Handling', () => {
     beforeEach(() => {
       calculator = new WindCalculator(mockLogger);
@@ -514,20 +382,9 @@ describe('WindCalculator', () => {
     });
   });
 
-  describe('Input Validation', () => {
-    it('should validate all required inputs', () => {
-      // Test valid inputs
-      expect(calculator.validateWindInputs(10, 5, 0, Math.PI / 2)).toBe(true);
-
-      // Test invalid inputs
-      expect(calculator.validateWindInputs(Number.NaN, 5, 0, Math.PI / 2)).toBe(false);
-      expect(calculator.validateWindInputs(10, -1, 0, Math.PI / 2)).toBe(false);
-      expect(calculator.validateWindInputs(10, 1000, 0, Math.PI / 2)).toBe(false);
-      expect(calculator.validateWindInputs(-5, 5, 0, Math.PI / 2)).toBe(false);
-    });
-
+  describe('Angle Normalization', () => {
     it('should normalize angles correctly', () => {
-      // Test angle normalization (both PI and -PI are equivalent)
+      // Both PI and -PI are equivalent endpoints
       expect(Math.abs(calculator.normalizeAngle(Math.PI * 3))).toBeCloseTo(Math.PI, 2);
       expect(Math.abs(calculator.normalizeAngle(-Math.PI * 3))).toBeCloseTo(Math.PI, 2);
       expect(calculator.normalizeAngle(Math.PI / 2)).toBeCloseTo(Math.PI / 2, 2);

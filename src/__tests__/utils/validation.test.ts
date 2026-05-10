@@ -8,19 +8,14 @@ import { describe, expect, it } from 'vitest';
 import type { WeatherData } from '../../types/index.js';
 import {
   ConfigurationValidator,
-  getValidationSummary,
-  isCompleteForWindCalculations,
   isValidLatitude,
   isValidLongitude,
   NMEA2000Validator,
   sanitizeConfiguration,
   sanitizeForNMEA2000,
   validateAccuWeatherResponse,
-  validateCompleteWeatherData,
   validateConfiguration,
-  validateNavigationData,
   validateNMEA2000Ranges,
-  validateTemperatureConsistency,
   validateWeatherData,
 } from '../../utils/validation.js';
 
@@ -97,110 +92,6 @@ describe('validateWeatherData', () => {
     });
     expect(result.isValid).toBe(false); // cloudCover errors
     expect(result.warnings.length).toBeGreaterThan(0);
-  });
-});
-
-describe('validateTemperatureConsistency', () => {
-  it('errors when dew point exceeds air temperature', () => {
-    const result = validateTemperatureConsistency({
-      temperature: 280,
-      dewPoint: 290,
-    });
-    expect(result.isValid).toBe(false);
-  });
-
-  it('warns when wind chill exceeds air temperature with wind present', () => {
-    const result = validateTemperatureConsistency({
-      temperature: 280,
-      windChill: 285,
-      windSpeed: 5,
-    });
-    expect(result.warnings.length).toBeGreaterThan(0);
-  });
-
-  it('errors when wet bulb exceeds dry bulb', () => {
-    const result = validateTemperatureConsistency({
-      temperature: 290,
-      wetBulbTemperature: 295,
-    });
-    expect(result.isValid).toBe(false);
-  });
-});
-
-describe('validateNavigationData', () => {
-  it('passes for valid navigation data', () => {
-    const result = validateNavigationData({
-      position: { latitude: 30, longitude: -120 },
-      speedOverGround: 5,
-      courseOverGroundTrue: 1.0,
-    });
-    expect(result.isValid).toBe(true);
-  });
-
-  it('rejects invalid coordinates', () => {
-    const result = validateNavigationData({
-      position: { latitude: 91, longitude: 200 },
-    });
-    expect(result.isValid).toBe(false);
-  });
-
-  it('rejects non-finite speed', () => {
-    const result = validateNavigationData({
-      speedOverGround: Number.NaN,
-    });
-    expect(result.isValid).toBe(false);
-  });
-
-  it('rejects negative speed', () => {
-    const result = validateNavigationData({
-      speedOverGround: -1,
-    });
-    expect(result.isValid).toBe(false);
-  });
-
-  it('warns on unusually high speed', () => {
-    const result = validateNavigationData({
-      speedOverGround: 150,
-    });
-    expect(result.warnings.length).toBeGreaterThan(0);
-  });
-
-  it('warns on unnormalized course', () => {
-    const result = validateNavigationData({
-      courseOverGroundTrue: 10,
-    });
-    expect(result.warnings.length).toBeGreaterThan(0);
-  });
-
-  it('rejects non-finite course', () => {
-    const result = validateNavigationData({
-      courseOverGroundTrue: Number.NaN,
-    });
-    expect(result.isValid).toBe(false);
-  });
-
-  it('warns and errors on stale data', () => {
-    const warn = validateNavigationData({ dataAge: 90 });
-    expect(warn.warnings.length).toBeGreaterThan(0);
-    const err = validateNavigationData({ dataAge: 400 });
-    expect(err.isValid).toBe(false);
-  });
-});
-
-describe('isCompleteForWindCalculations', () => {
-  it('returns true when all required fields are present and isComplete', () => {
-    expect(
-      isCompleteForWindCalculations({
-        position: { latitude: 0, longitude: 0 },
-        speedOverGround: 5,
-        courseOverGroundTrue: 1,
-        isComplete: true,
-      })
-    ).toBe(true);
-  });
-  it('returns false when fields are missing', () => {
-    expect(isCompleteForWindCalculations({})).toBe(false);
-    expect(isCompleteForWindCalculations({ isComplete: false })).toBe(false);
   });
 });
 
@@ -422,39 +313,6 @@ describe('NMEA2000 helpers', () => {
       expect(out.windSpeed).toBe(102.3);
       expect(out.windGustSpeed).toBe(102.3);
     });
-  });
-});
-
-describe('validateCompleteWeatherData', () => {
-  it('aggregates errors and warnings from all validators', () => {
-    const result = validateCompleteWeatherData({
-      ...baseValidWeather(),
-      humidity: 1.5, // basic + nmea2000 errors
-      temperature: 400, // out of range warning
-      pressure: 50000, // nmea2000 warning
-    });
-    expect(result.isValid).toBe(false);
-    expect(result.errors.length).toBeGreaterThanOrEqual(2);
-    expect(result.warnings.length).toBeGreaterThanOrEqual(1);
-  });
-
-  it('passes when all checks pass', () => {
-    const result = validateCompleteWeatherData(baseValidWeather());
-    expect(result.isValid).toBe(true);
-  });
-});
-
-describe('getValidationSummary', () => {
-  it('formats valid results', () => {
-    expect(getValidationSummary({ isValid: true, errors: [], warnings: [] })).toBe('Valid');
-    expect(getValidationSummary({ isValid: true, errors: [], warnings: ['a'] })).toContain(
-      'warnings'
-    );
-  });
-  it('formats invalid results', () => {
-    expect(getValidationSummary({ isValid: false, errors: ['a'], warnings: [] })).toContain(
-      'Invalid'
-    );
   });
 });
 

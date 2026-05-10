@@ -33,14 +33,15 @@ None tracked.
 ### Testing & Validation
 
 - [x] **Comprehensive unit test coverage** *(v1.2.2)*
-  - ✅ WeatherService tests (24 tests) - initialization, lifecycle, data emission
+  - ✅ WeatherService tests (21 tests) - initialization, lifecycle, data emission
   - ✅ SignalKService tests (40 tests) - position, speed, course, heading, caching
-  - ✅ AccuWeatherService tests (17 tests) - API integration, retry, validation
-  - ✅ WindCalculator tests (45 tests) - vector math, edge cases (negative angles, NaN)
+  - ✅ AccuWeatherService tests (22 tests) - API integration, retry, validation, error paths (403/429/503/RESPONSE_TOO_LARGE)
+  - ✅ WindCalculator tests (34 tests) - vector math, edge cases (negative angles, NaN)
   - ✅ NMEA2000PathMapper tests (16 tests) - delta build, sanitization, one-shot meta delta
-  - ✅ utils/conversions tests (48 tests) - all conversions + edge cases *(new in v1.2.2)*
-  - ✅ utils/validation tests (54 tests) - sanitize, validators, response schema *(new in v1.2.2)*
-  - ✅ Total: 231 tests across 7 test files (v1.3.2 dropped 13 tests for unused conversion helpers)
+  - ✅ utils/conversions tests (32 tests) - all conversions + edge cases *(new in v1.2.2)*
+  - ✅ utils/validation tests (37 tests) - sanitize, validators, response schema *(new in v1.2.2)*
+  - ✅ index.ts tests (4 tests) - plugin lifecycle and meta-delta one-shot invariant *(new in v1.3.3)*
+  - ✅ Total: 206 tests across 8 test files (v1.3.3 dropped tests for unused conversion/validation helpers, added retry-path and lifecycle tests)
 
 - [ ] **Add delta message format validation tests**
   - Unit tests to verify proper Signal K delta structure
@@ -120,7 +121,7 @@ None tracked.
 
 ## 🐛 Known Issues
 
-_None tracked. Branch coverage moved above the 80% threshold in v1.3.2 (currently 81.57%)._
+_None tracked. Branch coverage held above the 80% threshold through v1.3.3._
 
 ## 🔐 Security
 
@@ -191,10 +192,11 @@ _None tracked. Branch coverage moved above the 80% threshold in v1.3.2 (currentl
   - Regular dependency reviews
 
 - [x] **Code quality improvements** *(v1.1.0 onwards)*
-  - ✅ Test coverage at 231 tests, branch coverage 81.57% (above the 80% threshold)
-  - ✅ All log levels (debug/info/warn/error) route through `app.debug`. Plugin-level error STATUS goes to `app.setPluginError` separately, per the Signal K plugin developer docs.
+  - ✅ Test coverage at 206 tests across 8 files
+  - ✅ debug/info routed through `app.debug`; warn/error routed through `app.error` so they appear in production logs without enabling DEBUG. Plugin-level error STATUS still goes to `app.setPluginError` separately. *(v1.3.3)*
   - ✅ Logger sanitizes API keys at all levels
   - ✅ `toErrorMessage(error)` helper consolidates 19 sites of `error instanceof Error ? error.message : String(error)` *(v1.3.2)*
+  - ✅ Biome `noFloatingPromises` and `noMisusedPromises` enabled to catch unawaited async paths *(v1.3.3)*
   - [ ] Add mutation testing
 
 ---

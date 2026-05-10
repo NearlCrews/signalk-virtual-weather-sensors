@@ -154,7 +154,7 @@ npm run validate       # Type-check + lint + tests (runs on pre-commit)
 - `@signalk/server-api` 2.24+ (declared as a `peerDependency`; the Signal K server provides it at runtime)
 - esbuild 0.28 for bundling
 - Biome 2.4 for linting/formatting
-- Vitest 4.1 for testing (231 tests)
+- Vitest 4.1 for testing (206 tests)
 - Husky + lint-staged for pre-commit hooks
 
 ## License

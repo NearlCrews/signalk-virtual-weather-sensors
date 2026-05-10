@@ -429,22 +429,25 @@ const LOG_PREFIX: Record<LogLevel, string> = {
 };
 
 function createLogger(app: ServerAPI): Logger {
-  // All four levels go through app.debug per the official plugin docs
-  // (https://demo.signalk.org/documentation/Developing/Plugins.html). The
-  // line itself carries a level prefix from LOG_PREFIX so verbosity is still
-  // distinguishable in the log output. Plugin-level error STATUS (the
-  // Admin UI banner) is reported separately via app.setPluginError.
+  // debug/info go through app.debug (gated by DEBUG=plugin-id). warn/error
+  // go through app.error so operators see them without enabling debug logging.
+  // Admin UI banner state is reported separately via app.setPluginError.
   return (level, message, metadata) => {
     const hasMetadata =
       metadata !== undefined && metadata !== null && Object.keys(metadata).length > 0;
-    // Only sanitize metadata for warn/error (may contain config with API keys);
-    // skip for debug/info hot paths to avoid overhead.
+    // Sanitize metadata only for warn/error (may carry API keys etc); the
+    // hot-path debug/info logs skip it to avoid recursion overhead.
     const finalMetadata =
       hasMetadata && (level === 'warn' || level === 'error')
         ? sanitizeLogMetadata(metadata as Record<string, unknown>)
         : metadata;
     const logMetadata = hasMetadata ? ` | ${JSON.stringify(finalMetadata)}` : '';
-    app.debug(`${LOG_PREFIX[level]}[${PLUGIN.NAME}] ${message}${logMetadata}`);
+    const line = `${LOG_PREFIX[level]}[${PLUGIN.NAME}] ${message}${logMetadata}`;
+    if (level === 'warn' || level === 'error') {
+      app.error(line);
+    } else {
+      app.debug(line);
+    }
   };
 }
 

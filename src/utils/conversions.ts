@@ -49,72 +49,28 @@ export function fahrenheitToKelvin(fahrenheit: number): number {
  * Pressure conversion utilities
  */
 
-/**
- * Convert millibars to Pascals
- */
+/** Convert millibars to Pascals. */
 export function millibarsToPA(millibars: number): number {
   if (!Number.isFinite(millibars)) return 0;
   return millibars * UNITS.PRESSURE.MILLIBAR_TO_PASCAL;
 }
 
-/**
- * Convert Pascals to millibars
- */
-export function pascalsToMillibars(pascals: number): number {
-  if (!Number.isFinite(pascals)) return 0;
-  return pascals / UNITS.PRESSURE.MILLIBAR_TO_PASCAL;
-}
-
-/**
- * Wind speed conversion utilities
- */
-
-/**
- * Convert km/h to m/s
- */
+/** Convert km/h to m/s. */
 export function kmhToMS(kmh: number): number {
   if (!Number.isFinite(kmh)) return 0;
   return kmh * UNITS.WIND_SPEED.KMH_TO_MS;
 }
 
-/**
- * Convert m/s to km/h
- */
+/** Convert m/s to km/h. */
 export function msToKMH(ms: number): number {
   if (!Number.isFinite(ms)) return 0;
   return ms / UNITS.WIND_SPEED.KMH_TO_MS;
 }
 
-/**
- * Convert knots to m/s
- */
-export function knotsToMS(knots: number): number {
-  if (!Number.isFinite(knots)) return 0;
-  return knots * UNITS.WIND_SPEED.KNOTS_TO_MS;
-}
-
-/**
- * Convert m/s to knots
- */
+/** Convert m/s to knots. */
 export function msToKnots(ms: number): number {
   if (!Number.isFinite(ms)) return 0;
   return ms / UNITS.WIND_SPEED.KNOTS_TO_MS;
-}
-
-/**
- * Convert mph to m/s
- */
-export function mphToMS(mph: number): number {
-  if (!Number.isFinite(mph)) return 0;
-  return mph * UNITS.WIND_SPEED.MPH_TO_MS;
-}
-
-/**
- * Convert m/s to mph
- */
-export function msToMPH(ms: number): number {
-  if (!Number.isFinite(ms)) return 0;
-  return ms / UNITS.WIND_SPEED.MPH_TO_MS;
 }
 
 /**
@@ -185,29 +141,7 @@ export function isWithinBounds(value: number, min: number, max: number): boolean
   return Number.isFinite(value) && value >= min && value <= max;
 }
 
-/**
- * Validate numeric input with optional bounds
- */
-export function isValidNumber(value: unknown, min?: number, max?: number): value is number {
-  if (typeof value !== 'number' || !Number.isFinite(value)) {
-    return false;
-  }
-  if (min !== undefined && value < min) {
-    return false;
-  }
-  if (max !== undefined && value > max) {
-    return false;
-  }
-  return true;
-}
-
-/**
- * Data validation utilities for weather measurements
- */
-
-/**
- * Validate temperature value
- */
+/** Validate temperature value. */
 export function isValidTemperature(temperature: number): boolean {
   return isWithinBounds(
     temperature,
@@ -349,31 +283,7 @@ export function calculateAirDensity(
   return density;
 }
 
-/**
- * Calculate vapor pressure deficit
- * @param temperatureK Temperature in Kelvin
- * @param relativeHumidity Relative humidity as ratio (0-1)
- * @returns Vapor pressure deficit in Pascals
- */
-export function calculateVaporPressureDeficit(
-  temperatureK: number,
-  relativeHumidity: number
-): number {
-  if (!Number.isFinite(temperatureK) || !Number.isFinite(relativeHumidity)) return 0;
-
-  const saturationPressure = calculateSaturationVaporPressure(temperatureK);
-  const actualVaporPressure = relativeHumidity * saturationPressure;
-
-  return Math.max(0, saturationPressure - actualVaporPressure);
-}
-
-/**
- * Wind classification utilities
- */
-
-/**
- * Beaufort scale thresholds (wind speed in m/s)
- */
+/** Beaufort scale thresholds (wind speed in m/s). */
 const BEAUFORT_THRESHOLDS = [
   { max: 0.3, scale: 0 }, // Calm
   { max: 1.6, scale: 1 }, // Light air

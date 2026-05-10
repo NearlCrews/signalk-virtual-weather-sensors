@@ -78,7 +78,6 @@ describe('AccuWeatherService', () => {
     const testLocation: GeoLocation = {
       latitude: 37.7749,
       longitude: -122.4194,
-      isValid: true,
     };
 
     it('should fetch and transform enhanced weather data successfully', async () => {
@@ -183,7 +182,6 @@ describe('AccuWeatherService', () => {
       const invalidLocation: GeoLocation = {
         latitude: 91, // Invalid latitude
         longitude: -122.4194,
-        isValid: false,
       };
 
       await expect(service.fetchCurrentWeather(invalidLocation)).rejects.toThrow(
@@ -279,9 +277,7 @@ describe('AccuWeatherService', () => {
 
       (global.fetch as Mock).mockRejectedValueOnce(new Error('AbortError'));
 
-      await expect(
-        service.fetchCurrentWeather({ latitude: 0, longitude: 0, isValid: true })
-      ).rejects.toThrow();
+      await expect(service.fetchCurrentWeather({ latitude: 0, longitude: 0 })).rejects.toThrow();
     });
 
     it('should handle malformed API responses', async () => {
@@ -293,9 +289,9 @@ describe('AccuWeatherService', () => {
         .mockResolvedValueOnce(mockResponse({ Key: 'test' }))
         .mockResolvedValueOnce(mockResponse([])); // Empty array
 
-      await expect(
-        service.fetchCurrentWeather({ latitude: 0, longitude: 0, isValid: true })
-      ).rejects.toThrow('No current conditions data available');
+      await expect(service.fetchCurrentWeather({ latitude: 0, longitude: 0 })).rejects.toThrow(
+        'No current conditions data available'
+      );
     });
   });
 
@@ -312,7 +308,6 @@ describe('AccuWeatherService', () => {
       const weatherData = await service.fetchCurrentWeather({
         latitude: 37.7749,
         longitude: -122.4194,
-        isValid: true,
       });
 
       // Verify enhanced fields are extracted
@@ -343,7 +338,6 @@ describe('AccuWeatherService', () => {
       const weatherData = await service.fetchCurrentWeather({
         latitude: 37.7749,
         longitude: -122.4194,
-        isValid: true,
       });
 
       // Count enhanced fields beyond basic 8
@@ -375,7 +369,6 @@ describe('AccuWeatherService', () => {
       const weatherData = await service.fetchCurrentWeather({
         latitude: 37.7749,
         longitude: -122.4194,
-        isValid: true,
       });
 
       expect(weatherData.quality).toBeGreaterThan(0);
@@ -402,11 +395,110 @@ describe('AccuWeatherService', () => {
       const weatherData = await service.fetchCurrentWeather({
         latitude: 37.7749,
         longitude: -122.4194,
-        isValid: true,
       });
 
       // Quality should be enhanced due to rich data
       expect(weatherData.quality).toBeGreaterThan(0.9);
+    });
+  });
+
+  describe('HTTP Error Handling', () => {
+    const fastRetryConfig = { retryAttempts: 3, retryDelay: 1 };
+
+    beforeEach(() => {
+      service = new AccuWeatherService('test-api-key', mockLogger, fastRetryConfig);
+      vi.mocked(global.fetch).mockClear();
+    });
+
+    it('throws API_FORBIDDEN on a 403 response', async () => {
+      vi.mocked(global.fetch)
+        .mockResolvedValueOnce(mockResponse({ Key: '2628204' }) as never)
+        .mockResolvedValueOnce(
+          mockResponse(
+            { message: 'plan does not include this endpoint' },
+            { ok: false, status: 403, statusText: 'Forbidden' }
+          ) as never
+        );
+
+      await expect(
+        service.fetchCurrentWeather({ latitude: 37.7749, longitude: -122.4194 })
+      ).rejects.toThrow(/API_FORBIDDEN/);
+    });
+
+    it('retries 429 responses then succeeds', async () => {
+      vi.mocked(global.fetch)
+        .mockResolvedValueOnce(mockResponse({ Key: '2628204' }) as never)
+        .mockResolvedValueOnce(
+          mockResponse(
+            { message: 'rate limited' },
+            { ok: false, status: 429, statusText: 'Too Many Requests' }
+          ) as never
+        )
+        .mockResolvedValueOnce(mockResponse(createMockAccuWeatherResponse()) as never);
+
+      const result = await service.fetchCurrentWeather({
+        latitude: 37.7749,
+        longitude: -122.4194,
+      });
+
+      expect(result).toBeDefined();
+      // 1 location + 1 failed conditions + 1 retry succeeded
+      expect(global.fetch).toHaveBeenCalledTimes(3);
+    });
+
+    it('throws API_RATE_LIMIT after exhausting retries on 429', async () => {
+      vi.mocked(global.fetch)
+        .mockResolvedValueOnce(mockResponse({ Key: '2628204' }) as never)
+        .mockResolvedValue(
+          mockResponse(
+            { message: 'rate limited' },
+            { ok: false, status: 429, statusText: 'Too Many Requests' }
+          ) as never
+        );
+
+      await expect(
+        service.fetchCurrentWeather({ latitude: 37.7749, longitude: -122.4194 })
+      ).rejects.toThrow(/API_RATE_LIMIT/);
+    });
+
+    it('honors Retry-After header on 503 then succeeds', async () => {
+      const text503 = JSON.stringify({ message: 'temporary failure' });
+      const r503 = {
+        ok: false,
+        status: 503,
+        statusText: 'Service Unavailable',
+        headers: new Headers({ 'content-length': String(text503.length), 'Retry-After': '0' }),
+        text: () => Promise.resolve(text503),
+        json: () => Promise.resolve({ message: 'temporary failure' }),
+      };
+
+      vi.mocked(global.fetch)
+        .mockResolvedValueOnce(mockResponse({ Key: '2628204' }) as never)
+        .mockResolvedValueOnce(r503 as never)
+        .mockResolvedValueOnce(mockResponse(createMockAccuWeatherResponse()) as never);
+
+      const result = await service.fetchCurrentWeather({
+        latitude: 37.7749,
+        longitude: -122.4194,
+      });
+
+      expect(result).toBeDefined();
+    });
+
+    it('rejects with RESPONSE_TOO_LARGE when content-length exceeds the cap', async () => {
+      const oversized = {
+        ok: true,
+        status: 200,
+        statusText: 'OK',
+        headers: new Headers({ 'content-length': '2000000' }),
+        text: () => Promise.resolve('{}'),
+        json: () => Promise.resolve({}),
+      };
+      vi.mocked(global.fetch).mockResolvedValueOnce(oversized as never);
+
+      await expect(
+        service.fetchCurrentWeather({ latitude: 37.7749, longitude: -122.4194 })
+      ).rejects.toThrow(/RESPONSE_TOO_LARGE/);
     });
   });
 });

@@ -170,13 +170,10 @@ export interface WindCalculationResult {
   readonly validationErrors?: ReadonlyArray<string>;
 }
 
-/**
- * Geolocation coordinates with validation
- */
+/** Geolocation coordinates. */
 export interface GeoLocation {
   readonly latitude: number;
   readonly longitude: number;
-  readonly isValid: boolean;
 }
 
 /**

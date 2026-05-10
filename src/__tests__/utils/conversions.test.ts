@@ -10,14 +10,12 @@ import {
   calculateAirDensity,
   calculateBeaufortScale,
   calculateSaturationVaporPressure,
-  calculateVaporPressureDeficit,
   celsiusToKelvin,
   clamp,
   degreesToRadians,
   fahrenheitToKelvin,
   isValidCoordinates,
   isValidHumidity,
-  isValidNumber,
   isValidPressure,
   isValidTemperature,
   isValidWindDirection,
@@ -26,15 +24,11 @@ import {
   kelvinToCelsius,
   kelvinToFahrenheit,
   kmhToMS,
-  knotsToMS,
   millibarsToPA,
-  mphToMS,
   msToKMH,
   msToKnots,
-  msToMPH,
   normalizeAngle0To2Pi,
   normalizeAnglePiToPi,
-  pascalsToMillibars,
   percentageToRatio,
   radiansToDegrees,
   ratioToPercentage,
@@ -77,12 +71,10 @@ describe('Temperature conversions', () => {
 });
 
 describe('Pressure conversions', () => {
-  it('millibarsToPA / pascalsToMillibars round-trip', () => {
+  it('millibarsToPA', () => {
     expect(millibarsToPA(1013.25)).toBeCloseTo(101325, 2);
-    expect(pascalsToMillibars(101325)).toBeCloseTo(1013.25, 2);
     expect(millibarsToPA(0)).toBe(0);
     expect(millibarsToPA(Number.NaN)).toBe(0);
-    expect(pascalsToMillibars(Number.NaN)).toBe(0);
   });
 });
 
@@ -94,18 +86,9 @@ describe('Wind speed conversions', () => {
     expect(msToKMH(Number.NaN)).toBe(0);
   });
 
-  it('knots ↔ m/s', () => {
-    expect(knotsToMS(1)).toBeCloseTo(0.514444, 4);
+  it('m/s → knots', () => {
     expect(msToKnots(0.514444)).toBeCloseTo(1, 4);
-    expect(knotsToMS(Number.NaN)).toBe(0);
     expect(msToKnots(Number.NaN)).toBe(0);
-  });
-
-  it('mph ↔ m/s', () => {
-    expect(mphToMS(1)).toBeCloseTo(0.44704, 4);
-    expect(msToMPH(0.44704)).toBeCloseTo(1, 4);
-    expect(mphToMS(Number.NaN)).toBe(0);
-    expect(msToMPH(Number.NaN)).toBe(0);
   });
 });
 
@@ -180,15 +163,6 @@ describe('Math utilities', () => {
     expect(isWithinBounds(-1, 0, 10)).toBe(false);
     expect(isWithinBounds(Number.NaN, 0, 10)).toBe(false);
   });
-
-  it('isValidNumber', () => {
-    expect(isValidNumber(5)).toBe(true);
-    expect(isValidNumber(5, 0, 10)).toBe(true);
-    expect(isValidNumber(-1, 0, 10)).toBe(false);
-    expect(isValidNumber(11, 0, 10)).toBe(false);
-    expect(isValidNumber('5')).toBe(false);
-    expect(isValidNumber(Number.NaN)).toBe(false);
-  });
 });
 
 describe('Validation helpers', () => {
@@ -252,13 +226,6 @@ describe('Atmospheric calculations', () => {
     expect(calculateAirDensity(Number.NaN, 101325)).toBe(1.225);
     // Out-of-range result fallback
     expect(calculateAirDensity(1, 0, 0)).toBe(1.225);
-  });
-
-  it('calculateVaporPressureDeficit', () => {
-    expect(calculateVaporPressureDeficit(293.15, 1.0)).toBeCloseTo(0, 0); // saturated
-    const partial = calculateVaporPressureDeficit(293.15, 0.5);
-    expect(partial).toBeGreaterThan(0);
-    expect(calculateVaporPressureDeficit(Number.NaN, 0.5)).toBe(0);
   });
 
   describe('calculateBeaufortScale', () => {

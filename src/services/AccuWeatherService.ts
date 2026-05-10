@@ -18,12 +18,15 @@ import {
   calculateBeaufortScale,
   celsiusToKelvin,
   clamp,
+  degreesToRadians,
   isValidCoordinates,
   isValidHumidity,
   isValidPressure,
   isValidTemperature,
   isValidWindSpeed,
   kelvinToCelsius,
+  kmhToMS,
+  millibarsToPA,
   percentageToRatio,
   toErrorMessage,
 } from '../utils/conversions.js';
@@ -151,10 +154,10 @@ export class AccuWeatherService {
    */
   private transformWeatherData(conditions: AccuWeatherCurrentConditions): WeatherData {
     const temperature = celsiusToKelvin(conditions.Temperature.Metric.Value);
-    const pressure = conditions.Pressure.Metric.Value * UNITS.PRESSURE.MILLIBAR_TO_PASCAL;
+    const pressure = millibarsToPA(conditions.Pressure.Metric.Value);
     const humidity = percentageToRatio(conditions.RelativeHumidity);
-    const windSpeed = conditions.Wind.Speed.Metric.Value * UNITS.WIND_SPEED.KMH_TO_MS;
-    const windDirection = conditions.Wind.Direction.Degrees * UNITS.ANGLE.DEGREES_TO_RADIANS;
+    const windSpeed = kmhToMS(conditions.Wind.Speed.Metric.Value);
+    const windDirection = degreesToRadians(conditions.Wind.Direction.Degrees);
     const dewPoint = celsiusToKelvin(conditions.DewPoint.Metric.Value);
     const windChill = celsiusToKelvin(conditions.WindChillTemperature.Metric.Value);
     const heatIndex = celsiusToKelvin(conditions.RealFeelTemperature.Metric.Value);
@@ -168,7 +171,7 @@ export class AccuWeatherService {
     const wetBulbGlobeTemperature = toKelvin(conditions.WetBulbGlobeTemperature?.Metric?.Value);
     const apparentTemperature = toKelvin(conditions.ApparentTemperature?.Metric?.Value);
 
-    const windGustSpeed = conditions.WindGust.Speed.Metric.Value * UNITS.WIND_SPEED.KMH_TO_MS;
+    const windGustSpeed = kmhToMS(conditions.WindGust.Speed.Metric.Value);
     // undefined when wind is calm: a literal 1 would be indistinguishable from "no gust"
     const windGustFactor = windSpeed > 0 ? windGustSpeed / windSpeed : undefined;
 

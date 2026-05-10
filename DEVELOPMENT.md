@@ -194,6 +194,7 @@ export default function createPlugin(app: ServerAPI): Plugin {
 ```
 src/__tests__/
 ├── setup.ts                          # Global test configuration + mock factories
+├── index.test.ts                     # Plugin entry / lifecycle / meta-once invariant
 ├── calculators/
 │   └── WindCalculator.test.ts        # Vector wind / heat index / dew point
 ├── mappers/
@@ -201,7 +202,7 @@ src/__tests__/
 ├── services/
 │   ├── WeatherService.test.ts        # Orchestration / lifecycle
 │   ├── SignalKService.test.ts        # Navigation data + caching
-│   └── AccuWeatherService.test.ts    # API integration
+│   └── AccuWeatherService.test.ts    # API integration + retry/error paths
 └── utils/
     ├── conversions.test.ts           # Unit conversions
     └── validation.test.ts            # Sanitization + validators
@@ -393,17 +394,18 @@ npm run validate
 - **Edge Case Tests**: Boundary conditions and error handling
 - **Performance Tests**: Real-time calculation efficiency
 
-**Total: 231 tests** across 7 test files (latest coverage: 83.69% statements, 91.07% functions, 83.72% lines, 81.57% branches)
+**Total: 206 tests** across 8 test files (latest as of v1.3.3)
 
 ### Test Files
 
-- [`WeatherService.test.ts`](src/__tests__/services/WeatherService.test.ts) - Core orchestration (24 tests)
+- [`index.test.ts`](src/__tests__/index.test.ts) - Plugin entry point and meta-delta one-shot invariant (4 tests)
+- [`WeatherService.test.ts`](src/__tests__/services/WeatherService.test.ts) - Core orchestration (21 tests)
 - [`SignalKService.test.ts`](src/__tests__/services/SignalKService.test.ts) - Navigation data (40 tests)
-- [`AccuWeatherService.test.ts`](src/__tests__/services/AccuWeatherService.test.ts) - API integration (17 tests)
-- [`WindCalculator.test.ts`](src/__tests__/calculators/WindCalculator.test.ts) - Vector mathematics (45 tests)
+- [`AccuWeatherService.test.ts`](src/__tests__/services/AccuWeatherService.test.ts) - API integration + retry/error paths (22 tests)
+- [`WindCalculator.test.ts`](src/__tests__/calculators/WindCalculator.test.ts) - Vector mathematics (34 tests)
 - [`NMEA2000PathMapper.test.ts`](src/__tests__/mappers/NMEA2000PathMapper.test.ts) - Path mapping + one-shot meta delta (16 tests)
-- [`utils/conversions.test.ts`](src/__tests__/utils/conversions.test.ts) - Unit conversions (35 tests)
-- [`utils/validation.test.ts`](src/__tests__/utils/validation.test.ts) - Sanitize, validators, schema (54 tests)
+- [`utils/conversions.test.ts`](src/__tests__/utils/conversions.test.ts) - Unit conversions (32 tests)
+- [`utils/validation.test.ts`](src/__tests__/utils/validation.test.ts) - Sanitize, validators, schema (37 tests)
 
 ### Running Specific Tests
 
