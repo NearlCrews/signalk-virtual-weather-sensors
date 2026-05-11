@@ -157,6 +157,12 @@ export class AccuWeatherService {
     const pressure = millibarsToPA(conditions.Pressure.Metric.Value);
     const humidity = percentageToRatio(conditions.RelativeHumidity);
     const windSpeed = kmhToMS(conditions.Wind.Speed.Metric.Value);
+    // Wind.Direction.Degrees is azimuth from true north per the WMO surface-wind
+    // observation convention (Guide to Meteorological Instruments WMO-No. 8).
+    // AccuWeather's docs say "from north" without a qualifier because that is
+    // the universal meteorological default; using magnetic would require every
+    // consumer to know the local magnetic declination. Mapping to the canonical
+    // environment.wind.directionTrue path is therefore correct.
     const windDirection = degreesToRadians(conditions.Wind.Direction.Degrees);
     const dewPoint = celsiusToKelvin(conditions.DewPoint.Metric.Value);
     const windChill = celsiusToKelvin(conditions.WindChillTemperature.Metric.Value);

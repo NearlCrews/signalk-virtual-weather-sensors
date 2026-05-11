@@ -64,11 +64,8 @@ npm run test:run output here
 <!-- Verify all items before submitting -->
 
 - [ ] Code follows the project's coding standards
+- [ ] `npm run validate` passes locally (canonical pre-commit gate: type-check + lint + tests)
 - [ ] All pre-commit hooks pass
-- [ ] TypeScript compilation successful (`npm run type-check`)
-- [ ] Linting passes (`npm run lint`)
-- [ ] Code is formatted (`npm run format`)
-- [ ] All tests pass (`npm run test:run`)
 - [ ] No new warnings or errors introduced
 
 ## Documentation
@@ -86,21 +83,24 @@ npm run test:run output here
 
 <!-- If this PR affects NMEA2000 integration -->
 
-- [ ] PGN assignments verified
-- [ ] Instance numbers follow emitter-cannon conventions
-- [ ] Data validation within NMEA2000 ranges
+<!-- Note: PGN instance numbers and bus priority are owned by the companion
+     `signalk-nmea2000-emitter-cannon` plugin, not by this plugin. Wire-format
+     concerns belong to that PR, not this one. -->
+
+- [ ] Source paths consumed by cannon are still emitted (`environment.outside.{pressure,temperature,dewPointTemperature,apparentWindChillTemperature,heatIndexTemperature,relativeHumidity}`, `environment.wind.{speedOverGround,directionTrue,speedApparent,angleApparent}`)
+- [ ] Data validation within NMEA2000 ranges (per `NMEA2000_LIMITS` in `src/constants/index.ts`)
 - [ ] Tested with marine electronics (if applicable)
-- [ ] N/A - Does not affect NMEA2000
+- [ ] N/A: does not affect NMEA2000 bridging
 
 ## Signal K Integration
 
 <!-- If this PR affects Signal K paths or deltas -->
 
-- [ ] Signal K paths follow standard conventions
-- [ ] Delta messages properly formatted
-- [ ] Source metadata included
+- [ ] Canonical leaves stay under canonical containers (`environment.outside.*`, `environment.wind.*`); non-1.8.2 paths live under `environment.weather.*`
+- [ ] Delta messages properly formatted (`Update` is XOR `values | meta`; meta in its own update entry)
+- [ ] `$source: 'accuweather'` set on every emitted update
 - [ ] Tested with Signal K instruments
-- [ ] N/A - Does not affect Signal K paths
+- [ ] N/A: does not affect Signal K paths
 
 ## Breaking Changes
 

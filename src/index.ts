@@ -15,7 +15,7 @@ import type {
   PluginState,
   WeatherData,
 } from './types/index.js';
-import { toErrorMessage } from './utils/conversions.js';
+import { asTimestamp, toErrorMessage } from './utils/conversions.js';
 import { ConfigurationValidator } from './utils/validation.js';
 
 /**
@@ -216,9 +216,17 @@ function finalizePluginStart(
   config: PluginConfiguration,
   app: ServerAPI
 ): void {
+  // startServices() either assigns weatherService or throws (caught upstream
+  // and routed to handleStartupError, which skips this function). Reaching
+  // here with weatherService still null is a programmer error.
+  const { weatherService } = instance;
+  if (!weatherService) {
+    throw new Error('finalizePluginStart invoked before WeatherService was constructed');
+  }
+
   instance.state = 'running';
 
-  app.setPluginStatus(PLUGIN.STATUS.RUNNING);
+  app.setPluginStatus(weatherService.formatStatusBanner());
 
   instance.logger('info', 'signalk-virtual-weather-sensors plugin started successfully', {
     emissionInterval: config.emissionInterval,
@@ -271,31 +279,29 @@ function setupEnhancedEmissionSystem(
 
 /**
  * Single emission tick: refreshes the cached delta when weather data has
- * changed, rewrites the timestamp so consumers see the actual emission time
+ * changed, builds a fresh outbound delta with the current emission timestamp
  * (not the cached observation time), and skips emission entirely when upstream
  * data has gone stale beyond `maxStalenessMs`.
  * @private
  */
 function emitWeatherTick(instance: PluginInstance, app: ServerAPI, maxStalenessMs: number): void {
-  const weatherData = instance.weatherService?.getCurrentWeatherData();
-  if (!weatherData || !instance.pathMapper) {
+  if (!instance.weatherService || !instance.pathMapper) {
+    return;
+  }
+  const weatherData = instance.weatherService.getCurrentWeatherData();
+  if (!weatherData) {
     return;
   }
 
-  const lastUpdate = instance.weatherService?.getLastUpdate();
-  if (lastUpdate) {
-    const ageMs = Date.now() - lastUpdate.getTime();
-    if (ageMs > maxStalenessMs) {
-      app.setPluginError(
-        `Weather data stale: last update ${Math.round(ageMs / 60_000)} minutes ago`
-      );
-      instance.staleErrorActive = true;
-      return;
-    }
+  const ageMs = instance.weatherService.getDataAgeMs();
+  if (ageMs !== null && ageMs > maxStalenessMs) {
+    app.setPluginError(`Weather data stale: last update ${Math.round(ageMs / 60_000)} minutes ago`);
+    instance.staleErrorActive = true;
+    return;
   }
 
   if (instance.staleErrorActive) {
-    app.setPluginStatus(PLUGIN.STATUS.RUNNING);
+    app.setPluginStatus(instance.weatherService.formatStatusBanner());
     instance.staleErrorActive = false;
   }
 
@@ -309,31 +315,30 @@ function emitWeatherTick(instance: PluginInstance, app: ServerAPI, maxStalenessM
     return;
   }
 
-  // Ship the static meta block once per plugin lifetime so consumers can
-  // render units/labels for non-canonical paths. The Signal K spec recommends
-  // emitting meta only when it changes; this plugin's meta is fully static.
+  app.handleMessage(PLUGIN.NAME, withEmissionTimestamp(instance.cachedDelta), SKVersion.v1);
+
+  // Ship the static meta block once per plugin lifetime, AFTER the first
+  // values delta so admin UIs that render units lazily attach them on first
+  // paint. The Signal K spec recommends emitting meta only when it changes;
+  // this plugin's meta is fully static.
   if (!instance.metaEmitted) {
     app.handleMessage(PLUGIN.NAME, instance.pathMapper.buildMetaDelta(), SKVersion.v1);
     instance.metaEmitted = true;
   }
-
-  // Stamp the cached delta's update timestamps in place. The delta is private
-  // to this plugin instance and is rebuilt whenever weatherData changes, so
-  // mutation here doesn't surprise any other consumer.
-  stampEmissionTimestamp(instance.cachedDelta);
-  app.handleMessage(PLUGIN.NAME, instance.cachedDelta, SKVersion.v1);
 }
 
 /**
- * Stamps every update entry in the cached delta with the current emission
- * time. No-op if the delta has no updates.
+ * Returns a Delta clone with every update's timestamp restamped to the
+ * current emission time, preserving the immutability of the cached delta
+ * so handleMessage callers can safely retain references.
  * @private
  */
-function stampEmissionTimestamp(cached: Delta): void {
-  const now = new Date().toISOString();
-  for (const update of cached.updates) {
-    (update as { timestamp: typeof update.timestamp }).timestamp = now as typeof update.timestamp;
-  }
+function withEmissionTimestamp(cached: Delta): Delta {
+  const now = asTimestamp(new Date().toISOString());
+  return {
+    ...cached,
+    updates: cached.updates.map((update) => ({ ...update, timestamp: now })),
+  };
 }
 
 /**

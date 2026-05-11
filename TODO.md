@@ -4,7 +4,7 @@ This file tracks remaining tasks, known issues, and future enhancements for the 
 
 ## 🔄 Signal K Standards Compliance
 
-### Status: Aligned with Signal K 1.8.2
+### Status: Aligned with Signal K 1.8.2 (v1.4.0)
 
 The plugin uses official `@signalk/server-api` 2.24+ types and follows Signal K plugin standards as documented at:
 - https://signalk.org/specification/1.8.2/doc/ (data model and vocabulary)
@@ -13,16 +13,17 @@ The plugin uses official `@signalk/server-api` 2.24+ types and follows Signal K 
 - https://demo.signalk.org/documentation/Developing/Plugins/Weather_Providers.html
 
 ### ✅ Compliant Areas
-- [x] **Official Types**: Uses `Plugin`, `ServerAPI`, `Delta`, `PathValue`, `Meta`, `MetaValue`, `SourceRef`, `SKVersion` from `@signalk/server-api` 2.24+
+- [x] **Official Types**: uses `Plugin`, `ServerAPI`, `Delta`, `Path`, `PathValue`, `Context`, `Timestamp`, `Meta`, `MetaValue`, `SourceRef`, `SKVersion` from `@signalk/server-api` 2.24+
 - [x] Plugin structure (default export, start/stop methods)
 - [x] Configuration schema (JSON Schema with validation)
 - [x] Delta message format (proper context, updates array, values/meta XOR)
-- [x] **Canonical Signal K paths** per the 1.8.2 vocabulary: `relativeHumidity`, `apparentWindChillTemperature`, `speedOverGround`, etc.
-- [x] **Plugin-derived non-spec values** namespaced under `environment.{outside,wind}.derived.*` (Beaufort scale, gust factor, heat stress index)
+- [x] **Canonical Signal K paths** under canonical containers per the 1.8.2 vocabulary: `environment.outside.{temperature,pressure,relativeHumidity,dewPointTemperature,apparentWindChillTemperature,heatIndexTemperature,airDensity}` and `environment.wind.{speedOverGround,directionTrue,speedApparent,angleApparent}`
+- [x] **Producer-namespaced extensions** under `environment.weather.*` (16 leaves: AccuWeather observations like UV, visibility, cloud cover, plus plugin-derived Beaufort scale, gust factor, heat stress index). Keeps canonical containers leaf-only as the spec requires *(restructured in v1.4.0; previously misnamed `environment.{outside,wind}.derived.*`)*
 - [x] **Explicit `$source: 'accuweather'`** on every update so users can configure source priorities to prefer real onboard sensors
-- [x] **One-shot meta delta** on plugin start so the Admin UI / Instrument Panel can render units and labels for non-canonical paths
+- [x] **One-shot meta delta** on plugin start so the Admin UI / Instrument Panel can render units and labels for non-canonical paths. Shipped after the first values delta (admin-UI rendering workaround, not a spec ordering requirement).
 - [x] **`SKVersion.v1`** passed to `app.handleMessage` so v1/v2 routing is explicit
-- [x] Status reporting (`setPluginStatus` / `setPluginError`) with stale-data recovery flag in `emitWeatherTick`
+- [x] Status reporting (`setPluginStatus` / `setPluginError`) with stale-data recovery flag in `emitWeatherTick`. Banner string includes live counters (last-update age + update count) via `WeatherService.formatStatusBanner()` *(v1.4.0)*
+- [x] **`directionTrue` true-north convention** verified against the WMO surface-wind standard (Guide to Meteorological Instruments WMO-No. 8); rationale pinned in `AccuWeatherService.transformWeatherData` *(v1.4.0)*
 
 ### ⚠️ Known Deviations
 
@@ -33,15 +34,15 @@ None tracked.
 ### Testing & Validation
 
 - [x] **Comprehensive unit test coverage** *(v1.2.2)*
-  - ✅ WeatherService tests (21 tests) - initialization, lifecycle, data emission
-  - ✅ SignalKService tests (40 tests) - position, speed, course, heading, caching
-  - ✅ AccuWeatherService tests (22 tests) - API integration, retry, validation, error paths (403/429/503/RESPONSE_TOO_LARGE)
-  - ✅ WindCalculator tests (34 tests) - vector math, edge cases (negative angles, NaN)
-  - ✅ NMEA2000PathMapper tests (16 tests) - delta build, sanitization, one-shot meta delta
-  - ✅ utils/conversions tests (32 tests) - all conversions + edge cases *(new in v1.2.2)*
-  - ✅ utils/validation tests (37 tests) - sanitize, validators, response schema *(new in v1.2.2)*
-  - ✅ index.ts tests (4 tests) - plugin lifecycle and meta-delta one-shot invariant *(new in v1.3.3)*
-  - ✅ Total: 206 tests across 8 test files (v1.3.3 dropped tests for unused conversion/validation helpers, added retry-path and lifecycle tests)
+  - ✅ WeatherService tests (21 tests): initialization, lifecycle, data emission
+  - ✅ SignalKService tests (40 tests): position, speed, course, heading, caching
+  - ✅ AccuWeatherService tests (22 tests): API integration, retry, validation, error paths (403/429/503/RESPONSE_TOO_LARGE)
+  - ✅ WindCalculator tests (34 tests): vector math, edge cases (negative angles, NaN)
+  - ✅ NMEA2000PathMapper tests (16 tests): delta build, sanitization, one-shot meta delta, `environment.weather.*` path assertions
+  - ✅ utils/conversions tests (32 tests): all conversions plus edge cases *(new in v1.2.2)*
+  - ✅ utils/validation tests (37 tests): sanitize, validators, response schema *(new in v1.2.2)*
+  - ✅ index.ts tests (4 tests): plugin lifecycle and meta-delta one-shot invariant *(new in v1.3.3)*
+  - ✅ Total: 206 tests across 8 test files (v1.4.0 mapper tests rewritten to assert the new `environment.weather.*` paths; total unchanged)
 
 - [ ] **Add delta message format validation tests**
   - Unit tests to verify proper Signal K delta structure
@@ -117,11 +118,11 @@ None tracked.
   - [ ] Cache weather data between updates
 
 - [x] **Performance monitoring** *(removed in v1.2.0)*
-  - `MetricsCollector` and `createPluginMetrics` were removed in v1.2.0 -- they were never imported by any production code (332 lines of dead instrumentation). To re-add observability, prefer Signal K server's built-in metrics or a lightweight per-call timer instead.
+  - `MetricsCollector` and `createPluginMetrics` were removed in v1.2.0: they were never imported by any production code (332 lines of dead instrumentation). To re-add observability, prefer Signal K server's built-in metrics or a lightweight per-call timer instead.
 
 ## 🐛 Known Issues
 
-_None tracked. Branch coverage held above the 80% threshold through v1.3.3._
+_None tracked. Branch coverage held above the 80% threshold through v1.4.0._
 
 ## 🔐 Security
 
@@ -208,9 +209,10 @@ _None tracked. Branch coverage held above the 80% threshold through v1.3.3._
 
 ### P1 - High (Within 1-2 releases)
 - ~~Add comprehensive test coverage~~ *(Completed v1.1.0)*
+- ~~Publish to npm~~ *(Completed: package published; release workflow in `.github/workflows/publish.yml`)*
 - Add delta message format validation tests
 - Test with real Signal K server
-- Publish to npm
+- Evaluate migrating to `@signalk/server-api`'s `WeatherProvider` API as the canonical home for AccuWeather data (future major version, see CHANGELOG 1.4.0 "Future direction")
 
 ### P2 - Medium (Future releases)
 - Additional weather data sources
@@ -224,7 +226,7 @@ _None tracked. Branch coverage held above the 80% threshold through v1.3.3._
 
 ---
 
-**Last Updated**: 2026-05-09
+**Last Updated**: 2026-05-10
 
 **Maintainer**: Signal K Community
 

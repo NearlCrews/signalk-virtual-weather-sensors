@@ -60,55 +60,56 @@ export const DEFAULT_CONFIG = {
 /**
  * Signal K paths emitted by this plugin. See
  * https://signalk.org/specification/1.8.2/doc/vesselsBranch.html for canonical
- * vocabulary. Inline labels below tag each subgroup.
+ * vocabulary.
+ *
+ * ENVIRONMENT.OUTSIDE and ENVIRONMENT.WIND hold ONLY 1.8.2-vocabulary leaves.
+ * Anything not in the 1.8.2 vocabulary lives under ENVIRONMENT.WEATHER so the
+ * plugin never squats an object node on a canonical container that the spec
+ * defines as leaf-only. Provenance stays in `$source`, not in the path.
  */
 export const SIGNALK_PATHS = {
   ENVIRONMENT: {
     OUTSIDE: {
-      // Canonical temperature paths (1.8.2)
       TEMPERATURE: 'environment.outside.temperature',
-      HEAT_INDEX_TEMPERATURE: 'environment.outside.heatIndexTemperature',
-      APPARENT_WIND_CHILL_TEMPERATURE: 'environment.outside.apparentWindChillTemperature',
-      DEW_POINT_TEMPERATURE: 'environment.outside.dewPointTemperature',
-
-      // De facto convention paths (widely used by ecosystem plugins; not in 1.8.2 vocabulary)
-      APPARENT_TEMPERATURE: 'environment.outside.apparentTemperature',
-      REAL_FEEL_SHADE: 'environment.outside.realFeelShade',
-      WET_BULB_TEMPERATURE: 'environment.outside.wetBulbTemperature',
-      WET_BULB_GLOBE_TEMPERATURE: 'environment.outside.wetBulbGlobeTemperature',
-
-      // Canonical atmospheric paths (1.8.2)
       PRESSURE: 'environment.outside.pressure',
       RELATIVE_HUMIDITY: 'environment.outside.relativeHumidity',
-
-      // De facto convention paths
-      ABSOLUTE_HUMIDITY: 'environment.outside.absoluteHumidity',
-      UV_INDEX: 'environment.outside.uvIndex',
-      VISIBILITY: 'environment.outside.visibility',
-      CLOUD_COVER: 'environment.outside.cloudCover',
-      CLOUD_CEILING: 'environment.outside.cloudCeiling',
+      DEW_POINT_TEMPERATURE: 'environment.outside.dewPointTemperature',
+      APPARENT_WIND_CHILL_TEMPERATURE: 'environment.outside.apparentWindChillTemperature',
+      HEAT_INDEX_TEMPERATURE: 'environment.outside.heatIndexTemperature',
       AIR_DENSITY: 'environment.outside.airDensity',
-      PRECIPITATION_LAST_HOUR: 'environment.outside.precipitationLastHour',
-      PRECIPITATION_CURRENT: 'environment.outside.precipitationCurrent',
-      TEMPERATURE_DEPARTURE_24H: 'environment.outside.temperatureDeparture24h',
-
-      // Plugin-derived categorical, namespaced under .derived.
-      HEAT_STRESS_INDEX: 'environment.outside.derived.heatStressIndex',
     },
 
+    // AccuWeather wind is ground-referenced; speedTrue (water-referenced)
+    // would clobber a real anemometer feed on a moving vessel.
     WIND: {
-      // Canonical wind paths (1.8.2)
+      SPEED_OVER_GROUND: 'environment.wind.speedOverGround',
       DIRECTION_TRUE: 'environment.wind.directionTrue',
       SPEED_APPARENT: 'environment.wind.speedApparent',
       ANGLE_APPARENT: 'environment.wind.angleApparent',
-      SPEED_OVER_GROUND: 'environment.wind.speedOverGround',
+    },
 
-      // De facto convention paths
-      SPEED_GUST: 'environment.wind.speedGust',
-
-      // Plugin-derived, namespaced under .derived.
-      GUST_FACTOR: 'environment.wind.derived.gustFactor',
-      BEAUFORT_SCALE: 'environment.wind.derived.beaufortScale',
+    /**
+     * Producer-namespaced branch for everything outside the 1.8.2 vocabulary.
+     * Keeps non-spec leaves off `environment.outside` and `environment.wind`
+     * so consumers walking those canonical containers see only spec leaves.
+     */
+    WEATHER: {
+      APPARENT_TEMPERATURE: 'environment.weather.apparentTemperature',
+      REAL_FEEL_SHADE: 'environment.weather.realFeelShade',
+      WET_BULB_TEMPERATURE: 'environment.weather.wetBulbTemperature',
+      WET_BULB_GLOBE_TEMPERATURE: 'environment.weather.wetBulbGlobeTemperature',
+      ABSOLUTE_HUMIDITY: 'environment.weather.absoluteHumidity',
+      UV_INDEX: 'environment.weather.uvIndex',
+      VISIBILITY: 'environment.weather.visibility',
+      CLOUD_COVER: 'environment.weather.cloudCover',
+      CLOUD_CEILING: 'environment.weather.cloudCeiling',
+      PRECIPITATION_LAST_HOUR: 'environment.weather.precipitationLastHour',
+      PRECIPITATION_CURRENT: 'environment.weather.precipitationCurrent',
+      TEMPERATURE_DEPARTURE_24H: 'environment.weather.temperatureDeparture24h',
+      SPEED_GUST: 'environment.weather.speedGust',
+      GUST_FACTOR: 'environment.weather.gustFactor',
+      BEAUFORT_SCALE: 'environment.weather.beaufortScale',
+      HEAT_STRESS_INDEX: 'environment.weather.heatStressIndex',
     },
   },
 

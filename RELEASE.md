@@ -39,9 +39,9 @@ This document outlines the steps for creating a new release of Signal K Virtual 
 ### 1. Prepare Release Branch
 
 ```bash
-# Ensure main branch is up to date
-git checkout main
-git pull origin main
+# Ensure master branch is up to date
+git checkout master
+git pull origin master
 
 # Create release branch
 git checkout -b release/vX.Y.Z
@@ -70,7 +70,7 @@ git push origin release/vX.Y.Z
 
 ### 4. Create Pull Request
 
-- Create PR from `release/vX.Y.Z` to `main`
+- Create PR from `release/vX.Y.Z` to `master`
 - Ensure all CI checks pass
 - Get approval from maintainers
 - Merge using "Squash and merge"
@@ -78,9 +78,9 @@ git push origin release/vX.Y.Z
 ### 5. Create GitHub Release
 
 ```bash
-# Pull latest main
-git checkout main
-git pull origin main
+# Pull latest master
+git checkout master
+git pull origin master
 
 # Create and push tag
 git tag -a vX.Y.Z -m "Release vX.Y.Z"
@@ -155,8 +155,8 @@ For urgent bug fixes that need immediate release:
 # Branch from the tag that needs fixing
 git checkout -b hotfix/vX.Y.Z+1 vX.Y.Z
 
-# Or branch from main if it's the latest
-git checkout -b hotfix/vX.Y.Z+1 main
+# Or branch from master if it's the latest
+git checkout -b hotfix/vX.Y.Z+1 master
 ```
 
 ### 2. Apply Fix
@@ -183,13 +183,13 @@ npm run test:run
 # Commit changes
 git commit -am "fix: [description of hotfix]"
 
-# Merge to main
-git checkout main
+# Merge to master
+git checkout master
 git merge --no-ff hotfix/vX.Y.Z+1
 
 # Tag and push
 git tag -a vX.Y.Z+1 -m "Hotfix vX.Y.Z+1"
-git push origin main
+git push origin master
 git push origin vX.Y.Z+1
 ```
 
@@ -272,7 +272,7 @@ npm audit
 
 1. Clean and rebuild: `npm run clean && npm run build`
 2. Delete `node_modules` and reinstall: `rm -rf node_modules && npm install`
-3. Check Node.js version: `node --version` (should be 20+)
+3. Check Node.js version: `node --version` (should be >= 20.18, per `package.json#engines`)
 
 ### Tests Fail
 
@@ -296,8 +296,8 @@ npm audit
 
 ## Notes
 
-- Always create releases from `main` branch
-- Never force push to `main`
+- Always create releases from `master` branch
+- Never force push to `master`
 - Keep the CHANGELOG.md up to date with every release
 - Test installations on clean environments
 - Monitor npm download statistics and GitHub issues after release

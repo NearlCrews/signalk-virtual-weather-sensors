@@ -11,16 +11,14 @@ import type {
   Path,
   PathValue,
   SourceRef,
-  Timestamp,
 } from '@signalk/server-api';
 import { PLUGIN, SIGNALK_PATHS, UNITS } from '../constants/index.js';
 import type { Logger, WeatherData } from '../types/index.js';
+import { asTimestamp } from '../utils/conversions.js';
 import { NMEA2000Validator } from '../utils/validation.js';
 
 const SELF_CONTEXT = 'vessels.self' as Context;
 const ACCUWEATHER_SOURCE = PLUGIN.SOURCE_REF as SourceRef;
-
-const asTimestamp = (ts: string): Timestamp => ts as Timestamp;
 
 /** Build a Signal K PathValue, casting the plain string path to the branded Path type. */
 const pv = (path: string, value: unknown): PathValue => ({
@@ -37,64 +35,61 @@ const me = (path: string, value: MetaValue): Meta => ({ path: path as Path, valu
  * mapper instance via {@link NMEA2000PathMapper.buildMetaDelta}.
  */
 const NON_CANONICAL_META: ReadonlyArray<Meta> = [
-  // De facto convention paths (widely used but not in 1.8.2)
-  me(SIGNALK_PATHS.ENVIRONMENT.OUTSIDE.REAL_FEEL_SHADE, {
+  me(SIGNALK_PATHS.ENVIRONMENT.WEATHER.REAL_FEEL_SHADE, {
     units: 'K',
     displayName: 'RealFeel (shade)',
   }),
-  me(SIGNALK_PATHS.ENVIRONMENT.OUTSIDE.WET_BULB_TEMPERATURE, {
+  me(SIGNALK_PATHS.ENVIRONMENT.WEATHER.WET_BULB_TEMPERATURE, {
     units: 'K',
     displayName: 'Wet bulb temperature',
   }),
-  me(SIGNALK_PATHS.ENVIRONMENT.OUTSIDE.WET_BULB_GLOBE_TEMPERATURE, {
+  me(SIGNALK_PATHS.ENVIRONMENT.WEATHER.WET_BULB_GLOBE_TEMPERATURE, {
     units: 'K',
     displayName: 'Wet bulb globe temperature',
   }),
-  me(SIGNALK_PATHS.ENVIRONMENT.OUTSIDE.APPARENT_TEMPERATURE, {
+  me(SIGNALK_PATHS.ENVIRONMENT.WEATHER.APPARENT_TEMPERATURE, {
     units: 'K',
     displayName: 'Apparent temperature',
   }),
-  me(SIGNALK_PATHS.ENVIRONMENT.OUTSIDE.ABSOLUTE_HUMIDITY, {
+  me(SIGNALK_PATHS.ENVIRONMENT.WEATHER.ABSOLUTE_HUMIDITY, {
     units: 'kg/m3',
     displayName: 'Absolute humidity',
   }),
-  me(SIGNALK_PATHS.ENVIRONMENT.OUTSIDE.UV_INDEX, {
+  me(SIGNALK_PATHS.ENVIRONMENT.WEATHER.UV_INDEX, {
     displayName: 'UV index',
     description: '0..15+ solar UV scale',
   }),
-  me(SIGNALK_PATHS.ENVIRONMENT.OUTSIDE.VISIBILITY, { units: 'm', displayName: 'Visibility' }),
-  me(SIGNALK_PATHS.ENVIRONMENT.OUTSIDE.CLOUD_COVER, { units: 'ratio', displayName: 'Cloud cover' }),
-  me(SIGNALK_PATHS.ENVIRONMENT.OUTSIDE.CLOUD_CEILING, { units: 'm', displayName: 'Cloud ceiling' }),
-  me(SIGNALK_PATHS.ENVIRONMENT.OUTSIDE.AIR_DENSITY, {
-    units: 'kg/m3',
-    displayName: 'Air density',
-  }),
-  me(SIGNALK_PATHS.ENVIRONMENT.OUTSIDE.PRECIPITATION_LAST_HOUR, {
+  me(SIGNALK_PATHS.ENVIRONMENT.WEATHER.VISIBILITY, { units: 'm', displayName: 'Visibility' }),
+  me(SIGNALK_PATHS.ENVIRONMENT.WEATHER.CLOUD_COVER, { units: 'ratio', displayName: 'Cloud cover' }),
+  me(SIGNALK_PATHS.ENVIRONMENT.WEATHER.CLOUD_CEILING, { units: 'm', displayName: 'Cloud ceiling' }),
+  me(SIGNALK_PATHS.ENVIRONMENT.WEATHER.PRECIPITATION_LAST_HOUR, {
     units: 'm',
     displayName: 'Precipitation, last hour',
   }),
-  me(SIGNALK_PATHS.ENVIRONMENT.OUTSIDE.PRECIPITATION_CURRENT, {
+  me(SIGNALK_PATHS.ENVIRONMENT.WEATHER.PRECIPITATION_CURRENT, {
     units: 'm/s',
     displayName: 'Precipitation rate',
   }),
-  me(SIGNALK_PATHS.ENVIRONMENT.OUTSIDE.TEMPERATURE_DEPARTURE_24H, {
+  me(SIGNALK_PATHS.ENVIRONMENT.WEATHER.TEMPERATURE_DEPARTURE_24H, {
     units: 'K',
     displayName: '24h temperature departure',
   }),
-  me(SIGNALK_PATHS.ENVIRONMENT.WIND.SPEED_GUST, { units: 'm/s', displayName: 'Wind gust speed' }),
-  // Plugin-derived categorical/ratio values under .derived.
-  me(SIGNALK_PATHS.ENVIRONMENT.OUTSIDE.HEAT_STRESS_INDEX, {
-    displayName: 'Heat stress index',
-    description: '0..4 categorical (derived from WBGT)',
+  me(SIGNALK_PATHS.ENVIRONMENT.WEATHER.SPEED_GUST, {
+    units: 'm/s',
+    displayName: 'Wind gust speed',
   }),
-  me(SIGNALK_PATHS.ENVIRONMENT.WIND.GUST_FACTOR, {
+  me(SIGNALK_PATHS.ENVIRONMENT.WEATHER.GUST_FACTOR, {
     units: 'ratio',
     displayName: 'Wind gust factor',
     description: 'gust/sustained ratio',
   }),
-  me(SIGNALK_PATHS.ENVIRONMENT.WIND.BEAUFORT_SCALE, {
+  me(SIGNALK_PATHS.ENVIRONMENT.WEATHER.BEAUFORT_SCALE, {
     displayName: 'Beaufort scale',
     description: '0..12 wind force category',
+  }),
+  me(SIGNALK_PATHS.ENVIRONMENT.WEATHER.HEAT_STRESS_INDEX, {
+    displayName: 'Heat stress index',
+    description: '0..4 categorical (derived from WBGT)',
   }),
 ];
 
@@ -174,19 +169,19 @@ export class NMEA2000PathMapper {
     );
 
     if (data.realFeelShade !== undefined) {
-      values.push(pv(SIGNALK_PATHS.ENVIRONMENT.OUTSIDE.REAL_FEEL_SHADE, data.realFeelShade));
+      values.push(pv(SIGNALK_PATHS.ENVIRONMENT.WEATHER.REAL_FEEL_SHADE, data.realFeelShade));
     }
 
     if (data.wetBulbTemperature !== undefined) {
       values.push(
-        pv(SIGNALK_PATHS.ENVIRONMENT.OUTSIDE.WET_BULB_TEMPERATURE, data.wetBulbTemperature)
+        pv(SIGNALK_PATHS.ENVIRONMENT.WEATHER.WET_BULB_TEMPERATURE, data.wetBulbTemperature)
       );
     }
 
     if (data.wetBulbGlobeTemperature !== undefined) {
       values.push(
         pv(
-          SIGNALK_PATHS.ENVIRONMENT.OUTSIDE.WET_BULB_GLOBE_TEMPERATURE,
+          SIGNALK_PATHS.ENVIRONMENT.WEATHER.WET_BULB_GLOBE_TEMPERATURE,
           data.wetBulbGlobeTemperature
         )
       );
@@ -194,14 +189,14 @@ export class NMEA2000PathMapper {
 
     if (data.apparentTemperature !== undefined) {
       values.push(
-        pv(SIGNALK_PATHS.ENVIRONMENT.OUTSIDE.APPARENT_TEMPERATURE, data.apparentTemperature)
+        pv(SIGNALK_PATHS.ENVIRONMENT.WEATHER.APPARENT_TEMPERATURE, data.apparentTemperature)
       );
     }
   }
 
   private addHumidityPaths(values: PathValue[], data: WeatherData): void {
     if (data.absoluteHumidity !== undefined) {
-      values.push(pv(SIGNALK_PATHS.ENVIRONMENT.OUTSIDE.ABSOLUTE_HUMIDITY, data.absoluteHumidity));
+      values.push(pv(SIGNALK_PATHS.ENVIRONMENT.WEATHER.ABSOLUTE_HUMIDITY, data.absoluteHumidity));
     }
   }
 
@@ -217,15 +212,15 @@ export class NMEA2000PathMapper {
     );
 
     if (data.windGustSpeed !== undefined) {
-      values.push(pv(SIGNALK_PATHS.ENVIRONMENT.WIND.SPEED_GUST, data.windGustSpeed));
+      values.push(pv(SIGNALK_PATHS.ENVIRONMENT.WEATHER.SPEED_GUST, data.windGustSpeed));
     }
 
     if (data.windGustFactor !== undefined) {
-      values.push(pv(SIGNALK_PATHS.ENVIRONMENT.WIND.GUST_FACTOR, data.windGustFactor));
+      values.push(pv(SIGNALK_PATHS.ENVIRONMENT.WEATHER.GUST_FACTOR, data.windGustFactor));
     }
 
     if (data.beaufortScale !== undefined) {
-      values.push(pv(SIGNALK_PATHS.ENVIRONMENT.WIND.BEAUFORT_SCALE, data.beaufortScale));
+      values.push(pv(SIGNALK_PATHS.ENVIRONMENT.WEATHER.BEAUFORT_SCALE, data.beaufortScale));
     }
 
     if (data.apparentWindSpeed !== undefined) {
@@ -239,19 +234,19 @@ export class NMEA2000PathMapper {
 
   private addAtmosphericPaths(values: PathValue[], data: WeatherData): void {
     if (data.uvIndex !== undefined) {
-      values.push(pv(SIGNALK_PATHS.ENVIRONMENT.OUTSIDE.UV_INDEX, data.uvIndex));
+      values.push(pv(SIGNALK_PATHS.ENVIRONMENT.WEATHER.UV_INDEX, data.uvIndex));
     }
 
     if (data.visibility !== undefined) {
-      values.push(pv(SIGNALK_PATHS.ENVIRONMENT.OUTSIDE.VISIBILITY, data.visibility));
+      values.push(pv(SIGNALK_PATHS.ENVIRONMENT.WEATHER.VISIBILITY, data.visibility));
     }
 
     if (data.cloudCover !== undefined) {
-      values.push(pv(SIGNALK_PATHS.ENVIRONMENT.OUTSIDE.CLOUD_COVER, data.cloudCover));
+      values.push(pv(SIGNALK_PATHS.ENVIRONMENT.WEATHER.CLOUD_COVER, data.cloudCover));
     }
 
     if (data.cloudCeiling !== undefined) {
-      values.push(pv(SIGNALK_PATHS.ENVIRONMENT.OUTSIDE.CLOUD_CEILING, data.cloudCeiling));
+      values.push(pv(SIGNALK_PATHS.ENVIRONMENT.WEATHER.CLOUD_CEILING, data.cloudCeiling));
     }
   }
 
@@ -265,7 +260,7 @@ export class NMEA2000PathMapper {
     if (data.precipitationLastHour !== undefined) {
       values.push(
         pv(
-          SIGNALK_PATHS.ENVIRONMENT.OUTSIDE.PRECIPITATION_LAST_HOUR,
+          SIGNALK_PATHS.ENVIRONMENT.WEATHER.PRECIPITATION_LAST_HOUR,
           data.precipitationLastHour * UNITS.PRECIPITATION.MM_TO_M
         )
       );
@@ -274,7 +269,7 @@ export class NMEA2000PathMapper {
     if (data.precipitationCurrent !== undefined) {
       values.push(
         pv(
-          SIGNALK_PATHS.ENVIRONMENT.OUTSIDE.PRECIPITATION_CURRENT,
+          SIGNALK_PATHS.ENVIRONMENT.WEATHER.PRECIPITATION_CURRENT,
           data.precipitationCurrent * UNITS.PRECIPITATION.MMH_TO_MS
         )
       );
@@ -283,13 +278,13 @@ export class NMEA2000PathMapper {
 
   private addSafetyPaths(values: PathValue[], data: WeatherData): void {
     if (data.heatStressIndex !== undefined) {
-      values.push(pv(SIGNALK_PATHS.ENVIRONMENT.OUTSIDE.HEAT_STRESS_INDEX, data.heatStressIndex));
+      values.push(pv(SIGNALK_PATHS.ENVIRONMENT.WEATHER.HEAT_STRESS_INDEX, data.heatStressIndex));
     }
 
     if (data.temperatureDeparture24h !== undefined) {
       values.push(
         pv(
-          SIGNALK_PATHS.ENVIRONMENT.OUTSIDE.TEMPERATURE_DEPARTURE_24H,
+          SIGNALK_PATHS.ENVIRONMENT.WEATHER.TEMPERATURE_DEPARTURE_24H,
           data.temperatureDeparture24h
         )
       );
@@ -310,23 +305,23 @@ export class NMEA2000PathMapper {
  * temperature/pressure/humidity/wind set). Used by debug logging.
  */
 const ENHANCED_PATHS: ReadonlySet<string> = new Set([
-  SIGNALK_PATHS.ENVIRONMENT.OUTSIDE.REAL_FEEL_SHADE,
-  SIGNALK_PATHS.ENVIRONMENT.OUTSIDE.WET_BULB_TEMPERATURE,
-  SIGNALK_PATHS.ENVIRONMENT.OUTSIDE.WET_BULB_GLOBE_TEMPERATURE,
-  SIGNALK_PATHS.ENVIRONMENT.OUTSIDE.APPARENT_TEMPERATURE,
-  SIGNALK_PATHS.ENVIRONMENT.OUTSIDE.UV_INDEX,
-  SIGNALK_PATHS.ENVIRONMENT.OUTSIDE.VISIBILITY,
-  SIGNALK_PATHS.ENVIRONMENT.OUTSIDE.CLOUD_COVER,
-  SIGNALK_PATHS.ENVIRONMENT.OUTSIDE.CLOUD_CEILING,
-  SIGNALK_PATHS.ENVIRONMENT.OUTSIDE.ABSOLUTE_HUMIDITY,
+  SIGNALK_PATHS.ENVIRONMENT.WEATHER.REAL_FEEL_SHADE,
+  SIGNALK_PATHS.ENVIRONMENT.WEATHER.WET_BULB_TEMPERATURE,
+  SIGNALK_PATHS.ENVIRONMENT.WEATHER.WET_BULB_GLOBE_TEMPERATURE,
+  SIGNALK_PATHS.ENVIRONMENT.WEATHER.APPARENT_TEMPERATURE,
+  SIGNALK_PATHS.ENVIRONMENT.WEATHER.UV_INDEX,
+  SIGNALK_PATHS.ENVIRONMENT.WEATHER.VISIBILITY,
+  SIGNALK_PATHS.ENVIRONMENT.WEATHER.CLOUD_COVER,
+  SIGNALK_PATHS.ENVIRONMENT.WEATHER.CLOUD_CEILING,
+  SIGNALK_PATHS.ENVIRONMENT.WEATHER.ABSOLUTE_HUMIDITY,
   SIGNALK_PATHS.ENVIRONMENT.OUTSIDE.AIR_DENSITY,
-  SIGNALK_PATHS.ENVIRONMENT.OUTSIDE.HEAT_STRESS_INDEX,
-  SIGNALK_PATHS.ENVIRONMENT.OUTSIDE.TEMPERATURE_DEPARTURE_24H,
-  SIGNALK_PATHS.ENVIRONMENT.OUTSIDE.PRECIPITATION_LAST_HOUR,
-  SIGNALK_PATHS.ENVIRONMENT.OUTSIDE.PRECIPITATION_CURRENT,
-  SIGNALK_PATHS.ENVIRONMENT.WIND.SPEED_GUST,
-  SIGNALK_PATHS.ENVIRONMENT.WIND.GUST_FACTOR,
-  SIGNALK_PATHS.ENVIRONMENT.WIND.BEAUFORT_SCALE,
+  SIGNALK_PATHS.ENVIRONMENT.WEATHER.HEAT_STRESS_INDEX,
+  SIGNALK_PATHS.ENVIRONMENT.WEATHER.TEMPERATURE_DEPARTURE_24H,
+  SIGNALK_PATHS.ENVIRONMENT.WEATHER.PRECIPITATION_LAST_HOUR,
+  SIGNALK_PATHS.ENVIRONMENT.WEATHER.PRECIPITATION_CURRENT,
+  SIGNALK_PATHS.ENVIRONMENT.WEATHER.SPEED_GUST,
+  SIGNALK_PATHS.ENVIRONMENT.WEATHER.GUST_FACTOR,
+  SIGNALK_PATHS.ENVIRONMENT.WEATHER.BEAUFORT_SCALE,
   SIGNALK_PATHS.ENVIRONMENT.WIND.SPEED_APPARENT,
   SIGNALK_PATHS.ENVIRONMENT.WIND.ANGLE_APPARENT,
 ]);

@@ -5,6 +5,57 @@ All notable changes to the signalk-virtual-weather-sensors project will be docum
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.0] - 2026-05-10
+
+Signal K 1.8.2 spec-compliance pass driven by an audit against the official spec, the Plugin Developer Guide, and `@signalk/server-api` 2.24 typings. **Includes Signal K path renames that change the wire output**: every non-1.8.2 leaf this plugin previously emitted under `environment.outside.*` or `environment.wind.*` now lives under a new producer-namespaced `environment.weather.*` branch. Consumers reading the previous path strings must update.
+
+### Changed -- Signal K paths (BREAKING)
+
+The 1.8.2 vocabulary defines `environment.outside` and `environment.wind` as leaf-only containers. The previous layout squatted an object node `derived` under each (`environment.wind.derived.beaufortScale`, `environment.outside.derived.heatStressIndex`), and emitted multiple AccuWeather extensions as if they were canonical leaves (`environment.outside.uvIndex`, `environment.outside.absoluteHumidity`, etc.). Both patterns put non-vocab content under canonical containers, breaking consumers that walk those containers expecting only spec leaves.
+
+Everything outside the 1.8.2 vocabulary now lives under `environment.weather.*` (flat, no further nesting). Source provenance stays in `$source`, not in the path. Old → new path mapping:
+
+| Old (1.3.x) | New (1.4.0) |
+|-------------|-------------|
+| `environment.outside.realFeelShade` | `environment.weather.realFeelShade` |
+| `environment.outside.wetBulbTemperature` | `environment.weather.wetBulbTemperature` |
+| `environment.outside.wetBulbGlobeTemperature` | `environment.weather.wetBulbGlobeTemperature` |
+| `environment.outside.apparentTemperature` | `environment.weather.apparentTemperature` |
+| `environment.outside.absoluteHumidity` | `environment.weather.absoluteHumidity` |
+| `environment.outside.uvIndex` | `environment.weather.uvIndex` |
+| `environment.outside.visibility` | `environment.weather.visibility` |
+| `environment.outside.cloudCover` | `environment.weather.cloudCover` |
+| `environment.outside.cloudCeiling` | `environment.weather.cloudCeiling` |
+| `environment.outside.precipitationLastHour` | `environment.weather.precipitationLastHour` |
+| `environment.outside.precipitationCurrent` | `environment.weather.precipitationCurrent` |
+| `environment.outside.temperatureDeparture24h` | `environment.weather.temperatureDeparture24h` |
+| `environment.outside.derived.heatStressIndex` | `environment.weather.heatStressIndex` |
+| `environment.wind.speedGust` | `environment.weather.speedGust` |
+| `environment.wind.derived.gustFactor` | `environment.weather.gustFactor` |
+| `environment.wind.derived.beaufortScale` | `environment.weather.beaufortScale` |
+
+Canonical `environment.outside.*` (temperature, pressure, relativeHumidity, dewPointTemperature, apparentWindChillTemperature, heatIndexTemperature) and `environment.wind.*` (speedOverGround, directionTrue, speedApparent, angleApparent) leaves are unchanged. The one-shot meta delta now describes the new `environment.weather.*` paths.
+
+### Fixed -- spec / dev-guide
+
+- **`environment.{outside,wind}.derived.*` removed.** The 1.8.2 vocab defines those containers as leaf-only; nesting an object node under them violated the spec and broke consumers walking the containers. The CLAUDE.md guidance that previously recommended this pattern has been revised.
+- **Meta delta now follows the first values delta** instead of preceding it. The 1.8.2 spec (`data_model.html`) does not specify ordering between meta and value updates, so this is an admin-UI rendering workaround (Instrument Panels that attach units lazily on first paint render correctly without a refresh), not a spec requirement.
+- **Per-tick delta is built fresh instead of stamping the cached delta in place.** `withEmissionTimestamp(cached)` returns a new `Delta` with restamped `updates[].timestamp`; the cached delta is no longer mutated. Removes an awkward `as` cast and matches the "treat deltas as immutable from the caller's perspective" expectation.
+- **Status banner shows live counters.** `setPluginStatus` now reports `Running, last update Nm ago (N updates)` (or `Running, awaiting first update` before the first fetch) so operators can see at a glance whether the plugin is fetching. Previously hardcoded to the static string `Running`.
+
+### Verified -- already correct, do not regress
+
+- `directionTrue` receives the `degreesToRadians` conversion in `AccuWeatherService.transformWeatherData`, so the `rad`-typed canonical path is fed radians as the spec requires. AccuWeather documents the field as "Wind direction in azimuth degrees from north" without a qualifier; per the WMO surface-wind convention (Guide to Meteorological Instruments WMO-No. 8), all meteorological surface-wind observations are referenced to true north. Mapping to `environment.wind.directionTrue` is therefore correct; the rationale is now pinned next to the conversion call.
+- `Plugin.start` is `async` even though the typed contract is sync; signalk-server doesn't await `start()`, so the existing try/catch funnels failures to `setPluginError` instead of letting them surface as unhandled rejections. The trap comment at `index.ts:80-82` is preserved.
+
+### Tests
+
+- 206 tests passing across 8 files. Mapper tests rewritten to assert the new `environment.weather.*` paths.
+
+### Future direction
+
+- `@signalk/server-api` 2.24 ships a first-class `WeatherProvider` interface (`registerWeatherProvider` + a typed `WeatherDataModel` whose `outside` block already covers `uvIndex`, `cloudCover`, `horizontalVisibility`, `feelsLikeTemperature`, `absoluteHumidity`, `precipitationType`, `precipitationVolume`, etc.). For data that is genuinely "weather provider" data (which this plugin is), that API is the canonical home. The producer-namespaced delta path is a defensible stopgap, not the long-term shape; a future major version should evaluate migrating to `WeatherProvider`.
+
 ## [1.3.3] - 2026-05-09
 
 6-agent codebase-wide cleanup pass following the 12-agent pass in v1.3.2. Findings were verified against the live Signal K master schema and the installed `@signalk/server-api` 2.24 `.d.ts`, not from memory. No public Signal K path or delta-shape changes; no configuration changes.

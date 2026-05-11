@@ -6,8 +6,8 @@ We release patches for security vulnerabilities. Only the latest minor release l
 
 | Version | Supported          |
 | ------- | ------------------ |
-| 1.3.x   | :white_check_mark: |
-| < 1.3   | :x:                |
+| 1.4.x   | :white_check_mark: |
+| < 1.4   | :x:                |
 
 ## Reporting a Vulnerability
 
@@ -177,6 +177,6 @@ If you have questions about this security policy or need clarification, please:
 
 ---
 
-**Last Updated**: 2026-05-08
+**Last Updated**: 2026-05-10
 
 Thank you for helping keep Signal K Virtual Weather Sensors and its users safe!

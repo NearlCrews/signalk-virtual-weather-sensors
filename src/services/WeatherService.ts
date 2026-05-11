@@ -207,6 +207,26 @@ export class WeatherService {
     return this.lastUpdate;
   }
 
+  /** Milliseconds since the last successful weather fetch, or null if none yet. */
+  public getDataAgeMs(): number | null {
+    return this.lastUpdate ? Date.now() - this.lastUpdate.getTime() : null;
+  }
+
+  /**
+   * Admin UI status banner string. Format: "Running, last update Nm ago (N updates)"
+   * or "Running, awaiting first update" before the first fetch. Lives here so
+   * the format and the underlying counters stay together.
+   */
+  public formatStatusBanner(): string {
+    const ageMs = this.getDataAgeMs();
+    if (ageMs === null) {
+      return `${PLUGIN.STATUS.RUNNING}, awaiting first update`;
+    }
+    const ageMin = Math.round(ageMs / 60_000);
+    const ageLabel = ageMin <= 0 ? 'just now' : `${ageMin}m ago`;
+    return `${PLUGIN.STATUS.RUNNING}, last update ${ageLabel} (${this.updateCount} updates)`;
+  }
+
   /**
    * Get service status and health information
    */

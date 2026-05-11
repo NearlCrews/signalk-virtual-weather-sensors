@@ -93,7 +93,7 @@ npm run validate         # Run all quality checks
 
 ### Making Code Changes
 
-1. **Create a feature branch** from `main`:
+1. **Create a feature branch** from `master`:
    ```bash
    git checkout -b feature/your-feature-name
    ```
@@ -260,7 +260,7 @@ Fixes #456
 2. ✅ **No linting errors**: `npm run lint`
 3. ✅ **Type checking passes**: `npm run type-check`
 4. ✅ **Code is formatted**: `npm run format`
-5. ✅ **Branch is up to date** with `main`
+5. ✅ **Branch is up to date** with `master`
 
 ### PR Requirements
 
@@ -276,15 +276,15 @@ Fixes #456
 1. Automated checks must pass (CI/CD pipeline)
 2. At least one maintainer approval required
 3. All review comments must be addressed
-4. Branch must be up to date with `main`
+4. Branch must be up to date with `master`
 
 ### After Merge
 
 1. Delete your feature branch
 2. Update your local repository:
    ```bash
-   git checkout main
-   git pull upstream main
+   git checkout master
+   git pull upstream master
    ```
 
 ## Development Tips
@@ -307,12 +307,12 @@ Fixes #456
 # Run with debugging enabled
 NODE_ENV=development npm run dev
 
-# Run specific test file
-npm run test WindCalculator.test.ts
+# Run specific test file (single-shot, not watch mode)
+npx vitest run src/__tests__/calculators/WindCalculator.test.ts
 
 # Check bundle size
 npm run build
-ls -lh dist/signalk-virtual-weather-sensors/
+ls -lh dist/
 ```
 
 ## Questions or Need Help?

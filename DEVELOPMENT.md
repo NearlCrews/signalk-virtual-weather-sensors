@@ -132,7 +132,7 @@ export default function createPlugin(app: ServerAPI): Plugin {
 #### esbuild 0.28+
 - **Purpose**: Fast, modern JavaScript bundler
 - **Configuration**: [`esbuild.config.js`](esbuild.config.js)
-- **Performance**: ~66 KB bundle in ~20 ms build time
+- **Performance**: ~63 KB bundle in ~35 ms build time
 - **Features**:
   - ES2023 target compilation
   - Source map generation
@@ -141,9 +141,9 @@ export default function createPlugin(app: ServerAPI): Plugin {
   - Banner injection for plugin metadata
 
 **Build Outputs:**
-- `dist/index.js` -- Main bundle (~66 KB)
-- `dist/index.js.map` -- Source map
-- `dist/index.d.ts` and per-source `*.d.ts` -- TypeScript declarations
+- `dist/index.js`: main bundle (~63 KB)
+- `dist/index.js.map`: source map
+- `dist/index.d.ts` and per-source `*.d.ts`: TypeScript declarations
 
 ### Code Quality
 
@@ -394,18 +394,18 @@ npm run validate
 - **Edge Case Tests**: Boundary conditions and error handling
 - **Performance Tests**: Real-time calculation efficiency
 
-**Total: 206 tests** across 8 test files (latest as of v1.3.3)
+**Total: 206 tests** across 8 test files (latest as of v1.4.0)
 
 ### Test Files
 
-- [`index.test.ts`](src/__tests__/index.test.ts) - Plugin entry point and meta-delta one-shot invariant (4 tests)
-- [`WeatherService.test.ts`](src/__tests__/services/WeatherService.test.ts) - Core orchestration (21 tests)
-- [`SignalKService.test.ts`](src/__tests__/services/SignalKService.test.ts) - Navigation data (40 tests)
-- [`AccuWeatherService.test.ts`](src/__tests__/services/AccuWeatherService.test.ts) - API integration + retry/error paths (22 tests)
-- [`WindCalculator.test.ts`](src/__tests__/calculators/WindCalculator.test.ts) - Vector mathematics (34 tests)
-- [`NMEA2000PathMapper.test.ts`](src/__tests__/mappers/NMEA2000PathMapper.test.ts) - Path mapping + one-shot meta delta (16 tests)
-- [`utils/conversions.test.ts`](src/__tests__/utils/conversions.test.ts) - Unit conversions (32 tests)
-- [`utils/validation.test.ts`](src/__tests__/utils/validation.test.ts) - Sanitize, validators, schema (37 tests)
+- [`index.test.ts`](src/__tests__/index.test.ts): plugin entry point and meta-delta one-shot invariant (4 tests)
+- [`WeatherService.test.ts`](src/__tests__/services/WeatherService.test.ts): core orchestration (21 tests)
+- [`SignalKService.test.ts`](src/__tests__/services/SignalKService.test.ts): navigation data (40 tests)
+- [`AccuWeatherService.test.ts`](src/__tests__/services/AccuWeatherService.test.ts): API integration plus retry/error paths (22 tests)
+- [`WindCalculator.test.ts`](src/__tests__/calculators/WindCalculator.test.ts): vector mathematics (34 tests)
+- [`NMEA2000PathMapper.test.ts`](src/__tests__/mappers/NMEA2000PathMapper.test.ts): path mapping plus one-shot meta delta (16 tests)
+- [`utils/conversions.test.ts`](src/__tests__/utils/conversions.test.ts): unit conversions (32 tests)
+- [`utils/validation.test.ts`](src/__tests__/utils/validation.test.ts): sanitize, validators, schema (37 tests)
 
 ### Running Specific Tests
 
@@ -475,8 +475,8 @@ This plugin adheres to the [Signal K 1.8.2 specification](https://signalk.org/sp
 | Plugin Structure | ✅ | Default export, async `start`/`stop` methods, schema/uiSchema |
 | Configuration Schema | ✅ | JSON Schema with validation in `index.ts` `schema()` |
 | Delta Message Format | ✅ | `Delta` type from `@signalk/server-api`; `Update` is XOR `values \| meta`, so meta rides in a separate update entry |
-| Signal K Paths (canonical) | ✅ | 1.8.2 vocabulary: `relativeHumidity`, `apparentWindChillTemperature`, `speedOverGround`, `directionTrue`, etc. |
-| Signal K Paths (non-canonical) | ✅ | Plugin-derived values namespaced under `environment.{outside,wind}.derived.*` so they don't squat on canonical-looking slots |
+| Signal K Paths (canonical) | ✅ | 1.8.2 vocabulary under `environment.outside.*` (`temperature`, `pressure`, `relativeHumidity`, `dewPointTemperature`, `apparentWindChillTemperature`, `heatIndexTemperature`, `airDensity`) and `environment.wind.*` (`speedOverGround`, `directionTrue`, `speedApparent`, `angleApparent`) |
+| Signal K Paths (non-canonical) | ✅ | Producer-namespaced under `environment.weather.*` (16 leaves: AccuWeather extensions like UV, visibility, cloud cover, plus plugin-derived Beaufort scale, gust factor, heat stress index). Keeps canonical containers leaf-only as the spec requires. |
 | Source Metadata | ✅ | Explicit `$source: 'accuweather'` (`SourceRef` brand) on every update; configurable via `PLUGIN.SOURCE_REF` |
 | Meta | ✅ | One-shot meta delta on plugin start (`NMEA2000PathMapper.buildMetaDelta()`) describing units and labels for non-canonical paths |
 | Status Reporting | ✅ | `app.setPluginStatus` / `app.setPluginError` (called unconditionally; both are required members of `ServerAPI` 2.x). Stale-data error is cleared on the next successful tick via `instance.staleErrorActive` flag in `emitWeatherTick` |
@@ -485,7 +485,9 @@ This plugin adheres to the [Signal K 1.8.2 specification](https://signalk.org/sp
 
 ### Wind Semantics
 
-AccuWeather wind data is **ground-referenced**. The plugin emits it only to `environment.wind.speedOverGround` and `environment.wind.directionTrue`. It does NOT emit `speedTrue` (which is water-referenced per the 1.8.2 vocabulary), because doing so would diverge from a real anemometer feed on any moving vessel. Consumers that need water-referenced wind should derive it from `speedOverGround` and the vessel's water-track speed.
+AccuWeather wind data is **ground-referenced**. The plugin emits four canonical wind leaves: `environment.wind.speedOverGround`, `directionTrue`, `speedApparent` (calculated from vessel motion), and `angleApparent` (omitted when no heading is available). It does NOT emit `speedTrue` (which is water-referenced per the 1.8.2 vocabulary), because doing so would diverge from a real anemometer feed on any moving vessel. Consumers that need water-referenced wind should derive it from `speedOverGround` and the vessel's water-track speed.
+
+Wind direction is referenced to true north per the WMO surface-wind convention (Guide to Meteorological Instruments WMO-No. 8). AccuWeather documents the field as "azimuth degrees from north" without a qualifier; that is the universal meteorological default. The rationale is pinned in `AccuWeatherService.transformWeatherData` next to the `degreesToRadians` call.
 
 ### Humidity Format
 

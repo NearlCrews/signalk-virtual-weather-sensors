@@ -1,9 +1,13 @@
+import type { Timestamp } from '@signalk/server-api';
 import { MAGNUS, UNITS, VALIDATION_LIMITS } from '../constants/index.js';
 
 /** Extract a string message from any thrown value: `Error.message` or `String(value)`. */
 export function toErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
+
+/** Cast a plain ISO 8601 string to the branded `@signalk/server-api` Timestamp type. */
+export const asTimestamp = (ts: string): Timestamp => ts as Timestamp;
 
 const TWO_PI = 2 * Math.PI;
 

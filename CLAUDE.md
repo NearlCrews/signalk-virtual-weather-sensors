@@ -48,7 +48,7 @@ src/
 │   └── NMEA2000PathMapper.ts   # Weather data → Signal K delta messages
 ├── utils/
 │   ├── validation.ts           # Config validation, NMEA2000 range sanitization
-│   └── conversions.ts          # Unit conversions (temp, pressure, wind, Beaufort scale)
+│   └── conversions.ts          # Unit conversions (temp, pressure, wind, Beaufort scale) + `asTimestamp` brand helper
 ├── constants/
 │   └── index.ts                # PGN numbers, Signal K paths, validation limits
 └── types/
@@ -85,19 +85,20 @@ Test configuration in `vitest.config.ts` includes path aliases (`@/`, `@/service
 
 ## Signal K Spec Compliance (1.8.2)
 
-- **Canonical paths**: `environment.outside.{temperature,pressure,relativeHumidity,dewPointTemperature,apparentWindChillTemperature,heatIndexTemperature}`, `environment.wind.{speedOverGround,directionTrue,speedApparent,angleApparent}`. Per the 1.8.2 vocabulary.
-- **AccuWeather wind is ground-referenced**, so the plugin emits `speedOverGround` only. It does NOT emit `speedTrue` (which is water-referenced and would clobber a real anemometer feed on a moving vessel).
-- **Plugin-derived non-spec values** (Beaufort scale, gust factor, heat stress index) live under `environment.{outside,wind}.derived.*` so they don't squat on canonical-looking slots.
+- **Canonical paths only under canonical containers**: `environment.outside.{temperature,pressure,relativeHumidity,dewPointTemperature,apparentWindChillTemperature,heatIndexTemperature,airDensity}` and `environment.wind.{speedOverGround,directionTrue,speedApparent,angleApparent}` are the only leaves the plugin emits under `environment.outside.*` / `environment.wind.*`. The 1.8.2 vocabulary defines those containers as leaf-only; squatting an object node like `environment.outside.derived` violates that contract.
+- **Producer-namespaced branch for everything else**: `environment.weather.*` holds AccuWeather extensions (UV, visibility, cloud cover, absolute humidity, precipitation, 24h departure, wet bulb temperatures, apparent temperature, RealFeel shade) and plugin-derived values (Beaufort scale, gust factor, heat stress index, wind gust speed). Source provenance is in `$source`, not in the path, so consumers can swap weather providers without re-subscribing.
+- **AccuWeather wind is ground-referenced**, so the plugin emits `speedOverGround` only. It does NOT emit `speedTrue` (which is water-referenced and would clobber a real anemometer feed on a moving vessel). Wind direction is true-north per the WMO surface-wind convention; the rationale is pinned in `AccuWeatherService.transformWeatherData`.
 - **`$source: 'accuweather'`** is set on every delta (constant lives in `PLUGIN.SOURCE_REF`) so users can configure source priorities to prefer real onboard sensors.
-- **Meta delta**: `NMEA2000PathMapper.buildMetaDelta()` returns a one-shot meta delta describing units/labels/descriptions for every non-canonical path. `index.ts` ships it exactly once per plugin lifetime via `app.handleMessage(..., SKVersion.v1)`.
-- **PGNs** (when paired with `signalk-nmea2000-emitter-cannon`): 130311 (pressure), 130312 (temperatures via fixed enum slots: temperature, dewPoint, apparentWindChill, heatIndex), 130313 (relativeHumidity), 130306 (wind). Instance numbers and bus priority are assigned by the companion plugin, not embedded in the deltas this plugin produces.
+- **Meta delta**: `NMEA2000PathMapper.buildMetaDelta()` returns a one-shot meta delta describing units/labels/descriptions for every `environment.weather.*` path. `index.ts` ships it exactly once per plugin lifetime, after the first values delta (admin-UI rendering workaround, not a spec ordering requirement), via `app.handleMessage(..., SKVersion.v1)`.
+- **Status banner**: `WeatherService.formatStatusBanner()` returns the live `Running, last update Nm ago (N updates)` string used by `setPluginStatus`. The format and counters live together on `WeatherService`; `index.ts` just routes the call.
+- **PGNs** (when paired with `signalk-nmea2000-emitter-cannon`): 130311 (pressure), 130312 (temperatures via fixed enum slots: temperature, dewPoint, apparentWindChill, heatIndex), 130313 (relativeHumidity), 130306 (wind: `speedOverGround`, `directionTrue`, `speedApparent`, `angleApparent`). Note: `environment.weather.speedGust` is emitted but the current cannon release does not subscribe to it. Instance numbers and bus priority are assigned by the companion plugin, not embedded in the deltas this plugin produces.
 
 ## Technology Stack
 
 - TypeScript 6.0+ (strict mode, ES2023 target)
 - Node.js 20.18+ (ESM only)
 - `@signalk/server-api` 2.24+ as a `peerDependency` (the Signal K server provides it at runtime; not bundled). Used for `Plugin`, `ServerAPI`, `Delta`, `PathValue`, `Meta`, `MetaValue`, `SourceRef`, and `SKVersion` types.
-- esbuild 0.28+ for bundling (current bundle ~62 KB)
+- esbuild 0.28+ for bundling (current bundle ~63 KB)
 - Biome 2.4+ for linting/formatting (with `noFloatingPromises` / `noMisusedPromises` enabled)
 - Vitest 4.1+ for testing (206 tests across 8 files)
 - Husky + lint-staged for pre-commit hooks

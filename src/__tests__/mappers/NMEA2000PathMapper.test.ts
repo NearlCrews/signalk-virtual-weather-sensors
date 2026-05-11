@@ -120,31 +120,23 @@ describe('NMEA2000PathMapper', () => {
       const values = getValues(delta);
       const paths = values.map((v) => v.path);
 
-      // Enhanced temperature paths
-      expect(paths).toContain('environment.outside.realFeelShade');
-      expect(paths).toContain('environment.outside.wetBulbTemperature');
-      expect(paths).toContain('environment.outside.wetBulbGlobeTemperature');
-      expect(paths).toContain('environment.outside.apparentTemperature');
-
-      // Enhanced humidity paths
-      expect(paths).toContain('environment.outside.absoluteHumidity');
-
-      // Wind: speedGust is de facto convention; gustFactor and beaufortScale
-      // are plugin-derived and namespaced under .derived.
-      expect(paths).toContain('environment.wind.speedGust');
-      expect(paths).toContain('environment.wind.derived.gustFactor');
-      expect(paths).toContain('environment.wind.derived.beaufortScale');
-
-      // Atmospheric condition paths
-      expect(paths).toContain('environment.outside.uvIndex');
-      expect(paths).toContain('environment.outside.visibility');
-      expect(paths).toContain('environment.outside.cloudCover');
-      expect(paths).toContain('environment.outside.cloudCeiling');
-
-      // Calculated property paths (heatStressIndex is plugin-derived)
+      // Non-spec paths live under environment.weather.* (producer namespace,
+      // never on canonical environment.outside / environment.wind containers).
+      expect(paths).toContain('environment.weather.realFeelShade');
+      expect(paths).toContain('environment.weather.wetBulbTemperature');
+      expect(paths).toContain('environment.weather.wetBulbGlobeTemperature');
+      expect(paths).toContain('environment.weather.apparentTemperature');
+      expect(paths).toContain('environment.weather.absoluteHumidity');
+      expect(paths).toContain('environment.weather.speedGust');
+      expect(paths).toContain('environment.weather.gustFactor');
+      expect(paths).toContain('environment.weather.beaufortScale');
+      expect(paths).toContain('environment.weather.uvIndex');
+      expect(paths).toContain('environment.weather.visibility');
+      expect(paths).toContain('environment.weather.cloudCover');
+      expect(paths).toContain('environment.weather.cloudCeiling');
       expect(paths).toContain('environment.outside.airDensity');
-      expect(paths).toContain('environment.outside.derived.heatStressIndex');
-      expect(paths).toContain('environment.outside.temperatureDeparture24h');
+      expect(paths).toContain('environment.weather.heatStressIndex');
+      expect(paths).toContain('environment.weather.temperatureDeparture24h');
     });
 
     it('should exclude undefined enhanced fields', () => {
@@ -161,10 +153,10 @@ describe('NMEA2000PathMapper', () => {
       const paths = values.map((v) => v.path);
 
       // Enhanced paths should not be included when values are undefined
-      expect(paths).not.toContain('environment.outside.realFeelShade');
-      expect(paths).not.toContain('environment.outside.wetBulbTemperature');
-      expect(paths).not.toContain('environment.wind.speedGust');
-      expect(paths).not.toContain('environment.outside.uvIndex');
+      expect(paths).not.toContain('environment.weather.realFeelShade');
+      expect(paths).not.toContain('environment.weather.wetBulbTemperature');
+      expect(paths).not.toContain('environment.weather.speedGust');
+      expect(paths).not.toContain('environment.weather.uvIndex');
     });
   });
 
@@ -266,15 +258,15 @@ describe('NMEA2000PathMapper', () => {
       // Should have 20+ paths for comprehensive dataset
       expect(values.length).toBeGreaterThan(20);
 
-      // Verify specific enhanced paths exist
+      // Verify specific enhanced paths exist (all under environment.weather.*)
       const paths = values.map((v) => v.path);
-      expect(paths).toContain('environment.outside.realFeelShade');
-      expect(paths).toContain('environment.outside.wetBulbGlobeTemperature');
-      expect(paths).toContain('environment.wind.speedGust');
-      expect(paths).toContain('environment.wind.derived.beaufortScale');
-      expect(paths).toContain('environment.outside.uvIndex');
-      expect(paths).toContain('environment.outside.visibility');
-      expect(paths).toContain('environment.outside.derived.heatStressIndex');
+      expect(paths).toContain('environment.weather.realFeelShade');
+      expect(paths).toContain('environment.weather.wetBulbGlobeTemperature');
+      expect(paths).toContain('environment.weather.speedGust');
+      expect(paths).toContain('environment.weather.beaufortScale');
+      expect(paths).toContain('environment.weather.uvIndex');
+      expect(paths).toContain('environment.weather.visibility');
+      expect(paths).toContain('environment.weather.heatStressIndex');
     });
 
     it('should maintain Signal K delta structure integrity', () => {
@@ -309,10 +301,10 @@ describe('NMEA2000PathMapper', () => {
       expect(update && 'meta' in update).toBe(true);
       const meta = update && 'meta' in update ? update.meta : [];
       expect(meta.length).toBeGreaterThan(0);
-      // Meta entries describe non-canonical paths (derived or de-facto convention)
+      // Meta entries describe non-canonical paths under environment.weather.*
       const metaPaths = meta.map((m) => m.path);
-      expect(metaPaths).toContain('environment.wind.derived.beaufortScale');
-      expect(metaPaths).toContain('environment.outside.derived.heatStressIndex');
+      expect(metaPaths).toContain('environment.weather.beaufortScale');
+      expect(metaPaths).toContain('environment.weather.heatStressIndex');
     });
   });
 
@@ -365,21 +357,17 @@ describe('NMEA2000PathMapper', () => {
       const values = getValues(delta);
       const paths = values.map((v) => v.path);
 
-      // Verify safety-critical paths are included (derived ones namespaced)
-      expect(paths).toContain('environment.outside.derived.heatStressIndex');
-      expect(paths).toContain('environment.wind.derived.beaufortScale');
-      expect(paths).toContain('environment.outside.uvIndex');
-      expect(paths).toContain('environment.outside.visibility');
+      // Safety-critical paths under environment.weather.*
+      expect(paths).toContain('environment.weather.heatStressIndex');
+      expect(paths).toContain('environment.weather.beaufortScale');
+      expect(paths).toContain('environment.weather.uvIndex');
+      expect(paths).toContain('environment.weather.visibility');
 
       // Verify values are correctly mapped
-      expect(
-        values.find((v) => v.path === 'environment.outside.derived.heatStressIndex')?.value
-      ).toBe(3);
-      expect(values.find((v) => v.path === 'environment.wind.derived.beaufortScale')?.value).toBe(
-        8
-      );
-      expect(values.find((v) => v.path === 'environment.outside.uvIndex')?.value).toBe(9.5);
-      expect(values.find((v) => v.path === 'environment.outside.visibility')?.value).toBe(500);
+      expect(values.find((v) => v.path === 'environment.weather.heatStressIndex')?.value).toBe(3);
+      expect(values.find((v) => v.path === 'environment.weather.beaufortScale')?.value).toBe(8);
+      expect(values.find((v) => v.path === 'environment.weather.uvIndex')?.value).toBe(9.5);
+      expect(values.find((v) => v.path === 'environment.weather.visibility')?.value).toBe(500);
     });
   });
 

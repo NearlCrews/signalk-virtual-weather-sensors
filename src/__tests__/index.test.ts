@@ -70,8 +70,9 @@ describe('plugin entry: meta delta is shipped exactly once per lifetime', () => 
     await vi.advanceTimersByTimeAsync(2000);
 
     // We can't trigger a real fetch in this isolated test, so we accept that
-    // handleMessage may be 0 invocations. The behavior we assert is: if any
-    // value-delta is shipped, it is preceded by exactly one meta delta.
+    // handleMessage may be 0 invocations. The behavior we assert is: at most
+    // one meta delta is ever shipped per plugin lifetime (it follows the first
+    // values delta so admin UIs render units cleanly on first paint).
     const calls = app.handleMessage.mock.calls;
     const metaCalls = calls.filter(
       (call) =>

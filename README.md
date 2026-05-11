@@ -10,15 +10,15 @@ A Signal K plugin that fetches weather data from the AccuWeather API and emits i
 ## Features
 
 - **24+ weather data points** from AccuWeather: 8 temperature paths, wind (speed-over-ground, direction, gust, derived Beaufort), atmospheric conditions (pressure, relative humidity, UV, visibility, clouds), and precipitation
-- **Spec-compliant Signal K paths** following the 1.8.2 vocabulary (`relativeHumidity`, `apparentWindChillTemperature`, etc.). Plugin-derived values that are not in the spec (Beaufort scale, gust factor, heat stress index) live under `environment.{outside,wind}.derived.*` so they don't squat on canonical-looking slots.
+- **Spec-compliant Signal K paths** following the 1.8.2 vocabulary (`relativeHumidity`, `apparentWindChillTemperature`, etc.). Anything not in the 1.8.2 vocabulary (Beaufort scale, gust factor, heat stress index, AccuWeather extensions like UV, visibility, cloud cover) lives under a producer-namespaced `environment.weather.*` branch, so the canonical `environment.outside` and `environment.wind` containers hold only spec leaves and consumers walking them never trip over a non-leaf object.
 - **`$source: 'accuweather'`** on every delta, so users can configure source priorities to prefer real onboard sensors over the API feed when both are present.
 - **One-shot meta delta** on plugin start describing units and labels for non-canonical paths, so the Signal K Admin UI and Instrument Panel render them correctly.
 - **Apparent wind calculation** from true wind + vessel motion vectors
 - **NMEA2000 alignment** with [`signalk-nmea2000-emitter-cannon`](https://github.com/NearlCrews/signalk-nmea2000-emitter-cannon) PGN conventions (130306, 130311, 130312, 130313)
 - **Interval-based emission** (default 5s) for reliable NMEA2000 network recognition
-- **Delta caching** -- only rebuilds the Signal K delta when weather data actually changes
+- **Delta caching**: only rebuilds the Signal K delta when weather data actually changes
 - **Rate limit handling** with Retry-After header support and linear backoff fallback
-- **Bounded responses** -- 1 MiB cap on AccuWeather response bodies + schema validation before use
+- **Bounded responses**: 1 MiB cap on AccuWeather response bodies plus schema validation before use
 - **API key sanitization** in log output
 
 ## Installation
@@ -48,13 +48,13 @@ ln -s "$(pwd)" ~/.signalk/node_modules/signalk-virtual-weather-sensors
 
 | Setting | Description | Default | Range |
 |---------|-------------|---------|-------|
-| **AccuWeather API Key** | Required. Get one free at [developer.accuweather.com](https://developer.accuweather.com/) | -- | -- |
-| **Update Frequency** | How often to fetch new weather data (minutes) | 5 | 1--60 |
-| **Emission Interval** | How often to emit the current data to the NMEA2000 network (seconds) | 5 | 1--60 |
+| **AccuWeather API Key** | Required. Get one free at [developer.accuweather.com](https://developer.accuweather.com/) | n/a | n/a |
+| **Update Frequency** | How often to fetch new weather data (minutes) | 5 | 1 to 60 |
+| **Emission Interval** | How often to emit the current data to the NMEA2000 network (seconds) | 5 | 1 to 60 |
 
 ## Signal K Paths
 
-Paths marked **canonical** are defined in the [Signal K 1.8.2 vocabulary](https://signalk.org/specification/1.8.2/doc/vesselsBranch.html). Paths marked **convention** are not in the vocabulary but are widely used by ecosystem plugins (KIP, Instrument Panel). Paths marked **derived** are plugin-computed categorical or ratio values that live under `.derived.` so they don't squat on canonical-looking slots; the plugin emits a Signal K `meta` block describing each one.
+Paths marked **canonical** are defined in the [Signal K 1.8.2 vocabulary](https://signalk.org/specification/1.8.2/doc/vesselsBranch.html) and live under `environment.outside.*` or `environment.wind.*`. Everything else (AccuWeather extensions like UV, visibility, cloud cover, plus plugin-derived values like Beaufort scale and heat stress) lives under a producer-namespaced `environment.weather.*` branch, so the canonical containers stay leaf-only as the spec requires. The plugin ships a one-shot Signal K `meta` block describing units and labels for every non-canonical path.
 
 ### Core Environmental (canonical)
 
@@ -62,46 +62,43 @@ Paths marked **canonical** are defined in the [Signal K 1.8.2 vocabulary](https:
 |------|------|-------------|
 | `environment.outside.temperature` | K | Air temperature |
 | `environment.outside.pressure` | Pa | Atmospheric pressure |
-| `environment.outside.relativeHumidity` | ratio (0--1) | Relative humidity |
+| `environment.outside.relativeHumidity` | ratio (0 to 1) | Relative humidity |
 | `environment.outside.dewPointTemperature` | K | Dew point |
 | `environment.outside.apparentWindChillTemperature` | K | Wind chill referenced to observed wind |
 | `environment.outside.heatIndexTemperature` | K | Heat index (RealFeel) |
+| `environment.outside.airDensity` | kg/m3 | Calculated air density |
 
-### Enhanced Temperatures (convention)
+### Wind (canonical)
 
 | Path | Unit | Description |
 |------|------|-------------|
-| `environment.outside.realFeelShade` | K | RealFeel in shade |
-| `environment.outside.wetBulbTemperature` | K | Wet bulb |
-| `environment.outside.wetBulbGlobeTemperature` | K | Wet bulb globe (heat stress) |
-| `environment.outside.apparentTemperature` | K | AccuWeather apparent temperature |
+| `environment.wind.speedOverGround` | m/s | Ground-referenced wind speed (AccuWeather is ground-referenced; this plugin does not emit `speedTrue`) |
+| `environment.wind.directionTrue` | rad | True wind direction |
+| `environment.wind.speedApparent` | m/s | Apparent wind speed (calculated from vessel motion) |
+| `environment.wind.angleApparent` | rad | Apparent wind angle relative to bow (omitted when no heading is available) |
 
-### Wind
+### Weather extensions (`environment.weather.*`, producer namespace)
 
-| Path | Kind | Unit | Description |
-|------|------|------|-------------|
-| `environment.wind.speedOverGround` | canonical | m/s | Ground-referenced wind speed (AccuWeather is ground-referenced; this plugin does not emit `speedTrue`) |
-| `environment.wind.directionTrue` | canonical | rad | True wind direction |
-| `environment.wind.speedApparent` | canonical | m/s | Apparent wind speed (calculated from vessel motion) |
-| `environment.wind.angleApparent` | canonical | rad | Apparent wind angle relative to bow (omitted when no heading is available) |
-| `environment.wind.speedGust` | convention | m/s | Gust speed |
-| `environment.wind.derived.gustFactor` | derived | ratio | Gust / sustained ratio |
-| `environment.wind.derived.beaufortScale` | derived | 0..12 | Beaufort scale category |
+Everything in this section is outside the 1.8.2 vocabulary. The plugin ships meta describing units and labels.
 
-### Atmospheric & Safety
-
-| Path | Kind | Unit | Description |
-|------|------|------|-------------|
-| `environment.outside.uvIndex` | convention | (unitless) | UV radiation index (0..15+) |
-| `environment.outside.visibility` | convention | m | Visibility distance |
-| `environment.outside.cloudCover` | convention | ratio (0--1) | Cloud coverage |
-| `environment.outside.cloudCeiling` | convention | m | Cloud base height |
-| `environment.outside.absoluteHumidity` | convention | kg/m3 | Calculated absolute humidity |
-| `environment.outside.airDensity` | convention | kg/m3 | Calculated air density |
-| `environment.outside.derived.heatStressIndex` | derived | 0..4 | Heat stress category derived from WBGT |
-| `environment.outside.temperatureDeparture24h` | convention | K | 24-hour temperature change |
-| `environment.outside.precipitationLastHour` | convention | m | Precipitation depth in the last hour |
-| `environment.outside.precipitationCurrent` | convention | m/s | Current precipitation rate |
+| Path | Unit | Description |
+|------|------|-------------|
+| `environment.weather.realFeelShade` | K | RealFeel in shade |
+| `environment.weather.wetBulbTemperature` | K | Wet bulb |
+| `environment.weather.wetBulbGlobeTemperature` | K | Wet bulb globe (heat stress) |
+| `environment.weather.apparentTemperature` | K | AccuWeather apparent temperature |
+| `environment.weather.absoluteHumidity` | kg/m3 | Calculated absolute humidity |
+| `environment.weather.uvIndex` | (unitless) | UV radiation index (0..15+) |
+| `environment.weather.visibility` | m | Visibility distance |
+| `environment.weather.cloudCover` | ratio (0 to 1) | Cloud coverage |
+| `environment.weather.cloudCeiling` | m | Cloud base height |
+| `environment.weather.temperatureDeparture24h` | K | 24-hour temperature change |
+| `environment.weather.precipitationLastHour` | m | Precipitation depth in the last hour |
+| `environment.weather.precipitationCurrent` | m/s | Current precipitation rate |
+| `environment.weather.speedGust` | m/s | Wind gust speed |
+| `environment.weather.gustFactor` | ratio | Gust / sustained ratio |
+| `environment.weather.beaufortScale` | (unitless) | Beaufort scale category (0..12) |
+| `environment.weather.heatStressIndex` | (unitless) | Heat stress category derived from WBGT (0..4) |
 
 ## NMEA2000 Integration
 
@@ -113,7 +110,7 @@ PGN 130312 has fixed enum slots for Outside Temperature, Dew Point, Apparent Win
 
 | PGN | Description | Source paths emitted by this plugin |
 |-----|-------------|-------------------------------------|
-| 130306 | Wind Data | `environment.wind.speedOverGround`, `directionTrue`, `speedApparent`, `angleApparent`, `speedGust` |
+| 130306 | Wind Data | `environment.wind.speedOverGround`, `directionTrue`, `speedApparent`, `angleApparent` (`environment.weather.speedGust` is emitted but the current cannon release does not subscribe to it) |
 | 130311 | Environmental Parameters | `environment.outside.pressure` |
 | 130312 | Temperature (enum-routed) | `environment.outside.temperature`, `dewPointTemperature`, `apparentWindChillTemperature`, `heatIndexTemperature` |
 | 130313 | Humidity | `environment.outside.relativeHumidity` |
@@ -159,7 +156,7 @@ npm run validate       # Type-check + lint + tests (runs on pre-commit)
 
 ## License
 
-Apache-2.0 -- see [LICENSE](LICENSE).
+Apache-2.0: see [LICENSE](LICENSE).
 
 ## Contributing
 
