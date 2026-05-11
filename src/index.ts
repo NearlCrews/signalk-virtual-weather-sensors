@@ -338,12 +338,8 @@ function emitWeatherTick(instance: PluginInstance, app: ServerAPI, maxStalenessM
     return;
   }
 
-  // Quota-exhausted is checked BEFORE staleness so the operator sees WHY
-  // fetches paused (the specific quota message), not just that data is old.
-  // Once a quota pause persists long enough to cross the staleness threshold,
-  // both conditions are true; the quota-specific message wins because it is
-  // strictly more informative. setPluginStatus below would silently overwrite
-  // the prior setPluginError, so both branches return early.
+  // Quota-exhausted before staleness: when both fire the quota-specific
+  // message wins because it tells the operator WHY fetches paused.
   if (instance.weatherService.isQuotaExhausted()) {
     app.setPluginError(instance.weatherService.formatQuotaExhaustedMessage());
     return;
@@ -407,13 +403,11 @@ function withEmissionTimestamp(cached: Delta): Delta {
  * @private
  */
 async function cleanup(instance: PluginInstance): Promise<void> {
-  // Clear emission timer
   if (instance.emissionTimer) {
     clearInterval(instance.emissionTimer);
     instance.emissionTimer = null;
   }
 
-  // Stop weather service
   if (instance.weatherService) {
     try {
       await instance.weatherService.stop();
@@ -425,7 +419,6 @@ async function cleanup(instance: PluginInstance): Promise<void> {
     instance.weatherService = null;
   }
 
-  // Clear path mapper and cached delta
   instance.pathMapper = null;
   instance.cachedDelta = null;
   instance.cachedWeatherDataRef = null;
@@ -437,7 +430,6 @@ async function cleanup(instance: PluginInstance): Promise<void> {
  * @private
  */
 function validateAndNormalizeSettings(settings: unknown, logger: Logger): PluginConfiguration {
-  // Type check settings
   if (!settings || typeof settings !== 'object') {
     throw new Error(`${ERROR_CODES.CONFIGURATION.INVALID_API_KEY}: Invalid plugin configuration`);
   }
@@ -461,7 +453,6 @@ function validateAndNormalizeSettings(settings: unknown, logger: Logger): Plugin
         : DEFAULT_CONFIG.DAILY_API_QUOTA,
   };
 
-  // Validate configuration
   const validation = ConfigurationValidator.validateConfiguration(partialConfig);
   if (!validation.isValid) {
     const errorMessage = validation.errors.join('; ');
@@ -478,7 +469,6 @@ function validateAndNormalizeSettings(settings: unknown, logger: Logger): Plugin
     });
   }
 
-  // Sanitize and return final configuration
   const finalConfig = ConfigurationValidator.sanitizeConfiguration(partialConfig);
 
   logger('info', 'Plugin configuration validated and normalized', {

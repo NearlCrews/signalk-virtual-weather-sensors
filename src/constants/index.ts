@@ -30,9 +30,8 @@ export const PLUGIN = {
   INITIAL_UPDATE_DELAY_MS: 5000,
   /**
    * Multiplier on `updateFrequency` (minutes) used to decide when emitted
-   * weather data has gone stale. With the default 30-minute fetch cadence,
-   * data older than 60 minutes triggers a stale-data error in the Admin UI.
-   * Referenced by `setupEnhancedEmissionSystem` in `src/index.ts`.
+   * weather data has gone stale. At the default 30-minute fetch cadence,
+   * data older than 60 minutes trips the stale-data error.
    */
   STALENESS_FACTOR: 2,
 } as const;
@@ -255,26 +254,20 @@ export const VISIBILITY_LIMITS_M = { MIN: 0, MAX: 50000 } as const;
 /** Beaufort scale range */
 export const BEAUFORT_LIMITS = { MIN: 0, MAX: 12 } as const;
 
-/**
- * Cloud ceiling sanity range in meters. Real ceilings sit below the
- * tropopause (~12 km); 20 km gives headroom for service-provider quirks
- * while still rejecting garbage.
- */
+/** Cloud ceiling cap: above the tropopause is garbage. */
 export const CLOUD_CEILING_LIMITS_M = { MIN: 0, MAX: 20000 } as const;
 
 /**
- * Precipitation sanity caps. Stored as raw AccuWeather units (mm for hourly
- * accumulation, mm/h for instantaneous rate); the mapper converts to Signal K
- * SI (m and m/s) at emission time. 1000 in each axis equals 1 m and 1 m/h
- * post-conversion, well above any plausible meteorological event but enough
- * to cap a poisoned API response.
+ * Precipitation caps in raw AccuWeather units (mm hourly, mm/h rate). The
+ * mapper converts to Signal K SI (m, m/s) downstream. 1000 caps a poisoned
+ * API response without rejecting any plausible meteorological event.
  */
 export const PRECIPITATION_LIMITS = {
   HOURLY_MM_MAX: 1000,
   RATE_MMH_MAX: 1000,
 } as const;
 
-/** Heat-stress index discrete band: 0 low to 4 extreme. */
+/** Heat-stress index: 0 low to 4 extreme. */
 export const HEAT_STRESS_INDEX_LIMITS = { MIN: 0, MAX: 4 } as const;
 
 /** Data validation ranges and limits */

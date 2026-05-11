@@ -175,10 +175,9 @@ export class WindCalculator {
       0.00085282 * t * r * r +
       -0.00000199 * t * t * r * r;
 
-    // High-humidity adjustment: only branch reachable from the public method,
-    // since the HEAT_INDEX_MIN_HUMIDITY_PCT=40 gate above rules out the
-    // companion low-humidity (r<13) Rothfusz correction the NWS publishes.
-    // Keeping the low-humidity branch alongside would be dead code.
+    // High-humidity adjustment only: the HEAT_INDEX_MIN_HUMIDITY_PCT=40 gate
+    // above rules out the companion low-humidity (r<13) Rothfusz correction
+    // the NWS publishes, so we omit that branch.
     if (r > 85 && t >= 80 && t <= 87) {
       heatIndex += ((r - 85) / 10) * ((87 - t) / 5);
     }

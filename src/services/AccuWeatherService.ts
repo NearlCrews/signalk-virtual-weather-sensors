@@ -793,8 +793,9 @@ export class AccuWeatherService {
       this.requestWindow.fill(0);
     } else {
       // Shift left by `elapsed`, dropping the oldest hours and pushing zeros
-      // for the freshly exposed (current-hour) slots. Splice keeps array
-      // length stable and is fine off the hot path.
+      // for the freshly exposed (current-hour) slots. O(min(elapsed, 24)) per
+      // rotation; off the per-emission hot path (only fetches and quota
+      // checks rotate, both at minutes-or-longer cadence).
       this.requestWindow.splice(0, elapsed);
       for (let i = 0; i < elapsed; i++) {
         this.requestWindow.push(0);
