@@ -116,11 +116,19 @@ export default function createPlugin(app: ServerAPI): Plugin {
     },
 
     /**
-     * Plugin configuration schema for Signal K server UI
+     * Plugin configuration schema for Signal K server UI.
+     *
+     * Notes on what the admin UI actually consumes:
+     *  - Outer `title` is discarded: the SK admin UI wraps the schema and
+     *    forces the wrapper title to a single space. The displayed name
+     *    comes from `plugin.name` (PLUGIN.DISPLAY_NAME).
+     *  - Outer `required` is also discarded by the wrapper. The API key
+     *    field is enforced at submit via `minLength` here, and at runtime
+     *    via `ConfigurationValidator.validateConfiguration`. We therefore
+     *    do not declare an outer `required` array (it would be dead UI).
      */
     schema: () => ({
       type: 'object',
-      title: 'Virtual Weather Sensors',
       description: 'AccuWeather to Signal K with NMEA2000-compatible environmental measurements.',
       properties: {
         accuWeatherApiKey: {
@@ -158,7 +166,9 @@ export default function createPlugin(app: ServerAPI): Plugin {
           maximum: DEFAULT_CONFIG.DAILY_API_QUOTA_MAX,
         },
       },
-      required: ['accuWeatherApiKey'],
+      // `required` is intentionally omitted at the outer level: the SK admin
+      // UI wraps this schema and discards the outer `required` array. See
+      // the schema() docblock above.
     }),
 
     /**
@@ -205,12 +215,23 @@ function logPluginStarting(instance: PluginInstance, settings: unknown): void {
 
 /**
  * Returns true (and logs a warning) when start() is invoked while a previous
- * start is still in flight or already completed. The 'starting' check guards
- * against duplicate timers when the server calls start() concurrently.
+ * lifecycle phase is still in flight or already completed. We block on:
+ *   running    : already up, nothing to do.
+ *   starting   : duplicate concurrent start() would race construct/start.
+ *   stopping   : cleanup is awaiting weatherService.stop(); a concurrent
+ *                start() would assign new services that cleanup would then
+ *                null out when its await resolves.
+ * 'stopped' and 'error' are the only states that proceed.
  */
 function isPluginAlreadyRunning(instance: PluginInstance): boolean {
-  if (instance.state === 'running' || instance.state === 'starting') {
-    instance.logger('warn', 'Plugin already running', { state: instance.state });
+  if (
+    instance.state === 'running' ||
+    instance.state === 'starting' ||
+    instance.state === 'stopping'
+  ) {
+    instance.logger('warn', 'Plugin start blocked by current lifecycle state', {
+      state: instance.state,
+    });
     return true;
   }
   return false;
@@ -284,7 +305,7 @@ function setupEnhancedEmissionSystem(
   app: ServerAPI
 ): void {
   const emissionInterval = config.emissionInterval * 1000;
-  const maxStalenessMs = 2 * config.updateFrequency * 60_000;
+  const maxStalenessMs = PLUGIN.STALENESS_FACTOR * config.updateFrequency * 60_000;
 
   instance.emissionTimer = setInterval(() => {
     try {
@@ -317,6 +338,17 @@ function emitWeatherTick(instance: PluginInstance, app: ServerAPI, maxStalenessM
     return;
   }
 
+  // Quota-exhausted is checked BEFORE staleness so the operator sees WHY
+  // fetches paused (the specific quota message), not just that data is old.
+  // Once a quota pause persists long enough to cross the staleness threshold,
+  // both conditions are true; the quota-specific message wins because it is
+  // strictly more informative. setPluginStatus below would silently overwrite
+  // the prior setPluginError, so both branches return early.
+  if (instance.weatherService.isQuotaExhausted()) {
+    app.setPluginError(instance.weatherService.formatQuotaExhaustedMessage());
+    return;
+  }
+
   const ageMs = instance.weatherService.getDataAgeMs();
   if (ageMs !== null && ageMs > maxStalenessMs) {
     // Floor (not round) so a delta that has crossed the threshold by, say,
@@ -325,16 +357,6 @@ function emitWeatherTick(instance: PluginInstance, app: ServerAPI, maxStalenessM
     const ageMin = Math.floor(ageMs / 60_000);
     const unit = ageMin === 1 ? 'minute' : 'minutes';
     app.setPluginError(`Weather data stale: last update ${ageMin} ${unit} ago`);
-    return;
-  }
-
-  // If fetches are paused because the daily quota is exhausted, keep the
-  // pause-message visible. Calling setPluginStatus below would silently
-  // overwrite the prior setPluginError pushed by WeatherService.updateWeatherData,
-  // leaving operators looking at a healthy "Running" banner while no new
-  // data is actually being fetched.
-  if (instance.weatherService.isQuotaExhausted()) {
-    app.setPluginError(instance.weatherService.formatQuotaExhaustedMessage());
     return;
   }
 

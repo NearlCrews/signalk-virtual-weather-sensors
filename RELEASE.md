@@ -2,6 +2,18 @@
 
 This document outlines the steps for creating a new release of Signal K Virtual Weather Sensors.
 
+## Fast path (what we actually do)
+
+The recent 1.4.x releases all used this short flow:
+
+1. Bump `package.json` version and add a `## [X.Y.Z]` section in `CHANGELOG.md` on `master`.
+2. Run `npm run validate && npm run build` locally.
+3. Commit on `master`: `chore: release vX.Y.Z`.
+4. Run `npm run release`. This script tags `vX.Y.Z`, pushes the tag and the master commit, then runs `npm run create-release` (`gh release create vX.Y.Z --generate-notes`).
+5. The GitHub Release `published` event fires `.github/workflows/publish.yml`, which re-runs `type-check` and `test:run`, verifies `package.json` version matches the tag, and publishes to npm with provenance.
+
+The longer release-branch + PR workflow below is aspirational best practice for larger releases (breaking changes, coordinated multi-PR work) and is not enforced for routine patch and minor bumps.
+
 ## Pre-Release Checklist
 
 ### Code Quality

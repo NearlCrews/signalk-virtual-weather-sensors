@@ -395,7 +395,7 @@ npm run validate
 - **Edge Case Tests**: Boundary conditions and error handling
 - **Performance Tests**: Real-time calculation efficiency
 
-**Total: 238 tests** across 10 test files (latest as of v1.4.1)
+**Total: 242 tests** across 10 test files
 
 ### Test Files
 
@@ -403,12 +403,12 @@ npm run validate
 - [`WeatherService.test.ts`](src/__tests__/services/WeatherService.test.ts): core orchestration plus quota-aware status banner format and pluralization (28 tests)
 - [`SignalKService.test.ts`](src/__tests__/services/SignalKService.test.ts): navigation data (40 tests)
 - [`AccuWeatherService.test.ts`](src/__tests__/services/AccuWeatherService.test.ts): API integration, retry/error paths, rolling 24h request window (27 tests)
-- [`WindCalculator.test.ts`](src/__tests__/calculators/WindCalculator.test.ts): vector mathematics plus mutation-test-driven boundary cases for wind chill, heat index, beam-wind apparent angle (38 tests)
-- [`NMEA2000PathMapper.test.ts`](src/__tests__/mappers/NMEA2000PathMapper.test.ts): path mapping plus one-shot meta delta (16 tests)
+- [`WindCalculator.test.ts`](src/__tests__/calculators/WindCalculator.test.ts): vector mathematics plus mutation-test-driven boundary cases for wind chill, heat index, beam-wind apparent angle (39 tests)
+- [`NMEA2000PathMapper.test.ts`](src/__tests__/mappers/NMEA2000PathMapper.test.ts): path mapping plus one-shot meta delta (15 tests)
 - [`mappers/delta-schema.test.ts`](src/__tests__/mappers/delta-schema.test.ts): Ajv conformance against the `@signalk/signalk-schema@1.8.2` JSON Schema for both values and meta deltas, plus a vocabulary assertion that loads canonical leaves from the live `groups/environment.json` (8 tests)
 - [`integration/weather-flow.integration.test.ts`](src/__tests__/integration/weather-flow.integration.test.ts): end-to-end smoke against a stubbed `global.fetch`: happy-path delta shape, 429 retry, 401 unauthorized (3 tests)
 - [`utils/conversions.test.ts`](src/__tests__/utils/conversions.test.ts): unit conversions plus mutation-test-driven boundary cases for `normalizeAnglePiToPi`, air density, and Beaufort scale (35 tests)
-- [`utils/validation.test.ts`](src/__tests__/utils/validation.test.ts): sanitize, validators, schema, plus a NaN-vs-undefined guard test (38 tests)
+- [`utils/validation.test.ts`](src/__tests__/utils/validation.test.ts): sanitize, validators, schema, plus a NaN-vs-undefined guard test (42 tests)
 
 ### Running Specific Tests
 
@@ -482,7 +482,7 @@ This plugin adheres to the [Signal K 1.8.2 specification](https://signalk.org/sp
 | Signal K Paths (non-canonical) | ✅ | Producer-namespaced under `environment.weather.*` (16 leaves: AccuWeather extensions like UV, visibility, cloud cover, plus plugin-derived Beaufort scale, gust factor, heat stress index). Keeps canonical containers leaf-only as the spec requires. |
 | Source Metadata | ✅ | Explicit `$source: 'accuweather'` (`SourceRef` brand) on every update; configurable via `PLUGIN.SOURCE_REF` |
 | Meta | ✅ | One-shot meta delta on plugin start (`NMEA2000PathMapper.buildMetaDelta()`) describing units and labels for non-canonical paths |
-| Status Reporting | ✅ | `app.setPluginStatus` / `app.setPluginError` (called unconditionally; both are required members of `ServerAPI` 2.x). Live banner string from `WeatherService.formatStatusBanner()`: `Running, last update Nm ago (N updates, K API requests, K/Q today)`, with a `Running [quota 90% used]` warning prefix and a `setPluginError` quota-exhausted state. `emitWeatherTick` re-pushes the banner on every fresh tick so the `Nm ago` age and quota counters stay current; the same call clears any prior stale-data error via the `instance.staleErrorActive` flag |
+| Status Reporting | ✅ | `app.setPluginStatus` / `app.setPluginError` (called unconditionally; both are required members of `ServerAPI` 2.x). Live banner string from `WeatherService.formatStatusBanner()`: `Running, last update Nm ago (N updates, K API requests, K/Q today)`, with a `Running [quota 90% used]` warning prefix and a `setPluginError` quota-exhausted state. `emitWeatherTick` re-pushes the banner on every fresh tick so the `Nm ago` age and quota counters stay current; the same refresh subsumes the prior stale-data error path (the dead `staleErrorActive` flag was removed in v1.4.2), and the refresh is skipped while `WeatherService.isQuotaExhausted()` is true so the quota-exhausted error is not clobbered |
 | `handleMessage` versioning | ✅ | `app.handleMessage(id, delta, SKVersion.v1)` |
 | Logging channel separation | ✅ | All log levels go through `app.debug`. `app.setPluginError` is reserved for the Admin UI status banner, separate from log output |
 

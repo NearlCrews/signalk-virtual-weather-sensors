@@ -15,13 +15,11 @@ const createMockApp = (pathValues: Record<string, unknown> = {}) => ({
   debug: vi.fn(),
 });
 
-// Mock logger
-const createMockLogger = () =>
-  vi.fn() as unknown as (
-    level: 'debug' | 'info' | 'warn' | 'error',
-    message: string,
-    metadata?: Record<string, unknown>
-  ) => void;
+// Mock logger: SignalKService's constructor only invokes the logger as a
+// plain callable, so a bare `vi.fn()` is sufficient. The previous `as unknown`
+// double-cast existed only to satisfy a tighter type on the constructor
+// parameter that's now loosened.
+const createMockLogger = () => vi.fn();
 
 describe('SignalKService', () => {
   let mockLogger: ReturnType<typeof createMockLogger>;

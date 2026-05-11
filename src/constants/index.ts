@@ -14,7 +14,6 @@ export const PLUGIN = {
   DESCRIPTION:
     'Signal K plugin providing comprehensive weather data from AccuWeather API with NMEA2000-compatible environmental measurements',
   VERSION: process.env.PKG_VERSION || '1.0.0',
-  AUTHOR: 'Signal K Community',
   /**
    * Stable Signal K $source ref for every delta this plugin emits, so users
    * can configure source priorities to prefer real onboard sensors over the
@@ -33,6 +32,7 @@ export const PLUGIN = {
    * Multiplier on `updateFrequency` (minutes) used to decide when emitted
    * weather data has gone stale. With the default 30-minute fetch cadence,
    * data older than 60 minutes triggers a stale-data error in the Admin UI.
+   * Referenced by `setupEnhancedEmissionSystem` in `src/index.ts`.
    */
   STALENESS_FACTOR: 2,
 } as const;
@@ -44,22 +44,23 @@ export const PLUGIN = {
 /** Default plugin configuration settings */
 export const DEFAULT_CONFIG = {
   /**
-   * Default fetch cadence: 30 minutes yields 48 AccuWeather calls/day, which
-   * fits inside the free-tier 50/day quota with headroom. Operators on paid
-   * tiers commonly lower this to 5 to 15 minutes via the admin UI.
+   * Default fetch cadence: 30 minutes yields 48 AccuWeather calls/day
+   * (24h * 60min / 30 = 48), which fits inside the free-tier 50/day quota
+   * with headroom. Operators on paid tiers commonly lower this to 5 to 15
+   * minutes via the admin UI. INVARIANT: if `UPDATE_FREQUENCY` drops below
+   * `Math.ceil(1440 / DAILY_API_QUOTA)` minutes the plugin will exhaust the
+   * quota inside any rolling 24h window and pause fetches.
    */
   UPDATE_FREQUENCY: 30, // minutes
   EMISSION_INTERVAL: 5, // seconds
   /**
    * AccuWeather free tier allows 50 calls/day. Operators on a paid tier can
    * raise this in plugin settings (max 1000); setting it to 0 disables the cap
-   * entirely.
+   * entirely. Paired with `UPDATE_FREQUENCY`: see the invariant note there.
    */
   DAILY_API_QUOTA: 50,
   /** Maximum value accepted for `dailyApiQuota` in plugin settings. */
   DAILY_API_QUOTA_MAX: 1000,
-  ENABLE_EVENT_DRIVEN: true,
-  USE_VESSEL_POSITION: true,
   LOCATION_CACHE_TIMEOUT: 3600, // seconds (1 hour)
   REQUEST_TIMEOUT: 10000, // milliseconds
   RETRY_ATTEMPTS: 3,
@@ -169,14 +170,11 @@ export const UNITS = {
   /** Pressure conversions */
   PRESSURE: {
     MILLIBAR_TO_PASCAL: 100,
-    INCHES_HG_TO_PASCAL: 3386.389,
-    ATM_TO_PASCAL: 101325,
   },
 
   /** Wind speed conversions */
   WIND_SPEED: {
     KMH_TO_MS: 1 / 3.6,
-    MPH_TO_MS: 0.44704,
     KNOTS_TO_MS: 0.514444,
   },
 
@@ -257,6 +255,28 @@ export const VISIBILITY_LIMITS_M = { MIN: 0, MAX: 50000 } as const;
 /** Beaufort scale range */
 export const BEAUFORT_LIMITS = { MIN: 0, MAX: 12 } as const;
 
+/**
+ * Cloud ceiling sanity range in meters. Real ceilings sit below the
+ * tropopause (~12 km); 20 km gives headroom for service-provider quirks
+ * while still rejecting garbage.
+ */
+export const CLOUD_CEILING_LIMITS_M = { MIN: 0, MAX: 20000 } as const;
+
+/**
+ * Precipitation sanity caps. Stored as raw AccuWeather units (mm for hourly
+ * accumulation, mm/h for instantaneous rate); the mapper converts to Signal K
+ * SI (m and m/s) at emission time. 1000 in each axis equals 1 m and 1 m/h
+ * post-conversion, well above any plausible meteorological event but enough
+ * to cap a poisoned API response.
+ */
+export const PRECIPITATION_LIMITS = {
+  HOURLY_MM_MAX: 1000,
+  RATE_MMH_MAX: 1000,
+} as const;
+
+/** Heat-stress index discrete band: 0 low to 4 extreme. */
+export const HEAT_STRESS_INDEX_LIMITS = { MIN: 0, MAX: 4 } as const;
+
 /** Data validation ranges and limits */
 export const VALIDATION_LIMITS = {
   TEMPERATURE: {
@@ -284,16 +304,6 @@ export const VALIDATION_LIMITS = {
     MAX: 2 * Math.PI, // 0-360° in radians
   },
 
-  /**
-   * Course-over-ground (true) is in radians, same numeric range as wind
-   * direction. Defined separately so changing one bound does not silently
-   * shift the other.
-   */
-  COURSE_TRUE: {
-    MIN: 0,
-    MAX: 2 * Math.PI,
-  },
-
   COORDINATES: {
     LATITUDE: {
       MIN: -90,
@@ -314,13 +324,7 @@ export const VALIDATION_LIMITS = {
   /** Navigation data age threshold (seconds) used by SignalKService cache. */
   MAX_DATA_AGE: 30,
 
-  /** Vessel-data warning threshold (seconds) used by validateVesselNavigationData. */
-  VESSEL_DATA_WARN_AGE: 60,
-
-  /** Vessel-data error threshold (seconds) used by validateVesselNavigationData. */
-  VESSEL_DATA_ERROR_AGE: 300,
-
-  /** Vessel movement detection threshold (m/s) - 0.5 m/s ≈ 1 knot */
+  /** Vessel movement detection threshold (m/s): 0.5 m/s is roughly 1 knot. */
   VESSEL_MOVING_THRESHOLD: 0.5,
 } as const;
 

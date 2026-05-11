@@ -5,7 +5,7 @@ are tracked in [CHANGELOG.md](CHANGELOG.md), not here.
 
 ## Signal K Standards Compliance
 
-Status: Aligned with Signal K 1.8.2 (v1.4.0). Reference docs:
+Status: Aligned with Signal K 1.8.2 (since v1.4.1). Reference docs:
 
 - https://signalk.org/specification/1.8.2/doc/
 - https://demo.signalk.org/documentation/Developing/Plugins.html
@@ -15,19 +15,19 @@ Known deviations: none tracked.
 
 ## P1 - High (next 1-2 releases)
 
-- [x] **Delta message format validation tests** *(in progress this session)*
+- [x] **Delta message format validation tests** *(shipped v1.4.1)*
   - Unit tests assert proper Signal K delta structure, all path mappings,
     and metadata format. See `src/__tests__/mappers/`.
-- [x] **Manual server smoke test guide** *(in progress this session)*
+- [x] **Manual server smoke test guide** *(shipped v1.4.1)*
   - Step-by-step verification on a real Signal K server: data browser paths,
-    NMEA2000 bridging, Garmin display checks. See `docs/`.
-- [x] **End-to-end integration smoke test** *(in progress this session)*
+    NMEA2000 bridging, Garmin display checks. See `docs/manual-server-test.md`.
+- [x] **End-to-end integration smoke test** *(shipped v1.4.1)*
   - Mocked AccuWeather + real plugin lifecycle, asserts deltas reach
-    `app.handleMessage`. See `src/__tests__/`.
-- [x] **WeatherProvider API spike** *(in progress this session)*
-  - Evaluate migrating to `@signalk/server-api`'s `WeatherProvider` API
-    as the canonical home for AccuWeather data (future major version,
-    see CHANGELOG 1.4.0 "Future direction"). See `docs/`.
+    `app.handleMessage`. See `src/__tests__/integration/`.
+- [x] **WeatherProvider API spike** *(shipped v1.4.1)*
+  - Evaluated migrating to `@signalk/server-api`'s `WeatherProvider` API
+    as the canonical home for AccuWeather data (future major version).
+    See `docs/weather-provider-migration.md`.
 
 ## P2 - Medium (future releases)
 
@@ -39,7 +39,7 @@ Known deviations: none tracked.
   - Configurable thresholds, integration with Signal K notifications,
     optional email/push fan-out.
 
-- [x] **Encrypt the API key in configuration storage** *(spike, closed not-applicable this session)*
+- [x] **Encrypt the API key in configuration storage** *(spike, closed not-applicable v1.4.1)*
   - Investigated 2026-05-10. Signal K has no plugin-facing secrets API,
     peer plugins (`signalk-aisstream`, `signalk-windy-plugin`,
     `signalk-weatherflow`) all store keys in plaintext, and this plugin
@@ -50,12 +50,14 @@ Known deviations: none tracked.
     [`docs/api-key-storage.md`](docs/api-key-storage.md). Re-open only if
     one of the trigger conditions in that doc fires.
 
-- [x] **API quota usage dashboard** *(this session)*
-  - New `dailyApiQuota` config option (default 50, range 0 to 1000; 0 disables).
+- [x] **API quota usage dashboard** *(shipped v1.4.1, banner-clobber fix in v1.4.2)*
+  - `dailyApiQuota` config option (default 50, range 0 to 1000; 0 disables).
     Rolling 24h request counter via `AccuWeatherService.getRequestCountLast24h()`.
     Status banner gains `, K/Q today` suffix. At 90% the prefix switches to
     `Running [quota 90% used]`; at 100% the plugin trips `setPluginError` and
     skips fetches via `WeatherService.isQuotaExhausted()` until usage drops.
+    v1.4.2 gated the per-tick banner refresh behind `isQuotaExhausted()` so the
+    quota-exhausted error is no longer clobbered every 5 seconds.
 
 ## P3 - Low (nice to have)
 
@@ -63,12 +65,13 @@ Known deviations: none tracked.
   - No submission step exists: the App Store auto-discovers any npm package
     with the `signalk-node-server-plugin` keyword. Verified on 2026-05-10 that
     `signalk-virtual-weather-sensors@1.3.2` is returned by the same npm search
-    the server uses, listed under the "Weather" category. The next release
-    (1.4.0) adds `signalk-category-nmea-2000` for a second listing. See
-    `docs/app-store-status.md` for the verification details and a
-    reproducible curl check.
+    the server uses, listed under the "Weather" category. v1.4.1 added
+    `signalk-category-nmea-2000` for a second listing, and v1.4.2 added the
+    `signalk.appIcon` family icon so the App Store entry renders with a
+    distinct badge. See `docs/app-store-status.md` for the verification
+    details and a reproducible curl check.
 
-- [x] **Mutation testing** *(this session)*
+- [x] **Mutation testing** *(shipped v1.4.1)*
   - Stryker.js 9.6 added as a dev-only dependency (NOT in CI). One-shot pass
     raised the mutation score on `WindCalculator` from 57.96% to 74.34% and
     on `conversions` from 86.39% to 94.67%; 8 new tests killed 56 mutants.
@@ -76,7 +79,7 @@ Known deviations: none tracked.
 
 ## Known Issues
 
-None tracked. Branch coverage held above the 80% threshold through v1.4.0.
+None tracked. Branch coverage held above the 80% threshold through v1.4.2.
 
 ## Security (compliant baseline, see CHANGELOG)
 
@@ -88,18 +91,24 @@ None tracked. Branch coverage held above the 80% threshold through v1.4.0.
 
 ## Continuous Improvement
 
-- [x] **Dependabot configured** for npm + GitHub Actions, weekly cadence *(this session, see `.github/dependabot.yml`)*
+- [x] **Dependabot configured** for npm + GitHub Actions, weekly cadence *(v1.4.1, see `.github/dependabot.yml`)*
 - [x] **Code quality baseline** *(v1.1.0 onwards)*
-  - 234 tests across 10 files (v1.4.0 + Unreleased; baseline 206/8)
+  - 242 tests across 10 files (current; baseline 206/8)
   - Mutation score 67.44% across the pure-function modules (calculators + utils);
     `WindCalculator` 74%, `conversions` 95%, `validation` 57%
   - debug/info routed through `app.debug`; warn/error through `app.error`
     so they appear in production logs without enabling DEBUG *(v1.3.3)*
   - `toErrorMessage(error)` helper consolidates 19 sites *(v1.3.2)*
+- [x] **Plugin icon (`signalk.appIcon`)** *(shipped v1.4.2)*
+  - 512x512 SVG source at `assets/icons/icon.svg`, rasterized to 72/96/192/512
+    PNGs. Joins the `@NearlCrews` Signal K plugin icon family (rounded-square
+    ocean gradient + three wave lines + bottom-right badge varying per plugin).
+    `package.json` `signalk.appIcon` points at the 192px PNG and the `files`
+    array ships `assets/icons/` in the tarball.
 
 ---
 
-**Last Updated**: 2026-05-10
+**Last Updated**: 2026-05-11
 
 **Maintainer**: Signal K Community
 

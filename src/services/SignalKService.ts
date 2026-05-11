@@ -111,7 +111,9 @@ export class SignalKService {
       headingTrue: headingTrue ?? undefined,
       magneticVariation: magneticVariation ?? undefined,
       isComplete,
-      dataAge: dataAge || undefined,
+      // Explicit null check: dataAge of 0 ("just updated") is a legitimate
+      // value that the previous `dataAge || undefined` form silently dropped.
+      dataAge: dataAge !== null ? dataAge : undefined,
     };
 
     this.logger('debug', 'Vessel navigation data retrieved', {
@@ -230,6 +232,15 @@ export class SignalKService {
   /**
    * Returns the best-available course/heading in radians, falling back through
    * COG-true, COG-magnetic, heading-true, heading-magnetic in order.
+   *
+   * Caveat: when the chosen source is magnetic (COG-magnetic or heading-magnetic),
+   * the returned value is a magnetic reference even though the method is named
+   * `...True`. The plugin's apparent-wind math treats it as a true reference,
+   * which biases the result by the local magnetic variation (a few degrees in
+   * most cruising waters, up to ~10 degrees in high latitudes). We accept this
+   * trade-off to keep apparent-wind output flowing when only magnetic sources
+   * are available; `magneticVariation` is included in VesselNavigationData for
+   * callers that want to apply a correction.
    */
   public getVesselCourseOverGroundTrue(): number | null {
     for (const path of COURSE_FALLBACK_PATHS) {
@@ -369,7 +380,8 @@ export class SignalKService {
         typeof this.cachedData.speedOverGround === 'number' &&
         typeof this.cachedData.courseOverGroundTrue === 'number'
       ),
-      dataAge: dataAge || undefined,
+      // See getVesselNavigationData() for the explicit null-check rationale.
+      dataAge: dataAge !== null ? dataAge : undefined,
     };
   }
 

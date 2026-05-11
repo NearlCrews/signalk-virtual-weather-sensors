@@ -497,7 +497,10 @@ export class WeatherService {
   }
 
   /**
-   * Calculate apparent wind with complete vessel data
+   * Calculate apparent wind with complete vessel data. Calls
+   * `calculateWindAnalysis` once so the four shared sin/cos terms inside the
+   * calculator are computed a single time per update (the per-getter form
+   * would invoke them twice).
    * @private
    */
   private calculateApparentWindWithCompleteData(
@@ -510,28 +513,33 @@ export class WeatherService {
     const { speedOverGround, courseOverGroundTrue } = vesselData;
 
     try {
-      const apparentWindSpeed = this.windCalculator.calculateApparentWindSpeed(
+      const analysis = this.windCalculator.calculateWindAnalysis(
         weatherData.windSpeed,
         speedOverGround,
         courseOverGroundTrue,
         weatherData.windDirection
       );
 
-      const apparentWindAngle = this.windCalculator.calculateApparentWindAngle(
-        weatherData.windSpeed,
-        speedOverGround,
-        courseOverGroundTrue,
-        weatherData.windDirection
-      );
+      if (!analysis.isValid) {
+        // Validation failure inside the calculator: prefer the heading-only
+        // fallback over emitting the calculator's degraded defaults.
+        this.logger('warn', 'Apparent wind analysis flagged invalid', {
+          validationErrors: analysis.validationErrors,
+        });
+        return this.calculateApparentWindFallback(weatherData, vesselData);
+      }
 
       this.logger('debug', 'Apparent wind calculated', {
         trueWindSpeed: weatherData.windSpeed,
         vesselSpeed: speedOverGround,
-        apparentWindSpeed,
-        apparentWindAngle,
+        apparentWindSpeed: analysis.apparentWindSpeed,
+        apparentWindAngle: analysis.apparentWindAngle,
       });
 
-      return { apparentWindSpeed, apparentWindAngle };
+      return {
+        apparentWindSpeed: analysis.apparentWindSpeed,
+        apparentWindAngle: analysis.apparentWindAngle,
+      };
     } catch (error) {
       this.logger('warn', 'Failed to calculate apparent wind', {
         error: toErrorMessage(error),

@@ -222,6 +222,46 @@ describe('validateConfiguration / sanitizeConfiguration', () => {
     expect(ConfigurationValidator.validateConfiguration).toBe(validateConfiguration);
     expect(ConfigurationValidator.sanitizeConfiguration).toBe(sanitizeConfiguration);
   });
+
+  describe('dailyApiQuota field', () => {
+    const validKey = 'A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6';
+
+    it('accepts 0 (the documented "no cap" sentinel) without warning', () => {
+      const result = validateConfiguration({
+        accuWeatherApiKey: validKey,
+        dailyApiQuota: 0,
+      });
+      expect(result.isValid).toBe(true);
+      expect(result.warnings.some((w) => w.includes('quota'))).toBe(false);
+    });
+
+    it('errors when dailyApiQuota is negative', () => {
+      const result = validateConfiguration({
+        accuWeatherApiKey: validKey,
+        dailyApiQuota: -1,
+      });
+      expect(result.isValid).toBe(false);
+      expect(result.errors.some((e) => e.toLowerCase().includes('quota'))).toBe(true);
+    });
+
+    it('errors when dailyApiQuota is non-finite', () => {
+      const result = validateConfiguration({
+        accuWeatherApiKey: validKey,
+        dailyApiQuota: Number.NaN,
+      });
+      expect(result.isValid).toBe(false);
+    });
+
+    it('warns when dailyApiQuota exceeds the documented maximum', () => {
+      const result = validateConfiguration({
+        accuWeatherApiKey: validKey,
+        dailyApiQuota: 5000,
+      });
+      // Stays "valid" but flags the unusual value: the runtime accepts it,
+      // but operators should know the documented cap is lower.
+      expect(result.warnings.some((w) => w.toLowerCase().includes('quota'))).toBe(true);
+    });
+  });
 });
 
 describe('validateAccuWeatherResponse', () => {

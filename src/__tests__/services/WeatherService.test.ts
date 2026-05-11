@@ -16,13 +16,9 @@ const createMockApp = () => ({
   debug: vi.fn(),
 });
 
-// Mock logger
-const createMockLogger = () =>
-  vi.fn() as unknown as (
-    level: 'debug' | 'info' | 'warn' | 'error',
-    message: string,
-    metadata?: Record<string, unknown>
-  ) => void;
+// Mock logger: callers cast to the expected signature at the use site if
+// needed. `vi.fn()` is already callable, so no double cast is required here.
+const createMockLogger = () => vi.fn();
 
 // Default test configuration
 const createTestConfig = (overrides?: Partial<PluginConfiguration>): PluginConfiguration => ({

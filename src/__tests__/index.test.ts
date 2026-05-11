@@ -132,13 +132,22 @@ describe('plugin entry: meta delta is shipped exactly once per lifetime', () => 
     expect(typeof plugin.stop).toBe('function');
   });
 
-  it('passes the schema with required accuWeatherApiKey field', () => {
+  it('declares the accuWeatherApiKey property with a minLength enforcement', () => {
+    // The SK admin UI's rjsf wrapper discards the outer `required` array
+    // (see schema() docblock in src/index.ts), so the plugin enforces the
+    // API key via a `minLength` on the property itself plus a runtime
+    // validateConfiguration check. This test pins both: the field must be
+    // present in properties and carry a minLength gate so blank submissions
+    // are rejected at the form layer.
     const app = buildMockApp();
     const plugin = createPlugin(app as never);
 
-    const schema = plugin.schema?.();
+    const schema = plugin.schema?.() as {
+      properties?: { accuWeatherApiKey?: { type?: string; minLength?: number } };
+    };
     expect(schema).toBeDefined();
-    expect((schema as { required?: string[] }).required).toContain('accuWeatherApiKey');
+    expect(schema.properties?.accuWeatherApiKey?.type).toBe('string');
+    expect(schema.properties?.accuWeatherApiKey?.minLength).toBeGreaterThan(0);
   });
 
   // Regression: prior code only called setPluginStatus once at start (when

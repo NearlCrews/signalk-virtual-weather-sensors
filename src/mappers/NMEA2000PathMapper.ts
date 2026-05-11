@@ -141,6 +141,14 @@ export class NMEA2000PathMapper {
    * Map comprehensive weather data to a values-only Signal K delta. Meta for
    * non-canonical paths is emitted separately via {@link buildMetaDelta} so it
    * is shipped only when it changes (Signal K spec data_model.html).
+   *
+   * Every numeric leaf this method emits is clamped or normalized upstream by
+   * `NMEA2000Validator.sanitizeForNMEA2000`: temperatures into the NMEA2000
+   * Kelvin window, apparent wind angle into the canonical (-pi, pi] convention,
+   * speeds/visibility/ceilings into non-negative physical bounds, and derived
+   * categorical indices (Beaufort, heat stress) into their defined ranges.
+   * Adding a new emitted field here requires a matching rule in the
+   * sanitizer's NUMERIC_FIELD_RULES table.
    */
   public mapToSignalKPaths(weatherData: WeatherData): Delta {
     const sanitizedData = NMEA2000Validator.sanitizeForNMEA2000(weatherData);

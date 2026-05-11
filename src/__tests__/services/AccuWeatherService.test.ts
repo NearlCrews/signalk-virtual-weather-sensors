@@ -7,42 +7,29 @@ import type { Mock } from 'vitest';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AccuWeatherService } from '../../services/AccuWeatherService.js';
 import type { GeoLocation } from '../../types/index.js';
-import { createMockAccuWeatherResponse } from '../setup.js';
+import { createMockAccuWeatherResponse, createMockFetchResponse } from '../setup.js';
 
-// Mock fetch globally
-global.fetch = vi.fn();
-
-/**
- * Build a Fetch-API-shaped mock response with the headers + text() methods
- * that AccuWeatherService.readBoundedJson() needs (in addition to .json()).
- */
-const mockResponse = (
-  data: unknown,
-  init: { ok?: boolean; status?: number; statusText?: string } = {}
-) => {
-  const text = JSON.stringify(data);
-  return {
-    ok: init.ok ?? true,
-    status: init.status ?? 200,
-    statusText: init.statusText ?? 'OK',
-    headers: new Headers({ 'content-length': String(text.length) }),
-    text: () => Promise.resolve(text),
-    json: () => Promise.resolve(data),
-  };
-};
+// Local alias keeps the existing call sites short. `createMockFetchResponse`
+// is the shared helper in setup.ts; using it directly here avoids the
+// near-duplicate `mockResponse` that previously lived in this file.
+const mockResponse = createMockFetchResponse;
 
 describe('AccuWeatherService', () => {
   let service: AccuWeatherService;
   let mockLogger: ReturnType<typeof vi.fn>;
 
   beforeEach(() => {
+    // Stub fetch per test rather than mutating the module-scope global. This
+    // keeps fetch isolated to this test file (no leak across the worker) and
+    // ensures every afterEach restores the original implementation.
+    vi.stubGlobal('fetch', vi.fn());
     mockLogger = vi.fn();
     service = new AccuWeatherService('test-api-key', mockLogger);
-    vi.clearAllMocks();
   });
 
   afterEach(() => {
     service.clearLocationCache();
+    vi.unstubAllGlobals();
   });
 
   describe('Constructor', () => {

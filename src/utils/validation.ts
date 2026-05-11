@@ -1,13 +1,23 @@
 import {
   BEAUFORT_LIMITS,
+  CLOUD_CEILING_LIMITS_M,
   DEFAULT_CONFIG,
+  HEAT_STRESS_INDEX_LIMITS,
   NMEA2000_LIMITS,
+  PRECIPITATION_LIMITS,
   UV_INDEX_LIMITS,
   VALIDATION_LIMITS,
   VISIBILITY_LIMITS_M,
 } from '../constants/index.js';
 import type { PluginConfiguration, WeatherData } from '../types/index.js';
-import { celsiusToKelvin, clamp, kelvinToCelsius, normalizeAngle0To2Pi } from './conversions.js';
+import {
+  celsiusToKelvin,
+  clamp,
+  isWithinBounds,
+  kelvinToCelsius,
+  normalizeAngle0To2Pi,
+  normalizeAnglePiToPi,
+} from './conversions.js';
 
 /** NMEA2000 temperature bounds expressed in Kelvin (precomputed to avoid C↔K work on the hot path). */
 const NMEA2000_TEMP_K_MIN = celsiusToKelvin(NMEA2000_LIMITS.TEMPERATURE_C.MIN);
@@ -278,7 +288,13 @@ function validateApiKey(
 }
 
 /**
- * Validate update frequency field
+ * Validate update frequency field.
+ *
+ * Note: the admin UI schema in `index.ts` already enforces 1 to 60. The
+ * runtime warn-instead-of-error for > 60 is deliberate tolerance for
+ * hand-edited plugin config (e.g. operator pre-load before booting the
+ * server). `sanitizeConfiguration` clamps the actual value used at runtime,
+ * so the warning is purely advisory.
  */
 function validateUpdateFrequency(
   config: Partial<PluginConfiguration>,
@@ -300,7 +316,9 @@ function validateUpdateFrequency(
 }
 
 /**
- * Validate emission interval field
+ * Validate emission interval field. Same hand-edited-config tolerance as
+ * `validateUpdateFrequency`: schema bounds are stricter, the runtime warns
+ * and `sanitizeConfiguration` clamps.
  */
 function validateEmissionInterval(
   config: Partial<PluginConfiguration>,
@@ -529,82 +547,124 @@ export function validateNMEA2000Ranges(data: Partial<WeatherData>): ValidationRe
   };
 }
 
-/** Returns true when no field of `data` would be modified by NMEA2000 clamping. */
-function isWithinNMEA2000Ranges(data: WeatherData): boolean {
-  const inRange = (value: number | undefined, min: number, max: number): boolean =>
-    value === undefined || (value >= min && value <= max);
+/**
+ * Numeric WeatherData fields that the mapper emits. Excludes any field whose
+ * sanitization is non-numeric (angles handled separately).
+ */
+type SanitizableNumericKey = {
+  [K in keyof WeatherData]-?: WeatherData[K] extends number | undefined ? K : never;
+}[keyof WeatherData];
 
-  return (
-    inRange(data.temperature, NMEA2000_TEMP_K_MIN, NMEA2000_TEMP_K_MAX) &&
-    inRange(data.pressure, NMEA2000_LIMITS.PRESSURE_PA.MIN, NMEA2000_LIMITS.PRESSURE_PA.MAX) &&
-    inRange(data.humidity, VALIDATION_LIMITS.HUMIDITY.MIN, VALIDATION_LIMITS.HUMIDITY.MAX) &&
-    inRange(data.windSpeed, 0, NMEA2000_LIMITS.WIND_SPEED_MAX_MS) &&
-    inRange(data.windGustSpeed, 0, NMEA2000_LIMITS.WIND_SPEED_MAX_MS) &&
-    (data.windDirection === undefined ||
-      (data.windDirection >= 0 && data.windDirection < 2 * Math.PI))
-  );
+const TWO_PI = 2 * Math.PI;
+const TEMP_K_BOUNDS = [NMEA2000_TEMP_K_MIN, NMEA2000_TEMP_K_MAX] as const;
+const WIND_SPEED_BOUNDS = [0, NMEA2000_LIMITS.WIND_SPEED_MAX_MS] as const;
+const HUMIDITY_BOUNDS = [VALIDATION_LIMITS.HUMIDITY.MIN, VALIDATION_LIMITS.HUMIDITY.MAX] as const;
+
+/**
+ * Single source of truth for every numeric leaf the mapper can emit. Adding a
+ * new emitted field means appending one row here; both the fast-path range
+ * check and the clamping pass walk this table so they cannot drift.
+ */
+const NUMERIC_FIELD_RULES: ReadonlyArray<readonly [SanitizableNumericKey, number, number]> = [
+  ['temperature', ...TEMP_K_BOUNDS],
+  ['pressure', NMEA2000_LIMITS.PRESSURE_PA.MIN, NMEA2000_LIMITS.PRESSURE_PA.MAX],
+  ['humidity', ...HUMIDITY_BOUNDS],
+  ['windSpeed', ...WIND_SPEED_BOUNDS],
+  ['windGustSpeed', ...WIND_SPEED_BOUNDS],
+  ['dewPoint', ...TEMP_K_BOUNDS],
+  ['windChill', ...TEMP_K_BOUNDS],
+  ['heatIndex', ...TEMP_K_BOUNDS],
+  ['realFeelShade', ...TEMP_K_BOUNDS],
+  ['wetBulbTemperature', ...TEMP_K_BOUNDS],
+  ['wetBulbGlobeTemperature', ...TEMP_K_BOUNDS],
+  ['apparentTemperature', ...TEMP_K_BOUNDS],
+  ['apparentWindSpeed', ...WIND_SPEED_BOUNDS],
+  ['uvIndex', UV_INDEX_LIMITS.MIN, UV_INDEX_LIMITS.MAX],
+  ['visibility', VISIBILITY_LIMITS_M.MIN, VISIBILITY_LIMITS_M.MAX],
+  ['cloudCover', ...HUMIDITY_BOUNDS],
+  ['cloudCeiling', CLOUD_CEILING_LIMITS_M.MIN, CLOUD_CEILING_LIMITS_M.MAX],
+  ['precipitationLastHour', 0, PRECIPITATION_LIMITS.HOURLY_MM_MAX],
+  ['precipitationCurrent', 0, PRECIPITATION_LIMITS.RATE_MMH_MAX],
+  ['beaufortScale', BEAUFORT_LIMITS.MIN, BEAUFORT_LIMITS.MAX],
+  ['heatStressIndex', HEAT_STRESS_INDEX_LIMITS.MIN, HEAT_STRESS_INDEX_LIMITS.MAX],
+];
+
+/**
+ * Returns true when no field of `data` would be modified by NMEA2000 clamping.
+ *
+ * Every leaf emitted by `NMEA2000PathMapper.mapToSignalKPaths` is covered here
+ * so the mapper's "every path is sanitized" claim holds. Precipitation fields
+ * are checked in their raw AccuWeather units (mm / mm-h); the mapper does the
+ * mm-to-m conversion at emission time.
+ *
+ * Angles are checked inline: `windDirection` follows the Signal K 0..2π
+ * convention (half-open), `apparentWindAngle` follows the (-π, π]
+ * port-negative convention for canonical `environment.wind.angleApparent`.
+ */
+function isWithinNMEA2000Ranges(data: WeatherData): boolean {
+  for (const [key, min, max] of NUMERIC_FIELD_RULES) {
+    const value = data[key];
+    if (value !== undefined && (value < min || value > max)) {
+      return false;
+    }
+  }
+  const dir = data.windDirection;
+  if (dir !== undefined && (dir < 0 || dir >= TWO_PI)) return false;
+  const aAngle = data.apparentWindAngle;
+  if (aAngle !== undefined && (aAngle <= -Math.PI || aAngle > Math.PI)) return false;
+  return true;
 }
 
 /**
- * Clamp every field to its NMEA2000-emission range. When all fields already fit, the
- * original object reference is returned to avoid a 24-field shallow copy on the hot path.
+ * Clamp every field that the mapper emits to its NMEA2000-compatible range.
+ * When all fields already fit, the original object reference is returned to
+ * avoid a 24-field shallow copy on the hot path.
+ *
+ * Coverage matches `NMEA2000PathMapper.mapToSignalKPaths`: temperatures and
+ * wind speeds use NMEA2000 hardware bounds; ratios (humidity, cloudCover) are
+ * spec 0..1; angles use the Signal K canonical convention (windDirection
+ * 0..2π, apparentWindAngle port-negative -π..π); precipitation is capped in
+ * raw mm units before the mapper converts to m and m/s.
  */
 export function sanitizeForNMEA2000(data: WeatherData): WeatherData {
   if (isWithinNMEA2000Ranges(data)) {
     return data;
   }
 
-  const sanitized = { ...data };
-
-  if (sanitized.temperature !== undefined) {
-    sanitized.temperature = clamp(sanitized.temperature, NMEA2000_TEMP_K_MIN, NMEA2000_TEMP_K_MAX);
+  // `Record<string, unknown>` cast lets us index by SanitizableNumericKey
+  // without re-typing every assignment; the readonly contract is restored on
+  // the return type, and runtime mutation of the local copy is safe.
+  const sanitized = { ...data } as Record<string, unknown>;
+  for (const [key, min, max] of NUMERIC_FIELD_RULES) {
+    const value = data[key];
+    if (value !== undefined) {
+      sanitized[key] = clamp(value, min, max);
+    }
   }
-  if (sanitized.pressure !== undefined) {
-    sanitized.pressure = clamp(
-      sanitized.pressure,
-      NMEA2000_LIMITS.PRESSURE_PA.MIN,
-      NMEA2000_LIMITS.PRESSURE_PA.MAX
-    );
+  if (data.windDirection !== undefined) {
+    sanitized.windDirection = normalizeAngle0To2Pi(data.windDirection);
   }
-  if (sanitized.humidity !== undefined) {
-    sanitized.humidity = clamp(
-      sanitized.humidity,
-      VALIDATION_LIMITS.HUMIDITY.MIN,
-      VALIDATION_LIMITS.HUMIDITY.MAX
-    );
+  if (data.apparentWindAngle !== undefined) {
+    sanitized.apparentWindAngle = normalizeAnglePiToPi(data.apparentWindAngle);
   }
-  if (sanitized.windSpeed !== undefined) {
-    sanitized.windSpeed = clamp(sanitized.windSpeed, 0, NMEA2000_LIMITS.WIND_SPEED_MAX_MS);
-  }
-  if (sanitized.windGustSpeed !== undefined) {
-    sanitized.windGustSpeed = clamp(sanitized.windGustSpeed, 0, NMEA2000_LIMITS.WIND_SPEED_MAX_MS);
-  }
-  if (sanitized.windDirection !== undefined) {
-    sanitized.windDirection = normalizeAngle0To2Pi(sanitized.windDirection);
-  }
-
-  return sanitized;
+  return sanitized as unknown as WeatherData;
 }
 
 /** Validate latitude value. */
 export function isValidLatitude(latitude: number): boolean {
-  return (
-    typeof latitude === 'number' &&
-    Number.isFinite(latitude) &&
-    latitude >= VALIDATION_LIMITS.COORDINATES.LATITUDE.MIN &&
-    latitude <= VALIDATION_LIMITS.COORDINATES.LATITUDE.MAX
+  return isWithinBounds(
+    latitude,
+    VALIDATION_LIMITS.COORDINATES.LATITUDE.MIN,
+    VALIDATION_LIMITS.COORDINATES.LATITUDE.MAX
   );
 }
 
-/**
- * Validate longitude value
- */
+/** Validate longitude value. */
 export function isValidLongitude(longitude: number): boolean {
-  return (
-    typeof longitude === 'number' &&
-    Number.isFinite(longitude) &&
-    longitude >= VALIDATION_LIMITS.COORDINATES.LONGITUDE.MIN &&
-    longitude <= VALIDATION_LIMITS.COORDINATES.LONGITUDE.MAX
+  return isWithinBounds(
+    longitude,
+    VALIDATION_LIMITS.COORDINATES.LONGITUDE.MIN,
+    VALIDATION_LIMITS.COORDINATES.LONGITUDE.MAX
   );
 }
 

@@ -28,7 +28,12 @@ const WIND_CHILL_MAX_TEMP_C = 10;
 const WIND_CHILL_MIN_SPEED_KMH = 4.8;
 /** Heat index requires the temperature to be above this value (Rothfusz regression). */
 const HEAT_INDEX_MIN_TEMP_F = 80;
-/** Heat index requires humidity to be above this value (percentage). */
+/**
+ * Heat index requires humidity to be above this value (percentage). NWS
+ * publishes the heat index only when RH >= 40 because the Rothfusz fit was
+ * calibrated against humid conditions; below the gate we return the raw
+ * temperature instead of synthesizing a heat-index estimate.
+ */
 const HEAT_INDEX_MIN_HUMIDITY_PCT = 40;
 
 export class WindCalculator {
@@ -170,10 +175,11 @@ export class WindCalculator {
       0.00085282 * t * r * r +
       -0.00000199 * t * t * r * r;
 
-    // Adjustments for extreme conditions
-    if (r < 13 && t >= 80 && t <= 112) {
-      heatIndex -= ((13 - r) / 4) * Math.sqrt((17 - Math.abs(t - 95)) / 17);
-    } else if (r > 85 && t >= 80 && t <= 87) {
+    // High-humidity adjustment: only branch reachable from the public method,
+    // since the HEAT_INDEX_MIN_HUMIDITY_PCT=40 gate above rules out the
+    // companion low-humidity (r<13) Rothfusz correction the NWS publishes.
+    // Keeping the low-humidity branch alongside would be dead code.
+    if (r > 85 && t >= 80 && t <= 87) {
       heatIndex += ((r - 85) / 10) * ((87 - t) / 5);
     }
 

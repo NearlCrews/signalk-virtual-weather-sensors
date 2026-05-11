@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: Tag to publish (e.g. v1.3.2)
+        description: Tag to publish (e.g. v1.4.2)
         required: true
 
 permissions:
