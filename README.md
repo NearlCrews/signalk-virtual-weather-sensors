@@ -2,8 +2,8 @@
 
 [![npm version](https://img.shields.io/npm/v/signalk-virtual-weather-sensors.svg)](https://www.npmjs.com/package/signalk-virtual-weather-sensors)
 [![npm downloads](https://img.shields.io/npm/dm/signalk-virtual-weather-sensors.svg)](https://www.npmjs.com/package/signalk-virtual-weather-sensors)
-[![License](https://img.shields.io/github/license/NearlCrews/signalk-virtual-weather-sensors.svg)](https://github.com/NearlCrews/signalk-virtual-weather-sensors/blob/main/LICENSE)
-[![CI](https://github.com/NearlCrews/signalk-virtual-weather-sensors/workflows/CI/badge.svg)](https://github.com/NearlCrews/signalk-virtual-weather-sensors/actions)
+[![License](https://img.shields.io/github/license/NearlCrews/signalk-virtual-weather-sensors.svg)](https://github.com/NearlCrews/signalk-virtual-weather-sensors/blob/master/LICENSE)
+[![CI](https://github.com/NearlCrews/signalk-virtual-weather-sensors/actions/workflows/ci.yml/badge.svg)](https://github.com/NearlCrews/signalk-virtual-weather-sensors/actions/workflows/ci.yml)
 
 A Signal K plugin that fetches weather data from the AccuWeather API and emits it as Signal K deltas conforming to the [Signal K 1.8.2 specification](https://signalk.org/specification/1.8.2/doc/), with paths aligned for NMEA2000 emission via a companion plugin. Provides 24+ environmental data points including temperatures, wind, atmospheric conditions, and marine safety indices.
 
@@ -186,7 +186,7 @@ npm run validate       # Type-check + lint + tests (runs on pre-commit)
 - `@signalk/server-api` 2.24+ (declared as a `peerDependency`; the Signal K server provides it at runtime)
 - esbuild 0.28 for bundling
 - Biome 2.4 for linting/formatting
-- Vitest 4.1 for testing (234 tests across 10 files; Stryker.js for opt-in mutation testing)
+- Vitest 4.1 for testing (235 tests across 10 files; Stryker.js for opt-in mutation testing)
 - Husky + lint-staged for pre-commit hooks
 
 ## License
