@@ -312,10 +312,12 @@ function emitWeatherTick(instance: PluginInstance, app: ServerAPI, maxStalenessM
     return;
   }
 
-  if (instance.staleErrorActive) {
-    app.setPluginStatus(instance.weatherService.formatStatusBanner());
-    instance.staleErrorActive = false;
-  }
+  // Re-push the banner every fresh tick so the admin UI sees "last update Nm
+  // ago" rather than the start-time "awaiting first update" string. Also
+  // serves as the stale-error recovery path: clear the flag once we know data
+  // is flowing again.
+  app.setPluginStatus(instance.weatherService.formatStatusBanner());
+  instance.staleErrorActive = false;
 
   // Only rebuild delta when weather data changes (reference comparison).
   if (weatherData !== instance.cachedWeatherDataRef) {

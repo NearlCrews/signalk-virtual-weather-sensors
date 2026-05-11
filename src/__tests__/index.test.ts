@@ -8,6 +8,44 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { PLUGIN } from '../constants/index.js';
 import createPlugin from '../index.js';
 
+// Stub WeatherService + NMEA2000PathMapper so emission-tick tests can supply
+// synthetic data without making a real AccuWeather call. State lives in a
+// hoisted object so individual tests can flip the stub between "no data yet"
+// (the existing tests' assumption) and "data is available".
+const { stubState } = vi.hoisted(() => ({
+  stubState: {
+    getCurrentWeatherData: (() => null) as () => unknown,
+    formatStatusBanner: (() => 'Running, awaiting first update') as () => string,
+  },
+}));
+
+vi.mock('../services/WeatherService.js', () => {
+  class StubWeatherService {
+    public formatStatusBanner = vi.fn(() => stubState.formatStatusBanner());
+    public getCurrentWeatherData = vi.fn(() => stubState.getCurrentWeatherData());
+    public getDataAgeMs = vi.fn(() => 1000);
+    public getLastUpdate = vi.fn(() => new Date());
+    public isQuotaExhausted = vi.fn(() => false);
+    public start = vi.fn(async () => {});
+    public stop = vi.fn(async () => {});
+  }
+  return { WeatherService: StubWeatherService };
+});
+
+vi.mock('../mappers/NMEA2000PathMapper.js', () => {
+  class StubPathMapper {
+    public mapToSignalKPaths = vi.fn(() => ({
+      context: 'vessels.self',
+      updates: [{ values: [{ path: 'environment.outside.temperature', value: 283.15 }] }],
+    }));
+    public buildMetaDelta = vi.fn(() => ({
+      context: 'vessels.self',
+      updates: [{ meta: [{ path: 'environment.outside.temperature', value: { units: 'K' } }] }],
+    }));
+  }
+  return { NMEA2000PathMapper: StubPathMapper };
+});
+
 const validKey = 'A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6';
 
 const baseSettings = {
@@ -101,5 +139,36 @@ describe('plugin entry: meta delta is shipped exactly once per lifetime', () => 
     const schema = plugin.schema?.();
     expect(schema).toBeDefined();
     expect((schema as { required?: string[] }).required).toContain('accuWeatherApiKey');
+  });
+
+  // Regression: prior code only called setPluginStatus once at start (when
+  // lastUpdate was still null, so the banner said "awaiting first update")
+  // and never refreshed it on successful emission ticks. Banner stayed stuck.
+  it('refreshes the status banner on emission ticks after weather data is available', async () => {
+    stubState.getCurrentWeatherData = () => ({ temperature: 283.15 });
+    stubState.formatStatusBanner = () => 'Running, last update 0m ago (1 updates)';
+
+    try {
+      const app = buildMockApp();
+      const plugin = createPlugin(app as never);
+
+      await plugin.start(baseSettings, () => {});
+
+      // Snapshot how many times setPluginStatus was called at start, then
+      // advance through several emission ticks (emissionInterval = 1s).
+      const callsAtStart = app.setPluginStatus.mock.calls.length;
+      await vi.advanceTimersByTimeAsync(3500);
+
+      // Banner must be re-pushed at least once after start so the admin UI
+      // reflects a successful fetch rather than the stale "awaiting" string.
+      expect(app.setPluginStatus.mock.calls.length).toBeGreaterThan(callsAtStart);
+      const lastCall = app.setPluginStatus.mock.calls[app.setPluginStatus.mock.calls.length - 1];
+      expect(lastCall[0]).toBe('Running, last update 0m ago (1 updates)');
+
+      await plugin.stop();
+    } finally {
+      stubState.getCurrentWeatherData = () => null;
+      stubState.formatStatusBanner = () => 'Running, awaiting first update';
+    }
   });
 });
