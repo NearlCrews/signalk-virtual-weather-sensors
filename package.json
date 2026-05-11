@@ -24,7 +24,8 @@
   ],
   "signalk-plugin-enabled-by-default": false,
   "signalk": {
-    "displayName": "Virtual Weather Sensors"
+    "displayName": "Virtual Weather Sensors",
+    "appIcon": "./assets/icons/icon-192.png"
   },
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -37,6 +38,7 @@
   "sideEffects": false,
   "files": [
     "dist/",
+    "assets/icons/",
     "README.md",
     "LICENSE",
     "CHANGELOG.md"
