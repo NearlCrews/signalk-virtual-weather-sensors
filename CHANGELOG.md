@@ -5,9 +5,9 @@ All notable changes to the signalk-virtual-weather-sensors project will be docum
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.4.2] - 2026-05-11
 
-Four-lane UI review pass (admin form, status banner, meta delta, App Store + docs) by a parallel Signal K plugin expert team. 13 files touched, no `src` regressions, 238 tests pass (was 235; 3 new banner-grammar and quota-message tests).
+Four-lane UI review pass (admin form, status banner, meta delta, App Store + docs) by a parallel Signal K plugin expert team plus a new plugin icon. 14 files touched in the review pass + the icon family assets, no `src` regressions, 238 tests pass (was 235; 3 new banner-grammar and quota-message tests).
 
 ### Fixed
 
@@ -35,9 +35,9 @@ Four-lane UI review pass (admin form, status banner, meta delta, App Store + doc
 - README UV index and heat-stress rows now ship the legend inline (`0..2 low / 3..5 moderate / 6..7 high / 8..10 very high / 11+ extreme` for UV; the WBGT band table for heat stress).
 - DEVELOPMENT.md test count refreshed (235 → 238, WeatherService.test.ts 25 → 28).
 
-### Known gap
+### Added
 
-- `package.json signalk.appIcon` is still missing and no icon asset ships in the repo. The Signal K admin UI plugin list shows a default icon as a result. Not fabricated this pass: the reviewer correctly punted on creating one. A follow-up PR could add e.g. `assets/icons/icon-72x72.png` and reference it via `signalk.appIcon: "./assets/icons/icon-72x72.png"`.
+- Plugin icon. 512x512 SVG source at `assets/icons/icon.svg` rasterized via `librsvg2-bin` to PNGs at 72/96/192/512. Joins a coordinated icon family across `@NearlCrews` Signal K plugins (`signalk-nmea2000-emitter-cannon`, `signalk-openrouter-companion`): rounded-square ocean gradient + three stacked wave lines as the family motif, with a bottom-right circular badge varying per plugin. This variant's badge is warm yellow with a dark cloud silhouette. `package.json` gains `signalk.appIcon: "./assets/icons/icon-192.png"` and the `files` array now includes `assets/icons/` so the PNGs ship in the tarball. Closes the "Known gap" flagged in the four-lane UI review.
 
 ## [1.4.1] - 2026-05-11
 
