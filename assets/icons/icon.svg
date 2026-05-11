@@ -8,8 +8,9 @@
   project-specific colour with a 2-3 shape glyph. This badge is the only
   region that varies between sibling plugins.
 
-  This variant's badge: warm yellow (#FBC02D) with a dark cloud glyph,
-  signaling weather/atmosphere.
+  This variant's badge: warm yellow (#FBC02D) with a dark thundercloud
+  glyph (cloud + lightning bolt), signaling weather/atmosphere with
+  enough visual movement to distinguish the plugin at thumbnail size.
 -->
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512" role="img" aria-label="Virtual Weather Sensors plugin icon">
   <defs>
@@ -32,11 +33,17 @@
   <!-- Project badge: bottom-right circle (sun yellow for weather) -->
   <circle cx="388" cy="388" r="84" fill="#FBC02D" stroke="#FFFFFF" stroke-width="8"/>
 
-  <!-- Badge glyph: cloud silhouette (three lobes + rounded base) -->
+  <!--
+    Badge glyph: thundercloud (cloud silhouette + lightning bolt below).
+    Cloud sits in the upper half of the badge; bolt strikes downward from
+    just below the cloud's base. Both filled in the family glyph dark
+    (#1B3A4B) so they read as a single thundercloud silhouette at 32px.
+  -->
   <g fill="#1B3A4B">
-    <circle cx="364" cy="388" r="22"/>
-    <circle cx="396" cy="376" r="30"/>
-    <circle cx="420" cy="392" r="20"/>
-    <rect x="358" y="386" width="68" height="24" rx="12"/>
+    <circle cx="364" cy="376" r="22"/>
+    <circle cx="396" cy="364" r="30"/>
+    <circle cx="420" cy="380" r="20"/>
+    <rect x="358" y="374" width="68" height="24" rx="12"/>
+    <path d="M 376 400 v 28 h 8 v 22 l 17 -30 h -10 l 10 -20 z"/>
   </g>
 </svg>
