@@ -33,8 +33,6 @@ interface PluginInstance {
   cachedWeatherDataRef: WeatherData | null;
   /** True once the one-shot meta delta has been shipped to the server. */
   metaEmitted: boolean;
-  /** True between setPluginError(stale) and the next successful clear. */
-  staleErrorActive: boolean;
 }
 
 /**
@@ -54,7 +52,6 @@ export default function createPlugin(app: ServerAPI): Plugin {
     cachedDelta: null,
     cachedWeatherDataRef: null,
     metaEmitted: false,
-    staleErrorActive: false,
   };
 
   const plugin: Plugin = {
@@ -111,7 +108,10 @@ export default function createPlugin(app: ServerAPI): Plugin {
           error: errorMessage,
         });
 
-        app.setPluginError(`signalk-virtual-weather-sensors stop failed: ${errorMessage}`);
+        // The admin UI plugin list already prefixes banner text with the
+        // plugin's display name, so no need to repeat 'signalk-virtual-weather-sensors'
+        // here.
+        app.setPluginError(`Stop failed: ${errorMessage}`);
       }
     },
 
@@ -121,7 +121,7 @@ export default function createPlugin(app: ServerAPI): Plugin {
     schema: () => ({
       type: 'object',
       title: 'Virtual Weather Sensors',
-      description: 'AccuWeather → Signal K with NMEA2000-compatible environmental measurements.',
+      description: 'AccuWeather to Signal K with NMEA2000-compatible environmental measurements.',
       properties: {
         accuWeatherApiKey: {
           type: 'string',
@@ -131,26 +131,28 @@ export default function createPlugin(app: ServerAPI): Plugin {
           minLength: 20,
         },
         updateFrequency: {
-          type: 'number',
-          title: 'Weather Update Frequency',
-          description: 'How often to fetch weather data from AccuWeather API in minutes.',
+          type: 'integer',
+          title: 'Weather Update Frequency (minutes)',
+          description:
+            'How often to fetch new weather data from AccuWeather. Each tick costs one API call (location lookups are cached).',
           default: DEFAULT_CONFIG.UPDATE_FREQUENCY,
           minimum: 1,
           maximum: 60,
         },
         emissionInterval: {
-          type: 'number',
-          title: 'Broadcast Interval',
-          description: 'How often to emit weather data to the NMEA2000 network in seconds.',
+          type: 'integer',
+          title: 'Broadcast Interval (seconds)',
+          description:
+            'How often the cached weather payload is re-emitted to the Signal K bus so NMEA2000 listeners keep seeing fresh deltas.',
           default: DEFAULT_CONFIG.EMISSION_INTERVAL,
           minimum: 1,
           maximum: 60,
         },
         dailyApiQuota: {
-          type: 'number',
+          type: 'integer',
           title: 'Daily API Call Quota',
           description:
-            'Maximum AccuWeather calls per rolling 24-hour window. Free tier is 50/day. Set to 0 to disable the cap and quota warnings.',
+            'Cap on AccuWeather calls in any rolling 24-hour window. AccuWeather free tier allows 50/day. Set to 0 to disable the cap and quota warnings.',
           default: DEFAULT_CONFIG.DAILY_API_QUOTA,
           minimum: 0,
           maximum: DEFAULT_CONFIG.DAILY_API_QUOTA_MAX,
@@ -166,15 +168,23 @@ export default function createPlugin(app: ServerAPI): Plugin {
       'ui:order': ['accuWeatherApiKey', 'updateFrequency', 'emissionInterval', 'dailyApiQuota'],
       accuWeatherApiKey: {
         'ui:widget': 'password',
+        'ui:autocomplete': 'off',
+        'ui:placeholder': 'paste your AccuWeather developer API key',
       },
       updateFrequency: {
         'ui:widget': 'updown',
+        'ui:help':
+          'Free-tier keys get 50 calls/day, so 30 minutes (48/day) is the safe default. Raise the cadence on paid tiers.',
       },
       emissionInterval: {
         'ui:widget': 'updown',
+        'ui:help':
+          'Independent of the fetch cadence: keeps NMEA2000 listeners alive between AccuWeather updates.',
       },
       dailyApiQuota: {
         'ui:widget': 'updown',
+        'ui:help':
+          'When usage crosses 90% the banner shows a warning; at 100% fetches pause until the rolling window drops. 0 disables tracking entirely.',
       },
     }),
   };
@@ -261,7 +271,9 @@ async function handleStartupError(
     settingsKeys: typeof settings === 'object' && settings !== null ? Object.keys(settings) : [],
   });
 
-  app.setPluginError(`signalk-virtual-weather-sensors startup failed: ${errorMessage}`);
+  // The admin UI plugin list already prefixes banner text with the plugin's
+  // display name, so no need to repeat 'signalk-virtual-weather-sensors' here.
+  app.setPluginError(`Startup failed: ${errorMessage}`);
 
   await cleanup(instance);
 }
@@ -307,17 +319,30 @@ function emitWeatherTick(instance: PluginInstance, app: ServerAPI, maxStalenessM
 
   const ageMs = instance.weatherService.getDataAgeMs();
   if (ageMs !== null && ageMs > maxStalenessMs) {
-    app.setPluginError(`Weather data stale: last update ${Math.round(ageMs / 60_000)} minutes ago`);
-    instance.staleErrorActive = true;
+    // Floor (not round) so a delta that has crossed the threshold by, say,
+    // 30 seconds reports the actual whole minute since last update, not the
+    // next minute up. Pluralize for the "1 minute ago" boundary.
+    const ageMin = Math.floor(ageMs / 60_000);
+    const unit = ageMin === 1 ? 'minute' : 'minutes';
+    app.setPluginError(`Weather data stale: last update ${ageMin} ${unit} ago`);
+    return;
+  }
+
+  // If fetches are paused because the daily quota is exhausted, keep the
+  // pause-message visible. Calling setPluginStatus below would silently
+  // overwrite the prior setPluginError pushed by WeatherService.updateWeatherData,
+  // leaving operators looking at a healthy "Running" banner while no new
+  // data is actually being fetched.
+  if (instance.weatherService.isQuotaExhausted()) {
+    app.setPluginError(instance.weatherService.formatQuotaExhaustedMessage());
     return;
   }
 
   // Re-push the banner every fresh tick so the admin UI sees "last update Nm
-  // ago" rather than the start-time "awaiting first update" string. Also
-  // serves as the stale-error recovery path: clear the flag once we know data
-  // is flowing again.
+  // ago" rather than the start-time "awaiting first update" string. This call
+  // also clears any prior setPluginError (e.g. stale-data) as soon as the
+  // next successful tick lands.
   app.setPluginStatus(instance.weatherService.formatStatusBanner());
-  instance.staleErrorActive = false;
 
   // Only rebuild delta when weather data changes (reference comparison).
   if (weatherData !== instance.cachedWeatherDataRef) {
@@ -383,7 +408,6 @@ async function cleanup(instance: PluginInstance): Promise<void> {
   instance.cachedDelta = null;
   instance.cachedWeatherDataRef = null;
   instance.metaEmitted = false;
-  instance.staleErrorActive = false;
 }
 
 /**

@@ -12,25 +12,25 @@ published `navigation.position`) is required.
 
 ## Files
 
-- **`sailboat.json`**: Default 5-minute weather refresh, 5-second emission to
-  the NMEA2000 bus. A balanced profile that fits comfortably inside the
-  AccuWeather free tier (50 calls/day = 12 calls/hour ceiling) and gives plotters
-  a steady heartbeat.
+- **`sailboat.json`**: Default 30-minute weather refresh, 5-second emission to
+  the NMEA2000 bus. Matches the plugin defaults: 48 calls/day fits comfortably
+  inside the AccuWeather free-tier 50/day cap, and the 5-second emission keeps
+  plotters seeing a steady heartbeat between fetches.
 
 - **`powerboat.json`**: 2-minute weather refresh for faster-changing conditions
   while underway at higher speeds. Burns ~720 calls/day, so this profile
   requires a paid AccuWeather tier or a key with a higher quota.
 
-- **`slow-update.json`**: 15-minute weather refresh, 10-second emission. Use
+- **`slow-update.json`**: 60-minute weather refresh, 10-second emission. Use
   with a free-tier key when you also have other AccuWeather consumers on the
   same key, or when atmospheric conditions in your cruising area change slowly.
-  ~96 calls/day.
+  ~24 calls/day.
 
 ## Settings reference
 
 | Setting | Default | Range | Notes |
 |---------|---------|-------|-------|
 | `accuWeatherApiKey` | (required) | min 20 chars | Key from developer.accuweather.com |
-| `updateFrequency` | 5 | 1 to 60 minutes | How often to fetch from AccuWeather |
+| `updateFrequency` | 30 | 1 to 60 minutes | How often to fetch from AccuWeather. Default 48 calls/day fits free tier. |
 | `emissionInterval` | 5 | 1 to 60 seconds | How often to re-emit cached data to NMEA2000 |
 | `dailyApiQuota` | 50 | 0 to 1000 calls | Rolling 24h cap; 0 disables. Banner shows `K/Q today` and warns at 90%; at 100% the plugin pauses fetches. |

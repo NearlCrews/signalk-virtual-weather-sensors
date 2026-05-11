@@ -5,6 +5,40 @@ All notable changes to the signalk-virtual-weather-sensors project will be docum
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+Four-lane UI review pass (admin form, status banner, meta delta, App Store + docs) by a parallel Signal K plugin expert team. 13 files touched, no `src` regressions, 238 tests pass (was 235; 3 new banner-grammar and quota-message tests).
+
+### Fixed
+
+- **Banner refresh was clobbering the quota-exhausted error every 5 seconds.** The unconditional `setPluginStatus(formatStatusBanner())` added in the v1.4.1 banner-refresh fix overwrote any active `setPluginError`, including the "quota reached, fetches paused" message. `emitWeatherTick` now gates the recovery refresh behind `isQuotaExhausted()` and re-pushes the quota error instead of clobbering it. Stale-data recovery still works as before. (HIGH)
+- **Default `updateFrequency` was 5 minutes, producing 288 calls/day vs the default 50/day quota cap, so every fresh free-tier install tripped its own `setPluginError` on day one.** Default raised to 30 minutes (48/day, comfortably under the cap). `STALENESS_FACTOR` doc comment updated for the new 60-minute staleness window. Operators who want faster updates can lower the cadence and raise `dailyApiQuota` (or set it to 0 to disable). (HIGH)
+- Banner grammar: `1 update` instead of `1 updates`, `1 API request` instead of `1 API requests`. Stale-data error: `1 minute ago` instead of `1 minutes ago`, and the age uses `Math.floor` so a delta only 31 seconds past threshold no longer shows "1m ago". (MED)
+- Quota-exhausted `setPluginError` message rewritten to be operator-actionable: explicitly tells the operator how to resume (raise `dailyApiQuota` or `updateFrequency`). Hoisted to public `formatQuotaExhaustedMessage()` for testability. (MED)
+- Stale `signalk-virtual-weather-sensors stop failed:` / `startup failed:` prefixes trimmed to `Stop failed:` / `Startup failed:`. The admin UI plugin list already prefixes banner text with the plugin's display name, so the package-name repeat was redundant. (LOW)
+
+### Changed
+
+- **`signalk.displayName` and `PLUGIN.DISPLAY_NAME`** trimmed from `Signal K Virtual Weather Sensors` to `Virtual Weather Sensors`. The admin UI is already Signal K's, so the prefix was duplicative; matches sibling plugin convention (`signalk-questdb` ships `QuestDB History`). (HIGH, cosmetic)
+- Admin form schema types: `updateFrequency`, `emissionInterval`, `dailyApiQuota` retyped `number` → `integer` so the updown widget cannot submit fractional values. Runtime validation already tolerated floats, so legacy stored configs are unaffected. Titles now embed units inline (`(minutes)`, `(seconds)`), descriptions tightened. uiSchema gained `ui:autocomplete: 'off'` + placeholder on the API-key field and `ui:help` text on each numeric field explaining the quota interaction. (MED + LOW)
+- Meta delta: heat-stress index 0..4 scale now spells out the WBGT thresholds (<27, 27..29, 29..31, 31..33, >=33 °C) and category labels (low / moderate / high / very high / extreme). 12 producer-namespaced paths gained meaningful `description` fields (RealFeel vs canonical wind chill, wet bulb vs WBGT, apparent temperature, absolute humidity, visibility, cloud cover, cloud ceiling, precipitation last hour vs rate, 24h temp departure sign convention, wind gust). Two `displayName` strings shortened (`Wet bulb globe temperature` → `Wet bulb globe temp`, `24h temperature departure` → `24h temp departure`) to dodge Instrument Panel row truncation. (MED + LOW)
+- Examples updated for the new default: `sailboat.json` `updateFrequency` 5 → 30, `slow-update.json` 15 → 60. `examples/README.md` settings reference reconciled.
+
+### Removed
+
+- Dead `PLUGIN.STATUS.SERVICE_RUNNING` / `SERVICE_STOPPED` constants and their `setPluginStatus` writes in `WeatherService.start()` / `stop()`: both were overwritten on the same event-loop turn by `finalizePluginStart` and `stop()`. The dead `staleErrorActive` field on `PluginInstance` also dropped (set but never read). (LOW)
+
+### Docs
+
+- README Configuration table reflects the new 30-minute default and notes the 48 calls/day fit under the free-tier 50/day cap.
+- README Troubleshooting headings updated to match the post-edit banner strings verbatim so operators can grep their admin UI banner straight into the README.
+- README UV index and heat-stress rows now ship the legend inline (`0..2 low / 3..5 moderate / 6..7 high / 8..10 very high / 11+ extreme` for UV; the WBGT band table for heat stress).
+- DEVELOPMENT.md test count refreshed (235 → 238, WeatherService.test.ts 25 → 28).
+
+### Known gap
+
+- `package.json signalk.appIcon` is still missing and no icon asset ships in the repo. The Signal K admin UI plugin list shows a default icon as a result. Not fabricated this pass: the reviewer correctly punted on creating one. A follow-up PR could add e.g. `assets/icons/icon-72x72.png` and reference it via `signalk.appIcon: "./assets/icons/icon-72x72.png"`.
+
 ## [1.4.1] - 2026-05-11
 
 Signal K 1.8.2 spec-compliance release plus a post-audit follow-through cycle. **Includes Signal K path renames that change the wire output**: every non-1.8.2 leaf this plugin previously emitted under `environment.outside.*` or `environment.wind.*` now lives under a new producer-namespaced `environment.weather.*` branch. Consumers reading the previous path strings must update. Beyond the spec pass, this release adds an opt-in daily-quota visibility surface, a banner-refresh fix, mutation-testing infrastructure (67.44% score on the pure-function modules), end-to-end and schema-conformance test suites, four operator-facing documentation spikes, and a routine GitHub Actions + dev-deps refresh.

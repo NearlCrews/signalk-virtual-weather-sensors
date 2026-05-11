@@ -10,7 +10,7 @@
 /** Plugin identification and versioning */
 export const PLUGIN = {
   NAME: 'signalk-virtual-weather-sensors',
-  DISPLAY_NAME: 'Signal K Virtual Weather Sensors',
+  DISPLAY_NAME: 'Virtual Weather Sensors',
   DESCRIPTION:
     'Signal K plugin providing comprehensive weather data from AccuWeather API with NMEA2000-compatible environmental measurements',
   VERSION: process.env.PKG_VERSION || '1.0.0',
@@ -26,15 +26,13 @@ export const PLUGIN = {
     /** Banner prefix once 24h API usage crosses `API_QUOTA.WARN_RATIO`. */
     RUNNING_QUOTA_WARN: 'Running [quota 90% used]',
     STOPPED: 'Stopped',
-    SERVICE_RUNNING: 'Weather service running',
-    SERVICE_STOPPED: 'Weather service stopped',
   },
   /** Delay before first weather fetch after start, in ms */
   INITIAL_UPDATE_DELAY_MS: 5000,
   /**
    * Multiplier on `updateFrequency` (minutes) used to decide when emitted
-   * weather data has gone stale. With the default 5-minute fetch cadence,
-   * data older than 10 minutes triggers a stale-data error in the Admin UI.
+   * weather data has gone stale. With the default 30-minute fetch cadence,
+   * data older than 60 minutes triggers a stale-data error in the Admin UI.
    */
   STALENESS_FACTOR: 2,
 } as const;
@@ -45,7 +43,12 @@ export const PLUGIN = {
 
 /** Default plugin configuration settings */
 export const DEFAULT_CONFIG = {
-  UPDATE_FREQUENCY: 5, // minutes
+  /**
+   * Default fetch cadence: 30 minutes yields 48 AccuWeather calls/day, which
+   * fits inside the free-tier 50/day quota with headroom. Operators on paid
+   * tiers commonly lower this to 5 to 15 minutes via the admin UI.
+   */
+  UPDATE_FREQUENCY: 30, // minutes
   EMISSION_INTERVAL: 5, // seconds
   /**
    * AccuWeather free tier allows 50 calls/day. Operators on a paid tier can

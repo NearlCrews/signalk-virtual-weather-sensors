@@ -382,6 +382,81 @@ describe('WeatherService - Quota Banner', () => {
     expect(banner).toContain('50/50 today');
     expect(service.isQuotaExhausted()).toBe(true);
   });
+
+  it('formats the quota-exhausted message with actionable guidance', () => {
+    const config = createTestConfig({ dailyApiQuota: 50 });
+    const service = new WeatherService(
+      mockApp as never,
+      config,
+      mockLogger,
+      undefined,
+      makeFakeAccu(50)
+    );
+
+    const message = service.formatQuotaExhaustedMessage();
+    expect(message).toContain('AccuWeather daily quota reached (50/50 in last 24h)');
+    expect(message).toContain('Fetches paused');
+    // Operators need to know HOW to resume.
+    expect(message).toMatch(/raise dailyApiQuota|increase updateFrequency/);
+  });
+});
+
+describe('WeatherService - Banner Pluralization', () => {
+  let mockApp: ReturnType<typeof createMockApp>;
+  let mockLogger: ReturnType<typeof createMockLogger>;
+
+  /** Stand-in AccuWeatherService that pins both counters; see Quota Banner block. */
+  const makeFakeAccu = (last24h: number, cumulative = last24h) =>
+    ({
+      getRequestCount: () => cumulative,
+      getRequestCountLast24h: () => last24h,
+      getCacheStats: () => ({ size: 0 }),
+    }) as unknown as import('../../services/AccuWeatherService.js').AccuWeatherService;
+
+  beforeEach(() => {
+    mockApp = createMockApp();
+    mockLogger = createMockLogger();
+  });
+
+  it('uses singular "update" and singular "API request" when both counters are 1', () => {
+    const config = createTestConfig({ dailyApiQuota: 0 });
+    const service = new WeatherService(
+      mockApp as never,
+      config,
+      mockLogger,
+      undefined,
+      makeFakeAccu(0, 1)
+    );
+
+    // Reach into the orchestrator to pin updateCount=1 and lastUpdate=now
+    // without driving a real fetch.
+    (service as unknown as { updateCount: number }).updateCount = 1;
+    (service as unknown as { lastUpdate: Date }).lastUpdate = new Date();
+
+    const banner = service.formatStatusBanner();
+    expect(banner).toContain('1 update,');
+    expect(banner).not.toContain('1 updates');
+    expect(banner).toContain('1 API request)');
+    expect(banner).not.toContain('1 API requests');
+  });
+
+  it('uses plural "updates" / "API requests" when counters are >1', () => {
+    const config = createTestConfig({ dailyApiQuota: 0 });
+    const service = new WeatherService(
+      mockApp as never,
+      config,
+      mockLogger,
+      undefined,
+      makeFakeAccu(0, 3)
+    );
+
+    (service as unknown as { updateCount: number }).updateCount = 3;
+    (service as unknown as { lastUpdate: Date }).lastUpdate = new Date();
+
+    const banner = service.formatStatusBanner();
+    expect(banner).toContain('3 updates');
+    expect(banner).toContain('3 API requests');
+  });
 });
 
 describe('WeatherService - Configuration Validation', () => {

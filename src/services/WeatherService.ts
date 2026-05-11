@@ -126,7 +126,10 @@ export class WeatherService {
       this.state = 'running';
       this.logger('info', 'WeatherService started successfully');
 
-      this.app.setPluginStatus(PLUGIN.STATUS.SERVICE_RUNNING);
+      // The plugin entry point pushes the live status banner immediately after
+      // start() returns, so a banner write here would be overwritten on the
+      // same tick. Likewise, startup errors are surfaced via setPluginError in
+      // index.ts handleStartupError(): rethrow and let the caller publish.
     } catch (error) {
       this.state = 'error';
       const errorMessage = toErrorMessage(error);
@@ -134,8 +137,6 @@ export class WeatherService {
       this.logger('error', 'Failed to start WeatherService', {
         error: errorMessage,
       });
-
-      this.app.setPluginError(`Weather service startup failed: ${errorMessage}`);
 
       throw new Error(`${ERROR_CODES.SYSTEM.PLUGIN_START_FAILED}: ${errorMessage}`);
     }
@@ -180,7 +181,9 @@ export class WeatherService {
         errorCount: this.errorCount,
       });
 
-      this.app.setPluginStatus(PLUGIN.STATUS.SERVICE_STOPPED);
+      // No banner write here: the plugin entry point publishes PLUGIN.STATUS.STOPPED
+      // on the very next line of its stop() handler, so a write here would be a
+      // dead write.
     } catch (error) {
       this.state = 'error';
       const errorMessage = toErrorMessage(error);
@@ -238,13 +241,15 @@ export class WeatherService {
       const head = `${prefix}, awaiting first update`;
       return quotaSuffix ? `${head} (${quotaSuffix.replace(/^, /, '')})` : head;
     }
-    const ageMin = Math.round(ageMs / 60_000);
+    const ageMin = Math.floor(ageMs / 60_000);
     const ageLabel = ageMin <= 0 ? 'just now' : `${ageMin}m ago`;
     const requestCount = this.accuWeatherService.getRequestCount();
-    const counters =
+    const updatesLabel = `${this.updateCount} ${this.updateCount === 1 ? 'update' : 'updates'}`;
+    const requestsLabel =
       requestCount > 0
-        ? `${this.updateCount} updates, ${requestCount} API requests`
-        : `${this.updateCount} updates`;
+        ? `, ${requestCount} API ${requestCount === 1 ? 'request' : 'requests'}`
+        : '';
+    const counters = `${updatesLabel}${requestsLabel}`;
     return `${prefix}, last update ${ageLabel} (${counters}${this.formatQuotaSuffix()})`;
   }
 
@@ -281,6 +286,17 @@ export class WeatherService {
     if (this.config.dailyApiQuota <= 0) return false;
     const used = this.accuWeatherService.getRequestCountLast24h();
     return used / this.config.dailyApiQuota >= API_QUOTA.EXHAUST_RATIO;
+  }
+
+  /**
+   * Operator-facing message used when fetches are paused at the daily quota.
+   * Public so the emission tick can re-push the same wording instead of
+   * letting a periodic setPluginStatus call silently overwrite the error.
+   */
+  public formatQuotaExhaustedMessage(): string {
+    const used = this.accuWeatherService.getRequestCountLast24h();
+    const quota = this.config.dailyApiQuota;
+    return `AccuWeather daily quota reached (${used}/${quota} in last 24h). Fetches paused until the rolling window drops below the cap. To resume sooner, raise dailyApiQuota or increase updateFrequency.`;
   }
 
   /**
@@ -361,12 +377,11 @@ export class WeatherService {
     if (this.isQuotaExhausted()) {
       const used = this.accuWeatherService.getRequestCountLast24h();
       const quota = this.config.dailyApiQuota;
-      const message = `AccuWeather daily quota reached (${used}/${quota} in last 24h). Pausing fetches until usage drops below the cap.`;
       this.logger('warn', 'Skipping weather update: daily API quota reached', {
         used,
         quota,
       });
-      this.app.setPluginError(message);
+      this.app.setPluginError(this.formatQuotaExhaustedMessage());
       return;
     }
 

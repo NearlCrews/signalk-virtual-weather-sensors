@@ -49,7 +49,7 @@ ln -s "$(pwd)" ~/.signalk/node_modules/signalk-virtual-weather-sensors
 | Setting | Description | Default | Range |
 |---------|-------------|---------|-------|
 | **AccuWeather API Key** | Required. Get one free at [developer.accuweather.com](https://developer.accuweather.com/) | n/a | n/a |
-| **Update Frequency** | How often to fetch new weather data (minutes) | 5 | 1 to 60 |
+| **Update Frequency** | How often to fetch new weather data (minutes). At the default 30 minutes the plugin uses 48 calls/day, within the AccuWeather free-tier 50/day cap. | 30 | 1 to 60 |
 | **Emission Interval** | How often to emit the current data to the NMEA2000 network (seconds) | 5 | 1 to 60 |
 | **Daily API Call Quota** | Cap on AccuWeather calls per rolling 24-hour window. The status banner shows `K/Q today` and switches to a warning prefix at 90% usage; at 100% the plugin pauses fetches and surfaces a setPluginError until usage drops below the cap. Set to 0 to disable the cap entirely. | 50 | 0 to 1000 |
 
@@ -89,7 +89,7 @@ Everything in this section is outside the 1.8.2 vocabulary. The plugin ships met
 | `environment.weather.wetBulbGlobeTemperature` | K | Wet bulb globe (heat stress) |
 | `environment.weather.apparentTemperature` | K | AccuWeather apparent temperature |
 | `environment.weather.absoluteHumidity` | kg/m3 | Calculated absolute humidity |
-| `environment.weather.uvIndex` | (unitless) | UV radiation index (0..15+) |
+| `environment.weather.uvIndex` | (unitless) | WHO solar UV scale: 0..2 low, 3..5 moderate, 6..7 high, 8..10 very high, 11+ extreme |
 | `environment.weather.visibility` | m | Visibility distance |
 | `environment.weather.cloudCover` | ratio (0 to 1) | Cloud coverage |
 | `environment.weather.cloudCeiling` | m | Cloud base height |
@@ -99,7 +99,7 @@ Everything in this section is outside the 1.8.2 vocabulary. The plugin ships met
 | `environment.weather.speedGust` | m/s | Wind gust speed |
 | `environment.weather.gustFactor` | ratio | Gust / sustained ratio |
 | `environment.weather.beaufortScale` | (unitless) | Beaufort scale category (0..12) |
-| `environment.weather.heatStressIndex` | (unitless) | Heat stress category derived from WBGT (0..4) |
+| `environment.weather.heatStressIndex` | (unitless) | WBGT-derived heat-stress category: 0 low (<27 C), 1 moderate (27..29 C), 2 high (29..31 C), 3 very high (31..33 C), 4 extreme (>=33 C) |
 
 ## NMEA2000 Integration
 
@@ -142,7 +142,7 @@ The key is valid but not authorized for the *Current Conditions* endpoint, or th
 
 ### `API_RATE_LIMIT: Rate limit exceeded` (HTTP 429)
 The free tier allows 50 calls per day. Each `updateFrequency` tick costs 1 call (location lookups are cached for 2 hours, so they rarely cost extra).
-**What to check**: at the default `updateFrequency: 5` minutes, the plugin uses 288 calls/day. Raise it to 30 minutes (48 calls/day) for free-tier keys, or see `examples/slow-update.json` for a 15-minute profile (96 calls/day) suitable for keys shared with other consumers.
+**What to check**: the default `updateFrequency: 30` minutes uses 48 calls/day, which sits inside the free-tier 50/day cap. If you have lowered `updateFrequency` below 30, raise it back: at 5 minutes the plugin would burn 288 calls/day. See `examples/slow-update.json` for an ultra-conservative 60-minute profile (24 calls/day) suitable when the key is shared with other AccuWeather consumers.
 
 ### `RESPONSE_TOO_LARGE: AccuWeather response is N bytes`
 The plugin caps response bodies at 1 MiB to defend against runaway upstream payloads. AccuWeather Current Conditions responses are normally a few kilobytes, so this almost always indicates a misrouted response (proxy error page, captive portal).
@@ -153,11 +153,11 @@ The rolling 24-hour API request count has crossed 90% of `dailyApiQuota`. The pl
 **What to check**: the suffix `K/Q today` shows the live count. Either raise `dailyApiQuota` (paid-tier keys typically allow 25k+/day) or increase `updateFrequency` to spend the remaining headroom more slowly.
 
 ### `AccuWeather daily quota reached (K/Q in last 24h)`
-The rolling 24-hour count has hit `dailyApiQuota`. The plugin sets a `setPluginError`, skips new fetches, and serves the last good weather payload until the rolling window drops below the cap.
+The rolling 24-hour count has hit `dailyApiQuota`. The plugin emits a `setPluginError`, skips new fetches, and serves the last good weather payload until the rolling window drops below the cap. The full banner text is `AccuWeather daily quota reached (K/Q in last 24h). Fetches paused until the rolling window drops below the cap. To resume sooner, raise dailyApiQuota or increase updateFrequency.`
 **What to check**: the cap is per rolling 24h, NOT calendar day, so the plugin resumes fetches gradually as the oldest hourly buckets age out. To resume immediately, either raise `dailyApiQuota` and restart the plugin, or set `dailyApiQuota: 0` to disable the cap entirely.
 
 ### `Weather data stale: last update N minutes ago`
-The plugin emits this banner when the last successful fetch is older than `2 × updateFrequency`. The most common causes are upstream API errors, network outages, and missing GPS position.
+The plugin emits this banner when the last successful fetch is older than `2 × updateFrequency`. The unit pluralizes correctly: "1 minute ago" for the boundary case, "N minutes ago" otherwise. The most common causes are upstream API errors, network outages, and missing GPS position.
 **What to check**: the Signal K server logs will show the underlying error code from the previous list. The banner clears automatically once the next fetch succeeds.
 
 ### `No position available for weather data`
@@ -186,7 +186,7 @@ npm run validate       # Type-check + lint + tests (runs on pre-commit)
 - `@signalk/server-api` 2.24+ (declared as a `peerDependency`; the Signal K server provides it at runtime)
 - esbuild 0.28 for bundling
 - Biome 2.4 for linting/formatting
-- Vitest 4.1 for testing (235 tests across 10 files; Stryker.js for opt-in mutation testing)
+- Vitest 4.1 for testing (238 tests across 10 files; Stryker.js for opt-in mutation testing)
 - Husky + lint-staged for pre-commit hooks
 
 ## License

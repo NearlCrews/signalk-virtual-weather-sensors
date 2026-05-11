@@ -1,6 +1,6 @@
 {
   "accuWeatherApiKey": "REPLACE_WITH_YOUR_ACCUWEATHER_API_KEY",
-  "updateFrequency": 5,
+  "updateFrequency": 30,
   "emissionInterval": 5,
   "dailyApiQuota": 50
 }

@@ -38,58 +38,90 @@ const NON_CANONICAL_META: ReadonlyArray<Meta> = [
   me(SIGNALK_PATHS.ENVIRONMENT.WEATHER.REAL_FEEL_SHADE, {
     units: 'K',
     displayName: 'RealFeel (shade)',
+    description:
+      'AccuWeather RealFeel perceived temperature in shade (factors in wind and humidity, excludes solar gain).',
   }),
   me(SIGNALK_PATHS.ENVIRONMENT.WEATHER.WET_BULB_TEMPERATURE, {
     units: 'K',
     displayName: 'Wet bulb temperature',
+    description:
+      'Lowest temperature reachable by evaporative cooling at the current air temperature and humidity.',
   }),
   me(SIGNALK_PATHS.ENVIRONMENT.WEATHER.WET_BULB_GLOBE_TEMPERATURE, {
     units: 'K',
-    displayName: 'Wet bulb globe temperature',
+    displayName: 'Wet bulb globe temp',
+    description:
+      'WBGT: composite heat-stress index combining wet bulb, dry bulb, and globe (radiant) temperatures. Source of environment.weather.heatStressIndex.',
   }),
   me(SIGNALK_PATHS.ENVIRONMENT.WEATHER.APPARENT_TEMPERATURE, {
     units: 'K',
     displayName: 'Apparent temperature',
+    description:
+      'AccuWeather apparent (feels-like) temperature combining wind and humidity effects across the full thermal range.',
   }),
   me(SIGNALK_PATHS.ENVIRONMENT.WEATHER.ABSOLUTE_HUMIDITY, {
     units: 'kg/m3',
     displayName: 'Absolute humidity',
+    description:
+      'Mass of water vapor per cubic meter of air (derived from temperature and relative humidity).',
   }),
   me(SIGNALK_PATHS.ENVIRONMENT.WEATHER.UV_INDEX, {
     displayName: 'UV index',
-    description: '0..15+ solar UV scale',
+    description:
+      'WHO solar UV scale: 0..2 low, 3..5 moderate, 6..7 high, 8..10 very high, 11+ extreme.',
   }),
-  me(SIGNALK_PATHS.ENVIRONMENT.WEATHER.VISIBILITY, { units: 'm', displayName: 'Visibility' }),
-  me(SIGNALK_PATHS.ENVIRONMENT.WEATHER.CLOUD_COVER, { units: 'ratio', displayName: 'Cloud cover' }),
-  me(SIGNALK_PATHS.ENVIRONMENT.WEATHER.CLOUD_CEILING, { units: 'm', displayName: 'Cloud ceiling' }),
+  me(SIGNALK_PATHS.ENVIRONMENT.WEATHER.VISIBILITY, {
+    units: 'm',
+    displayName: 'Visibility',
+    description: 'Horizontal visibility distance reported by AccuWeather.',
+  }),
+  me(SIGNALK_PATHS.ENVIRONMENT.WEATHER.CLOUD_COVER, {
+    units: 'ratio',
+    displayName: 'Cloud cover',
+    description: 'Fraction of sky covered by clouds: 0 (clear) to 1 (overcast).',
+  }),
+  me(SIGNALK_PATHS.ENVIRONMENT.WEATHER.CLOUD_CEILING, {
+    units: 'm',
+    displayName: 'Cloud ceiling',
+    description: 'Altitude of the lowest cloud layer covering more than half the sky.',
+  }),
   me(SIGNALK_PATHS.ENVIRONMENT.WEATHER.PRECIPITATION_LAST_HOUR, {
     units: 'm',
     displayName: 'Precipitation, last hour',
+    description: 'Liquid-equivalent precipitation depth accumulated over the past hour.',
   }),
   me(SIGNALK_PATHS.ENVIRONMENT.WEATHER.PRECIPITATION_CURRENT, {
     units: 'm/s',
     displayName: 'Precipitation rate',
+    description: 'Current liquid-equivalent precipitation rate.',
   }),
   me(SIGNALK_PATHS.ENVIRONMENT.WEATHER.TEMPERATURE_DEPARTURE_24H, {
     units: 'K',
-    displayName: '24h temperature departure',
+    displayName: '24h temp departure',
+    description:
+      'Difference between current air temperature and the temperature at the same hour 24 hours ago (positive = warmer than yesterday).',
   }),
   me(SIGNALK_PATHS.ENVIRONMENT.WEATHER.SPEED_GUST, {
     units: 'm/s',
     displayName: 'Wind gust speed',
+    description:
+      'Peak gust wind speed (ground-referenced). Sits under environment.weather.* because the 1.8.2 wind vocabulary does not define a gust leaf.',
   }),
   me(SIGNALK_PATHS.ENVIRONMENT.WEATHER.GUST_FACTOR, {
     units: 'ratio',
     displayName: 'Wind gust factor',
-    description: 'gust/sustained ratio',
+    description:
+      'Ratio of peak gust to sustained wind speed (gust/sustained). Plugin-derived; not in the 1.8.2 vocabulary.',
   }),
   me(SIGNALK_PATHS.ENVIRONMENT.WEATHER.BEAUFORT_SCALE, {
     displayName: 'Beaufort scale',
-    description: '0..12 wind force category',
+    description:
+      'Wind force category 0 (calm) to 12 (hurricane), derived from sustained wind speed. Plugin-derived; not in the 1.8.2 vocabulary.',
   }),
   me(SIGNALK_PATHS.ENVIRONMENT.WEATHER.HEAT_STRESS_INDEX, {
     displayName: 'Heat stress index',
-    description: '0..4 categorical (derived from WBGT)',
+    description:
+      'WBGT-derived heat-stress category: 0 low (<27 C), 1 moderate (27..29 C), 2 high (29..31 C), 3 very high (31..33 C), 4 extreme (>=33 C). Standard military/marine WBGT bands.',
   }),
 ];
 

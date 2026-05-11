@@ -196,7 +196,8 @@ describe('validateConfiguration / sanitizeConfiguration', () => {
   it('sanitizeConfiguration applies defaults and clamps', () => {
     const c = sanitizeConfiguration({});
     expect(c.accuWeatherApiKey).toBe('');
-    expect(c.updateFrequency).toBe(5);
+    // Default 30 keeps free-tier keys within the 50/day quota (48 calls/day).
+    expect(c.updateFrequency).toBe(30);
     expect(c.emissionInterval).toBe(5);
 
     const big = sanitizeConfiguration({

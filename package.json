@@ -24,7 +24,7 @@
   ],
   "signalk-plugin-enabled-by-default": false,
   "signalk": {
-    "displayName": "Signal K Virtual Weather Sensors"
+    "displayName": "Virtual Weather Sensors"
   },
   "main": "dist/index.js",
   "types": "dist/index.d.ts",

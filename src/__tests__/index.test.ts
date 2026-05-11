@@ -146,7 +146,7 @@ describe('plugin entry: meta delta is shipped exactly once per lifetime', () => 
   // and never refreshed it on successful emission ticks. Banner stayed stuck.
   it('refreshes the status banner on emission ticks after weather data is available', async () => {
     stubState.getCurrentWeatherData = () => ({ temperature: 283.15 });
-    stubState.formatStatusBanner = () => 'Running, last update 0m ago (1 updates)';
+    stubState.formatStatusBanner = () => 'Running, last update just now (1 update)';
 
     try {
       const app = buildMockApp();
@@ -163,7 +163,7 @@ describe('plugin entry: meta delta is shipped exactly once per lifetime', () => 
       // reflects a successful fetch rather than the stale "awaiting" string.
       expect(app.setPluginStatus.mock.calls.length).toBeGreaterThan(callsAtStart);
       const lastCall = app.setPluginStatus.mock.calls[app.setPluginStatus.mock.calls.length - 1];
-      expect(lastCall[0]).toBe('Running, last update 0m ago (1 updates)');
+      expect(lastCall[0]).toBe('Running, last update just now (1 update)');
 
       await plugin.stop();
     } finally {
