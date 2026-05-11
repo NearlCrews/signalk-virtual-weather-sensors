@@ -5,9 +5,11 @@ All notable changes to the signalk-virtual-weather-sensors project will be docum
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [1.4.0] - 2026-05-10
+## [1.4.1] - 2026-05-11
 
-Signal K 1.8.2 spec-compliance release plus a post-audit follow-through cycle. **Includes Signal K path renames that change the wire output**: every non-1.8.2 leaf this plugin previously emitted under `environment.outside.*` or `environment.wind.*` now lives under a new producer-namespaced `environment.weather.*` branch. Consumers reading the previous path strings must update. Beyond the spec pass, this release adds an opt-in daily-quota visibility surface, a banner-refresh fix, mutation-testing infrastructure (67.44% score on the pure-function modules), end-to-end and schema-conformance test suites, and four operator-facing documentation spikes.
+Signal K 1.8.2 spec-compliance release plus a post-audit follow-through cycle. **Includes Signal K path renames that change the wire output**: every non-1.8.2 leaf this plugin previously emitted under `environment.outside.*` or `environment.wind.*` now lives under a new producer-namespaced `environment.weather.*` branch. Consumers reading the previous path strings must update. Beyond the spec pass, this release adds an opt-in daily-quota visibility surface, a banner-refresh fix, mutation-testing infrastructure (67.44% score on the pure-function modules), end-to-end and schema-conformance test suites, four operator-facing documentation spikes, and a routine GitHub Actions + dev-deps refresh.
+
+> **Note on the version skip:** 1.4.0 was published to npm from an earlier internal upload on 2025-10-13 and does not match the spec-compliance work described below. The 1.4.0 slot is therefore unusable for this release, and 1.4.1 is the first npm release of the post-audit codebase. There is no 1.4.0 → 1.4.1 changelog (this is the spec-compliance release content, re-numbered).
 
 ### Changed -- Signal K paths (BREAKING)
 
@@ -74,6 +76,11 @@ Canonical `environment.outside.*` (temperature, pressure, relativeHumidity, dewP
 - `AccuWeatherService.getCacheStats()` no longer mixes location-cache state with HTTP-fetch state. The previous `{ size, requestCount }` return shape was a leaky abstraction. `getCacheStats()` is back to `{ size }`; the API request count is exposed as a dedicated top-level `apiRequestCount` field on `WeatherServiceStatus` and via `AccuWeatherService.getRequestCount()`. Two accessors collapsed to one source of truth.
 - Integration test stubs `global.fetch` via `vi.stubGlobal` / `vi.unstubAllGlobals` so the original is restored after each test instead of being permanently shadowed.
 - Verbose 19-line meta-schema relaxation comment in `delta-schema.test.ts` trimmed to the load-bearing WHY (spec prose vs schema requirement, ecosystem behaviour); the draft-04 empty-required-array detail is left as a self-explanatory code spread.
+
+### Build / dependencies
+
+- GitHub Actions bumps merged from Dependabot: `actions/checkout` 4 → 6, `actions/setup-node` 4 → 6, `actions/github-script` 7 → 9, `peter-evans/create-pull-request` 7 → 8, `codecov/codecov-action` 5 → 6. The checkout/setup-node bumps clear the "Node 20 actions are deprecated" annotation that was showing on prior workflow runs.
+- Dev-deps bumps merged from Dependabot: `@types/node` 20.19.40 → 25.6.2, `lint-staged` 16.4.0 → 17.0.4. Dev-only; runtime `engines.node` floor stays at 20.18.
 
 ### Future direction
 
