@@ -37,6 +37,7 @@ export interface WeatherServiceStatus {
   };
   readonly cacheStats: {
     readonly size: number;
+    readonly requestCount: number;
   };
 }
 
@@ -213,9 +214,12 @@ export class WeatherService {
   }
 
   /**
-   * Admin UI status banner string. Format: "Running, last update Nm ago (N updates)"
-   * or "Running, awaiting first update" before the first fetch. Lives here so
-   * the format and the underlying counters stay together.
+   * Admin UI status banner string. Format:
+   *   "Running, last update Nm ago (N updates, K API requests)"
+   * or "Running, awaiting first update" before the first fetch. The API
+   * request counter is appended only when non-zero so the pre-fetch and
+   * "no requests yet" cases both stay terse. Lives here so the format and
+   * the underlying counters stay together.
    */
   public formatStatusBanner(): string {
     const ageMs = this.getDataAgeMs();
@@ -224,7 +228,12 @@ export class WeatherService {
     }
     const ageMin = Math.round(ageMs / 60_000);
     const ageLabel = ageMin <= 0 ? 'just now' : `${ageMin}m ago`;
-    return `${PLUGIN.STATUS.RUNNING}, last update ${ageLabel} (${this.updateCount} updates)`;
+    const requestCount = this.accuWeatherService.getRequestCount();
+    const counters =
+      requestCount > 0
+        ? `${this.updateCount} updates, ${requestCount} API requests`
+        : `${this.updateCount} updates`;
+    return `${PLUGIN.STATUS.RUNNING}, last update ${ageLabel} (${counters})`;
   }
 
   /**

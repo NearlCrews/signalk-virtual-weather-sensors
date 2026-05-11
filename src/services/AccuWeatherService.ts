@@ -82,6 +82,14 @@ export class AccuWeatherService {
   private readonly logger: Logger;
   private locationCache = new Map<string, { location: AccuWeatherLocation; timestamp: number }>();
   private lastCachePrune = Date.now();
+  /**
+   * Cumulative count of HTTP fetch attempts made by makeApiRequest, including
+   * retries. Surfaced via getRequestCount() / getCacheStats() so the status
+   * banner can show operators how chatty the plugin is being with the upstream
+   * API. Increments on the fetch path (every minute or two at most), not the
+   * 5-second emission tick, so this is not a hot-path concern.
+   */
+  private requestCount = 0;
 
   constructor(apiKey: string, logger: Logger = () => {}, config?: Partial<AccuWeatherConfig>) {
     this.config = {
@@ -428,6 +436,11 @@ export class AccuWeatherService {
         maxAttempts: this.config.retryAttempts,
       });
 
+      // Count every fetch attempt (initial + retries). Off the emission hot
+      // path: this fires at most once per AccuWeather call, default cadence
+      // five minutes. Cheap integer increment, no allocation.
+      this.requestCount++;
+
       const response = await fetch(url.toString(), {
         method: 'GET',
         headers: {
@@ -718,11 +731,24 @@ export class AccuWeatherService {
   }
 
   /**
-   * Get cache statistics for monitoring
+   * Get cache statistics for monitoring. `requestCount` is the cumulative
+   * number of fetch attempts the service has made since construction
+   * (including retries), exposed here so the WeatherService status banner
+   * can surface it without a second accessor call.
    */
-  public getCacheStats(): { size: number } {
+  public getCacheStats(): { size: number; requestCount: number } {
     return {
       size: this.locationCache.size,
+      requestCount: this.requestCount,
     };
+  }
+
+  /**
+   * Cumulative count of HTTP fetch attempts (initial + retries) since service
+   * construction. Mirrors the field surfaced via {@link getCacheStats} for
+   * callers that only need the counter.
+   */
+  public getRequestCount(): number {
+    return this.requestCount;
   }
 }

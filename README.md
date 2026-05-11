@@ -129,6 +129,32 @@ AccuWeather API --> AccuWeatherService (extract + convert to SI units)
                     Signal K server --> NMEA2000 emitter --> marine electronics
 ```
 
+## Troubleshooting
+
+### `API_UNAUTHORIZED: Invalid API key` (HTTP 401)
+The AccuWeather server rejected the key. The plugin status banner will show this string and no weather deltas will be emitted.
+**What to check**: log into [developer.accuweather.com](https://developer.accuweather.com/), open *My Apps*, confirm the key is active and copy it again (no leading or trailing whitespace). Keys are at least 20 characters.
+
+### `API_FORBIDDEN: API access forbidden` (HTTP 403)
+The key is valid but not authorized for the *Current Conditions* endpoint, or the request came from a blocked IP.
+**What to check**: confirm the key's plan includes *Current Conditions* in the AccuWeather portal. Trial keys expire 30 days after creation. If you proxy outbound traffic, confirm the egress IP is not on AccuWeather's block list.
+
+### `API_RATE_LIMIT: Rate limit exceeded` (HTTP 429)
+The free tier allows 50 calls per day. Each `updateFrequency` tick costs 1 call (location lookups are cached for 2 hours, so they rarely cost extra).
+**What to check**: at the default `updateFrequency: 5` minutes, the plugin uses 288 calls/day. Raise it to 30 minutes (48 calls/day) for free-tier keys, or see `examples/slow-update.json` for a 15-minute profile (96 calls/day) suitable for keys shared with other consumers.
+
+### `RESPONSE_TOO_LARGE: AccuWeather response is N bytes`
+The plugin caps response bodies at 1 MiB to defend against runaway upstream payloads. AccuWeather Current Conditions responses are normally a few kilobytes, so this almost always indicates a misrouted response (proxy error page, captive portal).
+**What to check**: confirm the Signal K server can reach `dataservice.accuweather.com` directly without an HTML interstitial.
+
+### `Weather data stale: last update N minutes ago`
+The plugin emits this banner when the last successful fetch is older than `2 × updateFrequency`. The most common causes are upstream API errors, network outages, and missing GPS position.
+**What to check**: the Signal K server logs will show the underlying error code from the previous list. The banner clears automatically once the next fetch succeeds.
+
+### `No position available for weather data`
+The plugin throws this when `navigation.position` on the self vessel is null, undefined, or comes from an excluded source (currently any source label containing `node-red`). There is no fixed-coordinates fallback.
+**What to check**: confirm a GPS source is publishing `navigation.position` in the Signal K data browser. Note that any source whose label contains `node-red` is deliberately ignored to avoid feedback loops, so a Node-RED-published position will not be picked up; use a different source label or a real GPS/AIS feed.
+
 ## Development
 
 See [DEVELOPMENT.md](DEVELOPMENT.md) for full details.

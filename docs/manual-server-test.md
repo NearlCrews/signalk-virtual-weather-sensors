@@ -1,0 +1,88 @@
+# Manual Server-Test Checklist
+
+Reproducible end-to-end check of `signalk-virtual-weather-sensors` running against a real Signal K server. Budget: about 30 minutes for a competent operator. Every UI string and path below is verbatim from the current code; deviations indicate a regression.
+
+## 0. Pre-flight
+
+- [ ] **Signal K server version recorded.** Run `signalk-server --version` on the host. The plugin requires `>=2.0.0` (per `package.json` `signalk.supportedVersions`).
+- [ ] **Server is running and reachable.** Default Admin UI is at `http://<host>:3000/admin/`.
+- [ ] **AccuWeather API key in hand.** Free key from <https://developer.accuweather.com/>. Free tier is sufficient: the plugin tolerates the missing `Precip1hr` / `Past24HourTemperatureDeparture` fields.
+- [ ] **Vessel `navigation.position` is being published.** The plugin needs a position to query AccuWeather. Confirm in the Admin UI **Data Browser** that `vessels.self.navigation.position` has a current value (any source: GPS, sim, or manual `PUT`).
+- [ ] **Plugin built locally.** From the repo root: `npm install && npm run build`. Confirm `dist/index.js` exists.
+- [ ] **Plugin symlinked into the server.** `ln -s "$(pwd)" ~/.signalk/node_modules/signalk-virtual-weather-sensors`. Restart the server: `sudo systemctl restart signalk` (or whatever supervises it).
+- [ ] **Plugin appears in Admin UI.** Open **Server -> Plugin Config**. Confirm an entry titled **Signal K Virtual Weather Sensors** is listed.
+
+## 1. Configuration in the Admin UI
+
+- [ ] Open **Server -> Plugin Config -> Signal K Virtual Weather Sensors**.
+- [ ] Toggle **Active** on.
+- [ ] Paste the AccuWeather key into **AccuWeather API Key**.
+- [ ] Leave **Update Frequency (minutes)** at the default `5` for the test run.
+- [ ] Leave **Emission Interval (seconds)** at the default `5` for the test run.
+- [ ] Click **Submit**. The plugin restarts.
+- [ ] Within ~10 seconds the status banner under the plugin name should change from `Stopped` to `Running, awaiting first update`.
+- [ ] Within `Update Frequency` minutes (default 5; or sooner because the plugin schedules its first fetch on a short timer) the banner should switch to `Running, last update just now (1 updates, 2 API requests)` (the first cycle costs one location-search call plus one current-conditions call). Subsequent updates show `(N updates, M API requests)` with both counters climbing.
+
+## 2. Path-by-path verification (Data Browser)
+
+Open **Server -> Data Browser**. Filter by `vessels.self`. For each path below confirm the listed value appears with `$source: accuweather` and a recent `timestamp`.
+
+### Canonical `environment.outside.*` (must be present)
+
+- [ ] `environment.outside.temperature` (K, roughly 250 to 320)
+- [ ] `environment.outside.pressure` (Pa, roughly 95000 to 105000)
+- [ ] `environment.outside.relativeHumidity` (ratio 0 to 1)
+- [ ] `environment.outside.dewPointTemperature` (K)
+- [ ] `environment.outside.apparentWindChillTemperature` (K)
+- [ ] `environment.outside.heatIndexTemperature` (K)
+- [ ] `environment.outside.airDensity` (kg/m3, roughly 1.0 to 1.4)
+
+### Canonical `environment.wind.*`
+
+- [ ] `environment.wind.speedOverGround` (m/s)
+- [ ] `environment.wind.directionTrue` (rad, 0 to ~6.28)
+- [ ] **`environment.wind.speedTrue` is absent.** AccuWeather wind is ground-referenced; the plugin deliberately does not emit `speedTrue`. Its presence would indicate a regression.
+- [ ] `environment.wind.speedApparent` and `environment.wind.angleApparent` appear **only when** `vessels.self.navigation.headingTrue` and `navigation.speedOverGround` are both present. If they are missing, confirm one of those upstream paths is also missing (expected behavior, not a bug).
+
+### Producer-namespaced `environment.weather.*`
+
+- [ ] `environment.weather.uvIndex`
+- [ ] `environment.weather.visibility` (m)
+- [ ] `environment.weather.cloudCover` (ratio 0 to 1)
+- [ ] `environment.weather.cloudCeiling` (m)
+- [ ] `environment.weather.absoluteHumidity` (kg/m3)
+- [ ] `environment.weather.realFeelShade` (K)
+- [ ] `environment.weather.wetBulbTemperature` (K)
+- [ ] `environment.weather.wetBulbGlobeTemperature` (K)
+- [ ] `environment.weather.apparentTemperature` (K)
+- [ ] `environment.weather.temperatureDeparture24h` (K, may be absent on free-tier)
+- [ ] `environment.weather.precipitationLastHour` (m, may be absent on free-tier)
+- [ ] `environment.weather.precipitationCurrent` (m/s, may be absent on free-tier)
+- [ ] `environment.weather.speedGust` (m/s)
+- [ ] `environment.weather.gustFactor` (ratio, may be absent when wind is calm)
+- [ ] `environment.weather.beaufortScale` (0..12)
+- [ ] `environment.weather.heatStressIndex` (0..4, present only when WBGT is)
+
+### Meta verification
+
+- [ ] In the Data Browser, click any `environment.weather.*` path. The right-hand details panel shows `units` (e.g. `K`, `m`, `m/s`, `ratio`) and a `displayName`. Confirm both are populated. The plugin ships these once at startup via a meta delta.
+
+## 3. Status banner verification
+
+- [ ] In **Plugin Config**, confirm the status banner under **Signal K Virtual Weather Sensors** matches the format `Running, last update <Nm ago | just now> (<N> updates, <M> API requests)`.
+- [ ] Wait at least one full **Update Frequency** cycle (default 5 minutes). Refresh the page. The `<N> updates` counter must increment by at least 1.
+- [ ] The `<Nm ago>` value must reset to `just now` immediately after each fetch and grow over time.
+
+## 4. Error path verification
+
+- [ ] In **Plugin Config**, replace the API key with `0000000000000000000000` (22 chars, valid format, invalid value). Submit.
+- [ ] Within one fetch cycle (or immediately, on the next forced retry) the banner should switch from green/grey `Running, ...` to a red error banner reading `signalk-virtual-weather-sensors startup failed: ...` or `Weather data stale: last update N minutes ago`. The exact prefix depends on whether the bad key surfaced during startup (`startup failed`) or after a successful key was previously cached (`stale`).
+- [ ] Open **Server -> Server Log**. Filter for `signalk-virtual-weather-sensors`. You should see a `[ERROR]`-prefixed line referencing `API_UNAUTHORIZED` (HTTP 401 from AccuWeather) or `API_FORBIDDEN` (HTTP 403). If you only see `[DEBUG]` lines, the routing fix in 1.3.3 has regressed.
+- [ ] Restore the correct API key. Submit. The banner clears back to `Running, ...` on the next successful fetch (the 1.3.1 stale-recovery flag handles this). If it does not, force a plugin restart with the toggle.
+
+## 5. Cleanup
+
+- [ ] In **Plugin Config**, toggle **Active** off. Submit. The banner switches to `Stopped`.
+- [ ] All `accuweather`-sourced paths in the Data Browser stop updating; their `timestamp` ages and they fall out of the panel after a server-configured retention window.
+- [ ] To uninstall completely: `rm ~/.signalk/node_modules/signalk-virtual-weather-sensors` and restart the server. The plugin entry disappears from **Plugin Config**.
+- [ ] If desired, `rm ~/.signalk/plugin-config-data/signalk-virtual-weather-sensors.json` to clear the persisted API key.

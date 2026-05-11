@@ -61,9 +61,13 @@
   "devDependencies": {
     "@biomejs/biome": "^2.4.15",
     "@signalk/server-api": "^2.24.0",
+    "@signalk/signalk-schema": "^1.8.2",
     "@types/node": "^20.18.0",
     "@vitest/coverage-v8": "^4.0.17",
     "@vitest/ui": "^4.0.17",
+    "ajv": "^8.20.0",
+    "ajv-draft-04": "^1.0.0",
+    "ajv-formats": "^3.0.1",
     "esbuild": "^0.28.0",
     "husky": "^9.1.7",
     "lint-staged": "^16.2.7",
