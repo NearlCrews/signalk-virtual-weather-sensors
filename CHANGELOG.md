@@ -7,10 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [1.4.2] - 2026-05-11
 
-Four-lane UI review pass (admin form, status banner, meta delta, App Store + docs) by a parallel Signal K plugin expert team plus a new plugin icon. 14 files touched in the review pass + the icon family assets, no `src` regressions, 238 tests pass (was 235; 3 new banner-grammar and quota-message tests).
+Two consecutive four-teammate Signal K plugin expert review passes (a focused UI lens on admin form / status banner / meta delta / App Store + docs, then a full-codebase lens on runtime / supporting modules / tests / docs+build) plus a parallel three-reviewer simplify pass on the resulting diff. Adds a coordinated plugin icon family across the `@NearlCrews` Signal K plugin set. 242 tests pass (was 235; 7 net new tests across banner grammar, quota messaging, `validateDailyApiQuota`, and calculator non-finite paths).
 
 ### Fixed
 
+- **`sanitizeForNMEA2000` only clamped 6 of ~22 emitted leaves.** The mapper's "every emitted leaf is sanitized" contract was false. Extended via a single-source `NUMERIC_FIELD_RULES` table now driving both `isWithinNMEA2000Ranges` and the clamping pass (temperatures, apparent-wind speed/angle normalization, visibility, cloud cover/ceiling, beaufort, heat-stress index, precipitation hourly + rate caps in raw mm units before unit conversion). New emitted fields require a matching row; the mapper docstring carries this invariant. (HIGH)
 - **Banner refresh was clobbering the quota-exhausted error every 5 seconds.** The unconditional `setPluginStatus(formatStatusBanner())` added in the v1.4.1 banner-refresh fix overwrote any active `setPluginError`, including the "quota reached, fetches paused" message. `emitWeatherTick` now gates the recovery refresh behind `isQuotaExhausted()` and re-pushes the quota error instead of clobbering it. Stale-data recovery still works as before. (HIGH)
 - **Default `updateFrequency` was 5 minutes, producing 288 calls/day vs the default 50/day quota cap, so every fresh free-tier install tripped its own `setPluginError` on day one.** Default raised to 30 minutes (48/day, comfortably under the cap). `STALENESS_FACTOR` doc comment updated for the new 60-minute staleness window. Operators who want faster updates can lower the cadence and raise `dailyApiQuota` (or set it to 0 to disable). (HIGH)
 - Banner grammar: `1 update` instead of `1 updates`, `1 API request` instead of `1 API requests`. Stale-data error: `1 minute ago` instead of `1 minutes ago`, and the age uses `Math.floor` so a delta only 31 seconds past threshold no longer shows "1m ago". (MED)
@@ -38,6 +39,20 @@ Four-lane UI review pass (admin form, status banner, meta delta, App Store + doc
 ### Added
 
 - Plugin icon. 512x512 SVG source at `assets/icons/icon.svg` rasterized via `librsvg2-bin` to PNGs at 72/96/192/512. Joins a coordinated icon family across `@NearlCrews` Signal K plugins (`signalk-nmea2000-emitter-cannon`, `signalk-openrouter-companion`): rounded-square ocean gradient + three stacked wave lines as the family motif, with a bottom-right circular badge varying per plugin. This variant's badge is warm yellow with a dark cloud silhouette. `package.json` gains `signalk.appIcon: "./assets/icons/icon-192.png"` and the `files` array now includes `assets/icons/` so the PNGs ship in the tarball. Closes the "Known gap" flagged in the four-lane UI review.
+
+### Audit + simplify follow-through
+
+After the UI review and icon work landed, a second pass ran: a four-teammate full-codebase review (runtime + supporting modules + tests + docs/build) plus a three-reviewer simplify lens (reuse / quality / efficiency) on the resulting diff. Notable lower-severity outcomes folded in here for traceability:
+
+- Lifecycle: `isPluginAlreadyRunning` now also blocks a concurrent `start()` while a prior `stop()` is awaiting cleanup. `SignalKService` no longer silently maps `dataAge: 0` to `undefined` (`||` to explicit null-check). `setupEnhancedEmissionSystem` now consumes `PLUGIN.STALENESS_FACTOR` instead of an inline `2 *`, eliminating the magic-number-vs-doc drift.
+- Schema: outer `title` + `required` removed from `schema()`. The Signal K admin UI's rjsf wrapper discards both; enforcement is the field-level `minLength: 20` plus `ConfigurationValidator`. Schema docblock records the rationale.
+- Wind math: `calculateApparentWindWithCompleteData` collapsed two separate calculator calls into one shared trig computation via `calculateWindAnalysis`, halving the per-update arithmetic.
+- Dead-code sweep: `PLUGIN.AUTHOR`, `DEFAULT_CONFIG.ENABLE_EVENT_DRIVEN` / `USE_VESSEL_POSITION`, three unused `UNITS` factors (inches-Hg, atm, mph), three unused `VALIDATION_LIMITS` (`COURSE_TRUE`, `VESSEL_DATA_WARN_AGE`, `VESSEL_DATA_ERROR_AGE`), and the unreachable Rothfusz low-humidity branch in `calculateHeatIndex` (gated at HEAT_INDEX_MIN_HUMIDITY_PCT=40).
+- Validation: `isValidLatitude` / `isValidLongitude` composed via `isWithinBounds` instead of inlining `Number.isFinite + bounds`. `validateUpdateFrequency` / `validateEmissionInterval` warn-over-error rationale documented (resolved the schema-vs-runtime drift question the UI review left open).
+- Tests: 6 net new tests (`validateDailyApiQuota` 4 cases, calculator non-finite paths 2 cases); two flaky wall-clock perf tests removed (false negatives on slow CI without proving anything determinism tests do not); `AccuWeatherService.test.ts` switched its module-scope `global.fetch = vi.fn()` to `vi.stubGlobal` + `vi.unstubAllGlobals`; local `mockResponse` factory replaced with shared `createMockFetchResponse` from `setup.ts`.
+- Docs/build: TODO.md P1 items marked shipped; `RELEASE.md` gained a "Fast path (what we actually do)" section describing the master-commit + GH-Release-fires-publish.yml flow used for 1.4.1; stale `stryker.conf.json` checker comment rewritten; `publish.yml` workflow_dispatch example tag refreshed to v1.4.2.
+- Simplify pass on the resulting diff: trimmed comment proliferation (six WHAT-narrative lines in `cleanup()` / `validateAndNormalizeSettings()` removed, verbose constant explainers shortened, fragile cross-file pointer dropped, multi-paragraph quota-vs-staleness ordering note tightened, dead-code tense fix on `WindCalculator`, rolling-window rotation comment now states actual `O(min(elapsed, 24))` cost instead of an implicit `O(1)` claim).
+- Test count: 242 across 10 files. Coverage 86.74 statements / 82.36 branches / 93.78 functions / 86.86 lines, all above the 80% floor.
 
 ## [1.4.1] - 2026-05-11
 
