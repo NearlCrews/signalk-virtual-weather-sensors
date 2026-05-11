@@ -8,11 +8,10 @@
  *   - the 429-with-Retry-After path actually retries (fetch is invoked twice);
  *   - a 401 surfaces as the API_UNAUTHORIZED error code.
  *
- * Mocking strategy: we keep the existing `vi.fn()` global.fetch pattern from
- * AccuWeatherService.test.ts. msw would add a dependency for negligible
- * additional realism here: the AccuWeather client only depends on the Fetch
- * Response shape (.ok, .status, .headers, .text()), which the inline helper
- * already supplies.
+ * Mocking strategy: `vi.stubGlobal('fetch', ...)` plus the shared
+ * `createMockFetchResponse` helper in setup.ts. The AccuWeather client only
+ * depends on the Fetch Response shape (.ok, .status, .headers, .text()), so
+ * msw would be overhead for negligible additional realism here.
  */
 
 import type { Mock } from 'vitest';
@@ -21,70 +20,13 @@ import { NMEA2000PathMapper } from '../../mappers/NMEA2000PathMapper.js';
 import { AccuWeatherService } from '../../services/AccuWeatherService.js';
 import { SignalKService } from '../../services/SignalKService.js';
 import { WeatherService } from '../../services/WeatherService.js';
-import type { PluginConfiguration } from '../../types/index.js';
-import { createMockAccuWeatherResponse } from '../setup.js';
-
-/**
- * Minimal Signal K ServerAPI stub used across this suite. Optionally returns
- * a vessel position; speed and heading are returned as fixed values so the
- * apparent-wind branch in WeatherService.enhanceWeatherData has both inputs
- * (otherwise environment.wind.angleApparent gets omitted from the delta).
- */
-function buildMockApp(position?: { latitude: number; longitude: number }) {
-  const positionData = position
-    ? { value: { latitude: position.latitude, longitude: position.longitude } }
-    : undefined;
-  const handleMessage = vi.fn();
-  return {
-    handleMessage,
-    setPluginStatus: vi.fn(),
-    setPluginError: vi.fn(),
-    debug: vi.fn(),
-    error: vi.fn(),
-    getSelfPath: vi.fn().mockImplementation((path: string) => {
-      switch (path) {
-        case 'navigation.position':
-          return positionData;
-        case 'navigation.speedOverGround':
-          // ~5 knots, well under VESSEL_SPEED.MAX
-          return { value: 2.57 };
-        case 'navigation.courseOverGroundTrue':
-          // ~0 rad (north), valid 0..2π
-          return { value: 0 };
-        case 'navigation.headingTrue':
-          return { value: 0 };
-        default:
-          return undefined;
-      }
-    }),
-    streambundle: { getSelfStream: vi.fn() },
-  };
-}
-
-/**
- * Minimal Fetch-API-shaped Response stub: AccuWeatherService.readBoundedJson
- * needs `headers`, `text()`, and the `ok`/`status`/`statusText` triple.
- */
-function fetchResponse(
-  data: unknown,
-  init: {
-    ok?: boolean;
-    status?: number;
-    statusText?: string;
-    extraHeaders?: Record<string, string>;
-  } = {}
-) {
-  const text = JSON.stringify(data);
-  const headers = new Headers({ 'content-length': String(text.length), ...init.extraHeaders });
-  return {
-    ok: init.ok ?? true,
-    status: init.status ?? 200,
-    statusText: init.statusText ?? 'OK',
-    headers,
-    text: () => Promise.resolve(text),
-    json: () => Promise.resolve(data),
-  };
-}
+import {
+  createMockAccuWeatherResponse,
+  createMockConfig,
+  createMockFetchResponse,
+  createMockSignalKApp,
+  getValuesFromDelta,
+} from '../setup.js';
 
 const SF_LOCATION = { latitude: 37.7749, longitude: -122.4194 };
 
@@ -96,23 +38,33 @@ const SF_LOCATION_RESPONSE = {
   GeoPosition: { Latitude: SF_LOCATION.latitude, Longitude: SF_LOCATION.longitude },
 };
 
-function buildConfig(overrides?: Partial<PluginConfiguration>): PluginConfiguration {
-  return {
-    accuWeatherApiKey: 'test-integration-key-12345',
-    updateFrequency: 5,
-    emissionInterval: 5,
-    ...overrides,
-  };
+/**
+ * Build a stub app pre-wired with the navigation paths WeatherService reads.
+ * Speed and heading are fixed so apparent-wind has both inputs (otherwise
+ * environment.wind.angleApparent gets omitted from the delta).
+ */
+function buildAppWithVessel(position: { latitude: number; longitude: number }) {
+  return createMockSignalKApp({
+    selfPaths: {
+      'navigation.position': {
+        value: { latitude: position.latitude, longitude: position.longitude },
+      },
+      // ~5 knots, under VESSEL_SPEED.MAX
+      'navigation.speedOverGround': { value: 2.57 },
+      // ~0 rad (north), valid 0..2π
+      'navigation.courseOverGroundTrue': { value: 0 },
+      'navigation.headingTrue': { value: 0 },
+    },
+  });
 }
 
 /**
  * Wire a real WeatherService + AccuWeatherService + SignalKService triple
- * with the stubbed app, plus a real NMEA2000PathMapper for the assertion
- * step. Retries are tightened so the 429 retry path doesn't add a second of
- * test wall time.
+ * with the stubbed app, plus a real NMEA2000PathMapper for assertion. Retry
+ * delay is tightened so the 429 retry test stays sub-second.
  */
-function buildPipeline(app: ReturnType<typeof buildMockApp>) {
-  const config = buildConfig();
+function buildPipeline(app: ReturnType<typeof createMockSignalKApp>) {
+  const config = createMockConfig({ accuWeatherApiKey: 'test-integration-key-12345' });
   const accu = new AccuWeatherService(config.accuWeatherApiKey, () => {}, {
     retryAttempts: 3,
     retryDelay: 1,
@@ -124,21 +76,21 @@ function buildPipeline(app: ReturnType<typeof buildMockApp>) {
 }
 
 beforeEach(() => {
-  global.fetch = vi.fn();
+  vi.stubGlobal('fetch', vi.fn());
 });
 
 afterEach(() => {
-  vi.clearAllMocks();
+  vi.unstubAllGlobals();
 });
 
 describe('integration: AccuWeather to Signal K delta pipeline', () => {
   it('produces a delta containing all canonical env.outside, env.wind, and env.weather paths', async () => {
-    const app = buildMockApp(SF_LOCATION);
+    const app = buildAppWithVessel(SF_LOCATION);
     const { weather, accu, mapper } = buildPipeline(app);
 
     (global.fetch as Mock)
-      .mockResolvedValueOnce(fetchResponse(SF_LOCATION_RESPONSE))
-      .mockResolvedValueOnce(fetchResponse(createMockAccuWeatherResponse()));
+      .mockResolvedValueOnce(createMockFetchResponse(SF_LOCATION_RESPONSE))
+      .mockResolvedValueOnce(createMockFetchResponse(createMockAccuWeatherResponse()));
 
     // start() must run before forceUpdate(): WeatherService.updateWeatherData
     // discards results when the service isn't in a running/starting state, so
@@ -157,9 +109,7 @@ describe('integration: AccuWeather to Signal K delta pipeline', () => {
     await weather.stop();
 
     const delta = mapper.mapToSignalKPaths(data);
-    const update = delta.updates[0];
-    if (!update) throw new Error('expected at least one update');
-    const values = (update as { values?: ReadonlyArray<{ path: string }> }).values ?? [];
+    const values = getValuesFromDelta(delta);
     const paths = new Set(values.map((v) => v.path));
 
     // All 7 canonical environment.outside.* leaves the mapper emits unconditionally
@@ -211,7 +161,7 @@ describe('integration: AccuWeather to Signal K delta pipeline', () => {
     }
 
     // Source ref is set so consumers can prefer real sensors over this feed.
-    expect((update as { $source?: string }).$source).toBe('accuweather');
+    expect((delta.updates[0] as { $source?: string }).$source).toBe('accuweather');
 
     // Request counter saw exactly one location-search and one currentconditions
     // fetch, so the status-banner accessor will have something to surface.
@@ -219,13 +169,13 @@ describe('integration: AccuWeather to Signal K delta pipeline', () => {
   });
 
   it('retries on a 429 with Retry-After then succeeds, calling fetch twice for currentconditions', async () => {
-    const app = buildMockApp(SF_LOCATION);
+    const app = buildAppWithVessel(SF_LOCATION);
     const { weather, accu } = buildPipeline(app);
 
     (global.fetch as Mock)
-      .mockResolvedValueOnce(fetchResponse(SF_LOCATION_RESPONSE))
+      .mockResolvedValueOnce(createMockFetchResponse(SF_LOCATION_RESPONSE))
       .mockResolvedValueOnce(
-        fetchResponse(
+        createMockFetchResponse(
           { message: 'rate limited' },
           {
             ok: false,
@@ -235,7 +185,7 @@ describe('integration: AccuWeather to Signal K delta pipeline', () => {
           }
         )
       )
-      .mockResolvedValueOnce(fetchResponse(createMockAccuWeatherResponse()));
+      .mockResolvedValueOnce(createMockFetchResponse(createMockAccuWeatherResponse()));
 
     await weather.start();
     await weather.forceUpdate();
@@ -251,11 +201,11 @@ describe('integration: AccuWeather to Signal K delta pipeline', () => {
   });
 
   it('surfaces API_UNAUTHORIZED on a 401 from the location search', async () => {
-    const app = buildMockApp(SF_LOCATION);
+    const app = buildAppWithVessel(SF_LOCATION);
     const { weather } = buildPipeline(app);
 
     (global.fetch as Mock).mockResolvedValueOnce(
-      fetchResponse(
+      createMockFetchResponse(
         { message: 'invalid api key' },
         { ok: false, status: 401, statusText: 'Unauthorized' }
       )

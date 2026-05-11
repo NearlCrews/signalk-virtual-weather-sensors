@@ -37,8 +37,8 @@ export interface WeatherServiceStatus {
   };
   readonly cacheStats: {
     readonly size: number;
-    readonly requestCount: number;
   };
+  readonly apiRequestCount: number;
 }
 
 /**
@@ -248,6 +248,7 @@ export class WeatherService {
       hasWeatherData: !!this.currentWeatherData,
       signalKHealth: this.signalKService.getHealthStatus(),
       cacheStats: this.accuWeatherService.getCacheStats(),
+      apiRequestCount: this.accuWeatherService.getRequestCount(),
     };
   }
 

@@ -730,24 +730,12 @@ export class AccuWeatherService {
     this.logger('debug', 'Location cache cleared');
   }
 
-  /**
-   * Get cache statistics for monitoring. `requestCount` is the cumulative
-   * number of fetch attempts the service has made since construction
-   * (including retries), exposed here so the WeatherService status banner
-   * can surface it without a second accessor call.
-   */
-  public getCacheStats(): { size: number; requestCount: number } {
-    return {
-      size: this.locationCache.size,
-      requestCount: this.requestCount,
-    };
+  /** Location-cache size, for monitoring. */
+  public getCacheStats(): { size: number } {
+    return { size: this.locationCache.size };
   }
 
-  /**
-   * Cumulative count of HTTP fetch attempts (initial + retries) since service
-   * construction. Mirrors the field surfaced via {@link getCacheStats} for
-   * callers that only need the counter.
-   */
+  /** Cumulative HTTP fetch attempts (initial + retries) since construction. */
   public getRequestCount(): number {
     return this.requestCount;
   }

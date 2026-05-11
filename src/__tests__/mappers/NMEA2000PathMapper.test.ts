@@ -4,16 +4,9 @@
  * signalk-nmea2000-emitter-cannon for NMEA2000 bus emission.
  */
 
-import type { Delta, PathValue } from '@signalk/server-api';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { NMEA2000PathMapper } from '../../mappers/NMEA2000PathMapper.js';
-import { createMockWeatherData } from '../setup.js';
-
-/** Pull the values array out of the first values-bearing update in a delta. */
-function getValues(delta: Delta): PathValue[] {
-  const update = delta.updates.find((u) => 'values' in u);
-  return update && 'values' in update ? update.values : [];
-}
+import { createMockWeatherData, getValuesFromDelta as getValues } from '../setup.js';
 
 describe('NMEA2000PathMapper', () => {
   let mapper: NMEA2000PathMapper;

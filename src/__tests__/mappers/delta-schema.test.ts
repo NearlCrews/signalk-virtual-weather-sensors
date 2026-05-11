@@ -29,16 +29,13 @@ import Ajv from 'ajv-draft-04';
 import addFormats from 'ajv-formats';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { NMEA2000PathMapper } from '../../mappers/NMEA2000PathMapper.js';
-import { createMockWeatherData } from '../setup.js';
+import { createMockWeatherData, getValuesFromDelta } from '../setup.js';
 
-// Resolve the schema package by following the npm install path. We deliberately
-// load JSON files rather than importing from the package's `main`: the package
-// ships its schemas under `schemas/` and the `main` entry exports unrelated
-// helpers that are not needed for schema validation.
+// Resolve the schema package by following the npm install path. The package
+// ships its schemas under `schemas/`; loading the JSON directly bypasses the
+// package's `main` (unrelated helpers).
 const SCHEMA_PKG = '@signalk/signalk-schema';
 const __dirname = dirname(fileURLToPath(import.meta.url));
-// Walk up from the test file to the project root, then into node_modules.
-// The test file lives at src/__tests__/mappers/, so the root is three levels up.
 const SCHEMA_DIR = join(__dirname, '..', '..', '..', 'node_modules', SCHEMA_PKG, 'schemas');
 
 function loadSchema(file: string): Record<string, unknown> {
@@ -46,27 +43,27 @@ function loadSchema(file: string): Record<string, unknown> {
 }
 
 /**
- * Canonical 1.8.2 environment leaves we expect to find in our values deltas.
- * Source: `@signalk/signalk-schema@1.8.2/schemas/groups/environment.json`,
- * the `outside` and `wind` blocks. Hand-encoded as a constant so the test
- * fails loudly if a future spec drop renames a leaf without our noticing.
- * See https://signalk.org/specification/1.8.2/doc/vesselsBranch.html
- * for the published vocabulary.
+ * Read the full canonical 1.8.2 environment vocabulary directly from the
+ * installed schema's `groups/environment.json`, so a future spec drop that
+ * adds a leaf doesn't make this test produce false positives. Returns the
+ * fully-qualified leaf paths under `environment.outside` and `environment.wind`.
  */
-const CANONICAL_ENV_LEAVES: ReadonlySet<string> = new Set([
-  // environment.outside.*
-  'environment.outside.temperature',
-  'environment.outside.dewPointTemperature',
-  'environment.outside.apparentWindChillTemperature',
-  'environment.outside.heatIndexTemperature',
-  'environment.outside.pressure',
-  'environment.outside.relativeHumidity',
-  // environment.wind.*
-  'environment.wind.speedOverGround',
-  'environment.wind.directionTrue',
-  'environment.wind.speedApparent',
-  'environment.wind.angleApparent',
-]);
+function loadCanonicalEnvLeaves(): ReadonlySet<string> {
+  const env = loadSchema('groups/environment.json') as {
+    properties?: {
+      outside?: { properties?: Record<string, unknown> };
+      wind?: { properties?: Record<string, unknown> };
+    };
+  };
+  const outside = Object.keys(env.properties?.outside?.properties ?? {});
+  const wind = Object.keys(env.properties?.wind?.properties ?? {});
+  return new Set([
+    ...outside.map((k) => `environment.outside.${k}`),
+    ...wind.map((k) => `environment.wind.${k}`),
+  ]);
+}
+
+const CANONICAL_ENV_LEAVES = loadCanonicalEnvLeaves();
 
 describe('Signal K Delta Schema Conformance (1.8.2)', () => {
   let ajv: Ajv;
@@ -94,26 +91,11 @@ describe('Signal K Delta Schema Conformance (1.8.2)', () => {
 
     validateValuesDelta = ajv.compile(deltaSchema);
 
-    // -- META DELTA WORKAROUND ----------------------------------------------
-    // The canonical `definitions.json#/definitions/meta` requires
-    // `description` on every meta entry. The 1.8.2 prose
-    // (https://signalk.org/specification/1.8.2/doc/data_model.html) does NOT
-    // mandate `description`: the example shows `units` and `displayName`
-    // alone as a valid meta block. The strict JSON Schema is therefore at
-    // odds with the spec text, and the wider Signal K ecosystem ships meta
-    // updates without `description` (the schema bug is tracked upstream but
-    // unresolved as of @signalk/signalk-schema 1.8.2).
-    //
-    // For our meta-delta validation we use a relaxed copy of the schema
-    // where the meta value object's `required: ['description']` array is
-    // rebuilt without `description`. We still validate the envelope, the
-    // path string, and every other meta sub-field against the canonical
-    // schema. If upstream tightens their meta requirements we will re-enable
-    // the strict check by dropping the relaxed clone.
-    //
-    // JSON Schema (draft-04) forbids an empty `required` array, so when the
-    // filter removes the only element we omit the key from the rebuilt meta
-    // sub-schema entirely (object spread with the property excluded).
+    // The canonical meta sub-schema requires `description` on every entry,
+    // but the 1.8.2 spec prose at data_model.html shows valid meta blocks
+    // with just `units`/`displayName`, and the wider Signal K ecosystem
+    // ships meta the same way. Drop the `description` requirement for the
+    // meta-delta validator only; the values-delta validator stays strict.
     const definitionsClone = JSON.parse(JSON.stringify(definitionsSchema)) as {
       definitions: { meta: Record<string, unknown> & { required?: string[] } };
     };
@@ -262,26 +244,16 @@ describe('Signal K Delta Schema Conformance (1.8.2)', () => {
  * Walk the values delta and collect every path that lives under a canonical
  * leaf-only container (`environment.outside.*`, `environment.wind.*`) but is
  * not in the 1.8.2 vocabulary. The producer namespace `environment.weather.*`
- * and the spec-defined-but-out-of-our-canonical-set `environment.outside.airDensity`
- * are explicitly skipped.
+ * is the escape hatch and is explicitly skipped.
  */
 function collectVocabularyViolations(delta: ReturnType<NMEA2000PathMapper['mapToSignalKPaths']>) {
-  const update = delta.updates[0];
-  if (!update || !('values' in update)) {
-    throw new Error('expected a values update');
-  }
   const violations: string[] = [];
-  for (const v of update.values) {
-    if (isUncheckedPath(v.path as string)) continue;
-    if (!CANONICAL_ENV_LEAVES.has(v.path as string)) {
-      violations.push(v.path as string);
+  for (const v of getValuesFromDelta(delta)) {
+    const path = v.path as string;
+    if (!path.startsWith('environment.outside.') && !path.startsWith('environment.wind.')) continue;
+    if (!CANONICAL_ENV_LEAVES.has(path)) {
+      violations.push(path);
     }
   }
   return violations;
-}
-
-function isUncheckedPath(path: string): boolean {
-  if (path === 'environment.outside.airDensity') return true;
-  if (path.startsWith('environment.weather.')) return true;
-  return !path.startsWith('environment.outside.') && !path.startsWith('environment.wind.');
 }

@@ -3,6 +3,7 @@
  * Provides mocks, utilities, and test environment setup
  */
 
+import type { Delta, PathValue } from '@signalk/server-api';
 import type { MockedFunction } from 'vitest';
 import { afterAll, afterEach, beforeAll, vi } from 'vitest';
 
@@ -244,43 +245,60 @@ export function createMockAccuWeatherResponse(
 // ===============================
 
 /**
- * Mock fetch implementation for API testing
+ * Build a Fetch-API-shaped Response stub. AccuWeatherService.readBoundedJson
+ * needs `headers`, `text()`, and the `ok`/`status`/`statusText` triple, so we
+ * supply a real `Headers` instance with `content-length` set from the body.
  */
-export function createMockFetch(
-  responseData: unknown,
-  options: { status?: number; ok?: boolean } = {}
+export function createMockFetchResponse(
+  data: unknown,
+  init: {
+    ok?: boolean;
+    status?: number;
+    statusText?: string;
+    extraHeaders?: Record<string, string>;
+  } = {}
 ) {
-  const mockResponse = {
-    ok: options.ok ?? true,
-    status: options.status ?? 200,
-    json: vi.fn().mockResolvedValue(responseData),
-    text: vi.fn().mockResolvedValue(JSON.stringify(responseData)),
+  const text = JSON.stringify(data);
+  const headers = new Headers({ 'content-length': String(text.length), ...init.extraHeaders });
+  return {
+    ok: init.ok ?? true,
+    status: init.status ?? 200,
+    statusText: init.statusText ?? 'OK',
+    headers,
+    text: () => Promise.resolve(text),
+    json: () => Promise.resolve(data),
   };
-
-  return vi.fn().mockResolvedValue(mockResponse);
 }
 
 /**
- * Mock Signal K app for plugin testing
+ * Mock Signal K app for plugin testing. `selfPaths` maps each path the plugin
+ * may read via `app.getSelfPath` to the value the stub should return; unmapped
+ * paths return `undefined` (matching real signalk-server behavior).
  */
-export function createMockSignalKApp() {
-  const mockApp = {
+export function createMockSignalKApp(opts: { selfPaths?: Record<string, unknown> } = {}) {
+  const selfPaths = opts.selfPaths ?? {};
+  return {
     debug: vi.fn(),
+    error: vi.fn(),
     setPluginStatus: vi.fn(),
     setPluginError: vi.fn(),
-    getSelfPath: vi.fn().mockReturnValue('vessels.self'),
+    getSelfPath: vi.fn().mockImplementation((path: string) => selfPaths[path]),
     streambundle: {
-      getBus: vi.fn().mockReturnValue({
-        on: vi.fn(),
-        off: vi.fn(),
-        emit: vi.fn(),
-      }),
+      getSelfStream: vi.fn(),
+      getBus: vi.fn().mockReturnValue({ on: vi.fn(), off: vi.fn(), emit: vi.fn() }),
     },
     handleMessage: vi.fn(),
     emit: vi.fn(),
   };
+}
 
-  return mockApp;
+/**
+ * Pull the values array out of the first values-bearing update in a delta.
+ * Used by mapper and integration tests that need to inspect emitted PathValues.
+ */
+export function getValuesFromDelta(delta: Delta): PathValue[] {
+  const update = delta.updates.find((u) => 'values' in u);
+  return update && 'values' in update ? update.values : [];
 }
 
 /**
