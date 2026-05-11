@@ -46,7 +46,17 @@ describe('WindCalculator', () => {
 
       // For beam wind, apparent wind should be higher than true wind
       expect(result).toBeGreaterThan(trueWindSpeed);
-      expect(result).toBeCloseTo(11.18, 1); // Expected vector result
+      // Tight tolerance kills sin/cos swap mutations: sqrt(10^2 + 5^2) = 11.180339887...
+      expect(result).toBeCloseTo(11.180339887498949, 6);
+    });
+
+    it('beam wind angle matches the exact vector result (atan2(10, 5) ≈ 1.1071 rad)', () => {
+      // Mutation guard: the `Math.atan2(apparentWindY, apparentWindX) - vesselHeading`
+      // expression has multiple ArithmeticOperator survivors when only loose
+      // `toBeGreaterThan(0) && toBeLessThan(π/2)` assertions are used. Pinning the
+      // exact angle (and therefore the cos/sin ordering in the X/Y formulas) kills them.
+      const angle = calculator.calculateApparentWindAngle(10, 5, 0, Math.PI / 2);
+      expect(angle).toBeCloseTo(1.1071487177940904, 6);
     });
 
     it('should calculate apparent wind correctly for head wind', () => {
@@ -220,6 +230,16 @@ describe('WindCalculator', () => {
       // Number guard: Number.NaN || 0 → 0
       expect(result).toBe(0);
     });
+
+    it('boundary: just-above the 4.8 km/h wind threshold computes a chill below temperature', () => {
+      // Mutation guard: the gate `windKmh < WIND_CHILL_MIN_SPEED_KMH` flipped to `<=`
+      // would cause exactly 4.8 km/h (≈ 1.3333 m/s) to be skipped. Pin the threshold
+      // by feeding a wind speed just above it and asserting the formula actually fires.
+      const tempK = 263.15; // -10°C, well below the 10°C upper gate
+      const justAbove = 4.81 / 3.6; // m/s
+      const out = calculator.calculateWindChill(tempK, justAbove);
+      expect(out).toBeLessThan(tempK);
+    });
   });
 
   describe('Heat Index Calculation', () => {
@@ -379,6 +399,27 @@ describe('WindCalculator', () => {
 
       // Should be approximately 19.15°C for these conditions
       expect(dewPointC).toBeCloseTo(19.15, 1);
+    });
+
+    it('Rothfusz heat index matches NWS reference at 95°F / 70% RH (no adjustment branch)', () => {
+      // Mutation guard: existing tests use loose `toBeGreaterThan` assertions on the heat
+      // index, so any sign / coefficient flip in the 9-term Rothfusz polynomial still passes.
+      // 95°F + 70% RH → 122.6°F is the published NWS reference value. The full polynomial
+      // must be intact to land within 1°F of this.
+      const tempK = ((95 - 32) * 5) / 9 + 273.15;
+      const result = calculator.calculateHeatIndex(tempK, 0.7);
+      const resultF = ((result - 273.15) * 9) / 5 + 32;
+      expect(resultF).toBeCloseTo(122.6, 1);
+    });
+
+    it('Rothfusz high-humidity adjustment branch matches reference at 85°F / 90% RH', () => {
+      // Mutation guard: the `r > 85 && t >= 80 && t <= 87` branch and its
+      // `((r - 85) / 10) * ((87 - t) / 5)` correction.
+      // Reference: NOAA HI table, 85°F / 90% ≈ 101.8°F.
+      const tempK = ((85 - 32) * 5) / 9 + 273.15;
+      const result = calculator.calculateHeatIndex(tempK, 0.9);
+      const resultF = ((result - 273.15) * 9) / 5 + 32;
+      expect(resultF).toBeCloseTo(101.8, 1);
     });
   });
 

@@ -33,3 +33,4 @@ published `navigation.position`) is required.
 | `accuWeatherApiKey` | (required) | min 20 chars | Key from developer.accuweather.com |
 | `updateFrequency` | 5 | 1 to 60 minutes | How often to fetch from AccuWeather |
 | `emissionInterval` | 5 | 1 to 60 seconds | How often to re-emit cached data to NMEA2000 |
+| `dailyApiQuota` | 50 | 0 to 1000 calls | Rolling 24h cap; 0 disables. Banner shows `K/Q today` and warns at 90%; at 100% the plugin pauses fetches. |

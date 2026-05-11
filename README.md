@@ -51,6 +51,7 @@ ln -s "$(pwd)" ~/.signalk/node_modules/signalk-virtual-weather-sensors
 | **AccuWeather API Key** | Required. Get one free at [developer.accuweather.com](https://developer.accuweather.com/) | n/a | n/a |
 | **Update Frequency** | How often to fetch new weather data (minutes) | 5 | 1 to 60 |
 | **Emission Interval** | How often to emit the current data to the NMEA2000 network (seconds) | 5 | 1 to 60 |
+| **Daily API Call Quota** | Cap on AccuWeather calls per rolling 24-hour window. The status banner shows `K/Q today` and switches to a warning prefix at 90% usage; at 100% the plugin pauses fetches and surfaces a setPluginError until usage drops below the cap. Set to 0 to disable the cap entirely. | 50 | 0 to 1000 |
 
 ## Signal K Paths
 
@@ -177,7 +178,7 @@ npm run validate       # Type-check + lint + tests (runs on pre-commit)
 - `@signalk/server-api` 2.24+ (declared as a `peerDependency`; the Signal K server provides it at runtime)
 - esbuild 0.28 for bundling
 - Biome 2.4 for linting/formatting
-- Vitest 4.1 for testing (217 tests across 10 files)
+- Vitest 4.1 for testing (234 tests across 10 files; Stryker.js for opt-in mutation testing)
 - Husky + lint-staged for pre-commit hooks
 
 ## License

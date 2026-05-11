@@ -98,7 +98,7 @@ Test configuration in `vitest.config.ts` includes path aliases (`@/`, `@/service
 - TypeScript 6.0+ (strict mode, ES2023 target)
 - Node.js 20.18+ (ESM only)
 - `@signalk/server-api` 2.24+ as a `peerDependency` (the Signal K server provides it at runtime; not bundled). Used for `Plugin`, `ServerAPI`, `Delta`, `PathValue`, `Meta`, `MetaValue`, `SourceRef`, and `SKVersion` types.
-- esbuild 0.28+ for bundling (current bundle ~63 KB)
+- esbuild 0.28+ for bundling (current bundle ~68 KB)
 - Biome 2.4+ for linting/formatting (with `noFloatingPromises` / `noMisusedPromises` enabled)
-- Vitest 4.1+ for testing (217 tests across 10 files)
+- Vitest 4.1+ for testing (234 tests across 10 files; mutation score 67% via Stryker.js, opt-in via `npm run mutation-test`)
 - Husky + lint-staged for pre-commit hooks

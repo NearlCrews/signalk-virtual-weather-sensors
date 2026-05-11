@@ -29,6 +29,7 @@ const createTestConfig = (overrides?: Partial<PluginConfiguration>): PluginConfi
   accuWeatherApiKey: 'test-api-key-12345678',
   updateFrequency: 5,
   emissionInterval: 5,
+  dailyApiQuota: 50,
   ...overrides,
 });
 
@@ -295,6 +296,91 @@ describe('WeatherService - Data Emission', () => {
     // handleMessage should not be called since there's no weather data
     // Data won't be valid without weather data
     expect(service.getCurrentWeatherData()).toBeNull();
+  });
+});
+
+describe('WeatherService - Quota Banner', () => {
+  let mockApp: ReturnType<typeof createMockApp>;
+  let mockLogger: ReturnType<typeof createMockLogger>;
+
+  /**
+   * Build a minimal AccuWeatherService stand-in that lets each test pin the
+   * rolling 24h count to a chosen value. We bypass the real constructor (no
+   * API key, no fetch) by casting the stub to AccuWeatherService.
+   */
+  const makeFakeAccu = (last24h: number, cumulative = last24h) =>
+    ({
+      getRequestCount: () => cumulative,
+      getRequestCountLast24h: () => last24h,
+      getCacheStats: () => ({ size: 0 }),
+    }) as unknown as import('../../services/AccuWeatherService.js').AccuWeatherService;
+
+  beforeEach(() => {
+    mockApp = createMockApp();
+    mockLogger = createMockLogger();
+  });
+
+  it('omits the quota suffix when dailyApiQuota is 0', () => {
+    const config = createTestConfig({ dailyApiQuota: 0 });
+    const service = new WeatherService(
+      mockApp as never,
+      config,
+      mockLogger,
+      undefined,
+      makeFakeAccu(40)
+    );
+
+    const banner = service.formatStatusBanner();
+    expect(banner).toBe('Running, awaiting first update');
+    expect(banner).not.toContain('today');
+  });
+
+  it('appends ", K/Q today" with the running prefix at 50% usage', () => {
+    const config = createTestConfig({ dailyApiQuota: 50 });
+    const service = new WeatherService(
+      mockApp as never,
+      config,
+      mockLogger,
+      undefined,
+      makeFakeAccu(25)
+    );
+
+    const banner = service.formatStatusBanner();
+    expect(banner).toContain('Running');
+    expect(banner).not.toContain('quota 90% used');
+    expect(banner).toContain('25/50 today');
+  });
+
+  it('switches to the quota-warning prefix at 90% usage', () => {
+    const config = createTestConfig({ dailyApiQuota: 50 });
+    const service = new WeatherService(
+      mockApp as never,
+      config,
+      mockLogger,
+      undefined,
+      makeFakeAccu(45)
+    );
+
+    const banner = service.formatStatusBanner();
+    expect(banner).toContain('Running [quota 90% used]');
+    expect(banner).toContain('45/50 today');
+    expect(service.isQuotaExhausted()).toBe(false);
+  });
+
+  it('flags exhaustion at 100% usage and keeps the warning prefix', () => {
+    const config = createTestConfig({ dailyApiQuota: 50 });
+    const service = new WeatherService(
+      mockApp as never,
+      config,
+      mockLogger,
+      undefined,
+      makeFakeAccu(50)
+    );
+
+    const banner = service.formatStatusBanner();
+    expect(banner).toContain('Running [quota 90% used]');
+    expect(banner).toContain('50/50 today');
+    expect(service.isQuotaExhausted()).toBe(true);
   });
 });
 

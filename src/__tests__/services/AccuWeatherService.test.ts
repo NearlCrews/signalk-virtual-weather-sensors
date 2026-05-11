@@ -402,6 +402,72 @@ describe('AccuWeatherService', () => {
     });
   });
 
+  describe('Rolling 24h request window', () => {
+    let windowService: AccuWeatherService;
+    const ONE_HOUR_MS = 60 * 60 * 1000;
+    const successPair = () => {
+      vi.mocked(global.fetch)
+        .mockResolvedValueOnce(
+          mockResponse({ Key: '2628204', LocalizedName: 'San Francisco' }) as never
+        )
+        .mockResolvedValueOnce(mockResponse(createMockAccuWeatherResponse()) as never);
+    };
+
+    beforeEach(() => {
+      // Pin the wall clock so the rotation math is deterministic. The service
+      // captures `Date.now()` in its constructor, so construct AFTER fake
+      // timers are in place.
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date('2026-05-10T12:00:00Z'));
+      windowService = new AccuWeatherService('test-api-key', mockLogger);
+      vi.mocked(global.fetch).mockClear();
+    });
+
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it('returns 0 before any request has been made', () => {
+      expect(windowService.getRequestCountLast24h()).toBe(0);
+    });
+
+    it('counts a successful request in the current-hour bucket', async () => {
+      successPair();
+      await windowService.fetchCurrentWeather({ latitude: 37.7749, longitude: -122.4194 });
+      // 1 location lookup + 1 current-conditions call
+      expect(windowService.getRequestCountLast24h()).toBe(2);
+    });
+
+    it('keeps counts that fall within the trailing 24h window', async () => {
+      successPair();
+      await windowService.fetchCurrentWeather({ latitude: 37.7749, longitude: -122.4194 });
+      // Advance 23 hours: the prior request still falls within the window.
+      vi.setSystemTime(new Date(Date.now() + 23 * ONE_HOUR_MS));
+      expect(windowService.getRequestCountLast24h()).toBe(2);
+    });
+
+    it('drops counts older than 24 hours', async () => {
+      successPair();
+      await windowService.fetchCurrentWeather({ latitude: 37.7749, longitude: -122.4194 });
+      // Advance just past the window: the original bucket has rotated out.
+      vi.setSystemTime(new Date(Date.now() + 24 * ONE_HOUR_MS));
+      expect(windowService.getRequestCountLast24h()).toBe(0);
+    });
+
+    it('zeroes the entire window after extended idleness', async () => {
+      successPair();
+      await windowService.fetchCurrentWeather({ latitude: 37.7749, longitude: -122.4194 });
+      // Advance more than a full window: every bucket is stale.
+      vi.setSystemTime(new Date(Date.now() + 48 * ONE_HOUR_MS));
+      expect(windowService.getRequestCountLast24h()).toBe(0);
+
+      // A fresh request after the long idle still lands in the current hour.
+      successPair();
+      await windowService.fetchCurrentWeather({ latitude: 37.7749, longitude: -122.4194 });
+      expect(windowService.getRequestCountLast24h()).toBe(2);
+    });
+  });
+
   describe('HTTP Error Handling', () => {
     const fastRetryConfig = { retryAttempts: 3, retryDelay: 1 };
 

@@ -146,6 +146,15 @@ export default function createPlugin(app: ServerAPI): Plugin {
           minimum: 1,
           maximum: 60,
         },
+        dailyApiQuota: {
+          type: 'number',
+          title: 'Daily API Call Quota',
+          description:
+            'Maximum AccuWeather calls per rolling 24-hour window. Free tier is 50/day. Set to 0 to disable the cap and quota warnings.',
+          default: DEFAULT_CONFIG.DAILY_API_QUOTA,
+          minimum: 0,
+          maximum: DEFAULT_CONFIG.DAILY_API_QUOTA_MAX,
+        },
       },
       required: ['accuWeatherApiKey'],
     }),
@@ -154,7 +163,7 @@ export default function createPlugin(app: ServerAPI): Plugin {
      * UI schema for better form presentation
      */
     uiSchema: () => ({
-      'ui:order': ['accuWeatherApiKey', 'updateFrequency', 'emissionInterval'],
+      'ui:order': ['accuWeatherApiKey', 'updateFrequency', 'emissionInterval', 'dailyApiQuota'],
       accuWeatherApiKey: {
         'ui:widget': 'password',
       },
@@ -162,6 +171,9 @@ export default function createPlugin(app: ServerAPI): Plugin {
         'ui:widget': 'updown',
       },
       emissionInterval: {
+        'ui:widget': 'updown',
+      },
+      dailyApiQuota: {
         'ui:widget': 'updown',
       },
     }),
@@ -395,6 +407,10 @@ function validateAndNormalizeSettings(settings: unknown, logger: Logger): Plugin
       typeof rawSettings.emissionInterval === 'number'
         ? rawSettings.emissionInterval
         : DEFAULT_CONFIG.EMISSION_INTERVAL,
+    dailyApiQuota:
+      typeof rawSettings.dailyApiQuota === 'number'
+        ? rawSettings.dailyApiQuota
+        : DEFAULT_CONFIG.DAILY_API_QUOTA,
   };
 
   // Validate configuration
@@ -420,6 +436,7 @@ function validateAndNormalizeSettings(settings: unknown, logger: Logger): Plugin
   logger('info', 'Plugin configuration validated and normalized', {
     updateFrequency: finalConfig.updateFrequency,
     emissionInterval: finalConfig.emissionInterval,
+    dailyApiQuota: finalConfig.dailyApiQuota,
   });
 
   return finalConfig;

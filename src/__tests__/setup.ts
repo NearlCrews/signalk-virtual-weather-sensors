@@ -94,6 +94,7 @@ export function createMockConfig(
     accuWeatherApiKey: 'testapikey123456789012345',
     updateFrequency: 5,
     emissionInterval: 5,
+    dailyApiQuota: 50,
     ...overrides,
   };
 }

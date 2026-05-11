@@ -23,6 +23,8 @@ export const PLUGIN = {
   SOURCE_REF: 'accuweather',
   STATUS: {
     RUNNING: 'Running',
+    /** Banner prefix once 24h API usage crosses `API_QUOTA.WARN_RATIO`. */
+    RUNNING_QUOTA_WARN: 'Running [quota 90% used]',
     STOPPED: 'Stopped',
     SERVICE_RUNNING: 'Weather service running',
     SERVICE_STOPPED: 'Weather service stopped',
@@ -45,12 +47,31 @@ export const PLUGIN = {
 export const DEFAULT_CONFIG = {
   UPDATE_FREQUENCY: 5, // minutes
   EMISSION_INTERVAL: 5, // seconds
+  /**
+   * AccuWeather free tier allows 50 calls/day. Operators on a paid tier can
+   * raise this in plugin settings (max 1000); setting it to 0 disables the cap
+   * entirely.
+   */
+  DAILY_API_QUOTA: 50,
+  /** Maximum value accepted for `dailyApiQuota` in plugin settings. */
+  DAILY_API_QUOTA_MAX: 1000,
   ENABLE_EVENT_DRIVEN: true,
   USE_VESSEL_POSITION: true,
   LOCATION_CACHE_TIMEOUT: 3600, // seconds (1 hour)
   REQUEST_TIMEOUT: 10000, // milliseconds
   RETRY_ATTEMPTS: 3,
   RETRY_DELAY: 1000, // milliseconds
+} as const;
+
+/**
+ * Quota usage thresholds (as ratios of `dailyApiQuota`). Crossing
+ * `WARN_RATIO` switches the status banner into a warning prefix; reaching
+ * `EXHAUST_RATIO` trips a setPluginError and pauses fetches until the rolling
+ * 24h window drops below the cap.
+ */
+export const API_QUOTA = {
+  WARN_RATIO: 0.9,
+  EXHAUST_RATIO: 1.0,
 } as const;
 
 // ===============================

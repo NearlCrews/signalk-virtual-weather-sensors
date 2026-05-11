@@ -132,6 +132,13 @@ describe('Angle conversions', () => {
     it('falls back to 0 for non-finite input', () => {
       expect(normalizeAnglePiToPi(Number.NaN)).toBe(0);
     });
+    it('maps -π to +π (the documented "wrapped === 0" boundary)', () => {
+      // Mutation guard: the conditional `wrapped === 0 ? Math.PI : wrapped - Math.PI`
+      // is the only place where -π collapses to +π. Without this case, tests pass
+      // even when the conditional is flipped to always return `wrapped - Math.PI`.
+      expect(normalizeAnglePiToPi(-Math.PI)).toBe(Math.PI);
+      expect(normalizeAnglePiToPi(Math.PI)).toBe(Math.PI);
+    });
   });
 });
 
@@ -228,6 +235,18 @@ describe('Atmospheric calculations', () => {
     expect(calculateAirDensity(1, 0, 0)).toBe(1.225);
   });
 
+  it('calculateAirDensity decreases when humidity > 0 at the same T/P', () => {
+    // Mutation guard: the dry-vs-humid branch (`relativeHumidity * saturationPressure`,
+    // `pressurePa - vaporPressure`, `(p_d/(R_d*T)) + (p_v/(R_v*T))`) is dead-code in tests
+    // that always pass relativeHumidity = 0. Humid air is less dense than dry air at the
+    // same pressure & temperature, so this assertion kills the "swap +/-" and "swap *//"
+    // mutations on those terms.
+    const dry = calculateAirDensity(293.15, 101325, 0);
+    const humid = calculateAirDensity(293.15, 101325, 0.9);
+    expect(humid).toBeLessThan(dry);
+    expect(dry - humid).toBeGreaterThan(0.005); // measurable, not just numerical noise
+  });
+
   describe('calculateBeaufortScale', () => {
     it('classifies sustained wind correctly', () => {
       expect(calculateBeaufortScale(0)).toBe(0);
@@ -241,6 +260,13 @@ describe('Atmospheric calculations', () => {
     it('returns 0 for negative or non-finite input', () => {
       expect(calculateBeaufortScale(-1)).toBe(0);
       expect(calculateBeaufortScale(Number.NaN)).toBe(0);
+    });
+    it('uses strict less-than at threshold boundaries (mutation guard)', () => {
+      // Threshold table starts with `{ max: 0.3, scale: 0 }`. The lookup uses
+      // `effectiveWindSpeed < threshold.max`, so 0.299 → 0 and 0.3 → 1. Mutating
+      // `<` to `<=` would push 0.3 into scale 0 instead of 1.
+      expect(calculateBeaufortScale(0.299)).toBe(0);
+      expect(calculateBeaufortScale(0.3)).toBe(1);
     });
   });
 });

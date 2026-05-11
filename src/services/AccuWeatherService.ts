@@ -77,6 +77,11 @@ const CACHE_PRUNE_INTERVAL_MS = 5 * 60 * 1000;
 /** Upper bound on Retry-After delays we honor, regardless of header value. */
 const MAX_RETRY_AFTER_MS = 60_000;
 
+/** Number of hourly buckets in the rolling 24h request window. */
+const REQUEST_WINDOW_HOURS = 24;
+/** Hour expressed in milliseconds, used by the rolling window rotation. */
+const HOUR_MS = 60 * 60 * 1000;
+
 export class AccuWeatherService {
   private readonly config: AccuWeatherConfig;
   private readonly logger: Logger;
@@ -90,6 +95,20 @@ export class AccuWeatherService {
    * 5-second emission tick, so this is not a hot-path concern.
    */
   private requestCount = 0;
+  /**
+   * Circular buffer of per-hour request counts spanning the last 24 hours.
+   * `requestWindow[i]` holds the count for the hour offset `i` from
+   * `requestWindowBaseHour` (midnight-aligned to 1970 epoch hour). On each
+   * request we rotate forward by the elapsed hours, zeroing skipped buckets,
+   * which keeps memory at exactly 24 numbers regardless of uptime.
+   */
+  private requestWindow: number[] = new Array(REQUEST_WINDOW_HOURS).fill(0);
+  /**
+   * Epoch-hour index of the LAST bucket (`requestWindow[REQUEST_WINDOW_HOURS - 1]`),
+   * i.e. the current-hour slot. On rotation we shift the array left by the
+   * number of elapsed hours and update this index.
+   */
+  private requestWindowCurrentHour = Math.floor(Date.now() / HOUR_MS);
 
   constructor(apiKey: string, logger: Logger = () => {}, config?: Partial<AccuWeatherConfig>) {
     this.config = {
@@ -440,6 +459,7 @@ export class AccuWeatherService {
       // path: this fires at most once per AccuWeather call, default cadence
       // five minutes. Cheap integer increment, no allocation.
       this.requestCount++;
+      this.recordRequestInWindow();
 
       const response = await fetch(url.toString(), {
         method: 'GET',
@@ -738,5 +758,64 @@ export class AccuWeatherService {
   /** Cumulative HTTP fetch attempts (initial + retries) since construction. */
   public getRequestCount(): number {
     return this.requestCount;
+  }
+
+  /**
+   * HTTP fetch attempts in the rolling last 24 hours. Backed by 24 hourly
+   * buckets that rotate as time advances, so memory stays constant regardless
+   * of uptime. Reads call `rotateRequestWindow` so a quota check made between
+   * fetches still reflects buckets that have aged out.
+   */
+  public getRequestCountLast24h(): number {
+    this.rotateRequestWindow();
+    let total = 0;
+    for (const count of this.requestWindow) {
+      total += count;
+    }
+    return total;
+  }
+
+  /**
+   * Advance the rolling window so `requestWindow[REQUEST_WINDOW_HOURS - 1]`
+   * tracks the current epoch hour, zeroing buckets for skipped hours. Called
+   * from both the read path (so quota checks see fresh state) and the write
+   * path (so the increment lands in the right bucket).
+   * @private
+   */
+  private rotateRequestWindow(): void {
+    const currentHour = Math.floor(Date.now() / HOUR_MS);
+    const elapsed = currentHour - this.requestWindowCurrentHour;
+    if (elapsed <= 0) {
+      return;
+    }
+    if (elapsed >= REQUEST_WINDOW_HOURS) {
+      // More than a full window has passed: every bucket is stale.
+      this.requestWindow.fill(0);
+    } else {
+      // Shift left by `elapsed`, dropping the oldest hours and pushing zeros
+      // for the freshly exposed (current-hour) slots. Splice keeps array
+      // length stable and is fine off the hot path.
+      this.requestWindow.splice(0, elapsed);
+      for (let i = 0; i < elapsed; i++) {
+        this.requestWindow.push(0);
+      }
+    }
+    this.requestWindowCurrentHour = currentHour;
+  }
+
+  /**
+   * Increment the trailing (current-hour) bucket. Always rotates first so a
+   * burst of requests after a long idle period lands in the correct bucket
+   * rather than the last hour the service was active.
+   * @private
+   */
+  private recordRequestInWindow(): void {
+    this.rotateRequestWindow();
+    // The current hour is the last bucket: index REQUEST_WINDOW_HOURS - 1.
+    // The bucket is guaranteed to exist (constructor pre-fills the array and
+    // rotateRequestWindow preserves length); the `?? 0` keeps strict
+    // noUncheckedIndexedAccess happy without a non-null assertion.
+    const lastIdx = REQUEST_WINDOW_HOURS - 1;
+    this.requestWindow[lastIdx] = (this.requestWindow[lastIdx] ?? 0) + 1;
   }
 }

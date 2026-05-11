@@ -39,23 +39,40 @@ Known deviations: none tracked.
   - Configurable thresholds, integration with Signal K notifications,
     optional email/push fan-out.
 
-- [ ] **Encrypt the API key in configuration storage**
-  - Use Signal K's security context. Today the key sits in plaintext in
-    `~/.signalk/plugin-config-data/`.
-  - Add key rotation support.
+- [x] **Encrypt the API key in configuration storage** *(spike, closed not-applicable this session)*
+  - Investigated 2026-05-10. Signal K has no plugin-facing secrets API,
+    peer plugins (`signalk-aisstream`, `signalk-windy-plugin`,
+    `signalk-weatherflow`) all store keys in plaintext, and this plugin
+    already does the meaningful hardening: `'ui:widget': 'password'`,
+    log redaction via `SENSITIVE_LOG_KEY_PATTERN`, and schema
+    `minLength: 20`. On a single-user appliance, encryption-at-rest
+    without an external key store is theatre. Spike write-up:
+    [`docs/api-key-storage.md`](docs/api-key-storage.md). Re-open only if
+    one of the trigger conditions in that doc fires.
 
-- [ ] **API quota usage dashboard**
-  - Surface `getRequestCount()` and per-day call estimate in the status
-    banner so free-tier operators don't silently exceed their quota.
+- [x] **API quota usage dashboard** *(this session)*
+  - New `dailyApiQuota` config option (default 50, range 0 to 1000; 0 disables).
+    Rolling 24h request counter via `AccuWeatherService.getRequestCountLast24h()`.
+    Status banner gains `, K/Q today` suffix. At 90% the prefix switches to
+    `Running [quota 90% used]`; at 100% the plugin trips `setPluginError` and
+    skips fetches via `WeatherService.isQuotaExhausted()` until usage drops.
 
 ## P3 - Low (nice to have)
 
-- [ ] **Signal K App Store submission**
-  - Prepare appstore metadata, screenshots, description; submit for review.
+- [x] **Signal K App Store submission** *(verified live 2026-05-10)*
+  - No submission step exists: the App Store auto-discovers any npm package
+    with the `signalk-node-server-plugin` keyword. Verified on 2026-05-10 that
+    `signalk-virtual-weather-sensors@1.3.2` is returned by the same npm search
+    the server uses, listed under the "Weather" category. The next release
+    (1.4.0) adds `signalk-category-nmea-2000` for a second listing. See
+    `docs/app-store-status.md` for the verification details and a
+    reproducible curl check.
 
-- [ ] **Mutation testing**
-  - Stryker against the calculator + validator modules to confirm the
-    217 unit tests actually catch logic regressions.
+- [x] **Mutation testing** *(this session)*
+  - Stryker.js 9.6 added as a dev-only dependency (NOT in CI). One-shot pass
+    raised the mutation score on `WindCalculator` from 57.96% to 74.34% and
+    on `conversions` from 86.39% to 94.67%; 8 new tests killed 56 mutants.
+    Future runs: `npm run mutation-test`. Config: `stryker.conf.json`.
 
 ## Known Issues
 
@@ -67,14 +84,15 @@ None tracked. Branch coverage held above the 80% threshold through v1.4.0.
 - [x] API key sanitization in logs and schema-level `minLength: 20` enforcement *(v1.2.2)*
 - [x] AccuWeather response trust boundary: schema validation, 1 MiB body cap, location-key regex *(v1.2.2)*
 - [x] `noFloatingPromises` and `noMisusedPromises` enabled in Biome *(v1.3.3)*
-
-The remaining security item (encryption at rest) is tracked under P2 above.
+- [x] API-key encryption-at-rest spike, closed not-applicable: see [`docs/api-key-storage.md`](docs/api-key-storage.md) *(this session)*
 
 ## Continuous Improvement
 
 - [x] **Dependabot configured** for npm + GitHub Actions, weekly cadence *(this session, see `.github/dependabot.yml`)*
 - [x] **Code quality baseline** *(v1.1.0 onwards)*
-  - 217 tests across 10 files (v1.4.0 + Unreleased; baseline 206/8)
+  - 234 tests across 10 files (v1.4.0 + Unreleased; baseline 206/8)
+  - Mutation score 67.44% across the pure-function modules (calculators + utils);
+    `WindCalculator` 74%, `conversions` 95%, `validation` 57%
   - debug/info routed through `app.debug`; warn/error through `app.error`
     so they appear in production logs without enabling DEBUG *(v1.3.3)*
   - `toErrorMessage(error)` helper consolidates 19 sites *(v1.3.2)*

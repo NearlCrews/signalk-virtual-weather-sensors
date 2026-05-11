@@ -6,7 +6,7 @@
 
 import type { ServerAPI } from '@signalk/server-api';
 import { WindCalculator } from '../calculators/WindCalculator.js';
-import { ERROR_CODES, PERFORMANCE, PLUGIN } from '../constants/index.js';
+import { API_QUOTA, ERROR_CODES, PERFORMANCE, PLUGIN } from '../constants/index.js';
 import {
   isCompleteNavigationData,
   type Logger,
@@ -220,11 +220,23 @@ export class WeatherService {
    * request counter is appended only when non-zero so the pre-fetch and
    * "no requests yet" cases both stay terse. Lives here so the format and
    * the underlying counters stay together.
+   *
+   * When `dailyApiQuota > 0` the suffix gains a ", K/Q today" segment, where
+   * K is the rolling 24h count from `AccuWeatherService.getRequestCountLast24h()`
+   * and Q is the configured quota. Crossing `API_QUOTA.WARN_RATIO` switches
+   * the banner prefix to a quota-warning variant so operators see the cap is
+   * approaching even when no setPluginError is active yet.
    */
   public formatStatusBanner(): string {
     const ageMs = this.getDataAgeMs();
+    const prefix = this.shouldShowQuotaWarning()
+      ? PLUGIN.STATUS.RUNNING_QUOTA_WARN
+      : PLUGIN.STATUS.RUNNING;
+
     if (ageMs === null) {
-      return `${PLUGIN.STATUS.RUNNING}, awaiting first update`;
+      const quotaSuffix = this.formatQuotaSuffix();
+      const head = `${prefix}, awaiting first update`;
+      return quotaSuffix ? `${head} (${quotaSuffix.replace(/^, /, '')})` : head;
     }
     const ageMin = Math.round(ageMs / 60_000);
     const ageLabel = ageMin <= 0 ? 'just now' : `${ageMin}m ago`;
@@ -233,7 +245,42 @@ export class WeatherService {
       requestCount > 0
         ? `${this.updateCount} updates, ${requestCount} API requests`
         : `${this.updateCount} updates`;
-    return `${PLUGIN.STATUS.RUNNING}, last update ${ageLabel} (${counters})`;
+    return `${prefix}, last update ${ageLabel} (${counters}${this.formatQuotaSuffix()})`;
+  }
+
+  /**
+   * `, K/Q today` segment for the banner suffix when `dailyApiQuota > 0`,
+   * otherwise an empty string so the existing format stays byte-identical
+   * with the cap disabled. Pulls the rolling 24h count fresh on each call
+   * so the displayed value reflects bucket rotation.
+   * @private
+   */
+  private formatQuotaSuffix(): string {
+    if (this.config.dailyApiQuota <= 0) return '';
+    const used = this.accuWeatherService.getRequestCountLast24h();
+    return `, ${used}/${this.config.dailyApiQuota} today`;
+  }
+
+  /**
+   * True when the rolling 24h request count has crossed `WARN_RATIO` of the
+   * configured quota. Returns false when the cap is disabled (`dailyApiQuota = 0`).
+   * @private
+   */
+  private shouldShowQuotaWarning(): boolean {
+    if (this.config.dailyApiQuota <= 0) return false;
+    const used = this.accuWeatherService.getRequestCountLast24h();
+    return used / this.config.dailyApiQuota >= API_QUOTA.WARN_RATIO;
+  }
+
+  /**
+   * True when the rolling 24h request count has reached the configured cap.
+   * Used by `updateWeatherData` to short-circuit fetches; the existing
+   * stale-data error path then surfaces the pause to operators.
+   */
+  public isQuotaExhausted(): boolean {
+    if (this.config.dailyApiQuota <= 0) return false;
+    const used = this.accuWeatherService.getRequestCountLast24h();
+    return used / this.config.dailyApiQuota >= API_QUOTA.EXHAUST_RATIO;
   }
 
   /**
@@ -304,6 +351,24 @@ export class WeatherService {
    */
   private async updateWeatherData(): Promise<void> {
     const startTime = Date.now();
+
+    // Daily-quota guard: when the rolling 24h request count meets the cap,
+    // skip the fetch entirely. The existing stale-data error path
+    // (`emitWeatherTick` in index.ts) takes over once `lastUpdate` ages
+    // past `2 * updateFrequency`. We also emit an explicit setPluginError
+    // here so operators see WHY the plugin paused (rather than a generic
+    // stale-data message) the moment the cap is hit.
+    if (this.isQuotaExhausted()) {
+      const used = this.accuWeatherService.getRequestCountLast24h();
+      const quota = this.config.dailyApiQuota;
+      const message = `AccuWeather daily quota reached (${used}/${quota} in last 24h). Pausing fetches until usage drops below the cap.`;
+      this.logger('warn', 'Skipping weather update: daily API quota reached', {
+        used,
+        quota,
+      });
+      this.app.setPluginError(message);
+      return;
+    }
 
     try {
       this.logger('debug', 'Starting weather data update');

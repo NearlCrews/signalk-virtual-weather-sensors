@@ -132,7 +132,7 @@ export default function createPlugin(app: ServerAPI): Plugin {
 #### esbuild 0.28+
 - **Purpose**: Fast, modern JavaScript bundler
 - **Configuration**: [`esbuild.config.js`](esbuild.config.js)
-- **Performance**: ~63 KB bundle in ~35 ms build time
+- **Performance**: ~68 KB bundle in ~15 ms build time
 - **Features**:
   - ES2023 target compilation
   - Source map generation
@@ -141,7 +141,7 @@ export default function createPlugin(app: ServerAPI): Plugin {
   - Banner injection for plugin metadata
 
 **Build Outputs:**
-- `dist/index.js`: main bundle (~63 KB)
+- `dist/index.js`: main bundle (~68 KB)
 - `dist/index.js.map`: source map
 - `dist/index.d.ts` and per-source `*.d.ts`: TypeScript declarations
 
@@ -319,6 +319,7 @@ npm run test              # Run tests in watch mode
 npm run test:run          # Run all tests once
 npm run test:coverage     # Generate coverage report
 npm run test:ui           # Interactive test UI
+npm run mutation-test     # Stryker.js mutation-test pass (slow, opt-in; not in CI)
 ```
 
 #### Code Quality
@@ -394,20 +395,20 @@ npm run validate
 - **Edge Case Tests**: Boundary conditions and error handling
 - **Performance Tests**: Real-time calculation efficiency
 
-**Total: 217 tests** across 10 test files (latest as of v1.4.0 + Unreleased)
+**Total: 234 tests** across 10 test files (latest as of v1.4.0 + Unreleased)
 
 ### Test Files
 
 - [`index.test.ts`](src/__tests__/index.test.ts): plugin entry point and meta-delta one-shot invariant (4 tests)
-- [`WeatherService.test.ts`](src/__tests__/services/WeatherService.test.ts): core orchestration (21 tests)
+- [`WeatherService.test.ts`](src/__tests__/services/WeatherService.test.ts): core orchestration plus quota-aware status banner format (25 tests)
 - [`SignalKService.test.ts`](src/__tests__/services/SignalKService.test.ts): navigation data (40 tests)
-- [`AccuWeatherService.test.ts`](src/__tests__/services/AccuWeatherService.test.ts): API integration plus retry/error paths (22 tests)
-- [`WindCalculator.test.ts`](src/__tests__/calculators/WindCalculator.test.ts): vector mathematics (34 tests)
+- [`AccuWeatherService.test.ts`](src/__tests__/services/AccuWeatherService.test.ts): API integration, retry/error paths, rolling 24h request window (27 tests)
+- [`WindCalculator.test.ts`](src/__tests__/calculators/WindCalculator.test.ts): vector mathematics plus mutation-test-driven boundary cases for wind chill, heat index, beam-wind apparent angle (38 tests)
 - [`NMEA2000PathMapper.test.ts`](src/__tests__/mappers/NMEA2000PathMapper.test.ts): path mapping plus one-shot meta delta (16 tests)
 - [`mappers/delta-schema.test.ts`](src/__tests__/mappers/delta-schema.test.ts): Ajv conformance against the `@signalk/signalk-schema@1.8.2` JSON Schema for both values and meta deltas, plus a vocabulary assertion that loads canonical leaves from the live `groups/environment.json` (8 tests)
 - [`integration/weather-flow.integration.test.ts`](src/__tests__/integration/weather-flow.integration.test.ts): end-to-end smoke against a stubbed `global.fetch`: happy-path delta shape, 429 retry, 401 unauthorized (3 tests)
-- [`utils/conversions.test.ts`](src/__tests__/utils/conversions.test.ts): unit conversions (32 tests)
-- [`utils/validation.test.ts`](src/__tests__/utils/validation.test.ts): sanitize, validators, schema (37 tests)
+- [`utils/conversions.test.ts`](src/__tests__/utils/conversions.test.ts): unit conversions plus mutation-test-driven boundary cases for `normalizeAnglePiToPi`, air density, and Beaufort scale (35 tests)
+- [`utils/validation.test.ts`](src/__tests__/utils/validation.test.ts): sanitize, validators, schema, plus a NaN-vs-undefined guard test (38 tests)
 
 ### Running Specific Tests
 

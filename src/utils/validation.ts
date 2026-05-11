@@ -322,6 +322,31 @@ function validateEmissionInterval(
 }
 
 /**
+ * Validate daily API quota field. Zero is the documented "no cap" sentinel,
+ * so accept it without warning.
+ */
+function validateDailyApiQuota(
+  config: Partial<PluginConfiguration>,
+  errors: string[],
+  warnings: string[]
+): void {
+  if (config.dailyApiQuota === undefined) return;
+
+  if (typeof config.dailyApiQuota !== 'number' || !Number.isFinite(config.dailyApiQuota)) {
+    errors.push('Daily API quota must be a finite number');
+    return;
+  }
+
+  if (config.dailyApiQuota < 0) {
+    errors.push('Daily API quota must be 0 or greater (0 disables the cap)');
+  } else if (config.dailyApiQuota > DEFAULT_CONFIG.DAILY_API_QUOTA_MAX) {
+    warnings.push(
+      `Daily API quota over ${DEFAULT_CONFIG.DAILY_API_QUOTA_MAX} is unusual; clamping to ${DEFAULT_CONFIG.DAILY_API_QUOTA_MAX}`
+    );
+  }
+}
+
+/**
  * Validate complete plugin configuration
  */
 export function validateConfiguration(config: Partial<PluginConfiguration>): ValidationResult {
@@ -331,6 +356,7 @@ export function validateConfiguration(config: Partial<PluginConfiguration>): Val
   validateApiKey(config, errors, warnings);
   validateUpdateFrequency(config, errors, warnings);
   validateEmissionInterval(config, errors, warnings);
+  validateDailyApiQuota(config, errors, warnings);
 
   return {
     isValid: errors.length === 0,
@@ -340,13 +366,20 @@ export function validateConfiguration(config: Partial<PluginConfiguration>): Val
 }
 
 /**
- * Sanitize and normalize configuration with defaults
+ * Sanitize and normalize configuration with defaults. `dailyApiQuota` uses
+ * `??` (not `||`) because 0 is the meaningful "no cap" value and would
+ * otherwise be replaced by the default.
  */
 export function sanitizeConfiguration(config: Partial<PluginConfiguration>): PluginConfiguration {
   return {
     accuWeatherApiKey: config.accuWeatherApiKey?.trim() || '',
     updateFrequency: clamp(config.updateFrequency || DEFAULT_CONFIG.UPDATE_FREQUENCY, 1, 60),
     emissionInterval: clamp(config.emissionInterval || DEFAULT_CONFIG.EMISSION_INTERVAL, 1, 60),
+    dailyApiQuota: clamp(
+      config.dailyApiQuota ?? DEFAULT_CONFIG.DAILY_API_QUOTA,
+      0,
+      DEFAULT_CONFIG.DAILY_API_QUOTA_MAX
+    ),
   };
 }
 

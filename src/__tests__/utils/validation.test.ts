@@ -82,6 +82,26 @@ describe('validateWeatherData', () => {
     expect(result.isValid).toBe(false);
   });
 
+  it('rejects defined-but-non-finite numeric fields (NaN, not undefined)', () => {
+    // Mutation guard: each numeric guard is `value === undefined || !Number.isFinite(value)`.
+    // Mutating `||` to `&&` would still pass when the value is undefined (because both
+    // branches are true). This case (defined but NaN) only fails when the `||` is intact.
+    const result = validateWeatherData({
+      ...baseValidWeather(),
+      temperature: Number.NaN,
+      pressure: Number.NaN,
+      humidity: Number.NaN,
+      windSpeed: Number.NaN,
+      windDirection: Number.NaN,
+    });
+    expect(result.isValid).toBe(false);
+    expect(result.errors.some((e) => e.includes('Temperature'))).toBe(true);
+    expect(result.errors.some((e) => e.includes('Pressure'))).toBe(true);
+    expect(result.errors.some((e) => e.includes('Humidity'))).toBe(true);
+    expect(result.errors.some((e) => e.includes('Wind speed'))).toBe(true);
+    expect(result.errors.some((e) => e.includes('Wind direction'))).toBe(true);
+  });
+
   it('flags enhanced-field violations', () => {
     const result = validateWeatherData({
       ...baseValidWeather(),
