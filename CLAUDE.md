@@ -90,7 +90,7 @@ Test configuration in `vitest.config.ts` includes path aliases (`@/`, `@/service
 - **AccuWeather wind is ground-referenced**, so the plugin emits `speedOverGround` only. It does NOT emit `speedTrue` (which is water-referenced and would clobber a real anemometer feed on a moving vessel). Wind direction is true-north per the WMO surface-wind convention; the rationale is pinned in `AccuWeatherService.transformWeatherData`.
 - **`$source: 'accuweather'`** is set on every delta (constant lives in `PLUGIN.SOURCE_REF`) so users can configure source priorities to prefer real onboard sensors.
 - **Meta delta**: `NMEA2000PathMapper.buildMetaDelta()` returns a one-shot meta delta describing units/labels/descriptions for every `environment.weather.*` path. `index.ts` ships it exactly once per plugin lifetime, after the first values delta (admin-UI rendering workaround, not a spec ordering requirement), via `app.handleMessage(..., SKVersion.v1)`.
-- **Status banner**: `WeatherService.formatStatusBanner()` returns the live `Running, last update Nm ago (N updates)` string used by `setPluginStatus`. The format and counters live together on `WeatherService`; `index.ts` just routes the call.
+- **Status banner**: `WeatherService.formatStatusBanner()` returns the live `Running, last update Nm ago (N updates, K API requests)` string used by `setPluginStatus` (or `Running, awaiting first update` before the first fetch). The `K API requests` suffix is appended only when `AccuWeatherService.getRequestCount()` is non-zero. The format and counters live together on `WeatherService`; `index.ts` just routes the call.
 - **PGNs** (when paired with `signalk-nmea2000-emitter-cannon`): 130311 (pressure), 130312 (temperatures via fixed enum slots: temperature, dewPoint, apparentWindChill, heatIndex), 130313 (relativeHumidity), 130306 (wind: `speedOverGround`, `directionTrue`, `speedApparent`, `angleApparent`). Note: `environment.weather.speedGust` is emitted but the current cannon release does not subscribe to it. Instance numbers and bus priority are assigned by the companion plugin, not embedded in the deltas this plugin produces.
 
 ## Technology Stack
@@ -100,5 +100,5 @@ Test configuration in `vitest.config.ts` includes path aliases (`@/`, `@/service
 - `@signalk/server-api` 2.24+ as a `peerDependency` (the Signal K server provides it at runtime; not bundled). Used for `Plugin`, `ServerAPI`, `Delta`, `PathValue`, `Meta`, `MetaValue`, `SourceRef`, and `SKVersion` types.
 - esbuild 0.28+ for bundling (current bundle ~63 KB)
 - Biome 2.4+ for linting/formatting (with `noFloatingPromises` / `noMisusedPromises` enabled)
-- Vitest 4.1+ for testing (206 tests across 8 files)
+- Vitest 4.1+ for testing (217 tests across 10 files)
 - Husky + lint-staged for pre-commit hooks

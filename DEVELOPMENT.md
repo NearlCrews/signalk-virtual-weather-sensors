@@ -394,7 +394,7 @@ npm run validate
 - **Edge Case Tests**: Boundary conditions and error handling
 - **Performance Tests**: Real-time calculation efficiency
 
-**Total: 206 tests** across 8 test files (latest as of v1.4.0)
+**Total: 217 tests** across 10 test files (latest as of v1.4.0 + Unreleased)
 
 ### Test Files
 
@@ -404,6 +404,8 @@ npm run validate
 - [`AccuWeatherService.test.ts`](src/__tests__/services/AccuWeatherService.test.ts): API integration plus retry/error paths (22 tests)
 - [`WindCalculator.test.ts`](src/__tests__/calculators/WindCalculator.test.ts): vector mathematics (34 tests)
 - [`NMEA2000PathMapper.test.ts`](src/__tests__/mappers/NMEA2000PathMapper.test.ts): path mapping plus one-shot meta delta (16 tests)
+- [`mappers/delta-schema.test.ts`](src/__tests__/mappers/delta-schema.test.ts): Ajv conformance against the `@signalk/signalk-schema@1.8.2` JSON Schema for both values and meta deltas, plus a vocabulary assertion that loads canonical leaves from the live `groups/environment.json` (8 tests)
+- [`integration/weather-flow.integration.test.ts`](src/__tests__/integration/weather-flow.integration.test.ts): end-to-end smoke against a stubbed `global.fetch`: happy-path delta shape, 429 retry, 401 unauthorized (3 tests)
 - [`utils/conversions.test.ts`](src/__tests__/utils/conversions.test.ts): unit conversions (32 tests)
 - [`utils/validation.test.ts`](src/__tests__/utils/validation.test.ts): sanitize, validators, schema (37 tests)
 
