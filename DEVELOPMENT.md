@@ -476,13 +476,13 @@ This plugin adheres to the [Signal K 1.8.2 specification](https://signalk.org/sp
 | Requirement | Status | Implementation |
 |-------------|--------|----------------|
 | Plugin Structure | ✅ | Default export, async `start`/`stop` methods, schema/uiSchema |
-| Configuration Schema | ✅ | JSON Schema with validation in `index.ts` `schema()` |
+| Configuration Schema | ✅ | JSON Schema with validation in `index.ts` `schema()`. Fields: `accuWeatherApiKey` (required, minLength 20), `updateFrequency` (1..60 min), `emissionInterval` (1..60 s), `dailyApiQuota` (0..1000 calls per rolling 24h, 0 disables) |
 | Delta Message Format | ✅ | `Delta` type from `@signalk/server-api`; `Update` is XOR `values \| meta`, so meta rides in a separate update entry |
 | Signal K Paths (canonical) | ✅ | 1.8.2 vocabulary under `environment.outside.*` (`temperature`, `pressure`, `relativeHumidity`, `dewPointTemperature`, `apparentWindChillTemperature`, `heatIndexTemperature`, `airDensity`) and `environment.wind.*` (`speedOverGround`, `directionTrue`, `speedApparent`, `angleApparent`) |
 | Signal K Paths (non-canonical) | ✅ | Producer-namespaced under `environment.weather.*` (16 leaves: AccuWeather extensions like UV, visibility, cloud cover, plus plugin-derived Beaufort scale, gust factor, heat stress index). Keeps canonical containers leaf-only as the spec requires. |
 | Source Metadata | ✅ | Explicit `$source: 'accuweather'` (`SourceRef` brand) on every update; configurable via `PLUGIN.SOURCE_REF` |
 | Meta | ✅ | One-shot meta delta on plugin start (`NMEA2000PathMapper.buildMetaDelta()`) describing units and labels for non-canonical paths |
-| Status Reporting | ✅ | `app.setPluginStatus` / `app.setPluginError` (called unconditionally; both are required members of `ServerAPI` 2.x). Stale-data error is cleared on the next successful tick via `instance.staleErrorActive` flag in `emitWeatherTick` |
+| Status Reporting | ✅ | `app.setPluginStatus` / `app.setPluginError` (called unconditionally; both are required members of `ServerAPI` 2.x). Live banner string from `WeatherService.formatStatusBanner()`: `Running, last update Nm ago (N updates, K API requests, K/Q today)`, with a `Running [quota 90% used]` warning prefix and a `setPluginError` quota-exhausted state. Stale-data error is cleared on the next successful tick via `instance.staleErrorActive` flag in `emitWeatherTick` |
 | `handleMessage` versioning | ✅ | `app.handleMessage(id, delta, SKVersion.v1)` |
 | Logging channel separation | ✅ | All log levels go through `app.debug`. `app.setPluginError` is reserved for the Admin UI status banner, separate from log output |
 

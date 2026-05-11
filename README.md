@@ -148,6 +148,14 @@ The free tier allows 50 calls per day. Each `updateFrequency` tick costs 1 call 
 The plugin caps response bodies at 1 MiB to defend against runaway upstream payloads. AccuWeather Current Conditions responses are normally a few kilobytes, so this almost always indicates a misrouted response (proxy error page, captive portal).
 **What to check**: confirm the Signal K server can reach `dataservice.accuweather.com` directly without an HTML interstitial.
 
+### `Running [quota 90% used]` (warning prefix in the status banner)
+The rolling 24-hour API request count has crossed 90% of `dailyApiQuota`. The plugin still fetches normally; this is a soft warning so operators can raise the quota or `updateFrequency` before fetches actually pause.
+**What to check**: the suffix `K/Q today` shows the live count. Either raise `dailyApiQuota` (paid-tier keys typically allow 25k+/day) or increase `updateFrequency` to spend the remaining headroom more slowly.
+
+### `AccuWeather daily quota reached (K/Q in last 24h)`
+The rolling 24-hour count has hit `dailyApiQuota`. The plugin sets a `setPluginError`, skips new fetches, and serves the last good weather payload until the rolling window drops below the cap.
+**What to check**: the cap is per rolling 24h, NOT calendar day, so the plugin resumes fetches gradually as the oldest hourly buckets age out. To resume immediately, either raise `dailyApiQuota` and restart the plugin, or set `dailyApiQuota: 0` to disable the cap entirely.
+
 ### `Weather data stale: last update N minutes ago`
 The plugin emits this banner when the last successful fetch is older than `2 × updateFrequency`. The most common causes are upstream API errors, network outages, and missing GPS position.
 **What to check**: the Signal K server logs will show the underlying error code from the previous list. The banner clears automatically once the next fetch succeeds.
