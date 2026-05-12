@@ -35,9 +35,18 @@ Known deviations: none tracked.
   - OpenWeather, NOAA, Weather Underground; fallback chain across providers.
   - Likely lands behind the `WeatherProvider` migration above.
 
-- [ ] **Weather alerting system**
-  - Configurable thresholds, integration with Signal K notifications,
-    optional email/push fan-out.
+- [x] **Weather alerting system** *(shipped v1.4.3)*
+  - Opt-in notifications under `notifications.environment.*` per Signal K
+    1.8.2. Eleven distinct hazard paths (`wind.gale|storm|hurricane`,
+    `visibility.low|veryLow`, `heat.caution|high|extreme`,
+    `cold.caution|extreme`, `weather.severe`). Transition state machine in
+    `WeatherNotifier`: each band fires once on entry and once on exit, so
+    the bus never sees a flapping notification path. Master + per-category
+    sub-toggles in the admin schema (`notifications.{enabled, wind,
+    visibility, heat, cold, weather}`). Bridging to N2K Alert PGN
+    126983 / 126985 still depends on the separate `signalk-to-nmea2000`
+    server-side plugin: this plugin emits SK-native deltas only.
+    Email / push fan-out remains out of scope.
 
 - [x] **Encrypt the API key in configuration storage** *(spike, closed not-applicable v1.4.1)*
   - Investigated 2026-05-10. Signal K has no plugin-facing secrets API,
@@ -79,7 +88,7 @@ Known deviations: none tracked.
 
 ## Known Issues
 
-None tracked. Branch coverage held above the 80% threshold through v1.4.2.
+None tracked. Branch coverage held above the 80% threshold through v1.4.3.
 
 ## Security (compliant baseline, see CHANGELOG)
 
@@ -93,7 +102,7 @@ None tracked. Branch coverage held above the 80% threshold through v1.4.2.
 
 - [x] **Dependabot configured** for npm + GitHub Actions, weekly cadence *(v1.4.1, see `.github/dependabot.yml`)*
 - [x] **Code quality baseline** *(v1.1.0 onwards)*
-  - 242 tests across 10 files (current; baseline 206/8)
+  - 263 tests across 11 files (current; baseline 206/8)
   - Mutation score 67.44% across the pure-function modules (calculators + utils);
     `WindCalculator` 74%, `conversions` 95%, `validation` 57%
   - debug/info routed through `app.debug`; warn/error through `app.error`
@@ -108,7 +117,7 @@ None tracked. Branch coverage held above the 80% threshold through v1.4.2.
 
 ---
 
-**Last Updated**: 2026-05-11
+**Last Updated**: 2026-05-12
 
 **Maintainer**: Nearl Crews
 

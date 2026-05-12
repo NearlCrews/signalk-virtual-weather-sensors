@@ -413,9 +413,20 @@ export class WeatherService {
         return;
       }
 
+      const isFirstSuccessfulUpdate = this.lastUpdate === null;
       this.currentWeatherData = enhancedWeatherData;
       this.lastUpdate = new Date();
       this.updateCount++;
+
+      // Cold-start UX: the plugin entry pushes "Running, awaiting first update"
+      // during start(), and the emission timer wouldn't re-push the banner
+      // until its next tick (up to emissionInterval seconds away). Push the
+      // live banner here so the "awaiting" string flips the instant the first
+      // fetch lands. Subsequent updates rely on the emission tick's dedupe to
+      // avoid double-pushes within the same minute.
+      if (isFirstSuccessfulUpdate) {
+        this.app.setPluginStatus(this.formatStatusBanner());
+      }
 
       const processingTime = Date.now() - startTime;
       this.logger('info', 'Weather data updated successfully', {

@@ -395,17 +395,18 @@ npm run validate
 - **Edge Case Tests**: Boundary conditions and error handling
 - **Performance Tests**: Real-time calculation efficiency
 
-**Total: 242 tests** across 10 test files
+**Total: 263 tests** across 11 test files
 
 ### Test Files
 
-- [`index.test.ts`](src/__tests__/index.test.ts): plugin entry point, meta-delta one-shot invariant, status-banner refresh regression (5 tests)
+- [`index.test.ts`](src/__tests__/index.test.ts): plugin entry point, meta-delta one-shot invariant, banner dedupe regression, stale-data and quota-exhausted emission-tick branches (7 tests)
 - [`WeatherService.test.ts`](src/__tests__/services/WeatherService.test.ts): core orchestration plus quota-aware status banner format and pluralization (28 tests)
 - [`SignalKService.test.ts`](src/__tests__/services/SignalKService.test.ts): navigation data (40 tests)
 - [`AccuWeatherService.test.ts`](src/__tests__/services/AccuWeatherService.test.ts): API integration, retry/error paths, rolling 24h request window (27 tests)
 - [`WindCalculator.test.ts`](src/__tests__/calculators/WindCalculator.test.ts): vector mathematics plus mutation-test-driven boundary cases for wind chill, heat index, beam-wind apparent angle (39 tests)
 - [`NMEA2000PathMapper.test.ts`](src/__tests__/mappers/NMEA2000PathMapper.test.ts): path mapping plus one-shot meta delta (15 tests)
 - [`mappers/delta-schema.test.ts`](src/__tests__/mappers/delta-schema.test.ts): Ajv conformance against the `@signalk/signalk-schema@1.8.2` JSON Schema for both values and meta deltas, plus a vocabulary assertion that loads canonical leaves from the live `groups/environment.json` (8 tests)
+- [`notifications/WeatherNotifier.test.ts`](src/__tests__/notifications/WeatherNotifier.test.ts): notification state machine, entry/exit edges across wind/visibility/heat/cold/severe-condition bands, master + per-category toggles, WeatherIcon severity mapping, SK 1.8.2 value-shape conformance, reset() semantics (19 tests)
 - [`integration/weather-flow.integration.test.ts`](src/__tests__/integration/weather-flow.integration.test.ts): end-to-end smoke against a stubbed `global.fetch`: happy-path delta shape, 429 retry, 401 unauthorized (3 tests)
 - [`utils/conversions.test.ts`](src/__tests__/utils/conversions.test.ts): unit conversions plus mutation-test-driven boundary cases for `normalizeAnglePiToPi`, air density, and Beaufort scale (35 tests)
 - [`utils/validation.test.ts`](src/__tests__/utils/validation.test.ts): sanitize, validators, schema, plus a NaN-vs-undefined guard test (42 tests)
@@ -476,13 +477,14 @@ This plugin adheres to the [Signal K 1.8.2 specification](https://signalk.org/sp
 | Requirement | Status | Implementation |
 |-------------|--------|----------------|
 | Plugin Structure | ✅ | Default export, async `start`/`stop` methods, schema/uiSchema |
-| Configuration Schema | ✅ | JSON Schema with validation in `index.ts` `schema()`. Fields: `accuWeatherApiKey` (required, minLength 20), `updateFrequency` (1..60 min), `emissionInterval` (1..60 s), `dailyApiQuota` (0..1000 calls per rolling 24h, 0 disables) |
+| Configuration Schema | ✅ | JSON Schema with validation in `index.ts` `schema()`. Fields: `accuWeatherApiKey` (required, minLength 20), `updateFrequency` (1..60 min), `emissionInterval` (1..60 s), `dailyApiQuota` (0..1000 calls per rolling 24h, 0 disables), `notifications` (object: master `enabled` plus per-category `wind`/`visibility`/`heat`/`cold`/`weather` booleans, all opt-in, master off by default) |
 | Delta Message Format | ✅ | `Delta` type from `@signalk/server-api`; `Update` is XOR `values \| meta`, so meta rides in a separate update entry |
 | Signal K Paths (canonical) | ✅ | 1.8.2 vocabulary under `environment.outside.*` (`temperature`, `pressure`, `relativeHumidity`, `dewPointTemperature`, `apparentWindChillTemperature`, `heatIndexTemperature`, `airDensity`) and `environment.wind.*` (`speedOverGround`, `directionTrue`, `speedApparent`, `angleApparent`) |
 | Signal K Paths (non-canonical) | ✅ | Producer-namespaced under `environment.weather.*` (16 leaves: AccuWeather extensions like UV, visibility, cloud cover, plus plugin-derived Beaufort scale, gust factor, heat stress index). Keeps canonical containers leaf-only as the spec requires. |
 | Source Metadata | ✅ | Explicit `$source: 'accuweather'` (`SourceRef` brand) on every update; configurable via `PLUGIN.SOURCE_REF` |
 | Meta | ✅ | One-shot meta delta on plugin start (`NMEA2000PathMapper.buildMetaDelta()`) describing units and labels for non-canonical paths |
-| Status Reporting | ✅ | `app.setPluginStatus` / `app.setPluginError` (called unconditionally; both are required members of `ServerAPI` 2.x). Live banner string from `WeatherService.formatStatusBanner()`: `Running, last update Nm ago (N updates, K API requests, K/Q today)`, with a `Running [quota 90% used]` warning prefix and a `setPluginError` quota-exhausted state. `emitWeatherTick` re-pushes the banner on every fresh tick so the `Nm ago` age and quota counters stay current; the same refresh subsumes the prior stale-data error path (the dead `staleErrorActive` flag was removed in v1.4.2), and the refresh is skipped while `WeatherService.isQuotaExhausted()` is true so the quota-exhausted error is not clobbered |
+| Status Reporting | ✅ | `app.setPluginStatus` / `app.setPluginError` (called unconditionally; both are required members of `ServerAPI` 2.x). Live banner string from `WeatherService.formatStatusBanner()`: `Running, last update Nm ago (N updates, K API requests, K/Q today)`, with a `Running [quota 90% used]` warning prefix and a `setPluginError` quota-exhausted state. `emitWeatherTick` re-pushes the banner on every fresh tick so the `Nm ago` age and quota counters stay current; the same refresh subsumes the prior stale-data error path (the dead `staleErrorActive` flag was removed in v1.4.2), and the refresh is skipped while `WeatherService.isQuotaExhausted()` is true so the quota-exhausted error is not clobbered. v1.4.3 added a `setBanner()` dedupe layer so consecutive identical `(kind, message)` pushes coalesce to a single SK call. |
+| Notifications | ✅ | Opt-in `notifications.environment.*` deltas per SK 1.8.2 notifications.html (v1.4.3). 11 distinct hazard paths (`wind.gale|storm|hurricane`, `visibility.low|veryLow`, `heat.caution|high|extreme`, `cold.caution|extreme`, `weather.severe`). Value shape `{ state, method, message, timestamp }`. Transition state machine in `WeatherNotifier`: a band is emitted only on entry / exit, so unchanged snapshots never write to the bus. N2K Alert PGN 126983 / 126985 bridging requires the separate `signalk-to-nmea2000` plugin. |
 | `handleMessage` versioning | ✅ | `app.handleMessage(id, delta, SKVersion.v1)` |
 | Logging channel separation | ✅ | All log levels go through `app.debug`. `app.setPluginError` is reserved for the Admin UI status banner, separate from log output |
 

@@ -9,7 +9,7 @@ import {
   VALIDATION_LIMITS,
   VISIBILITY_LIMITS_M,
 } from '../constants/index.js';
-import type { PluginConfiguration, WeatherData } from '../types/index.js';
+import type { NotificationsConfig, PluginConfiguration, WeatherData } from '../types/index.js';
 import {
   celsiusToKelvin,
   clamp,
@@ -384,6 +384,26 @@ export function validateConfiguration(config: Partial<PluginConfiguration>): Val
 }
 
 /**
+ * Coerce a raw notifications subobject into the canonical `NotificationsConfig`
+ * shape, falling back to `DEFAULT_CONFIG.NOTIFICATIONS` for any missing or
+ * non-boolean field. Treats missing input as "use all defaults" so legacy
+ * configurations (no `notifications` key) continue to load.
+ */
+function sanitizeNotifications(input: unknown): NotificationsConfig {
+  const defaults = DEFAULT_CONFIG.NOTIFICATIONS;
+  const raw = (typeof input === 'object' && input !== null ? input : {}) as Record<string, unknown>;
+  const bool = (v: unknown, fallback: boolean): boolean => (typeof v === 'boolean' ? v : fallback);
+  return {
+    enabled: bool(raw.enabled, defaults.ENABLED),
+    wind: bool(raw.wind, defaults.WIND),
+    visibility: bool(raw.visibility, defaults.VISIBILITY),
+    heat: bool(raw.heat, defaults.HEAT),
+    cold: bool(raw.cold, defaults.COLD),
+    weather: bool(raw.weather, defaults.WEATHER),
+  };
+}
+
+/**
  * Sanitize and normalize configuration with defaults. `dailyApiQuota` uses
  * `??` (not `||`) because 0 is the meaningful "no cap" value and would
  * otherwise be replaced by the default.
@@ -398,6 +418,7 @@ export function sanitizeConfiguration(config: Partial<PluginConfiguration>): Plu
       0,
       DEFAULT_CONFIG.DAILY_API_QUOTA_MAX
     ),
+    notifications: sanitizeNotifications(config.notifications),
   };
 }
 

@@ -46,13 +46,16 @@ src/
 │   └── WindCalculator.ts       # Vector math for apparent wind, Beaufort scale
 ├── mappers/
 │   └── NMEA2000PathMapper.ts   # Weather data → Signal K delta messages
+├── notifications/
+│   └── WeatherNotifier.ts      # Transition state machine: WeatherData → notifications.environment.* deltas
 ├── utils/
 │   ├── validation.ts           # Config validation, NMEA2000 range sanitization
-│   └── conversions.ts          # Unit conversions (temp, pressure, wind, Beaufort scale) + `asTimestamp` brand helper
+│   ├── conversions.ts          # Unit conversions (temp, pressure, wind, Beaufort scale) + `asTimestamp` brand helper
+│   └── skDelta.ts              # Shared SK delta primitives: pv / me / buildValuesDelta / buildMetaDelta
 ├── constants/
-│   └── index.ts                # PGN numbers, Signal K paths, validation limits
+│   └── index.ts                # PGN numbers, Signal K paths, notification paths + thresholds, validation limits
 └── types/
-    └── index.ts                # All interfaces (readonly), type guards
+    └── index.ts                # All interfaces (readonly), type guards, NotificationsConfig, NotificationValue
 ```
 
 ### Data Flow
@@ -93,6 +96,9 @@ Test configuration in `vitest.config.ts` includes path aliases (`@/`, `@/service
 - **Status banner**: `WeatherService.formatStatusBanner()` returns the live `Running, last update Nm ago (N updates, K API requests)` string used by `setPluginStatus` (or `Running, awaiting first update` before the first fetch). The `K API requests` suffix is appended only when `AccuWeatherService.getRequestCount()` is non-zero. When `dailyApiQuota > 0` the suffix gains a `, K/Q today` segment showing the rolling 24h count; at 90% the prefix flips to `Running [quota 90% used]`, and at 100% the plugin trips `setPluginError` via `WeatherService.isQuotaExhausted()` and skips fetches until usage drops. Format and counters live together on `WeatherService`; `index.ts` just routes the call. The banner is re-pushed on every successful `emitWeatherTick` so the age and counters stay current (and the start-time `awaiting first update` string flips as soon as the first fetch lands).
 - **Daily API quota**: `dailyApiQuota` config option (default 50, range 0 to 1000; 0 disables). `AccuWeatherService` tracks usage via a rolling 24h window backed by 24 fixed hourly buckets that rotate on read/write (O(1) memory regardless of uptime). Accessor: `getRequestCountLast24h()`.
 - **PGNs** (when paired with `signalk-nmea2000-emitter-cannon`): 130311 (pressure), 130312 (temperatures via fixed enum slots: temperature, dewPoint, apparentWindChill, heatIndex), 130313 (relativeHumidity), 130306 (wind: `speedOverGround`, `directionTrue`, `speedApparent`, `angleApparent`). Note: `environment.weather.speedGust` is emitted but the current cannon release does not subscribe to it. Instance numbers and bus priority are assigned by the companion plugin, not embedded in the deltas this plugin produces.
+- **Notifications** (opt-in, off by default): `notifications.environment.*` per SK 1.8.2 notifications.html. Distinct paths per band (`wind.gale|storm|hurricane`, `visibility.low|veryLow`, `heat.caution|high|extreme`, `cold.caution|extreme`, `weather.severe`) so consumers caching by path+id see independent transitions. Value shape `{ state, method, message, timestamp }`, `state: 'normal'` on exit. The notifier is a pure transition emitter (Map of last-seen states), so unchanged snapshots produce zero output. Bridging to N2K Alert PGN 126983 / 126985 requires the separate `signalk-to-nmea2000` plugin: this plugin emits SK-native deltas only. Config branch: `notifications: { enabled, wind, visibility, heat, cold, weather }`.
+- **Banner dedupe**: every `setPluginStatus` / `setPluginError` call in `index.ts` routes through `setBanner()` which dedupes consecutive identical `(kind, message)` pairs. A flapping API or steady-state quota pause therefore lands one banner write per unique message, not one per 5-second emission tick. `WeatherService.updateWeatherData` also pushes the live banner directly on the first successful update so the "awaiting first update" string flips the moment data lands.
+- **Shared SK delta primitives**: `src/utils/skDelta.ts` exports `pv` (PathValue builder), `me` (Meta builder), `buildValuesDelta(values, timestamp?)`, `buildMetaDelta(meta)`, plus `SELF_CONTEXT` and `ACCUWEATHER_SOURCE` branded-cast constants. Mapper, notifier, and plugin entry all build deltas through this module instead of hand-rolling the envelope.
 
 ## Technology Stack
 
@@ -101,5 +107,5 @@ Test configuration in `vitest.config.ts` includes path aliases (`@/`, `@/service
 - `@signalk/server-api` 2.24+ as a `peerDependency` (the Signal K server provides it at runtime; not bundled). Used for `Plugin`, `ServerAPI`, `Delta`, `PathValue`, `Meta`, `MetaValue`, `SourceRef`, and `SKVersion` types.
 - esbuild 0.28+ for bundling (current bundle ~68 KB)
 - Biome 2.4+ for linting/formatting (with `noFloatingPromises` / `noMisusedPromises` enabled)
-- Vitest 4.1+ for testing (242 tests across 10 files; mutation score 67% via Stryker.js, opt-in via `npm run mutation-test`)
+- Vitest 4.1+ for testing (263 tests across 11 files; mutation score 67% via Stryker.js, opt-in via `npm run mutation-test`)
 - Husky + lint-staged for pre-commit hooks

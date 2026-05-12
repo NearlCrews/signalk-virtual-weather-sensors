@@ -204,9 +204,16 @@ export class AccuWeatherService {
     const wetBulbGlobeTemperature = toKelvin(conditions.WetBulbGlobeTemperature?.Metric?.Value);
     const apparentTemperature = toKelvin(conditions.ApparentTemperature?.Metric?.Value);
 
-    const windGustSpeed = kmhToMS(conditions.WindGust.Speed.Metric.Value);
-    // undefined when wind is calm: a literal 1 would be indistinguishable from "no gust"
-    const windGustFactor = windSpeed > 0 ? windGustSpeed / windSpeed : undefined;
+    // Free-tier and partial responses occasionally omit WindGust; match the
+    // optional-chained style of the neighbouring optional fields so a missing
+    // gust block falls through cleanly instead of throwing a TypeError that
+    // flaps the plugin banner.
+    const rawWindGustKmh = conditions.WindGust?.Speed?.Metric?.Value;
+    const windGustSpeed = typeof rawWindGustKmh === 'number' ? kmhToMS(rawWindGustKmh) : undefined;
+    // undefined when wind is calm OR gust data is missing: a literal 1 would be
+    // indistinguishable from "no gust".
+    const windGustFactor =
+      windGustSpeed !== undefined && windSpeed > 0 ? windGustSpeed / windSpeed : undefined;
 
     const uvIndex = conditions.UVIndexFloat;
     const visibility = conditions.Visibility.Metric.Value * UNITS.LENGTH.KM_TO_M;
@@ -247,8 +254,8 @@ export class AccuWeatherService {
       ...(wetBulbGlobeTemperature !== undefined && { wetBulbGlobeTemperature }),
       ...(apparentTemperature !== undefined && { apparentTemperature }),
 
-      // Enhanced wind data
-      windGustSpeed,
+      // Enhanced wind data (gust omitted on responses that lack the WindGust block)
+      ...(windGustSpeed !== undefined && { windGustSpeed }),
       ...(windGustFactor !== undefined && { windGustFactor }),
 
       // Atmospheric conditions
@@ -270,8 +277,11 @@ export class AccuWeatherService {
       airDensityEnhanced,
       ...(heatStressIndex !== undefined && { heatStressIndex }),
 
-      // Metadata
+      // Metadata. `weatherIcon` carries the AccuWeather code (1..44) to the
+      // notifier so it can classify severe-condition categories without
+      // re-parsing the upstream response.
       description: capString(conditions.WeatherText, ACCUWEATHER.MAX_DESCRIPTION_LENGTH),
+      ...(typeof conditions.WeatherIcon === 'number' && { weatherIcon: conditions.WeatherIcon }),
       timestamp: capString(conditions.LocalObservationDateTime, ACCUWEATHER.MAX_LABEL_LENGTH),
       quality: this.calculateDataQuality(conditions),
     };
@@ -664,7 +674,7 @@ export class AccuWeatherService {
       quality -= 0.1;
     }
 
-    if (conditions.WindGust.Speed.Metric.Value > 0) quality += 0.05;
+    if ((conditions.WindGust?.Speed?.Metric?.Value ?? 0) > 0) quality += 0.05;
     if (conditions.Visibility.Metric.Value > 0) quality += 0.05;
 
     return clamp(quality, 0, 1);
