@@ -5,6 +5,15 @@ All notable changes to the signalk-virtual-weather-sensors project will be docum
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.4] - 2026-05-12
+
+Maintenance release. Dev-deps and CI-action bumps only: the published `dist/` is byte-identical to 1.4.3 (no source code changed). Plugin behaviour, public API, and Signal K paths are unchanged.
+
+### Changed
+
+- `github/codeql-action` bumped from v3 to v4 in `.github/workflows/codeql.yml` (PR #9). v3 was end-of-lifed; CodeQL Default Setup was disabled in the repo settings at the same time to resolve a long-standing "advanced configurations cannot be processed when the default setup is enabled" SARIF-upload failure on every CodeQL run. Every CodeQL run on `main` is green from this release forward.
+- Dev-deps bumped via the Dependabot dev-deps group (PR #8): `@types/node` 25.6.2 to 25.7.0, `vitest` / `@vitest/coverage-v8` / `@vitest/ui` 4.1.5 to 4.1.6. The Vitest 4.1.6 release notes flag a deprecation of the `sequential` test API and one browser-test fix; neither surface is in use by this plugin's 263 tests.
+
 ## [1.4.3] - 2026-05-12
 
 Opt-in severe-weather notifications under `notifications.environment.*` plus the bug-fix cluster from a Signal K plugin expert audit. 263 tests pass (was 242; 21 net new: 19 in WeatherNotifier.test.ts and 2 in index.test.ts for the stale/quota emission-tick branches).
