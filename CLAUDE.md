@@ -37,10 +37,10 @@ npm run validate       # All checks (pre-commit uses this)
 
 ```
 src/
-├── index.ts                    # Plugin entry point & lifecycle (start/stop/getStatus)
+├── index.ts                    # Plugin entry point & lifecycle (start/stop/registerWithRouter)
 ├── services/
 │   ├── WeatherService.ts       # Orchestration: coordinates API, navigation, calculations
-│   ├── AccuWeatherService.ts   # API client: 24+ field extraction, location caching
+│   ├── AccuWeatherService.ts   # API client: 24+ field extraction, location caching, verifyApiKey
 │   └── SignalKService.ts       # Vessel navigation data retrieval
 ├── calculators/
 │   └── WindCalculator.ts       # Vector math for apparent wind, Beaufort scale
@@ -48,8 +48,11 @@ src/
 │   └── NMEA2000PathMapper.ts   # Weather data → Signal K delta messages
 ├── notifications/
 │   └── WeatherNotifier.ts      # Transition state machine: WeatherData → notifications.environment.* deltas
+├── configpanel/                # React 19 federated config panel (bundled by webpack to public/)
+│   ├── index.js                # Module Federation entry
+│   └── PluginConfigurationPanel.jsx
 ├── utils/
-│   ├── validation.ts           # Config validation, NMEA2000 range sanitization
+│   ├── validation.ts           # Config validation, NMEA2000 range sanitization, API_KEY_MIN_LENGTH
 │   ├── conversions.ts          # Unit conversions (temp, pressure, wind, Beaufort scale) + `asTimestamp` brand helper
 │   └── skDelta.ts              # Shared SK delta primitives: pv / me / buildValuesDelta / buildMetaDelta
 ├── constants/
@@ -99,6 +102,8 @@ Test configuration in `vitest.config.ts` includes path aliases (`@/`, `@/service
 - **Notifications** (opt-in, off by default): `notifications.environment.*` per SK 1.8.2 notifications.html. Distinct paths per band (`wind.gale|storm|hurricane`, `visibility.low|veryLow`, `heat.caution|high|extreme`, `cold.caution|extreme`, `weather.severe`) so consumers caching by path+id see independent transitions. Value shape `{ state, method, message, timestamp }`, `state: 'normal'` on exit. The notifier is a pure transition emitter (Map of last-seen states), so unchanged snapshots produce zero output. Bridging to N2K Alert PGN 126983 / 126985 requires the separate `signalk-to-nmea2000` plugin: this plugin emits SK-native deltas only. Config branch: `notifications: { enabled, wind, visibility, heat, cold, weather }`.
 - **Banner dedupe**: every `setPluginStatus` / `setPluginError` call in `index.ts` routes through `setBanner()` which dedupes consecutive identical `(kind, message)` pairs. A flapping API or steady-state quota pause therefore lands one banner write per unique message, not one per 5-second emission tick. `WeatherService.updateWeatherData` also pushes the live banner directly on the first successful update so the "awaiting first update" string flips the moment data lands.
 - **Shared SK delta primitives**: `src/utils/skDelta.ts` exports `pv` (PathValue builder), `me` (Meta builder), `buildValuesDelta(values, timestamp?)`, `buildMetaDelta(meta)`, plus `SELF_CONTEXT` and `ACCUWEATHER_SOURCE` branded-cast constants. Mapper, notifier, and plugin entry all build deltas through this module instead of hand-rolling the envelope.
+- **Federated React config panel** (since v1.5.0): `src/configpanel/PluginConfigurationPanel.jsx` is the panel component, bundled by `webpack.config.cjs` (must be `.cjs` because our `package.json` is `"type": "module"`) into `public/` via `ModuleFederationPlugin`. React 19 is declared `singleton` so the panel shares the host admin UI's React. The `signalk-plugin-configurator` keyword in `package.json` triggers the SK admin UI to load the panel in place of the auto-generated rjsf form; the JSON `schema()` is kept as a fallback for older admin UIs.
+- **Panel-supporting REST endpoints**: `Plugin.registerWithRouter` mounts `GET /api/status` (live banner + 24h API count + minutes since last fetch + active-notification count) and `POST /api/test-key` (probes a candidate AccuWeather key with one `AccuWeatherService.verifyApiKey()` call). Both endpoints are read-only or non-mutating; neither persists a key. The panel polls `/api/status` every 10 s.
 
 ## Technology Stack
 
@@ -107,5 +112,6 @@ Test configuration in `vitest.config.ts` includes path aliases (`@/`, `@/service
 - `@signalk/server-api` 2.24+ as a `peerDependency` (the Signal K server provides it at runtime; not bundled). Used for `Plugin`, `ServerAPI`, `Delta`, `PathValue`, `Meta`, `MetaValue`, `SourceRef`, and `SKVersion` types.
 - esbuild 0.28+ for bundling (current bundle ~68 KB)
 - Biome 2.4+ for linting/formatting (with `noFloatingPromises` / `noMisusedPromises` enabled)
-- Vitest 4.1+ for testing (263 tests across 11 files; mutation score 67% via Stryker.js, opt-in via `npm run mutation-test`)
+- Vitest 4.1+ for testing (266 tests across 11 files; mutation score 67% via Stryker.js, opt-in via `npm run mutation-test`)
+- React 19, webpack 5, @babel/preset-react, babel-loader, @types/express for the federated config panel (panel-only deps, runtime is unaffected)
 - Husky + lint-staged for pre-commit hooks

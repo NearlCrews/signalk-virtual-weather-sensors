@@ -136,6 +136,17 @@ export class AccuWeatherService {
   }
 
   /**
+   * Probe the configured API key by issuing exactly one location-search call.
+   * Returns when the call succeeds; throws the underlying error otherwise.
+   * Used by the admin-UI panel's `/api/test-key` endpoint so the test costs
+   * half what a full `fetchCurrentWeather` would (no currentconditions hop).
+   */
+  public async verifyApiKey(location: GeoLocation): Promise<AccuWeatherLocation> {
+    this.validateLocation(location);
+    return this.searchLocation(location);
+  }
+
+  /**
    * Fetch current weather data for specified coordinates
    * @param location Geographic coordinates
    * @returns Promise resolving to processed weather data

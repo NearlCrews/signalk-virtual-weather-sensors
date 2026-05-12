@@ -7,6 +7,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { PLUGIN } from '../constants/index.js';
 import createPlugin from '../index.js';
+import type { WeatherServiceStatus } from '../services/WeatherService.js';
 
 // Stub WeatherService + NMEA2000PathMapper so emission-tick tests can supply
 // synthetic data without making a real AccuWeather call. State lives in a
@@ -30,6 +31,21 @@ vi.mock('../services/WeatherService.js', () => {
     public getLastUpdate = vi.fn(() => new Date());
     public isQuotaExhausted = vi.fn(() => stubState.isQuotaExhausted());
     public formatQuotaExhaustedMessage = vi.fn(() => stubState.formatQuotaExhaustedMessage());
+    public getRequestCountLast24h = vi.fn(() => 0);
+    // Typed against the real WeatherServiceStatus so an interface change
+    // (new required field, renamed key) breaks the stub at compile time.
+    public getServiceStatus = vi.fn(
+      (): WeatherServiceStatus => ({
+        state: 'running',
+        lastUpdate: new Date(),
+        updateCount: 1,
+        errorCount: 0,
+        hasWeatherData: true,
+        signalKHealth: { status: 'running', dataAge: 1, isStale: false, hasComplete: true },
+        cacheStats: { size: 1 },
+        apiRequestCount: 0,
+      })
+    );
     public start = vi.fn(async () => {});
     public stop = vi.fn(async () => {});
   }
@@ -40,6 +56,7 @@ vi.mock('../notifications/WeatherNotifier.js', () => {
   class StubWeatherNotifier {
     public evaluate = vi.fn(() => []);
     public reset = vi.fn();
+    public getActiveCount = vi.fn(() => 0);
   }
   return { WeatherNotifier: StubWeatherNotifier };
 });
@@ -285,6 +302,104 @@ describe('plugin entry: emission-tick error branches (O6)', () => {
       String(call[0]).startsWith('Weather data stale:')
     );
     expect(staleCalls.length).toBe(0);
+
+    await plugin.stop();
+  });
+});
+
+describe('plugin entry: registerWithRouter exposes panel REST endpoints', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    resetStubState();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  /** Capture the routes the plugin registers without spinning up Express. */
+  function captureRoutes() {
+    const routes = new Map<string, (req: unknown, res: unknown) => void>();
+    const router = {
+      get: vi.fn((path: string, handler: (req: unknown, res: unknown) => void) => {
+        routes.set(`GET ${path}`, handler);
+      }),
+      post: vi.fn((path: string, handler: (req: unknown, res: unknown) => void) => {
+        routes.set(`POST ${path}`, handler);
+      }),
+    };
+    return { router, routes };
+  }
+
+  function makeRes() {
+    const body: { json?: unknown; status?: number } = {};
+    const res = {
+      json: vi.fn((payload: unknown) => {
+        body.json = payload;
+        return res;
+      }),
+      status: vi.fn((code: number) => {
+        body.status = code;
+        return res;
+      }),
+    };
+    return { res, body };
+  }
+
+  it('registers GET /api/status and POST /api/test-key', async () => {
+    const app = buildMockApp();
+    const plugin = createPlugin(app as never);
+    await plugin.start(baseSettings, () => {});
+    const { router, routes } = captureRoutes();
+    plugin.registerWithRouter?.(router as never);
+
+    expect(routes.has('GET /api/status')).toBe(true);
+    expect(routes.has('POST /api/test-key')).toBe(true);
+
+    await plugin.stop();
+  });
+
+  it('GET /api/status returns the live banner + counters once data has arrived', async () => {
+    stubState.getCurrentWeatherData = () => ({ temperature: 283.15 });
+    stubState.formatStatusBanner = () => 'Running, last update 0m ago (1 update)';
+    stubState.getDataAgeMs = () => 30_000;
+
+    const app = buildMockApp();
+    const plugin = createPlugin(app as never);
+    await plugin.start(baseSettings, () => {});
+    const { router, routes } = captureRoutes();
+    plugin.registerWithRouter?.(router as never);
+
+    const { res, body } = makeRes();
+    const handler = routes.get('GET /api/status');
+    if (!handler) throw new Error('status route not registered');
+    handler({}, res);
+
+    const payload = body.json as Record<string, unknown>;
+    expect(payload.running).toBe(true);
+    expect(payload.banner).toBe('Running, last update 0m ago (1 update)');
+    expect(payload.lastUpdateMinutesAgo).toBe(0);
+    expect(typeof payload.activeNotifications).toBe('number');
+
+    await plugin.stop();
+  });
+
+  it('POST /api/test-key rejects keys shorter than 20 characters with status 400', async () => {
+    const app = buildMockApp();
+    const plugin = createPlugin(app as never);
+    await plugin.start(baseSettings, () => {});
+    const { router, routes } = captureRoutes();
+    plugin.registerWithRouter?.(router as never);
+
+    const { res, body } = makeRes();
+    const handler = routes.get('POST /api/test-key');
+    if (!handler) throw new Error('test-key route not registered');
+    handler({ body: { apiKey: 'short' } }, res);
+
+    expect(body.status).toBe(400);
+    const payload = body.json as { ok: boolean; message: string };
+    expect(payload.ok).toBe(false);
+    expect(payload.message).toContain('20 characters');
 
     await plugin.stop();
   });

@@ -11,9 +11,11 @@ import {
   type ServerAPI,
   SKVersion,
 } from '@signalk/server-api';
+import type { IRouter, Request, Response } from 'express';
 import { DEFAULT_CONFIG, ERROR_CODES, PLUGIN } from './constants/index.js';
 import { NMEA2000PathMapper } from './mappers/NMEA2000PathMapper.js';
 import { WeatherNotifier } from './notifications/WeatherNotifier.js';
+import { AccuWeatherService } from './services/AccuWeatherService.js';
 import { WeatherService } from './services/WeatherService.js';
 import type {
   Logger,
@@ -24,7 +26,7 @@ import type {
 } from './types/index.js';
 import { asTimestamp, toErrorMessage } from './utils/conversions.js';
 import { buildValuesDelta } from './utils/skDelta.js';
-import { ConfigurationValidator } from './utils/validation.js';
+import { API_KEY_MIN_LENGTH, ConfigurationValidator } from './utils/validation.js';
 
 /** Distinguishes a banner string pushed via setPluginStatus from one pushed via setPluginError. */
 type BannerKind = 'status' | 'error';
@@ -267,6 +269,18 @@ export default function createPlugin(app: ServerAPI): Plugin {
         'ui:order': ['enabled', 'wind', 'visibility', 'heat', 'cold', 'weather'],
       },
     }),
+
+    /**
+     * REST endpoints consumed by the federated React config panel
+     * (src/configpanel/). Mounted at /plugins/<id>/api/* by signalk-server.
+     *
+     * The panel polls `/api/status` for live banner + quota + active-alert
+     * data, and calls `/api/test-key` on demand to verify a candidate API
+     * key against AccuWeather without persisting it.
+     */
+    registerWithRouter: (router) => {
+      registerPanelRoutes(router, instance);
+    },
   };
 
   return plugin;
@@ -657,4 +671,90 @@ function sanitizeLogMetadata(metadata: Record<string, unknown>): Record<string, 
     }
   }
   return sanitized;
+}
+
+/**
+ * Hardcoded probe coordinates for `/api/test-key`. Greenwich Royal Observatory
+ * is an arbitrary fixed reference point: AccuWeather requires a coordinate
+ * for any location-search call, but the test only validates the key, not the
+ * vessel position. Using a fixed point avoids depending on a live GPS fix.
+ */
+const TEST_KEY_LOCATION = { latitude: 51.4779, longitude: 0.0015 };
+
+/**
+ * Mount the panel's REST endpoints onto the express router signalk-server
+ * passes in. Endpoints live under `/plugins/signalk-virtual-weather-sensors/api/`.
+ *
+ * `/api/status` is read-only and safe to expose; `/api/test-key` accepts a
+ * candidate key in a POST body and makes one AccuWeather location-search
+ * call without persisting it. Neither endpoint mutates plugin state.
+ * @private
+ */
+function registerPanelRoutes(router: IRouter, instance: PluginInstance): void {
+  router.get('/api/status', (_req: Request, res: Response) => {
+    const ws = instance.weatherService;
+    if (!ws) {
+      res.json({
+        running: false,
+        banner: instance.lastBanner?.message ?? 'Plugin stopped',
+        updates: 0,
+        quotaUsedLast24h: 0,
+        lastUpdateMinutesAgo: null,
+        activeNotifications: 0,
+      });
+      return;
+    }
+    const snapshot = ws.getServiceStatus();
+    const ageMs = ws.getDataAgeMs();
+    res.json({
+      running: instance.state === 'running',
+      banner: ws.formatStatusBanner(),
+      updates: snapshot.updateCount,
+      quotaUsedLast24h: ws.getRequestCountLast24h(),
+      lastUpdateMinutesAgo: ageMs === null ? null : Math.floor(ageMs / 60_000),
+      activeNotifications: instance.notifier?.getActiveCount() ?? 0,
+    });
+  });
+
+  router.post('/api/test-key', (req: Request, res: Response) => {
+    // express.json() body-parser is wired by signalk-server before plugin
+    // routers run; the body is therefore the parsed JSON object.
+    const body = (req.body ?? {}) as { apiKey?: unknown };
+    const apiKey = typeof body.apiKey === 'string' ? body.apiKey.trim() : '';
+    if (apiKey.length < API_KEY_MIN_LENGTH) {
+      res.status(400).json({
+        ok: false,
+        message: `API key must be at least ${API_KEY_MIN_LENGTH} characters.`,
+      });
+      return;
+    }
+    void testApiKey(apiKey).then(
+      (result) => res.json(result),
+      (error: unknown) =>
+        res.status(500).json({ ok: false, message: `Test failed: ${toErrorMessage(error)}` })
+    );
+  });
+}
+
+/**
+ * Probe a candidate AccuWeather API key with exactly one location-search call
+ * (via {@link AccuWeatherService.verifyApiKey}). Returns a `{ok, message}`
+ * shape consumed by the admin-UI panel; no key persistence, no plugin-state
+ * mutation. Costs one AccuWeather API call per test, half what a full
+ * currentconditions probe would.
+ * @private
+ */
+async function testApiKey(apiKey: string): Promise<{ ok: boolean; message: string }> {
+  const probe = new AccuWeatherService(apiKey, () => {}, {
+    // Tight retry budget: the panel should surface failure fast, not chew
+    // through the user's quota retrying a bad key.
+    retryAttempts: 1,
+    requestTimeout: 8000,
+  });
+  try {
+    await probe.verifyApiKey(TEST_KEY_LOCATION);
+    return { ok: true, message: 'API key verified against AccuWeather.' };
+  } catch (error) {
+    return { ok: false, message: toErrorMessage(error) };
+  }
 }

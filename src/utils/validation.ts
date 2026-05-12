@@ -233,7 +233,7 @@ export function validateWeatherData(data: Partial<WeatherData>): ValidationResul
  */
 
 /** Minimum length for any plausible AccuWeather API key. */
-const API_KEY_MIN_LENGTH = 20;
+export const API_KEY_MIN_LENGTH = 20;
 /** Disallowed control/whitespace characters in API keys (catches paste mistakes). */
 // biome-ignore lint/suspicious/noControlCharactersInRegex: deliberately matching paste-error control chars
 const API_KEY_INVALID_CHARS = /[\s\x00-\x1f\x7f]/;

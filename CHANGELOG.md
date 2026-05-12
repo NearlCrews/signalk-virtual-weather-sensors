@@ -5,6 +5,34 @@ All notable changes to the signalk-virtual-weather-sensors project will be docum
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.5.0] - 2026-05-12
+
+Adds a federated React config panel: when the Signal K Admin UI v2.13+ sees the new `signalk-plugin-configurator` keyword it loads the panel via Module Federation in place of the auto-generated rjsf form. The existing JSON schema is preserved as a fallback for older admin UIs. 266 tests pass (was 263; 3 new for the panel's REST endpoints).
+
+### Added
+
+- **React config panel** under `src/configpanel/`, bundled by webpack via `ModuleFederationPlugin` into `public/remoteEntry.js` (~40 KB total across 4 chunks: `main.js`, `remoteEntry.js`, a React-fallback chunk, and the panel chunk). React 19 is declared `singleton` so the panel shares the host admin UI's React instance. Plain JSX, no TypeScript, no CSS framework: styles live in one inline `S = {}` object mirroring the `signalk-questdb` plugin's pattern.
+- **Panel features**: live status card with banner string and four counter tiles (updates / 24h API calls / active alerts / minutes since last fetch), inline "Test" button on the API key field that probes AccuWeather without persisting, sectioned form for the 5 existing config fields (api key, update frequency, broadcast interval, daily quota, severe-weather notifications), dependency-aware notifications block (sub-toggles dim when the master is off).
+- **`registerWithRouter` REST endpoints** at `/plugins/signalk-virtual-weather-sensors/api/`:
+  - `GET /api/status`: returns running state, live banner, update count, rolling 24h API count, minutes since last fetch, active-notification count. Polled by the panel every 10 s.
+  - `POST /api/test-key`: takes `{apiKey}` in the body, runs one AccuWeather location-search call against a fixed reference point (Greenwich Royal Observatory), returns `{ok, message}`. Costs exactly one AccuWeather API call per test, half what a full currentconditions probe would.
+- **`signalk-plugin-configurator` keyword** in `package.json` triggers the Signal K Admin UI to load the federated panel.
+- **`AccuWeatherService.verifyApiKey(location)`** public method: thin wrapper around the internal `searchLocation` so the panel's test-key endpoint exercises the auth path with a single API call. Exported alongside `API_KEY_MIN_LENGTH` from `utils/validation.ts` so the panel route and the configuration validator agree on the 20-character floor.
+- **`WeatherService.getRequestCountLast24h()`** and **`WeatherNotifier.getActiveCount()`** accessors for the panel's status endpoint.
+
+### Changed
+
+- **Build pipeline**: `npm run build` now does `clean` then types then esbuild bundle then webpack panel. esbuild still produces the plugin runtime; webpack only produces the panel into `public/`. Two build systems by design, mirroring the QuestDB plugin's approach.
+- **Tarball additions**: `public/` joins `dist/` + `assets/icons/` in the `files` array. Tarball size grows from roughly 78 KB to roughly 120 KB.
+- **devDependencies**: added `react`, `webpack`, `webpack-cli`, `babel-loader`, `@babel/core`, `@babel/preset-react`, `@types/express`.
+- **`webpack.config.cjs`** (not `.js`): our `package.json` declares `"type": "module"` so the webpack config has to be CommonJS-flagged. The QuestDB plugin doesn't hit this because they aren't ESM at the package level.
+
+### Notes for consumers
+
+- **No breaking changes for existing installations.** Operators on older Signal K Admin UIs that don't honour `signalk-plugin-configurator` will continue to see the JSON-schema-rendered form (functionally identical to v1.4.x).
+- **The panel is React 19 singleton-shared.** If the Signal K Admin UI host upgrades to React 20, a matching plugin bump will be needed or the panel will fall back to its bundled React copy (still works, slightly bigger payload).
+- **Bridging notifications to NMEA 2000 Alert PGNs (126983/126985)** still requires the separate `signalk-to-nmea2000` plugin. The panel does not change this.
+
 ## [1.4.4] - 2026-05-12
 
 Maintenance release. Dev-deps and CI-action bumps only: the published `dist/` is byte-identical to 1.4.3 (no source code changed). Plugin behaviour, public API, and Signal K paths are unchanged.

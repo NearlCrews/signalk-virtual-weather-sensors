@@ -395,11 +395,11 @@ npm run validate
 - **Edge Case Tests**: Boundary conditions and error handling
 - **Performance Tests**: Real-time calculation efficiency
 
-**Total: 263 tests** across 11 test files
+**Total: 266 tests** across 11 test files
 
 ### Test Files
 
-- [`index.test.ts`](src/__tests__/index.test.ts): plugin entry point, meta-delta one-shot invariant, banner dedupe regression, stale-data and quota-exhausted emission-tick branches (7 tests)
+- [`index.test.ts`](src/__tests__/index.test.ts): plugin entry point, meta-delta one-shot invariant, banner dedupe regression, stale-data and quota-exhausted emission-tick branches, panel REST endpoint registration + status + test-key (10 tests)
 - [`WeatherService.test.ts`](src/__tests__/services/WeatherService.test.ts): core orchestration plus quota-aware status banner format and pluralization (28 tests)
 - [`SignalKService.test.ts`](src/__tests__/services/SignalKService.test.ts): navigation data (40 tests)
 - [`AccuWeatherService.test.ts`](src/__tests__/services/AccuWeatherService.test.ts): API integration, retry/error paths, rolling 24h request window (27 tests)

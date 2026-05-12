@@ -217,6 +217,14 @@ export class WeatherService {
   }
 
   /**
+   * Rolling 24h request count for the admin-UI panel's `/api/status` endpoint.
+   * Delegates to the AccuWeather service's hourly-bucket accessor.
+   */
+  public getRequestCountLast24h(): number {
+    return this.accuWeatherService.getRequestCountLast24h();
+  }
+
+  /**
    * Admin UI status banner string. Format:
    *   "Running, last update Nm ago (N updates, K API requests)"
    * or "Running, awaiting first update" before the first fetch. The API

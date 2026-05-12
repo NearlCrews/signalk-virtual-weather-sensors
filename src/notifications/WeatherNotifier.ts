@@ -177,6 +177,19 @@ export class WeatherNotifier {
   }
 
   /**
+   * Count notification paths currently in a non-`normal` state. Consumed by
+   * the admin-UI panel's `/api/status` endpoint so operators see how many
+   * alerts are active without subscribing to the bus.
+   */
+  public getActiveCount(): number {
+    let count = 0;
+    for (const state of this.lastState.values()) {
+      if (state !== 'normal') count++;
+    }
+    return count;
+  }
+
+  /**
    * Wind: gale (warn) / storm (alarm) / hurricane (emergency) tracked
    * independently. Each band is active when Beaufort >= its threshold, so
    * during a hurricane all three are concurrently active.

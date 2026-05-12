@@ -12,6 +12,7 @@ A Signal K plugin that fetches weather data from the AccuWeather API and emits i
 - **24+ weather data points** from AccuWeather: 8 temperature paths, wind (speed-over-ground, direction, gust, derived Beaufort), atmospheric conditions (pressure, relative humidity, UV, visibility, clouds), and precipitation
 - **Spec-compliant Signal K paths** following the 1.8.2 vocabulary (`relativeHumidity`, `apparentWindChillTemperature`, etc.). Anything not in the 1.8.2 vocabulary (Beaufort scale, gust factor, heat stress index, AccuWeather extensions like UV, visibility, cloud cover) lives under a producer-namespaced `environment.weather.*` branch, so the canonical `environment.outside` and `environment.wind` containers hold only spec leaves and consumers walking them never trip over a non-leaf object.
 - **Severe-weather notifications** (opt-in, off by default) under `notifications.environment.*`: gale / storm / hurricane wind bands, low / very-low visibility, heat-stress and cold-exposure tiers, and a severe-condition path driven by AccuWeather's `WeatherIcon` codes (thunderstorm / ice / freezing rain). Transition-only state machine: each band fires once on entry and once on exit, so the bus never sees a flapping notification path.
+- **React config panel** (since v1.5.0) loaded by the Signal K Admin UI v2.13+ via the `signalk-plugin-configurator` keyword: live status card (banner + counters), inline "Test" button that probes AccuWeather with a single location-search call, sectioned form with dependency-aware notification toggles. The original JSON-schema form is preserved as a fallback for older admin UIs.
 - **`$source: 'accuweather'`** on every delta, so users can configure source priorities to prefer real onboard sensors over the API feed when both are present.
 - **One-shot meta delta** on plugin start describing units and labels for non-canonical paths, so the Signal K Admin UI and Instrument Panel render them correctly.
 - **Apparent wind calculation** from true wind + vessel motion vectors
@@ -213,7 +214,8 @@ npm run validate       # Type-check + lint + tests (runs on pre-commit)
 - `@signalk/server-api` 2.24+ (declared as a `peerDependency`; the Signal K server provides it at runtime)
 - esbuild 0.28 for bundling
 - Biome 2.4 for linting/formatting
-- Vitest 4.1 for testing (263 tests across 11 files; Stryker.js for opt-in mutation testing)
+- Vitest 4.1 for testing (266 tests across 11 files; Stryker.js for opt-in mutation testing)
+- React 19 + webpack 5 + Module Federation for the federated config panel (`src/configpanel/`, bundled to `public/`)
 - Husky + lint-staged for pre-commit hooks
 
 ## License
