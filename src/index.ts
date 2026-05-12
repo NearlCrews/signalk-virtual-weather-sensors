@@ -12,7 +12,13 @@ import {
   SKVersion,
 } from '@signalk/server-api';
 import type { IRouter, Request, Response } from 'express';
-import { DEFAULT_CONFIG, ERROR_CODES, PLUGIN } from './constants/index.js';
+import {
+  DEFAULT_CONFIG,
+  ERROR_CODES,
+  NOTIFICATION_LABELS,
+  PLUGIN,
+  TEST_KEY_LOCATION,
+} from './constants/index.js';
 import { NMEA2000PathMapper } from './mappers/NMEA2000PathMapper.js';
 import { WeatherNotifier } from './notifications/WeatherNotifier.js';
 import { AccuWeatherService } from './services/AccuWeatherService.js';
@@ -20,6 +26,7 @@ import { WeatherService } from './services/WeatherService.js';
 import type {
   Logger,
   LogLevel,
+  PanelStatusResponse,
   PluginConfiguration,
   PluginState,
   WeatherData,
@@ -196,32 +203,32 @@ export default function createPlugin(app: ServerAPI): Plugin {
           properties: {
             enabled: {
               type: 'boolean',
-              title: 'Enable notifications',
+              title: 'Enable PGN notifications',
               default: DEFAULT_CONFIG.NOTIFICATIONS.ENABLED,
             },
             wind: {
               type: 'boolean',
-              title: 'Wind alerts (gale / storm / hurricane)',
+              title: NOTIFICATION_LABELS.wind,
               default: DEFAULT_CONFIG.NOTIFICATIONS.WIND,
             },
             visibility: {
               type: 'boolean',
-              title: 'Reduced-visibility alerts',
+              title: NOTIFICATION_LABELS.visibility,
               default: DEFAULT_CONFIG.NOTIFICATIONS.VISIBILITY,
             },
             heat: {
               type: 'boolean',
-              title: 'Heat-stress alerts',
+              title: NOTIFICATION_LABELS.heat,
               default: DEFAULT_CONFIG.NOTIFICATIONS.HEAT,
             },
             cold: {
               type: 'boolean',
-              title: 'Cold-exposure alerts',
+              title: NOTIFICATION_LABELS.cold,
               default: DEFAULT_CONFIG.NOTIFICATIONS.COLD,
             },
             weather: {
               type: 'boolean',
-              title: 'Severe-condition alerts (thunderstorm / ice / freezing rain)',
+              title: NOTIFICATION_LABELS.weather,
               default: DEFAULT_CONFIG.NOTIFICATIONS.WEATHER,
             },
           },
@@ -674,14 +681,6 @@ function sanitizeLogMetadata(metadata: Record<string, unknown>): Record<string, 
 }
 
 /**
- * Hardcoded probe coordinates for `/api/test-key`. Greenwich Royal Observatory
- * is an arbitrary fixed reference point: AccuWeather requires a coordinate
- * for any location-search call, but the test only validates the key, not the
- * vessel position. Using a fixed point avoids depending on a live GPS fix.
- */
-const TEST_KEY_LOCATION = { latitude: 51.4779, longitude: 0.0015 };
-
-/**
  * Mount the panel's REST endpoints onto the express router signalk-server
  * passes in. Endpoints live under `/plugins/signalk-virtual-weather-sensors/api/`.
  *
@@ -694,29 +693,31 @@ function registerPanelRoutes(router: IRouter, instance: PluginInstance): void {
   router.get('/api/status', (_req: Request, res: Response) => {
     const ws = instance.weatherService;
     if (!ws) {
-      res.json({
+      const payload: PanelStatusResponse = {
         running: false,
         banner: instance.lastBanner?.message ?? 'Plugin stopped',
         updates: 0,
         quotaUsedLast24h: 0,
         lastUpdateMinutesAgo: null,
         activeNotifications: 0,
-      });
+      };
+      res.json(payload);
       return;
     }
     const snapshot = ws.getServiceStatus();
     const ageMs = ws.getDataAgeMs();
-    res.json({
+    const payload: PanelStatusResponse = {
       running: instance.state === 'running',
       banner: ws.formatStatusBanner(),
       updates: snapshot.updateCount,
       quotaUsedLast24h: ws.getRequestCountLast24h(),
       lastUpdateMinutesAgo: ageMs === null ? null : Math.floor(ageMs / 60_000),
       activeNotifications: instance.notifier?.getActiveCount() ?? 0,
-    });
+    };
+    res.json(payload);
   });
 
-  router.post('/api/test-key', (req: Request, res: Response) => {
+  router.post('/api/test-key', async (req: Request, res: Response) => {
     // express.json() body-parser is wired by signalk-server before plugin
     // routers run; the body is therefore the parsed JSON object.
     const body = (req.body ?? {}) as { apiKey?: unknown };
@@ -728,11 +729,12 @@ function registerPanelRoutes(router: IRouter, instance: PluginInstance): void {
       });
       return;
     }
-    void testApiKey(apiKey).then(
-      (result) => res.json(result),
-      (error: unknown) =>
-        res.status(500).json({ ok: false, message: `Test failed: ${toErrorMessage(error)}` })
-    );
+    try {
+      const result = await testApiKey(apiKey);
+      res.json(result);
+    } catch (error) {
+      res.status(500).json({ ok: false, message: `Test failed: ${toErrorMessage(error)}` });
+    }
   });
 }
 

@@ -16,6 +16,12 @@
  */
 
 import React, { useCallback, useEffect, useState } from 'react';
+// Plain ESM JS shared with the TS plugin runtime so the federated panel and
+// the rjsf schema cannot drift on label wording or default values.
+import {
+  DEFAULT_NOTIFICATIONS,
+  NOTIFICATION_LABELS,
+} from '../constants/notifications-shared.js';
 
 // All styles live in a single `S` object: no CSS-in-JS library, no Tailwind,
 // no stylesheets shipped in the bundle. Mirrors the QuestDB plugin convention.
@@ -140,22 +146,13 @@ const S = {
 
 const API_BASE = '/plugins/signalk-virtual-weather-sensors/api';
 
-const DEFAULT_NOTIFICATIONS = {
-  enabled: false,
-  wind: true,
-  visibility: true,
-  heat: true,
-  cold: true,
-  weather: true,
-};
-
-const NOTIFICATION_TOGGLES = [
-  { key: 'wind', label: 'Wind alerts (gale / storm / hurricane)' },
-  { key: 'visibility', label: 'Reduced-visibility alerts' },
-  { key: 'heat', label: 'Heat-stress alerts' },
-  { key: 'cold', label: 'Cold-exposure alerts' },
-  { key: 'weather', label: 'Severe-condition alerts (thunderstorm / ice / freezing rain)' },
-];
+// Rendering order comes from NOTIFICATION_LABELS property declaration order;
+// keep that aligned with the rjsf schema's notifications.properties order in
+// src/index.ts so the federated panel and the fallback form match.
+const NOTIFICATION_TOGGLES = Object.entries(NOTIFICATION_LABELS).map(([key, label]) => ({
+  key,
+  label,
+}));
 
 export default function PluginConfigurationPanel({ configuration, save }) {
   const cfg = configuration || {};
@@ -176,13 +173,20 @@ export default function PluginConfigurationPanel({ configuration, save }) {
   const [status, setStatus] = useState(null);
   const [statusLoading, setStatusLoading] = useState(true);
 
-  // Test-API-key button transient state.
-  const [testKeyState, setTestKeyState] = useState(/** @type {null | 'pending' | 'ok' | 'error'} */ (null));
-  const [testKeyMessage, setTestKeyMessage] = useState('');
+  // Test-API-key button transient state. `state` is always paired with a
+  // `message`, so collapsing into one object eliminates a class of bugs
+  // where the two get out of sync between setters.
+  const [testKey, setTestKey] = useState(
+    /** @type {{state: null | 'pending' | 'ok' | 'error', message: string}} */ ({
+      state: null,
+      message: '',
+    })
+  );
 
-  // Save transient state for the action bar.
-  const [actionStatus, setActionStatus] = useState('');
-  const [actionError, setActionError] = useState(false);
+  // Save transient state for the action bar (same coupling as testKey above).
+  const [action, setAction] = useState(
+    /** @type {{message: string, isError: boolean}} */ ({ message: '', isError: false })
+  );
 
   const fetchStatus = useCallback(async () => {
     try {
@@ -212,12 +216,10 @@ export default function PluginConfigurationPanel({ configuration, save }) {
   const doTestKey = async () => {
     const trimmed = accuWeatherApiKey.trim();
     if (trimmed.length < 20) {
-      setTestKeyState('error');
-      setTestKeyMessage('Key must be at least 20 characters.');
+      setTestKey({ state: 'error', message: 'Key must be at least 20 characters.' });
       return;
     }
-    setTestKeyState('pending');
-    setTestKeyMessage('Testing key against AccuWeather...');
+    setTestKey({ state: 'pending', message: 'Testing key against AccuWeather...' });
     try {
       const res = await fetch(`${API_BASE}/test-key`, {
         method: 'POST',
@@ -226,15 +228,18 @@ export default function PluginConfigurationPanel({ configuration, save }) {
       });
       const data = await res.json().catch(() => ({}));
       if (res.ok && data.ok) {
-        setTestKeyState('ok');
-        setTestKeyMessage(data.message || 'API key works.');
+        setTestKey({ state: 'ok', message: data.message || 'API key works.' });
       } else {
-        setTestKeyState('error');
-        setTestKeyMessage(data.message || `Test failed (HTTP ${res.status}).`);
+        setTestKey({
+          state: 'error',
+          message: data.message || `Test failed (HTTP ${res.status}).`,
+        });
       }
     } catch (err) {
-      setTestKeyState('error');
-      setTestKeyMessage(`Network error: ${err && err.message ? err.message : String(err)}`);
+      setTestKey({
+        state: 'error',
+        message: `Network error: ${err && err.message ? err.message : String(err)}`,
+      });
     }
   };
 
@@ -251,11 +256,15 @@ export default function PluginConfigurationPanel({ configuration, save }) {
           notifications: { ...notifications },
         })
       );
-      setActionStatus('Saved. Plugin will restart with the new configuration.');
-      setActionError(false);
+      setAction({
+        message: 'Saved. Plugin will restart with the new configuration.',
+        isError: false,
+      });
     } catch (err) {
-      setActionStatus(`Save failed: ${err && err.message ? err.message : String(err)}`);
-      setActionError(true);
+      setAction({
+        message: `Save failed: ${err && err.message ? err.message : String(err)}`,
+        isError: true,
+      });
     }
   };
 
@@ -323,29 +332,29 @@ export default function PluginConfigurationPanel({ configuration, save }) {
         <button
           type="button"
           onClick={doTestKey}
-          disabled={testKeyState === 'pending'}
+          disabled={testKey.state === 'pending'}
           style={{
             ...S.btn,
             ...S.btnSecondary,
-            ...(testKeyState === 'pending' ? S.btnDisabled : {}),
+            ...(testKey.state === 'pending' ? S.btnDisabled : {}),
           }}
         >
-          {testKeyState === 'pending' ? 'Testing...' : 'Test'}
+          {testKey.state === 'pending' ? 'Testing...' : 'Test'}
         </button>
       </div>
       <div style={S.help}>
         Get one free at <a href="https://developer.accuweather.com/" target="_blank" rel="noreferrer">developer.accuweather.com</a>.
         Minimum 20 characters.
       </div>
-      {testKeyState && testKeyState !== 'pending' && (
+      {testKey.state && testKey.state !== 'pending' && (
         <div
           style={{
             ...S.status,
-            color: testKeyState === 'ok' ? '#10b981' : '#ef4444',
+            color: testKey.state === 'ok' ? '#10b981' : '#ef4444',
             marginLeft: 232,
           }}
         >
-          {testKeyMessage}
+          {testKey.message}
         </div>
       )}
 
@@ -416,12 +425,8 @@ export default function PluginConfigurationPanel({ configuration, save }) {
           onChange={(e) => updateNotification('enabled', e.target.checked)}
         />
         <label htmlFor="vws-notif-enabled" style={{ ...S.checkboxLabel, fontWeight: 600 }}>
-          Enable notifications
+          Enable PGN notifications
         </label>
-      </div>
-      <div style={S.help}>
-        Emits Signal K notifications on <code>notifications.environment.*</code> when thresholds are crossed.
-        Bridges to NMEA 2000 Alert PGNs (126983/126985) only when <code>signalk-to-nmea2000</code> is installed.
       </div>
 
       {NOTIFICATION_TOGGLES.map((row) => (
@@ -441,15 +446,15 @@ export default function PluginConfigurationPanel({ configuration, save }) {
 
       {/* Action bar: save status above the button so the operator sees the
           confirmation message without scrolling. */}
-      {actionStatus && (
+      {action.message && (
         <div
           style={{
             ...S.status,
-            color: actionError ? '#ef4444' : '#10b981',
+            color: action.isError ? '#ef4444' : '#10b981',
             marginTop: 16,
           }}
         >
-          {actionStatus}
+          {action.message}
         </div>
       )}
 

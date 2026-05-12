@@ -403,4 +403,47 @@ describe('plugin entry: registerWithRouter exposes panel REST endpoints', () => 
 
     await plugin.stop();
   });
+
+  it('POST /api/test-key returns {ok:false} when AccuWeather rejects a long key with 401', async () => {
+    // The route handler spins up a fresh AccuWeatherService inside testApiKey()
+    // and calls verifyApiKey, which invokes the global fetch. Stubbing fetch
+    // with a 401 response covers the full long-key-but-AccuWeather-rejects
+    // path (the short-key test above only exercises the length guard).
+    vi.useRealTimers(); // testApiKey uses a setTimeout-based delay in retry classification
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: false,
+        status: 401,
+        statusText: 'Unauthorized',
+        headers: new Headers({ 'content-length': '36' }),
+        text: () => Promise.resolve('{"message":"invalid"}'),
+      })
+    );
+
+    try {
+      const app = buildMockApp();
+      const plugin = createPlugin(app as never);
+      await plugin.start(baseSettings, () => {});
+      const { router, routes } = captureRoutes();
+      plugin.registerWithRouter?.(router as never);
+
+      const { res, body } = makeRes();
+      const handler = routes.get('POST /api/test-key');
+      if (!handler) throw new Error('test-key route not registered');
+      // 20+ chars so the length guard passes and the real verifyApiKey runs.
+      await handler({ body: { apiKey: 'A1B2C3D4E5F6G7H8I9J0' } }, res);
+
+      const payload = body.json as { ok: boolean; message: string };
+      expect(payload.ok).toBe(false);
+      expect(payload.message).toMatch(/API_UNAUTHORIZED|Invalid API key/);
+      // The length-guard path uses status 400; the verifyApiKey-failure path
+      // returns 200 with {ok:false} so the panel renders the message inline.
+      expect(body.status).toBeUndefined();
+
+      await plugin.stop();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
 });

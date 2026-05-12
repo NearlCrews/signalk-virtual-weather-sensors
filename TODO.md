@@ -117,7 +117,7 @@ None tracked. Branch coverage held above the 80% threshold through v1.4.3.
 
 ---
 
-**Last Updated**: 2026-05-12
+**Last Updated**: 2026-05-12 (v1.5.1)
 
 **Maintainer**: Nearl Crews
 

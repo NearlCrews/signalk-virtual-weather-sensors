@@ -3,6 +3,18 @@
  * Centralized configuration values and NMEA2000 specifications
  */
 
+import { DEFAULT_NOTIFICATIONS } from './notifications-shared.js';
+
+export { DEFAULT_NOTIFICATIONS, NOTIFICATION_LABELS } from './notifications-shared.js';
+
+/**
+ * Fixed reference point used by the admin-UI panel's `/api/test-key`
+ * endpoint to probe a candidate AccuWeather key with one location-search
+ * call. Greenwich Royal Observatory is an arbitrary, well-defined coordinate;
+ * the test does not depend on a live vessel GPS fix.
+ */
+export const TEST_KEY_LOCATION = { latitude: 51.4779, longitude: 0.0015 } as const;
+
 // ===============================
 // Plugin Metadata
 // ===============================
@@ -69,14 +81,16 @@ export const DEFAULT_CONFIG = {
    * existing measurement-only behaviour is preserved on upgrade. The per-
    * category toggles default to true so a single flip of `enabled` lights up
    * the full set; operators can untick individual categories from the admin UI.
+   * Values come from notifications-shared.js so the JSX panel and the rjsf
+   * schema agree on the canonical defaults.
    */
   NOTIFICATIONS: {
-    ENABLED: false,
-    WIND: true,
-    VISIBILITY: true,
-    HEAT: true,
-    COLD: true,
-    WEATHER: true,
+    ENABLED: DEFAULT_NOTIFICATIONS.enabled,
+    WIND: DEFAULT_NOTIFICATIONS.wind,
+    VISIBILITY: DEFAULT_NOTIFICATIONS.visibility,
+    HEAT: DEFAULT_NOTIFICATIONS.heat,
+    COLD: DEFAULT_NOTIFICATIONS.cold,
+    WEATHER: DEFAULT_NOTIFICATIONS.weather,
   },
 } as const;
 

@@ -5,6 +5,32 @@ All notable changes to the signalk-virtual-weather-sensors project will be docum
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.5.1] - 2026-05-12
+
+Critical fix for the v1.5.0 federated config panel, plus follow-up refinements from a third simplify pass. Operators on v1.5.0 saw a silent `Could not load module signalk-virtual-weather-sensors` in the admin UI console with the panel never rendering: the panel chunks all served 200 OK but the Module Federation library type was wrong for an ESM package. Plus a UX rename, a deduplication of label strings between the panel and the schema, and a typed `/api/status` payload. 267 tests pass (was 266; 1 new for the long-key-rejected path through `/api/test-key`).
+
+### Fixed
+
+- **Federated panel failed to load in Signal K Admin UI v2.27+** (the version that ships with current `signalk-server`). The root cause is a three-way interaction: `package.json` declares `"type": "module"`, which makes `signalk-server` inject the panel as `<script type="module" src=".../remoteEntry.js"></script>` (see `signalk-server/src/serverroutes.ts` ~line 265); the admin UI loader then does `await import(remoteEntryUrl)` and looks for `.get` / `.init` ESM exports (`@signalk/server-admin-ui/src/views/Webapps/dynamicutilities.ts:toLazyDynamicComponent`). Our v1.5.0 webpack used `library: { type: 'var', name: ... }`, which assigns to `window.signalk_virtual_weather_sensors` via a classic script and exports nothing via ESM. The import therefore resolved to an empty module and the loader logged `Could not load module signalk-virtual-weather-sensors`. Fix: switch webpack to `experiments.outputModule: true`, `output.module: true`, `output.chunkFormat: 'module'`, and `library: { type: 'module' }`. `remoteEntry.js` now ends with `export { ... as get, ... as init }`. Panel chunk filenames change from `.js` to `.mjs`. The sibling plugin `signalk-openrouter-companion` already hit this issue and uses the same configuration. (HIGH)
+
+### Changed
+
+- **Master notifications toggle renamed** from `Enable notifications` to `Enable PGN notifications` in both the panel JSX (`src/configpanel/PluginConfigurationPanel.jsx`) and the rjsf schema title (`src/index.ts`), so older admin UIs that fall back to the auto-generated form see the same wording.
+- **Removed the help paragraph under the master notifications toggle** in the panel JSX. The paragraph was floating out to the right at the field-row indent (designed for input rows, not checkbox rows) and looked disconnected. The bridge-PGN-dependency caveat survives in the schema-level `description` field on the `notifications` object for rjsf-fallback consumers, and in the project README + CLAUDE.md for documentation consumers.
+- **Notification labels and defaults extracted to a shared module** (`src/constants/notifications-shared.js` + `.d.ts` shim). The TS plugin runtime (schema titles in `src/index.ts`, `DEFAULT_CONFIG.NOTIFICATIONS` defaults in `src/constants/index.ts`) and the JSX panel both import from one source. Labels and defaults can no longer drift between the federated panel and the rjsf fallback form. Plain ESM JS so the JSX webpack bundle resolves it cleanly under `@babel/preset-react`; co-located `.d.ts` declares the types for TypeScript consumers under `allowJs: false` + NodeNext resolution.
+- **`PanelStatusResponse` interface** added to `src/types/index.ts`. The `/api/status` route handler builds its payload as `const payload: PanelStatusResponse = {...}`, so a typo on the producer side fails compile-time instead of silently shipping a mismatched field name to the panel.
+- **`TEST_KEY_LOCATION` constant moved** from the bottom of `src/index.ts` to `src/constants/index.ts` alongside the other AccuWeather constants. Single import site in `index.ts`.
+- **Panel state pairs consolidated**: `testKeyState` + `testKeyMessage` collapsed into one `testKey: { state, message }` object, and `actionStatus` + `actionError` into `action: { message, isError }`. Same render output, but the paired setters can no longer drift between `setTestKeyState('ok')` and a forgotten `setTestKeyMessage` update.
+- **`POST /api/test-key` handler converted to `async`** so test code can await the full round-trip instead of polling `res.json.mock.calls`.
+
+### Tests
+
+- New test in `src/__tests__/index.test.ts` covers the long-but-AccuWeather-rejected key path: stubs `global.fetch` with a 401 response, fires `POST /api/test-key` with a 20+ char key, asserts `{ok: false, message: /API_UNAUTHORIZED/}` and `body.status === undefined` (the route returns 200 with the diagnostic message; only the length guard uses 400). `index.test.ts` now carries 11 tests; total project count is 267 across 11 test files.
+
+### Notes for operators on v1.5.0
+
+- The published v1.5.0 npm bundle has the broken panel. The plugin runtime works correctly on v1.5.0 (deltas emit normally, REST endpoints respond, JSON schema fallback renders for admin UIs older than 2.13), but the federated config panel never shows for admin UI v2.13+. Upgrading to v1.5.1 is recommended.
+
 ## [1.5.0] - 2026-05-12
 
 Adds a federated React config panel: when the Signal K Admin UI v2.13+ sees the new `signalk-plugin-configurator` keyword it loads the panel via Module Federation in place of the auto-generated rjsf form. The existing JSON schema is preserved as a fallback for older admin UIs. 266 tests pass (was 263; 3 new for the panel's REST endpoints).
