@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Question or discussion
+    url: https://github.com/NearlCrews/signalk-virtual-weather-sensors/discussions
+    about: Ask a question, share a setup, or discuss ideas with other users.
+  - name: Security vulnerability
+    url: https://github.com/NearlCrews/signalk-virtual-weather-sensors/security/advisories/new
+    about: Report a security vulnerability privately. Do not open a public issue.
+  - name: Signal K server help
+    url: https://github.com/SignalK/signalk-server/discussions
+    about: For Signal K server questions unrelated to this plugin.

@@ -51,9 +51,9 @@ The longer release-branch + PR workflow below is aspirational best practice for 
 ### 1. Prepare Release Branch
 
 ```bash
-# Ensure master branch is up to date
-git checkout master
-git pull origin master
+# Ensure main branch is up to date
+git checkout main
+git pull origin main
 
 # Create release branch
 git checkout -b release/vX.Y.Z

@@ -30,7 +30,17 @@ jobs:
           registry-url: https://registry.npmjs.org
 
       - name: Install dependencies
-        run: npm ci
+        run: npm ci --ignore-scripts
+
+      - name: Verify tag is reachable from main
+        env:
+          TAG: ${{ github.event.release.tag_name || inputs.tag }}
+        run: |
+          git fetch origin main --depth=200
+          if ! git merge-base --is-ancestor "$TAG" origin/main; then
+            echo "::error::Tag $TAG is not reachable from origin/main; refusing to publish."
+            exit 1
+          fi
 
       - name: Type check
         run: npm run type-check

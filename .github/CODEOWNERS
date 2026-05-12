@@ -1,0 +1,4 @@
+# Default owner for everything in the repo.
+# Used to auto-request review and (when paired with required-reviews branch
+# protection) gate merges through the listed owners.
+* @NearlCrews
