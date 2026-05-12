@@ -5,6 +5,38 @@ All notable changes to the signalk-virtual-weather-sensors project will be docum
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.3] - 2026-05-12
+
+Opt-in severe-weather notifications under `notifications.environment.*` plus the bug-fix cluster from a Signal K plugin expert audit. 263 tests pass (was 242; 21 net new: 19 in WeatherNotifier.test.ts and 2 in index.test.ts for the stale/quota emission-tick branches).
+
+### Added
+
+- **Severe-weather notifications**, opt-in (off by default), under `notifications.environment.*` per Signal K 1.8.2. Eleven distinct paths so consumers that cache by path+id (Garmin plotters, the `signalk-to-nmea2000` Alert PGN bridge) see independent transitions rather than one rising/falling state ladder:
+  - `notifications.environment.wind.gale` (warn at Beaufort 8), `.storm` (alarm at Beaufort 10), `.hurricane` (emergency at Beaufort 12)
+  - `notifications.environment.visibility.low` (warn under 1 nm), `.veryLow` (alarm under 0.5 nm)
+  - `notifications.environment.heat.caution` (warn at heat-stress index 2), `.high` (alarm at 3), `.extreme` (emergency at 4)
+  - `notifications.environment.cold.caution` (warn at wind chill below 0 C), `.extreme` (alarm below -20 C)
+  - `notifications.environment.weather.severe` (state varies by AccuWeather `WeatherIcon`: thunderstorm / ice / sleet / freezing rain / snow). Bridges to NMEA 2000 Alert PGNs 126983 / 126985 only when `signalk-to-nmea2000` is also installed on the server; this plugin produces SK-native deltas.
+- `notifications` config subobject in the admin form schema with master `enabled` toggle plus per-category sub-toggles (`wind`, `visibility`, `heat`, `cold`, `weather`). The notifier is a pure transition emitter (Map of last-seen states), so steady-state ticks do not flap the bus.
+- `WeatherIcon` (1..44) now flows from the AccuWeather response onto `WeatherData.weatherIcon` so the notifier classifies severe conditions without re-parsing the upstream payload.
+
+### Fixed
+
+- **Banner flap on flapping API.** `setPluginStatus` / `setPluginError` calls in `emitWeatherTick` and the lifecycle handlers now route through a single `setBanner()` helper that dedupes consecutive identical `(kind, message)` pairs. A persistent quota-exhausted state or oscillating stale/recovery edges no longer rewrites the admin UI banner every 5 seconds: each unique message lands exactly once. (MED)
+- **`WindGust` block was non-optional in the type and unguarded in `transformWeatherData`.** Free-tier and partial AccuWeather responses occasionally omit `WindGust` entirely; the previous code threw a `TypeError` that propagated into `errorCount` and flapped the banner. `AccuWeatherCurrentConditions.WindGust` is now optional, `transformWeatherData` optional-chains `WindGust?.Speed?.Metric?.Value`, `WeatherData.windGustSpeed` is conditionally spread, and `calculateDataQuality` no longer dereferences a missing block. (MED)
+- **Cold-start banner showed `Running, awaiting first update` for up to one emission interval past the first successful fetch.** `WeatherService.updateWeatherData` now pushes the live banner directly on the first successful update, so the `last update Nm ago` string lands the moment data arrives instead of waiting for the next 5-second emission tick. (LOW)
+
+### Changed
+
+- **Reuse: shared `SELF_CONTEXT`, `ACCUWEATHER_SOURCE`, `pv`, `me`, `buildValuesDelta`, `buildMetaDelta` lifted into `src/utils/skDelta.ts`.** Mapper and plugin entry point now build deltas through the same call sites instead of hand-rolling the `{ context, updates: [{ $source, timestamp, ... }] }` envelope. The notifier consumes `pv()` too. Eliminates three duplicate definitions of the `vessels.self` literal and the branded-type casts.
+- `AccuWeatherCurrentConditions` type stripped to the fields the plugin actually consumes. Dropped 10 cosmetic fields (`HasPrecipitation`, `PrecipitationType`, `IsDayTime`, `IndoorRelativeHumidity`, `PressureTendency`, `UVIndexText`, `ObstructionsToVisibility`, `TemperatureSummary`, `MobileLink`, `Link`) and the no-longer-used `AcwTempRange` helper type. The test fixture in `setup.ts` was tightened to match.
+
+### Tests
+
+- New `src/__tests__/notifications/WeatherNotifier.test.ts` (19 tests): master enable / disable, no-leading-`normal` on first evaluation, entry / exit edges across each band, idempotent re-evaluation of unchanged snapshots, per-category toggles, severity mapping for `WeatherIcon` 15 / 24 / off-table, SK 1.8.2 value-shape conformance (`state`, `method`, `message`, `timestamp`), and `reset()` semantics.
+- Two new emission-tick tests in `src/__tests__/index.test.ts`: stale-data branch (age past `STALENESS_FACTOR * updateFrequency` produces one `setPluginError` with the dedupe-collapsed `Weather data stale` message), quota-exhausted branch (`setPluginError` carries the quota message and takes precedence over staleness).
+- Test count: 263 across 11 files.
+
 ## [1.4.2] - 2026-05-11
 
 Two consecutive four-teammate Signal K plugin expert review passes (a focused UI lens on admin form / status banner / meta delta / App Store + docs, then a full-codebase lens on runtime / supporting modules / tests / docs+build) plus a parallel three-reviewer simplify pass on the resulting diff. Adds a coordinated plugin icon family across the `@NearlCrews` Signal K plugin set. 242 tests pass (was 235; 7 net new tests across banner grammar, quota messaging, `validateDailyApiQuota`, and calculator non-finite paths).

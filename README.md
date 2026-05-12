@@ -11,12 +11,14 @@ A Signal K plugin that fetches weather data from the AccuWeather API and emits i
 
 - **24+ weather data points** from AccuWeather: 8 temperature paths, wind (speed-over-ground, direction, gust, derived Beaufort), atmospheric conditions (pressure, relative humidity, UV, visibility, clouds), and precipitation
 - **Spec-compliant Signal K paths** following the 1.8.2 vocabulary (`relativeHumidity`, `apparentWindChillTemperature`, etc.). Anything not in the 1.8.2 vocabulary (Beaufort scale, gust factor, heat stress index, AccuWeather extensions like UV, visibility, cloud cover) lives under a producer-namespaced `environment.weather.*` branch, so the canonical `environment.outside` and `environment.wind` containers hold only spec leaves and consumers walking them never trip over a non-leaf object.
+- **Severe-weather notifications** (opt-in, off by default) under `notifications.environment.*`: gale / storm / hurricane wind bands, low / very-low visibility, heat-stress and cold-exposure tiers, and a severe-condition path driven by AccuWeather's `WeatherIcon` codes (thunderstorm / ice / freezing rain). Transition-only state machine: each band fires once on entry and once on exit, so the bus never sees a flapping notification path.
 - **`$source: 'accuweather'`** on every delta, so users can configure source priorities to prefer real onboard sensors over the API feed when both are present.
 - **One-shot meta delta** on plugin start describing units and labels for non-canonical paths, so the Signal K Admin UI and Instrument Panel render them correctly.
 - **Apparent wind calculation** from true wind + vessel motion vectors
 - **NMEA2000 alignment** with [`signalk-nmea2000-emitter-cannon`](https://github.com/NearlCrews/signalk-nmea2000-emitter-cannon) PGN conventions (130306, 130311, 130312, 130313)
 - **Interval-based emission** (default 5s) for reliable NMEA2000 network recognition
 - **Delta caching**: only rebuilds the Signal K delta when weather data actually changes
+- **Banner dedupe**: identical `setPluginStatus` / `setPluginError` strings within the same minute are coalesced so a flapping API can never flap the admin UI banner
 - **Rate limit handling** with Retry-After header support and linear backoff fallback
 - **Bounded responses**: 1 MiB cap on AccuWeather response bodies plus schema validation before use
 - **API key sanitization** in log output
@@ -52,6 +54,7 @@ ln -s "$(pwd)" ~/.signalk/node_modules/signalk-virtual-weather-sensors
 | **Update Frequency** | How often to fetch new weather data (minutes). At the default 30 minutes the plugin uses 48 calls/day, within the AccuWeather free-tier 50/day cap. | 30 | 1 to 60 |
 | **Emission Interval** | How often to emit the current data to the NMEA2000 network (seconds) | 5 | 1 to 60 |
 | **Daily API Call Quota** | Cap on AccuWeather calls per rolling 24-hour window. The status banner shows `K/Q today` and switches to a warning prefix at 90% usage; at 100% the plugin pauses fetches and surfaces a setPluginError until usage drops below the cap. Set to 0 to disable the cap entirely. | 50 | 0 to 1000 |
+| **Severe-weather notifications** | Opt-in toggle plus per-category sub-toggles (wind, visibility, heat, cold, severe condition). When enabled, emits Signal K notifications under `notifications.environment.*` on hazard transitions. Master is off by default; sub-toggles default to on. See "Notifications" below. | master off, sub-toggles on | boolean |
 
 ## Signal K Paths
 
@@ -100,6 +103,30 @@ Everything in this section is outside the 1.8.2 vocabulary. The plugin ships met
 | `environment.weather.gustFactor` | ratio | Gust / sustained ratio |
 | `environment.weather.beaufortScale` | (unitless) | Beaufort scale category (0..12) |
 | `environment.weather.heatStressIndex` | (unitless) | WBGT-derived heat-stress category: 0 low (<27 C), 1 moderate (27..29 C), 2 high (29..31 C), 3 very high (31..33 C), 4 extreme (>=33 C) |
+
+## Notifications
+
+Severe-weather notifications under `notifications.environment.*` are opt-in (master toggle off by default). When enabled, the plugin emits one Signal K notification delta per hazard band transition (entry into / exit from the band). Bands are tracked independently so a single weather event can light up multiple paths concurrently.
+
+| Path | State | Trigger |
+|------|-------|---------|
+| `notifications.environment.wind.gale` | `warn` | Beaufort >= 8 |
+| `notifications.environment.wind.storm` | `alarm` | Beaufort >= 10 |
+| `notifications.environment.wind.hurricane` | `emergency` | Beaufort >= 12 |
+| `notifications.environment.visibility.low` | `warn` | Visibility under 1 nm (1852 m) |
+| `notifications.environment.visibility.veryLow` | `alarm` | Visibility under 0.5 nm (926 m) |
+| `notifications.environment.heat.caution` | `warn` | Heat-stress index >= 2 |
+| `notifications.environment.heat.high` | `alarm` | Heat-stress index >= 3 |
+| `notifications.environment.heat.extreme` | `emergency` | Heat-stress index >= 4 |
+| `notifications.environment.cold.caution` | `warn` | Wind chill below 0 C |
+| `notifications.environment.cold.extreme` | `alarm` | Wind chill below -20 C |
+| `notifications.environment.weather.severe` | `warn` or `alarm` | AccuWeather `WeatherIcon` 15-17 thunderstorms (warn), 24 ice (alarm), 25-26 sleet / freezing rain (warn), 22-23 / 29 / 41-44 snow / thunderstorms (warn) |
+
+Each notification value follows the SK 1.8.2 shape `{ state, method, message, timestamp }`. `state: 'normal'` is written on exit so plotter UIs clear the alert. `method` is `['visual']` for `warn` and `['visual', 'sound']` for `alarm` / `emergency`.
+
+### Bridging to NMEA 2000 Alert PGNs
+
+Signal K notifications round-trip to N2K Alert PGNs 126983 (Alert) and 126985 (Alert Text) only when the separate `signalk-to-nmea2000` plugin is installed on the server. This plugin produces SK-native deltas only: it does not bridge to N2K itself. Notifications still render in the Signal K Data Browser and any SK webapp regardless.
 
 ## NMEA2000 Integration
 
@@ -186,7 +213,7 @@ npm run validate       # Type-check + lint + tests (runs on pre-commit)
 - `@signalk/server-api` 2.24+ (declared as a `peerDependency`; the Signal K server provides it at runtime)
 - esbuild 0.28 for bundling
 - Biome 2.4 for linting/formatting
-- Vitest 4.1 for testing (242 tests across 10 files; Stryker.js for opt-in mutation testing)
+- Vitest 4.1 for testing (263 tests across 11 files; Stryker.js for opt-in mutation testing)
 - Husky + lint-staged for pre-commit hooks
 
 ## License

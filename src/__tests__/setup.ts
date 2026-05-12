@@ -95,6 +95,16 @@ export function createMockConfig(
     updateFrequency: 5,
     emissionInterval: 5,
     dailyApiQuota: 50,
+    // Mirror DEFAULT_CONFIG.NOTIFICATIONS so unit tests exercise the
+    // off-by-default master toggle. Individual tests opt in via overrides.
+    notifications: {
+      enabled: false,
+      wind: true,
+      visibility: true,
+      heat: true,
+      cold: true,
+      weather: true,
+    },
     ...overrides,
   };
 }
@@ -111,9 +121,6 @@ export function createMockAccuWeatherResponse(
       EpochTime: Date.now() / 1000,
       WeatherText: 'Partly cloudy',
       WeatherIcon: 3,
-      HasPrecipitation: false,
-      PrecipitationType: null,
-      IsDayTime: true,
       Temperature: {
         Metric: { Value: 20, Unit: 'C' },
         Imperial: { Value: 68, Unit: 'F' },
@@ -127,7 +134,6 @@ export function createMockAccuWeatherResponse(
         Imperial: { Value: 66, Unit: 'F', Phrase: 'Pleasant' },
       },
       RelativeHumidity: 65,
-      IndoorRelativeHumidity: 70,
       Wind: {
         Speed: {
           Metric: { Value: 18.5, Unit: 'km/h' },
@@ -148,10 +154,6 @@ export function createMockAccuWeatherResponse(
       Pressure: {
         Metric: { Value: 1013.25, Unit: 'mb' },
         Imperial: { Value: 29.92, Unit: 'inHg' },
-      },
-      PressureTendency: {
-        LocalizedText: 'Steady',
-        Code: 'S',
       },
       DewPoint: {
         Metric: { Value: 13.3, Unit: 'C' },
@@ -175,7 +177,6 @@ export function createMockAccuWeatherResponse(
       },
       UVIndex: 3,
       UVIndexFloat: 3.2,
-      UVIndexText: 'Moderate',
       Visibility: {
         Metric: { Value: 16.0, Unit: 'km' },
         Imperial: { Value: 10, Unit: 'mi' },
@@ -185,7 +186,6 @@ export function createMockAccuWeatherResponse(
         Metric: { Value: 1200, Unit: 'm' },
         Imperial: { Value: 4000, Unit: 'ft' },
       },
-      ObstructionsToVisibility: '',
       Past24HourTemperatureDeparture: {
         Metric: { Value: 1.5, Unit: 'C' },
         Imperial: { Value: 3, Unit: 'F' },
@@ -220,22 +220,6 @@ export function createMockAccuWeatherResponse(
           Imperial: { Value: 0, Unit: 'in' },
         },
       },
-      TemperatureSummary: {
-        Past6HourRange: {
-          Minimum: { Metric: { Value: 18, Unit: 'C' }, Imperial: { Value: 64, Unit: 'F' } },
-          Maximum: { Metric: { Value: 22, Unit: 'C' }, Imperial: { Value: 72, Unit: 'F' } },
-        },
-        Past12HourRange: {
-          Minimum: { Metric: { Value: 16, Unit: 'C' }, Imperial: { Value: 61, Unit: 'F' } },
-          Maximum: { Metric: { Value: 24, Unit: 'C' }, Imperial: { Value: 75, Unit: 'F' } },
-        },
-        Past24HourRange: {
-          Minimum: { Metric: { Value: 15, Unit: 'C' }, Imperial: { Value: 59, Unit: 'F' } },
-          Maximum: { Metric: { Value: 25, Unit: 'C' }, Imperial: { Value: 77, Unit: 'F' } },
-        },
-      },
-      MobileLink: 'http://www.accuweather.com/test',
-      Link: 'http://www.accuweather.com/test',
       ...overrides,
     },
   ];

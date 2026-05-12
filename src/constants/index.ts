@@ -64,6 +64,20 @@ export const DEFAULT_CONFIG = {
   REQUEST_TIMEOUT: 10000, // milliseconds
   RETRY_ATTEMPTS: 3,
   RETRY_DELAY: 1000, // milliseconds
+  /**
+   * Severe-weather notifications are opt-in (master off by default) so the
+   * existing measurement-only behaviour is preserved on upgrade. The per-
+   * category toggles default to true so a single flip of `enabled` lights up
+   * the full set; operators can untick individual categories from the admin UI.
+   */
+  NOTIFICATIONS: {
+    ENABLED: false,
+    WIND: true,
+    VISIBILITY: true,
+    HEAT: true,
+    COLD: true,
+    WEATHER: true,
+  },
 } as const;
 
 /**
@@ -80,6 +94,59 @@ export const API_QUOTA = {
 // ===============================
 // Signal K Path Constants
 // ===============================
+
+/**
+ * Notification paths the plugin emits under SK 1.8.2 `notifications.environment.*`.
+ *
+ * Each path tracks a single hazard band. Distinct paths (rather than one path
+ * whose state ladder rises and falls) keep Garmin and other consumers that
+ * cache by path+id from collapsing transitions into one another. The
+ * WeatherNotifier state machine emits a delta only when a band's active flag
+ * flips, sending `state: 'normal'` on exit so plotters clear the alert.
+ */
+export const NOTIFICATION_PATHS = {
+  WIND_GALE: 'notifications.environment.wind.gale',
+  WIND_STORM: 'notifications.environment.wind.storm',
+  WIND_HURRICANE: 'notifications.environment.wind.hurricane',
+  VISIBILITY_LOW: 'notifications.environment.visibility.low',
+  VISIBILITY_VERY_LOW: 'notifications.environment.visibility.veryLow',
+  HEAT_CAUTION: 'notifications.environment.heat.caution',
+  HEAT_HIGH: 'notifications.environment.heat.high',
+  HEAT_EXTREME: 'notifications.environment.heat.extreme',
+  COLD_CAUTION: 'notifications.environment.cold.caution',
+  COLD_EXTREME: 'notifications.environment.cold.extreme',
+  WEATHER_SEVERE: 'notifications.environment.weather.severe',
+} as const;
+
+/**
+ * Hazard thresholds used by the notification state machine. All thresholds
+ * are inclusive entry points: `>= threshold` activates the band.
+ *
+ *   Wind:        Beaufort entry per WMO classification (8 gale, 10 storm, 12 hurricane).
+ *   Visibility:  SOLAS restricted-visibility threshold (1 nm = 1852 m); very-low at 0.5 nm.
+ *   Heat:        wet-bulb globe temperature heat stress index (military/marine bands).
+ *   Cold:        wind chill in Kelvin (0 C caution, -20 C extreme).
+ */
+export const NOTIFICATION_THRESHOLDS = {
+  WIND: {
+    GALE_BEAUFORT: 8,
+    STORM_BEAUFORT: 10,
+    HURRICANE_BEAUFORT: 12,
+  },
+  VISIBILITY: {
+    LOW_M: 1852,
+    VERY_LOW_M: 926,
+  },
+  HEAT_STRESS: {
+    CAUTION_INDEX: 2,
+    HIGH_INDEX: 3,
+    EXTREME_INDEX: 4,
+  },
+  COLD: {
+    CAUTION_K: 273.15,
+    EXTREME_K: 253.15,
+  },
+} as const;
 
 /**
  * Signal K paths emitted by this plugin. See
@@ -227,7 +294,7 @@ export const ACCUWEATHER = {
   DEFAULT_LANGUAGE: 'en-us',
   /** Maximum length for descriptive strings copied verbatim from API responses into Signal K deltas */
   MAX_DESCRIPTION_LENGTH: 128,
-  /** Maximum length for short labels (e.g. PressureTendency.LocalizedText) */
+  /** Maximum length for short labels copied verbatim from API responses (e.g. observation timestamps). */
   MAX_LABEL_LENGTH: 64,
 } as const;
 

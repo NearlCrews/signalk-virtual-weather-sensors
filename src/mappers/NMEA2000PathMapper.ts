@@ -3,31 +3,11 @@
  * Maps comprehensive weather data to standardized NMEA2000 Signal K paths.
  */
 
-import type {
-  Context,
-  Delta,
-  Meta,
-  MetaValue,
-  Path,
-  PathValue,
-  SourceRef,
-} from '@signalk/server-api';
-import { PLUGIN, SIGNALK_PATHS, UNITS } from '../constants/index.js';
+import type { Delta, Meta, PathValue } from '@signalk/server-api';
+import { SIGNALK_PATHS, UNITS } from '../constants/index.js';
 import type { Logger, WeatherData } from '../types/index.js';
-import { asTimestamp } from '../utils/conversions.js';
+import { buildMetaDelta as buildSkMetaDelta, buildValuesDelta, me, pv } from '../utils/skDelta.js';
 import { NMEA2000Validator } from '../utils/validation.js';
-
-const SELF_CONTEXT = 'vessels.self' as Context;
-const ACCUWEATHER_SOURCE = PLUGIN.SOURCE_REF as SourceRef;
-
-/** Build a Signal K PathValue, casting the plain string path to the branded Path type. */
-const pv = (path: string, value: unknown): PathValue => ({
-  path: path as Path,
-  value: value as PathValue['value'],
-});
-
-/** Build a Signal K Meta entry, casting the plain string path to the branded Path type. */
-const me = (path: string, value: MetaValue): Meta => ({ path: path as Path, value });
 
 /**
  * Static meta block for paths outside the 1.8.2 vocabulary so the Admin UI
@@ -152,7 +132,6 @@ export class NMEA2000PathMapper {
    */
   public mapToSignalKPaths(weatherData: WeatherData): Delta {
     const sanitizedData = NMEA2000Validator.sanitizeForNMEA2000(weatherData);
-    const timestamp = asTimestamp(sanitizedData.timestamp || new Date().toISOString());
     const values: PathValue[] = [];
 
     this.addCoreEnvironmentalPaths(values, sanitizedData);
@@ -169,10 +148,9 @@ export class NMEA2000PathMapper {
       enhancedFields: this.countEnhancedFields(values),
     });
 
-    return {
-      context: SELF_CONTEXT,
-      updates: [{ $source: ACCUWEATHER_SOURCE, timestamp, values }],
-    };
+    // Carries the observation timestamp through to consumers; emission-time
+    // restamping for re-broadcast happens at the plugin entry point.
+    return buildValuesDelta(values, sanitizedData.timestamp);
   }
 
   /**
@@ -181,16 +159,7 @@ export class NMEA2000PathMapper {
    * instance.
    */
   public buildMetaDelta(): Delta {
-    return {
-      context: SELF_CONTEXT,
-      updates: [
-        {
-          $source: ACCUWEATHER_SOURCE,
-          timestamp: asTimestamp(new Date().toISOString()),
-          meta: [...NON_CANONICAL_META],
-        },
-      ],
-    };
+    return buildSkMetaDelta([...NON_CANONICAL_META]);
   }
 
   private addCoreEnvironmentalPaths(values: PathValue[], data: WeatherData): void {

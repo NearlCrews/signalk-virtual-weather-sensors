@@ -4,9 +4,16 @@
  * Signal K deltas on a fixed interval.
  */
 
-import { type Delta, type Plugin, type ServerAPI, SKVersion } from '@signalk/server-api';
+import {
+  type Delta,
+  type PathValue,
+  type Plugin,
+  type ServerAPI,
+  SKVersion,
+} from '@signalk/server-api';
 import { DEFAULT_CONFIG, ERROR_CODES, PLUGIN } from './constants/index.js';
 import { NMEA2000PathMapper } from './mappers/NMEA2000PathMapper.js';
+import { WeatherNotifier } from './notifications/WeatherNotifier.js';
 import { WeatherService } from './services/WeatherService.js';
 import type {
   Logger,
@@ -16,7 +23,11 @@ import type {
   WeatherData,
 } from './types/index.js';
 import { asTimestamp, toErrorMessage } from './utils/conversions.js';
+import { buildValuesDelta } from './utils/skDelta.js';
 import { ConfigurationValidator } from './utils/validation.js';
+
+/** Distinguishes a banner string pushed via setPluginStatus from one pushed via setPluginError. */
+type BannerKind = 'status' | 'error';
 
 /**
  * Plugin instance state
@@ -24,6 +35,8 @@ import { ConfigurationValidator } from './utils/validation.js';
 interface PluginInstance {
   weatherService: WeatherService | null;
   pathMapper: NMEA2000PathMapper | null;
+  /** Null when notifications are disabled or the plugin is stopped. */
+  notifier: WeatherNotifier | null;
   emissionTimer: NodeJS.Timeout | null;
   state: PluginState;
   startTime: Date | null;
@@ -33,6 +46,12 @@ interface PluginInstance {
   cachedWeatherDataRef: WeatherData | null;
   /** True once the one-shot meta delta has been shipped to the server. */
   metaEmitted: boolean;
+  /**
+   * Last (kind, message) pushed to the admin UI. Used to dedupe identical
+   * setPluginStatus / setPluginError calls so a flapping API doesn't oscillate
+   * the banner every emission tick. Reset on stop().
+   */
+  lastBanner: { kind: BannerKind; message: string } | null;
 }
 
 /**
@@ -45,6 +64,7 @@ export default function createPlugin(app: ServerAPI): Plugin {
   const instance: PluginInstance = {
     weatherService: null,
     pathMapper: null,
+    notifier: null,
     emissionTimer: null,
     state: 'stopped',
     startTime: null,
@@ -52,6 +72,7 @@ export default function createPlugin(app: ServerAPI): Plugin {
     cachedDelta: null,
     cachedWeatherDataRef: null,
     metaEmitted: false,
+    lastBanner: null,
   };
 
   const plugin: Plugin = {
@@ -94,7 +115,7 @@ export default function createPlugin(app: ServerAPI): Plugin {
         instance.state = 'stopped';
         instance.startTime = null;
 
-        app.setPluginStatus(PLUGIN.STATUS.STOPPED);
+        setBanner(instance, app, 'status', PLUGIN.STATUS.STOPPED);
 
         instance.logger('info', 'signalk-virtual-weather-sensors plugin stopped successfully', {
           uptimeMs: uptime,
@@ -111,7 +132,7 @@ export default function createPlugin(app: ServerAPI): Plugin {
         // The admin UI plugin list already prefixes banner text with the
         // plugin's display name, so no need to repeat 'signalk-virtual-weather-sensors'
         // here.
-        app.setPluginError(`Stop failed: ${errorMessage}`);
+        setBanner(instance, app, 'error', `Stop failed: ${errorMessage}`);
       }
     },
 
@@ -165,6 +186,44 @@ export default function createPlugin(app: ServerAPI): Plugin {
           minimum: 0,
           maximum: DEFAULT_CONFIG.DAILY_API_QUOTA_MAX,
         },
+        notifications: {
+          type: 'object',
+          title: 'Severe-weather notifications',
+          description:
+            'Emit Signal K notifications on notifications.environment.* when wind, visibility, heat-stress, cold, or severe-condition thresholds are crossed. Bridges to NMEA 2000 Alert PGNs (126983/126985) only when signalk-to-nmea2000 is installed on the server.',
+          properties: {
+            enabled: {
+              type: 'boolean',
+              title: 'Enable notifications',
+              default: DEFAULT_CONFIG.NOTIFICATIONS.ENABLED,
+            },
+            wind: {
+              type: 'boolean',
+              title: 'Wind alerts (gale / storm / hurricane)',
+              default: DEFAULT_CONFIG.NOTIFICATIONS.WIND,
+            },
+            visibility: {
+              type: 'boolean',
+              title: 'Reduced-visibility alerts',
+              default: DEFAULT_CONFIG.NOTIFICATIONS.VISIBILITY,
+            },
+            heat: {
+              type: 'boolean',
+              title: 'Heat-stress alerts',
+              default: DEFAULT_CONFIG.NOTIFICATIONS.HEAT,
+            },
+            cold: {
+              type: 'boolean',
+              title: 'Cold-exposure alerts',
+              default: DEFAULT_CONFIG.NOTIFICATIONS.COLD,
+            },
+            weather: {
+              type: 'boolean',
+              title: 'Severe-condition alerts (thunderstorm / ice / freezing rain)',
+              default: DEFAULT_CONFIG.NOTIFICATIONS.WEATHER,
+            },
+          },
+        },
       },
       // `required` is intentionally omitted at the outer level: the SK admin
       // UI wraps this schema and discards the outer `required` array. See
@@ -175,7 +234,13 @@ export default function createPlugin(app: ServerAPI): Plugin {
      * UI schema for better form presentation
      */
     uiSchema: () => ({
-      'ui:order': ['accuWeatherApiKey', 'updateFrequency', 'emissionInterval', 'dailyApiQuota'],
+      'ui:order': [
+        'accuWeatherApiKey',
+        'updateFrequency',
+        'emissionInterval',
+        'dailyApiQuota',
+        'notifications',
+      ],
       accuWeatherApiKey: {
         'ui:widget': 'password',
         'ui:autocomplete': 'off',
@@ -195,6 +260,11 @@ export default function createPlugin(app: ServerAPI): Plugin {
         'ui:widget': 'updown',
         'ui:help':
           'When usage crosses 90% the banner shows a warning; at 100% fetches pause until the rolling window drops. 0 disables tracking entirely.',
+      },
+      notifications: {
+        'ui:help':
+          'Notifications are off by default. Each category-specific toggle below only takes effect when the master enable is on. Bridging to NMEA 2000 Alert PGNs requires the separate signalk-to-nmea2000 plugin on the server.',
+        'ui:order': ['enabled', 'wind', 'visibility', 'heat', 'cold', 'weather'],
       },
     }),
   };
@@ -250,6 +320,10 @@ async function startServices(
 ): Promise<void> {
   instance.weatherService = new WeatherService(app, config, instance.logger);
   instance.pathMapper = new NMEA2000PathMapper(instance.logger);
+  // Construct the notifier even when notifications are disabled at the master
+  // level so a hot-reload from disabled -> enabled does not need a restart.
+  // `evaluate()` short-circuits when `config.notifications.enabled` is false.
+  instance.notifier = new WeatherNotifier(config.notifications, instance.logger);
   await instance.weatherService.start();
   setupEnhancedEmissionSystem(instance, config, app);
 }
@@ -269,7 +343,7 @@ function finalizePluginStart(
 
   instance.state = 'running';
 
-  app.setPluginStatus(weatherService.formatStatusBanner());
+  setBanner(instance, app, 'status', weatherService.formatStatusBanner());
 
   instance.logger('info', 'signalk-virtual-weather-sensors plugin started successfully', {
     emissionInterval: config.emissionInterval,
@@ -294,9 +368,35 @@ async function handleStartupError(
 
   // The admin UI plugin list already prefixes banner text with the plugin's
   // display name, so no need to repeat 'signalk-virtual-weather-sensors' here.
-  app.setPluginError(`Startup failed: ${errorMessage}`);
+  setBanner(instance, app, 'error', `Startup failed: ${errorMessage}`);
 
   await cleanup(instance);
+}
+
+/**
+ * Single entry point for every admin-UI banner push. Dedupes consecutive
+ * identical (kind, message) pairs so a flapping API or a steady-state quota
+ * pause doesn't oscillate the banner every 5 seconds. Identity is tracked
+ * separately for `setPluginStatus` and `setPluginError` because the server
+ * treats them as distinct UI bands.
+ * @private
+ */
+function setBanner(
+  instance: PluginInstance,
+  app: ServerAPI,
+  kind: BannerKind,
+  message: string
+): void {
+  const last = instance.lastBanner;
+  if (last !== null && last.kind === kind && last.message === message) {
+    return;
+  }
+  if (kind === 'status') {
+    app.setPluginStatus(message);
+  } else {
+    app.setPluginError(message);
+  }
+  instance.lastBanner = { kind, message };
 }
 
 function setupEnhancedEmissionSystem(
@@ -341,7 +441,7 @@ function emitWeatherTick(instance: PluginInstance, app: ServerAPI, maxStalenessM
   // Quota-exhausted before staleness: when both fire the quota-specific
   // message wins because it tells the operator WHY fetches paused.
   if (instance.weatherService.isQuotaExhausted()) {
-    app.setPluginError(instance.weatherService.formatQuotaExhaustedMessage());
+    setBanner(instance, app, 'error', instance.weatherService.formatQuotaExhaustedMessage());
     return;
   }
 
@@ -352,20 +452,28 @@ function emitWeatherTick(instance: PluginInstance, app: ServerAPI, maxStalenessM
     // next minute up. Pluralize for the "1 minute ago" boundary.
     const ageMin = Math.floor(ageMs / 60_000);
     const unit = ageMin === 1 ? 'minute' : 'minutes';
-    app.setPluginError(`Weather data stale: last update ${ageMin} ${unit} ago`);
+    setBanner(instance, app, 'error', `Weather data stale: last update ${ageMin} ${unit} ago`);
     return;
   }
 
   // Re-push the banner every fresh tick so the admin UI sees "last update Nm
-  // ago" rather than the start-time "awaiting first update" string. This call
-  // also clears any prior setPluginError (e.g. stale-data) as soon as the
-  // next successful tick lands.
-  app.setPluginStatus(instance.weatherService.formatStatusBanner());
+  // ago" rather than the start-time "awaiting first update" string. Dedupe in
+  // setBanner means we only actually hit the SK API when the message changes
+  // (typically once per minute as the age counter ticks up), and identical
+  // ticks during the same minute are no-ops.
+  setBanner(instance, app, 'status', instance.weatherService.formatStatusBanner());
 
   // Only rebuild delta when weather data changes (reference comparison).
+  // Notifications are evaluated on the same edge: transitions only fire when
+  // the underlying snapshot changes, so re-evaluating on every emission tick
+  // would waste CPU on the steady-state case.
+  let notificationValues: PathValue[] = [];
   if (weatherData !== instance.cachedWeatherDataRef) {
     instance.cachedDelta = instance.pathMapper.mapToSignalKPaths(weatherData);
     instance.cachedWeatherDataRef = weatherData;
+    if (instance.notifier) {
+      notificationValues = instance.notifier.evaluate(weatherData);
+    }
   }
 
   if (!instance.cachedDelta) {
@@ -373,6 +481,14 @@ function emitWeatherTick(instance: PluginInstance, app: ServerAPI, maxStalenessM
   }
 
   app.handleMessage(PLUGIN.NAME, withEmissionTimestamp(instance.cachedDelta), SKVersion.v1);
+
+  // Notifications ride a separate delta so consumers walking the values delta
+  // do not see a `notifications.*` leaf interleaved with measurements. The
+  // notifier returned PathValues only on transition, so a non-empty list here
+  // always represents an entry or exit edge.
+  if (notificationValues.length > 0) {
+    app.handleMessage(PLUGIN.NAME, buildValuesDelta(notificationValues), SKVersion.v1);
+  }
 
   // Ship the static meta block once per plugin lifetime, AFTER the first
   // values delta so admin UIs that render units lazily attach them on first
@@ -420,9 +536,14 @@ async function cleanup(instance: PluginInstance): Promise<void> {
   }
 
   instance.pathMapper = null;
+  if (instance.notifier) {
+    instance.notifier.reset();
+    instance.notifier = null;
+  }
   instance.cachedDelta = null;
   instance.cachedWeatherDataRef = null;
   instance.metaEmitted = false;
+  instance.lastBanner = null;
 }
 
 /**
@@ -451,6 +572,11 @@ function validateAndNormalizeSettings(settings: unknown, logger: Logger): Plugin
       typeof rawSettings.dailyApiQuota === 'number'
         ? rawSettings.dailyApiQuota
         : DEFAULT_CONFIG.DAILY_API_QUOTA,
+    // `sanitizeConfiguration` coerces a missing or partial notifications
+    // subobject into the canonical NotificationsConfig with documented defaults,
+    // so we forward whatever the operator submitted and let the sanitizer fill
+    // in the rest.
+    notifications: rawSettings.notifications as PluginConfiguration['notifications'],
   };
 
   const validation = ConfigurationValidator.validateConfiguration(partialConfig);
@@ -475,6 +601,7 @@ function validateAndNormalizeSettings(settings: unknown, logger: Logger): Plugin
     updateFrequency: finalConfig.updateFrequency,
     emissionInterval: finalConfig.emissionInterval,
     dailyApiQuota: finalConfig.dailyApiQuota,
+    notifications: finalConfig.notifications,
   });
 
   return finalConfig;

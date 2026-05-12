@@ -72,9 +72,15 @@ export interface WeatherData {
   /** Calculated apparent wind angle in radians (relative to vessel heading) */
   readonly apparentWindAngle?: number;
 
-  // Metadata (existing)
-  /** Human-readable weather description */
+  // Metadata
+  /** Human-readable weather description (e.g. "Partly cloudy"). */
   readonly description?: string;
+  /**
+   * AccuWeather icon code (1..44) used by the notification state machine to
+   * detect severe-condition categories. Stored on WeatherData so downstream
+   * notifiers do not have to re-parse the original API response.
+   */
+  readonly weatherIcon?: number;
   /** ISO 8601 timestamp of measurement */
   readonly timestamp: string;
   /** Data quality indicator (0-1, 1 = highest quality) */
@@ -131,6 +137,28 @@ export interface VesselNavigationData {
 // ===============================
 
 /**
+ * Severe-weather notification controls. Master `enabled` is off by default so
+ * the plugin preserves its measurement-only behaviour on upgrade; flipping
+ * `enabled` activates each per-category sub-toggle individually so operators
+ * can suppress a category (e.g. wind alerts while at anchor) without losing
+ * the others.
+ */
+export interface NotificationsConfig {
+  /** Master switch: when false, no `notifications.environment.*` deltas are emitted. */
+  readonly enabled: boolean;
+  /** Beaufort gale/storm/hurricane bands on `notifications.environment.wind.*`. */
+  readonly wind: boolean;
+  /** Low / very-low visibility on `notifications.environment.visibility.*`. */
+  readonly visibility: boolean;
+  /** Heat-stress-index bands on `notifications.environment.heat.*`. */
+  readonly heat: boolean;
+  /** Wind-chill bands on `notifications.environment.cold.*`. */
+  readonly cold: boolean;
+  /** Severe-condition codes (thunderstorm/ice/freezing rain) on `notifications.environment.weather.severe`. */
+  readonly weather: boolean;
+}
+
+/**
  * Runtime plugin configuration with validation
  * Uses Zod schema for type-safe configuration parsing
  */
@@ -151,6 +179,33 @@ export interface PluginConfiguration {
    * warnings, no auto-pause).
    */
   readonly dailyApiQuota: number;
+
+  /** Severe-weather notification settings (opt-in, off by default). */
+  readonly notifications: NotificationsConfig;
+}
+
+/**
+ * Signal K notification state values per spec 1.8.2 (notifications.html).
+ * `normal` is the resolved-state sentinel that clears an active notification;
+ * `alert`, `warn`, `alarm`, `emergency` form the ascending hazard ladder.
+ */
+export type NotificationState = 'normal' | 'alert' | 'warn' | 'alarm' | 'emergency';
+
+/** Methods a notification consumer is asked to invoke (visual cue, audible alert). */
+export type NotificationMethod = 'visual' | 'sound';
+
+/**
+ * Value object placed at a `notifications.environment.*` path. Matches the
+ * shape consumed by `signalk-to-nmea2000`'s notification → Alert PGN bridge
+ * (PGN 126983 + Alert Text 126985); fields not in the spec are intentionally
+ * omitted to keep the payload simple.
+ */
+export interface NotificationValue {
+  readonly state: NotificationState;
+  readonly method: ReadonlyArray<NotificationMethod>;
+  readonly message: string;
+  /** ISO 8601 timestamp of the state transition. */
+  readonly timestamp: string;
 }
 
 /**
@@ -209,23 +264,26 @@ type AcwMeasurement = { readonly Value: number; readonly Unit: string };
 type AcwPhrasedMeasurement = AcwMeasurement & { readonly Phrase: string };
 /** Bilingual measurement pair returned by AccuWeather */
 type AcwMetricPair = { readonly Metric: AcwMeasurement; readonly Imperial: AcwMeasurement };
-/** Min/max temperature range for a time window */
-type AcwTempRange = {
-  readonly Minimum: AcwMetricPair;
-  readonly Maximum: AcwMetricPair;
-};
 
 /**
- * AccuWeather API current conditions response (enhanced with all available fields)
+ * AccuWeather API current conditions response.
+ *
+ * Only fields actually consumed by the plugin are typed: purely cosmetic
+ * fields from the upstream response (PrecipitationType, IsDayTime, UVIndexText,
+ * ObstructionsToVisibility, TemperatureSummary, MobileLink, Link, etc.) are
+ * intentionally omitted so the type stays a contract for what the plugin
+ * uses, not a mirror of the AccuWeather schema.
  */
 export interface AccuWeatherCurrentConditions {
   readonly LocalObservationDateTime: string;
   readonly EpochTime: number;
+  /** Plain-English description of the current condition (e.g. "Partly cloudy"). */
   readonly WeatherText: string;
+  /**
+   * AccuWeather icon code (1..44) used to map severe-condition categories
+   * (thunderstorms, ice, freezing rain, etc.) into Signal K notifications.
+   */
   readonly WeatherIcon: number;
-  readonly HasPrecipitation: boolean;
-  readonly PrecipitationType?: string | null;
-  readonly IsDayTime: boolean;
 
   // Core temperature data
   readonly Temperature: AcwMetricPair;
@@ -245,11 +303,10 @@ export interface AccuWeatherCurrentConditions {
   readonly WetBulbGlobeTemperature: AcwMetricPair;
   readonly DewPoint: AcwMetricPair;
 
-  // Humidity data (outside and inside)
+  // Humidity
   readonly RelativeHumidity: number;
-  readonly IndoorRelativeHumidity: number;
 
-  // Enhanced wind data
+  // Wind
   readonly Wind: {
     readonly Speed: AcwMetricPair;
     readonly Direction: {
@@ -258,30 +315,25 @@ export interface AccuWeatherCurrentConditions {
       readonly English: string;
     };
   };
-  readonly WindGust: {
+  /** Optional: free-tier and partial responses may omit WindGust entirely. */
+  readonly WindGust?: {
     readonly Speed: AcwMetricPair;
   };
 
-  // Pressure data
+  // Pressure
   readonly Pressure: AcwMetricPair;
-  readonly PressureTendency: {
-    readonly LocalizedText: string;
-    readonly Code: string;
-  };
 
   // Atmospheric conditions
   readonly UVIndex: number;
   readonly UVIndexFloat: number;
-  readonly UVIndexText: string;
   readonly Visibility: AcwMetricPair;
   readonly CloudCover: number;
   readonly Ceiling: AcwMetricPair;
-  readonly ObstructionsToVisibility: string;
 
   // Temperature trends
   readonly Past24HourTemperatureDeparture: AcwMetricPair;
 
-  // Precipitation data
+  // Precipitation
   readonly Precip1hr: AcwMetricPair;
   readonly PrecipitationSummary: {
     readonly Precipitation: AcwMetricPair;
@@ -291,17 +343,6 @@ export interface AccuWeatherCurrentConditions {
     readonly Past12Hours: AcwMetricPair;
     readonly Past24Hours: AcwMetricPair;
   };
-
-  // Temperature ranges
-  readonly TemperatureSummary: {
-    readonly Past6HourRange: AcwTempRange;
-    readonly Past12HourRange: AcwTempRange;
-    readonly Past24HourRange: AcwTempRange;
-  };
-
-  // Links
-  readonly MobileLink: string;
-  readonly Link: string;
 }
 
 /**
