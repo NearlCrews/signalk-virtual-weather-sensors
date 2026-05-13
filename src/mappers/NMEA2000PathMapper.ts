@@ -79,7 +79,7 @@ const NON_CANONICAL_META: ReadonlyArray<Meta> = [
     units: 'K',
     displayName: '24h temp departure',
     description:
-      'Difference between current air temperature and the temperature at the same hour 24 hours ago (positive = warmer than yesterday).',
+      'Temperature DELTA (not absolute): current air temperature minus the temperature at the same hour 24 hours ago. Positive means warmer than yesterday. Reported in Kelvin because a 1 K delta equals a 1 C delta numerically; consumers must NOT apply a K-to-C subtraction.',
   }),
   me(SIGNALK_PATHS.ENVIRONMENT.WEATHER.SPEED_GUST, {
     units: 'm/s',
@@ -88,10 +88,13 @@ const NON_CANONICAL_META: ReadonlyArray<Meta> = [
       'Peak gust wind speed (ground-referenced). Sits under environment.weather.* because the 1.8.2 wind vocabulary does not define a gust leaf.',
   }),
   me(SIGNALK_PATHS.ENVIRONMENT.WEATHER.GUST_FACTOR, {
-    units: 'ratio',
+    // No `units`: the value is a dimensionless multiplier that routinely
+    // exceeds 1 (gust > sustained). `units: 'ratio'` would trip consumers
+    // that clamp ratio paths to [0, 1] for percent-style rendering. Same
+    // convention as `uvIndex`, `beaufortScale`, `heatStressIndex`.
     displayName: 'Wind gust factor',
     description:
-      'Ratio of peak gust to sustained wind speed (gust/sustained). Plugin-derived; not in the 1.8.2 vocabulary.',
+      'Multiplier of peak gust over sustained wind speed (gust/sustained). Values are >= 1 when gusts are present; below 1 only when the upstream feed has stale or inconsistent samples. Plugin-derived; not in the 1.8.2 vocabulary.',
   }),
   me(SIGNALK_PATHS.ENVIRONMENT.WEATHER.BEAUFORT_SCALE, {
     displayName: 'Beaufort scale',
