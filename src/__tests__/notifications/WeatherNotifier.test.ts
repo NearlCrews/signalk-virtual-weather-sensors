@@ -230,3 +230,167 @@ describe('WeatherNotifier: reset', () => {
     }
   });
 });
+
+describe('WeatherNotifier: enriched messages', () => {
+  const MAX_LEN = 80;
+
+  it('wind: surfaces Beaufort, cardinal direction, sustained speed, gusts, and pressure', () => {
+    const notifier = makeNotifier();
+    const out = notifier.evaluate(
+      snapshot({
+        beaufortScale: 9,
+        windSpeed: 19,
+        windGustSpeed: 27,
+        windDirection: (5 * Math.PI) / 4, // 225 deg = SW
+        pressure: 99800, // 998 hPa
+      })
+    );
+    const gale = out.find((pv) => pv.path === NOTIFICATION_PATHS.WIND_GALE);
+    if (!gale) throw new Error('expected gale to fire at Beaufort 9');
+    const msg = readValue(gale).message;
+    expect(msg).toContain('Gale-force wind:');
+    expect(msg).toContain('Bf9');
+    expect(msg).toContain('SW');
+    expect(msg).toContain('19 m/s');
+    expect(msg).toContain('gusts 27 m/s');
+    expect(msg).toContain('998 hPa');
+    expect(msg.length).toBeLessThanOrEqual(MAX_LEN);
+  });
+
+  it('wind: omits gust segment when gust is missing or not above sustained', () => {
+    const notifier = makeNotifier();
+    const out = notifier.evaluate(
+      snapshot({
+        beaufortScale: 9,
+        windSpeed: 19,
+        // No windGustSpeed
+        pressure: 101325,
+      })
+    );
+    const gale = out.find((pv) => pv.path === NOTIFICATION_PATHS.WIND_GALE);
+    if (!gale) throw new Error('expected gale to fire');
+    expect(readValue(gale).message).not.toContain('gusts');
+  });
+
+  it('visibility: includes ceiling and precipitation rate when available', () => {
+    const notifier = makeNotifier();
+    const out = notifier.evaluate(
+      snapshot({
+        visibility: 800,
+        cloudCeiling: 90,
+        precipitationCurrent: 2.5, // mm/h
+      })
+    );
+    const low = out.find((pv) => pv.path === NOTIFICATION_PATHS.VISIBILITY_LOW);
+    if (!low) throw new Error('expected visibility.low to fire');
+    const msg = readValue(low).message;
+    expect(msg).toContain('Reduced visibility:');
+    expect(msg).toContain('0.8 km');
+    expect(msg).toContain('ceiling 90 m');
+    expect(msg).toContain('rain 2.5 mm/h');
+    expect(msg.length).toBeLessThanOrEqual(MAX_LEN);
+  });
+
+  it('heat: surfaces HSI, WBGT in C, humidity percent, and RealFeel-in-shade', () => {
+    const notifier = makeNotifier();
+    const out = notifier.evaluate(
+      snapshot({
+        heatStressIndex: 3,
+        wetBulbGlobeTemperature: 305.15, // 32 C
+        humidity: 0.78,
+        realFeelShade: 308.15, // 35 C
+      })
+    );
+    const high = out.find((pv) => pv.path === NOTIFICATION_PATHS.HEAT_HIGH);
+    if (!high) throw new Error('expected heat.high to fire at HSI 3');
+    const msg = readValue(high).message;
+    expect(msg).toContain('High heat stress:');
+    expect(msg).toContain('HSI 3');
+    expect(msg).toContain('WBGT 32 C');
+    expect(msg).toContain('RH 78%');
+    expect(msg).toContain('RealFeel 35 C');
+    expect(msg.length).toBeLessThanOrEqual(MAX_LEN);
+  });
+
+  it('cold: includes air temperature and wind speed alongside wind chill', () => {
+    const notifier = makeNotifier();
+    const out = notifier.evaluate(
+      snapshot({
+        windChill: 271.15, // -2 C
+        temperature: 274.15, // +1 C
+        windSpeed: 12,
+      })
+    );
+    const cold = out.find((pv) => pv.path === NOTIFICATION_PATHS.COLD_CAUTION);
+    if (!cold) throw new Error('expected cold.caution to fire');
+    const msg = readValue(cold).message;
+    expect(msg).toContain('Cold exposure caution:');
+    expect(msg).toContain('wind chill -2 C');
+    expect(msg).toContain('air 1 C');
+    expect(msg).toContain('wind 12 m/s');
+    expect(msg.length).toBeLessThanOrEqual(MAX_LEN);
+  });
+
+  it('severe: appends barometric pressure when finite', () => {
+    const notifier = makeNotifier();
+    const out = notifier.evaluate(
+      snapshot({
+        weatherIcon: 15,
+        description: 'Severe thunderstorms approaching',
+        pressure: 99800,
+      })
+    );
+    const severe = out.find((pv) => pv.path === NOTIFICATION_PATHS.WEATHER_SEVERE);
+    if (!severe) throw new Error('expected severe to fire');
+    const msg = readValue(severe).message;
+    expect(msg).toContain('Thunderstorms:');
+    expect(msg).toContain('998 hPa');
+    expect(msg.length).toBeLessThanOrEqual(MAX_LEN);
+  });
+
+  it('caps every emitted message at the chartplotter ceiling (80 chars)', () => {
+    const notifier = makeNotifier();
+    const out = notifier.evaluate(
+      snapshot({
+        beaufortScale: 12,
+        windSpeed: 35,
+        windGustSpeed: 65,
+        windDirection: (5 * Math.PI) / 4,
+        pressure: 92000,
+        visibility: 400,
+        cloudCeiling: 75,
+        precipitationCurrent: 25,
+        heatStressIndex: 4,
+        wetBulbGlobeTemperature: 308.15,
+        humidity: 0.95,
+        realFeelShade: 313.15,
+        windChill: 270.15,
+        temperature: 273.15,
+        weatherIcon: 24,
+        description:
+          'Ice with severe thunderstorms approaching from the southwest, hazardous conditions',
+      })
+    );
+    expect(out.length).toBeGreaterThan(0);
+    for (const transition of out) {
+      expect(readValue(transition).message.length).toBeLessThanOrEqual(MAX_LEN);
+    }
+  });
+
+  it('cardinal direction maps 0/π/2 radians correctly to N/E/S/W', () => {
+    const notifier = makeNotifier();
+    const cases: ReadonlyArray<readonly [number, string]> = [
+      [0, 'from N'],
+      [Math.PI / 2, 'from E'],
+      [Math.PI, 'from S'],
+      [(3 * Math.PI) / 2, 'from W'],
+    ];
+    for (const [radians, expected] of cases) {
+      notifier.reset();
+      const out = notifier.evaluate(snapshot({ beaufortScale: 9, windDirection: radians }));
+      const gale = out.find((pv) => pv.path === NOTIFICATION_PATHS.WIND_GALE);
+      if (!gale) throw new Error(`expected gale to fire for ${radians}`);
+      expect(readValue(gale).message).toContain(expected);
+    }
+  });
+});

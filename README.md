@@ -125,6 +125,18 @@ Severe-weather notifications under `notifications.environment.*` are opt-in (mas
 
 Each notification value follows the SK 1.8.2 shape `{ state, method, message, timestamp }`. `state: 'normal'` is written on exit so plotter UIs clear the alert. `method` is `['visual']` for `warn` and `['visual', 'sound']` for `alarm` / `emergency`.
 
+The `message` field packs adjacent context so a chartplotter banner is actionable on its own:
+
+| Band | Sample message |
+|------|----------------|
+| Wind | `Gale-force wind: Bf9 from SW, 19 m/s, gusts 27 m/s, 998 hPa` |
+| Visibility | `Reduced visibility: 0.8 km, ceiling 90 m, rain 2.5 mm/h` |
+| Heat | `High heat stress: HSI 3, WBGT 32 C, RH 78%, RealFeel 35 C` |
+| Cold | `Cold exposure caution: wind chill -2 C, air 1 C, wind 12 m/s` |
+| Severe | `Thunderstorms: Severe thunderstorms approaching, 998 hPa` |
+
+Optional fields drop out cleanly when AccuWeather doesn't provide them: a wind notification on a free-tier key with no gust block just omits the `gusts ...` segment. Every message is capped at 80 characters (with a `…` suffix on overflow) so it renders cleanly across the chartplotter fleet that bridges through `signalk-to-nmea2000` to NMEA 2000 Alert PGN 126985.
+
 ### Bridging to NMEA 2000 Alert PGNs
 
 Signal K notifications round-trip to N2K Alert PGNs 126983 (Alert) and 126985 (Alert Text) only when the separate `signalk-to-nmea2000` plugin is installed on the server. This plugin produces SK-native deltas only: it does not bridge to N2K itself. Notifications still render in the Signal K Data Browser and any SK webapp regardless.
