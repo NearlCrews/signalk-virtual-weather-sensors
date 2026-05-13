@@ -226,7 +226,7 @@ npm run validate       # Type-check + lint + tests (runs on pre-commit)
 - `@signalk/server-api` 2.24+ (declared as a `peerDependency`; the Signal K server provides it at runtime)
 - esbuild 0.28 for bundling
 - Biome 2.4 for linting/formatting
-- Vitest 4.1 for testing (267 tests across 11 files; Stryker.js for opt-in mutation testing)
+- Vitest 4.1 for testing (275 tests across 11 files; Stryker.js for opt-in mutation testing)
 - React 19 + webpack 5 + Module Federation for the federated config panel (`src/configpanel/`, bundled to `public/`)
 - Husky + lint-staged for pre-commit hooks
 
