@@ -9,7 +9,7 @@
 
 import { describe, expect, it } from 'vitest';
 import { NOTIFICATION_PATHS } from '../../constants/index.js';
-import { WeatherNotifier } from '../../notifications/WeatherNotifier.js';
+import { MAX_MESSAGE_LENGTH, WeatherNotifier } from '../../notifications/WeatherNotifier.js';
 import type { NotificationsConfig, NotificationValue, WeatherData } from '../../types/index.js';
 import { createMockWeatherData } from '../setup.js';
 
@@ -232,8 +232,6 @@ describe('WeatherNotifier: reset', () => {
 });
 
 describe('WeatherNotifier: enriched messages', () => {
-  const MAX_LEN = 80;
-
   it('wind: surfaces Beaufort, cardinal direction, sustained speed, gusts, and pressure', () => {
     const notifier = makeNotifier();
     const out = notifier.evaluate(
@@ -254,7 +252,6 @@ describe('WeatherNotifier: enriched messages', () => {
     expect(msg).toContain('19 m/s');
     expect(msg).toContain('gusts 27 m/s');
     expect(msg).toContain('998 hPa');
-    expect(msg.length).toBeLessThanOrEqual(MAX_LEN);
   });
 
   it('wind: omits gust segment when gust is missing or not above sustained', () => {
@@ -288,7 +285,6 @@ describe('WeatherNotifier: enriched messages', () => {
     expect(msg).toContain('0.8 km');
     expect(msg).toContain('ceiling 90 m');
     expect(msg).toContain('rain 2.5 mm/h');
-    expect(msg.length).toBeLessThanOrEqual(MAX_LEN);
   });
 
   it('heat: surfaces HSI, WBGT in C, humidity percent, and RealFeel-in-shade', () => {
@@ -309,7 +305,6 @@ describe('WeatherNotifier: enriched messages', () => {
     expect(msg).toContain('WBGT 32 C');
     expect(msg).toContain('RH 78%');
     expect(msg).toContain('RealFeel 35 C');
-    expect(msg.length).toBeLessThanOrEqual(MAX_LEN);
   });
 
   it('cold: includes air temperature and wind speed alongside wind chill', () => {
@@ -328,7 +323,6 @@ describe('WeatherNotifier: enriched messages', () => {
     expect(msg).toContain('wind chill -2 C');
     expect(msg).toContain('air 1 C');
     expect(msg).toContain('wind 12 m/s');
-    expect(msg.length).toBeLessThanOrEqual(MAX_LEN);
   });
 
   it('severe: appends barometric pressure when finite', () => {
@@ -345,10 +339,9 @@ describe('WeatherNotifier: enriched messages', () => {
     const msg = readValue(severe).message;
     expect(msg).toContain('Thunderstorms:');
     expect(msg).toContain('998 hPa');
-    expect(msg.length).toBeLessThanOrEqual(MAX_LEN);
   });
 
-  it('caps every emitted message at the chartplotter ceiling (80 chars)', () => {
+  it('caps every emitted message at MAX_MESSAGE_LENGTH', () => {
     const notifier = makeNotifier();
     const out = notifier.evaluate(
       snapshot({
@@ -373,7 +366,7 @@ describe('WeatherNotifier: enriched messages', () => {
     );
     expect(out.length).toBeGreaterThan(0);
     for (const transition of out) {
-      expect(readValue(transition).message.length).toBeLessThanOrEqual(MAX_LEN);
+      expect(readValue(transition).message.length).toBeLessThanOrEqual(MAX_MESSAGE_LENGTH);
     }
   });
 

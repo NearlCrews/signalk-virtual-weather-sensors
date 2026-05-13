@@ -24,7 +24,7 @@ import type {
   NotificationValue,
   WeatherData,
 } from '../types/index.js';
-import { kelvinToCelsius, radiansToDegrees } from '../utils/conversions.js';
+import { kelvinToCelsius, radiansToDegrees, ratioToPercentage } from '../utils/conversions.js';
 import { pv } from '../utils/skDelta.js';
 
 /** Default alert presentation: visual on every band; audible from `alarm` upward. */
@@ -48,13 +48,24 @@ function methodsFor(state: NotificationState): ReadonlyArray<NotificationMethod>
  *
  * Pure Signal K consumers (Freeboard, Instrument Panel webapps) have no hard
  * limit but render best when messages stay on a single visual line.
+ *
+ * Exported so tests can assert the same ceiling without hardcoding 80.
  */
-const MAX_MESSAGE_LENGTH = 80;
+export const MAX_MESSAGE_LENGTH = 80;
 
-/** Cap a message at `MAX_MESSAGE_LENGTH`, ending with `…` when truncated. */
 function capForChartplotter(message: string): string {
   if (message.length <= MAX_MESSAGE_LENGTH) return message;
   return `${message.slice(0, MAX_MESSAGE_LENGTH - 1)}…`;
+}
+
+/**
+ * Narrow `number | undefined` to `number` for optional WeatherData fields.
+ * Required fields (`temperature`, `windSpeed`, etc.) are already `number` per
+ * the type; this guard is only for the spread fields like `windGustSpeed`,
+ * `cloudCeiling`, `precipitationCurrent` that AccuWeather may omit.
+ */
+function isFiniteNumber(value: number | undefined): value is number {
+  return value !== undefined && Number.isFinite(value);
 }
 
 /** 16-point compass rose, indexed by floor((deg + 11.25) / 22.5). */
@@ -77,41 +88,39 @@ const CARDINAL_16 = [
   'NNW',
 ] as const;
 
-/** Convert a true-north radians bearing to a 16-point compass label. */
 function radiansToCardinal(radians: number): string {
   const deg = ((radiansToDegrees(radians) % 360) + 360) % 360;
   const idx = Math.floor((deg + 11.25) / 22.5) % 16;
   return CARDINAL_16[idx] ?? 'N';
 }
 
-/** Round a Pa pressure to whole hPa (mbar). */
 function paToHpa(pressurePa: number): number {
-  return Math.round(pressurePa / 100);
+  return Math.round(pressurePa / UNITS.PRESSURE.MILLIBAR_TO_PASCAL);
 }
 
-/** Round a humidity ratio (0..1) to whole percent. */
-function ratioToPercent(ratio: number): number {
-  return Math.round(ratio * 100);
-}
-
-/** Round a Kelvin temperature to whole Celsius. */
 function kToCRounded(kelvin: number): number {
   return Math.round(kelvinToCelsius(kelvin));
 }
 
-/** Round an m/s speed to one decimal. */
 function msRounded(ms: number): number {
   return Math.round(ms * 10) / 10;
 }
 
 /**
- * Build the wind suffix shared by gale/storm/hurricane bands. Always includes
- * the Beaufort number; appends sustained wind, gust speed (only when present
- * and above sustained), cardinal direction, and barometric pressure when each
- * is finite. Adjacent context helps operators decide whether to reef, run
- * for shelter, or hold course.
+ * Each `format*Suffix` builder produces the right-hand side of one
+ * notification message, packed with adjacent context the operator can act on
+ * (reef vs run for shelter, fog vs heavy rain, etc.) without subscribing to
+ * extra paths.
+ *
+ * Required `WeatherData` fields (temperature, pressure, windSpeed, etc.) are
+ * still guarded with `Number.isFinite` because the sanitizer can in principle
+ * clamp them but cannot guarantee finite outputs across all upstream-corrupted
+ * inputs. Optional fields use `isFiniteNumber` to narrow `number | undefined`
+ * in one step.
  */
-function formatWindSuffix(data: WeatherData, bft: number): string {
+function formatWindSuffix(data: WeatherData): string {
+  const bft = data.beaufortScale;
+  if (bft === undefined) return '';
   const parts: string[] = [`Bf${bft}`];
   if (Number.isFinite(data.windDirection)) {
     parts.push(`from ${radiansToCardinal(data.windDirection)}`);
@@ -119,11 +128,7 @@ function formatWindSuffix(data: WeatherData, bft: number): string {
   if (Number.isFinite(data.windSpeed)) {
     parts.push(`${msRounded(data.windSpeed)} m/s`);
   }
-  if (
-    data.windGustSpeed !== undefined &&
-    Number.isFinite(data.windGustSpeed) &&
-    data.windGustSpeed > data.windSpeed
-  ) {
+  if (isFiniteNumber(data.windGustSpeed) && data.windGustSpeed > data.windSpeed) {
     parts.push(`gusts ${msRounded(data.windGustSpeed)} m/s`);
   }
   if (Number.isFinite(data.pressure)) {
@@ -132,45 +137,39 @@ function formatWindSuffix(data: WeatherData, bft: number): string {
   return parts.join(', ');
 }
 
-/**
- * Build the visibility suffix. Always shows visibility in km; appends cloud
- * ceiling (m) and current precipitation rate (mm/h) when available so the
- * operator can tell fog from heavy rain at a glance.
- */
-function formatVisibilitySuffix(data: WeatherData, visM: number): string {
-  const parts: string[] = [`${(visM / UNITS.LENGTH.KM_TO_M).toFixed(1)} km`];
-  if (data.cloudCeiling !== undefined && Number.isFinite(data.cloudCeiling)) {
+function formatVisibilitySuffix(data: WeatherData): string {
+  const vis = data.visibility;
+  if (vis === undefined) return '';
+  const parts: string[] = [`${(vis / UNITS.LENGTH.KM_TO_M).toFixed(1)} km`];
+  if (isFiniteNumber(data.cloudCeiling)) {
     parts.push(`ceiling ${Math.round(data.cloudCeiling)} m`);
   }
-  if (data.precipitationCurrent !== undefined && data.precipitationCurrent > 0) {
+  if (isFiniteNumber(data.precipitationCurrent) && data.precipitationCurrent > 0) {
     parts.push(`rain ${data.precipitationCurrent.toFixed(1)} mm/h`);
   }
   return parts.join(', ');
 }
 
-/**
- * Build the heat-stress suffix. Always shows HSI; appends WBGT (C), relative
- * humidity (percent), and RealFeel-in-shade (C) when available so operators
- * see both the index and the underlying physiology drivers.
- */
-function formatHeatSuffix(data: WeatherData, hsi: number): string {
+function formatHeatSuffix(data: WeatherData): string {
+  const hsi = data.heatStressIndex;
+  if (hsi === undefined) return '';
   const parts: string[] = [`HSI ${hsi}`];
-  if (data.wetBulbGlobeTemperature !== undefined && Number.isFinite(data.wetBulbGlobeTemperature)) {
+  if (isFiniteNumber(data.wetBulbGlobeTemperature)) {
     parts.push(`WBGT ${kToCRounded(data.wetBulbGlobeTemperature)} C`);
   }
   if (Number.isFinite(data.humidity)) {
-    parts.push(`RH ${ratioToPercent(data.humidity)}%`);
+    parts.push(`RH ${Math.round(ratioToPercentage(data.humidity))}%`);
   }
-  if (data.realFeelShade !== undefined && Number.isFinite(data.realFeelShade)) {
+  if (isFiniteNumber(data.realFeelShade)) {
     parts.push(`RealFeel ${kToCRounded(data.realFeelShade)} C`);
   }
   return parts.join(', ');
 }
 
 /**
- * Build the cold-exposure suffix. Always shows wind chill in C; appends the
- * air temperature and wind speed because wind chill alone undersells the
- * exposure risk (a calm -10 C is far less dangerous than a windy -2 C).
+ * Wind chill alone undersells the exposure risk on a windy day: a calm -10 C
+ * is far less dangerous than a windy -2 C. Air temp and sustained wind speed
+ * give the operator the missing context.
  */
 function formatColdSuffix(data: WeatherData): string {
   const parts: string[] = [`wind chill ${kToCRounded(data.windChill)} C`];
@@ -184,11 +183,12 @@ function formatColdSuffix(data: WeatherData): string {
 }
 
 /**
- * Build the severe-weather suffix. AccuWeather's WeatherText drives the lead
- * phrase; barometric pressure is appended when available because a falling
- * barometer alongside a thunderstorm icon is a useful operational signal.
+ * AccuWeather's WeatherText drives the lead phrase; pressure is appended
+ * because a falling barometer alongside a thunderstorm icon is a useful
+ * operational signal beyond what the icon alone conveys.
  */
-function formatSevereSuffix(data: WeatherData, label: string, description: string): string {
+function formatSevereSuffix(data: WeatherData, label: string): string {
+  const description = data.description?.trim() ?? '';
   const lead = description ? `${label}: ${description}` : label;
   if (Number.isFinite(data.pressure)) {
     return `${lead}, ${paToHpa(data.pressure)} hPa`;
@@ -362,7 +362,7 @@ export class WeatherNotifier {
   private evaluateWind(data: WeatherData, out: PathValue[]): void {
     const bft = data.beaufortScale;
     if (bft === undefined) return;
-    this.evaluateAscendingBands(WIND_BANDS, bft, () => formatWindSuffix(data, bft), out);
+    this.evaluateAscendingBands(WIND_BANDS, bft, () => formatWindSuffix(data), out);
   }
 
   /**
@@ -374,7 +374,7 @@ export class WeatherNotifier {
     if (vis === undefined) return;
 
     const { LOW_M, VERY_LOW_M } = NOTIFICATION_THRESHOLDS.VISIBILITY;
-    const suffix = () => formatVisibilitySuffix(data, vis);
+    const suffix = () => formatVisibilitySuffix(data);
 
     this.maybeTransition(
       NOTIFICATION_PATHS.VISIBILITY_LOW,
@@ -399,7 +399,7 @@ export class WeatherNotifier {
   private evaluateHeat(data: WeatherData, out: PathValue[]): void {
     const hsi = data.heatStressIndex;
     if (hsi === undefined) return;
-    this.evaluateAscendingBands(HEAT_BANDS, hsi, () => formatHeatSuffix(data, hsi), out);
+    this.evaluateAscendingBands(HEAT_BANDS, hsi, () => formatHeatSuffix(data), out);
   }
 
   /**
@@ -465,7 +465,6 @@ export class WeatherNotifier {
   private evaluateSevereCondition(data: WeatherData, out: PathValue[]): void {
     const icon = data.weatherIcon;
     const severity = icon !== undefined ? WEATHER_ICON_SEVERITY.get(icon) : undefined;
-    const description = data.description?.trim() ?? '';
 
     if (severity === undefined) {
       this.maybeTransition(NOTIFICATION_PATHS.WEATHER_SEVERE, 'normal', () => '', out);
@@ -475,7 +474,7 @@ export class WeatherNotifier {
     this.maybeTransition(
       NOTIFICATION_PATHS.WEATHER_SEVERE,
       severity.state,
-      () => formatSevereSuffix(data, severity.label, description),
+      () => formatSevereSuffix(data, severity.label),
       out
     );
   }
