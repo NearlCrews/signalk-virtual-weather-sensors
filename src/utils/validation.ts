@@ -567,6 +567,11 @@ const HUMIDITY_BOUNDS = [VALIDATION_LIMITS.HUMIDITY.MIN, VALIDATION_LIMITS.HUMID
  * Single source of truth for every numeric leaf the mapper can emit. Adding a
  * new emitted field means appending one row here; both the fast-path range
  * check and the clamping pass walk this table so they cannot drift.
+ *
+ * Angles (`windDirection`, `apparentWindAngle`) are NOT in this table because
+ * they need wrap-around normalization, not clamping. They are handled inline
+ * by `isWithinNMEA2000Ranges` and `sanitizeForNMEA2000` (via
+ * `normalizeAngle0To2Pi` / `normalizeAnglePiToPi`).
  */
 const NUMERIC_FIELD_RULES: ReadonlyArray<readonly [SanitizableNumericKey, number, number]> = [
   ['temperature', ...TEMP_K_BOUNDS],
@@ -590,6 +595,14 @@ const NUMERIC_FIELD_RULES: ReadonlyArray<readonly [SanitizableNumericKey, number
   ['precipitationCurrent', 0, PRECIPITATION_LIMITS.RATE_MMH_MAX],
   ['beaufortScale', BEAUFORT_LIMITS.MIN, BEAUFORT_LIMITS.MAX],
   ['heatStressIndex', HEAT_STRESS_INDEX_LIMITS.MIN, HEAT_STRESS_INDEX_LIMITS.MAX],
+  // Derived values computed by this plugin from already-validated inputs.
+  // Bounds are wide enough to never clamp a meteorologically plausible value
+  // but tight enough to catch obvious numerical garbage (NaN propagation,
+  // upstream-poisoned inputs that slipped past earlier validation).
+  ['absoluteHumidity', 0, 0.1], // kg/m³; saturated air at 50 C is ~0.083
+  ['airDensityEnhanced', 0.5, 2.0], // kg/m³; standard sea-level 1.225
+  ['windGustFactor', 0, 10], // dimensionless; typical 1.0..2.0, hurricane spikes can reach 3..4
+  ['temperatureDeparture24h', -50, 50], // K (as delta); ±50 covers any Earth-realistic 24h change
 ];
 
 /**
