@@ -17,12 +17,12 @@ Reproducible end-to-end check of `signalk-virtual-weather-sensors` running again
 - [ ] Open **Server -> Plugin Config -> Signal K Virtual Weather Sensors**.
 - [ ] Toggle **Active** on.
 - [ ] Paste the AccuWeather key into **AccuWeather API Key**.
-- [ ] Leave **Update Frequency (minutes)** at the default `5` for the test run.
+- [ ] Leave **Update Frequency (minutes)** at the default `30` for the test run (or temporarily lower it to 1 to speed up verification, then restore before regular use).
 - [ ] Leave **Emission Interval (seconds)** at the default `5` for the test run.
 - [ ] Leave **Daily API Call Quota** at the default `50` for a free-tier check, OR raise it to your paid-tier limit to skip the quota verification step at the end.
 - [ ] Click **Submit**. The plugin restarts.
 - [ ] Within ~10 seconds the status banner under the plugin name should change from `Stopped` to `Running, awaiting first update` (or `Running, awaiting first update (0/50 today)` when the quota is on).
-- [ ] Within `Update Frequency` minutes (default 5; or sooner because the plugin schedules its first fetch on a short timer) the banner should switch to `Running, last update just now (1 updates, 2 API requests)` (the first cycle costs one location-search call plus one current-conditions call). With `dailyApiQuota > 0` the suffix gains `, 2/50 today`. Subsequent updates show `(N updates, M API requests, M/Q today)` with the counters climbing.
+- [ ] Within `Update Frequency` minutes (default 30; the plugin schedules its first fetch on a short startup timer roughly 5 seconds after start) the banner should switch to `Running, last update just now (1 update, 2 API requests)` (the first cycle costs one location-search call plus one current-conditions call). With `dailyApiQuota > 0` the suffix gains `, 2/50 today`. Subsequent updates show `(N updates, M API requests, M/Q today)` with the counters climbing.
 
 ## 2. Path-by-path verification (Data Browser)
 
@@ -71,7 +71,7 @@ Open **Server -> Data Browser**. Filter by `vessels.self`. For each path below c
 ## 3. Status banner verification
 
 - [ ] In **Plugin Config**, confirm the status banner under **Signal K Virtual Weather Sensors** matches the format `Running, last update <Nm ago | just now> (<N> updates, <M> API requests)`. With `dailyApiQuota > 0` the suffix continues `, <M>/<Q> today`.
-- [ ] Wait at least one full **Update Frequency** cycle (default 5 minutes). Refresh the page. The `<N> updates` counter must increment by at least 1.
+- [ ] Wait at least one full **Update Frequency** cycle (default 30 minutes; or however long you set it during Section 1). Refresh the page. The `<N> updates` counter must increment by at least 1.
 - [ ] The `<Nm ago>` value must reset to `just now` immediately after each fetch and grow over time.
 
 ### Quota verification (skip if `dailyApiQuota = 0`)
@@ -84,7 +84,7 @@ Open **Server -> Data Browser**. Filter by `vessels.self`. For each path below c
 ## 4. Error path verification
 
 - [ ] In **Plugin Config**, replace the API key with `0000000000000000000000` (22 chars, valid format, invalid value). Submit.
-- [ ] Within one fetch cycle (or immediately, on the next forced retry) the banner should switch from green/grey `Running, ...` to a red error banner reading `signalk-virtual-weather-sensors startup failed: ...` or `Weather data stale: last update N minutes ago`. The exact prefix depends on whether the bad key surfaced during startup (`startup failed`) or after a successful key was previously cached (`stale`).
+- [ ] Within one fetch cycle (or immediately, on the next forced retry) the banner should switch from green/grey `Running, ...` to a red error banner reading `AccuWeather rejected the configured API key. Update the key in plugin settings: ...` (the auth-rejection escalation that stops the update timer to protect your quota). If a previously-good key was cached, you may instead see `Weather data stale: last update N minutes ago` until the consecutive-failure threshold trips. Note the admin UI prefixes banner text with the plugin display name, so no `signalk-virtual-weather-sensors` package-name prefix appears in the message itself.
 - [ ] Open **Server -> Server Log**. Filter for `signalk-virtual-weather-sensors`. You should see a `[ERROR]`-prefixed line referencing `API_UNAUTHORIZED` (HTTP 401 from AccuWeather) or `API_FORBIDDEN` (HTTP 403). If you only see `[DEBUG]` lines, the routing fix in 1.3.3 has regressed.
 - [ ] Restore the correct API key. Submit. The banner clears back to `Running, ...` on the next successful fetch (the 1.3.1 stale-recovery flag handles this). If it does not, force a plugin restart with the toggle.
 

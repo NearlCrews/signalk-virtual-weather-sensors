@@ -4,12 +4,12 @@ This document outlines the steps for creating a new release of Signal K Virtual 
 
 ## Fast path (what we actually do)
 
-The recent 1.4.x releases all used this short flow:
+Recent 1.4.x and 1.5.x releases used this short flow:
 
-1. Bump `package.json` version and add a `## [X.Y.Z]` section in `CHANGELOG.md` on `master`.
+1. Bump `package.json` version and add a `## [X.Y.Z]` section in `CHANGELOG.md` on `main`.
 2. Run `npm run validate && npm run build` locally.
-3. Commit on `master`: `chore: release vX.Y.Z`.
-4. Run `npm run release`. This script tags `vX.Y.Z`, pushes the tag and the master commit, then runs `npm run create-release` (`gh release create vX.Y.Z --generate-notes`).
+3. Commit on `main`: `chore: release vX.Y.Z`.
+4. Run `npm run release`. This script tags `vX.Y.Z`, pushes the tag and the main commit, then runs `npm run create-release` (`gh release create vX.Y.Z --generate-notes`).
 5. The GitHub Release `published` event fires `.github/workflows/publish.yml`, which re-runs `type-check` and `test:run`, verifies `package.json` version matches the tag, and publishes to npm with provenance.
 
 The longer release-branch + PR workflow below is aspirational best practice for larger releases (breaking changes, coordinated multi-PR work) and is not enforced for routine patch and minor bumps.
@@ -82,7 +82,7 @@ git push origin release/vX.Y.Z
 
 ### 4. Create Pull Request
 
-- Create PR from `release/vX.Y.Z` to `master`
+- Create PR from `release/vX.Y.Z` to `main`
 - Ensure all CI checks pass
 - Get approval from maintainers
 - Merge using "Squash and merge"
@@ -90,9 +90,9 @@ git push origin release/vX.Y.Z
 ### 5. Create GitHub Release
 
 ```bash
-# Pull latest master
-git checkout master
-git pull origin master
+# Pull latest main
+git checkout main
+git pull origin main
 
 # Create and push tag
 git tag -a vX.Y.Z -m "Release vX.Y.Z"
@@ -167,8 +167,8 @@ For urgent bug fixes that need immediate release:
 # Branch from the tag that needs fixing
 git checkout -b hotfix/vX.Y.Z+1 vX.Y.Z
 
-# Or branch from master if it's the latest
-git checkout -b hotfix/vX.Y.Z+1 master
+# Or branch from main if it's the latest
+git checkout -b hotfix/vX.Y.Z+1 main
 ```
 
 ### 2. Apply Fix
@@ -195,13 +195,13 @@ npm run test:run
 # Commit changes
 git commit -am "fix: [description of hotfix]"
 
-# Merge to master
-git checkout master
+# Merge to main
+git checkout main
 git merge --no-ff hotfix/vX.Y.Z+1
 
 # Tag and push
 git tag -a vX.Y.Z+1 -m "Hotfix vX.Y.Z+1"
-git push origin master
+git push origin main
 git push origin vX.Y.Z+1
 ```
 
@@ -308,8 +308,8 @@ npm audit
 
 ## Notes
 
-- Always create releases from `master` branch
-- Never force push to `master`
+- Always create releases from `main` branch
+- Never force push to `main`
 - Keep the CHANGELOG.md up to date with every release
 - Test installations on clean environments
 - Monitor npm download statistics and GitHub issues after release

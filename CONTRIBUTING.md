@@ -93,7 +93,7 @@ npm run validate         # Run all quality checks
 
 ### Making Code Changes
 
-1. **Create a feature branch** from `master`:
+1. **Create a feature branch** from `main`:
    ```bash
    git checkout -b feature/your-feature-name
    ```
@@ -155,11 +155,13 @@ npm run validate         # Run all quality checks
 ```
 src/
 ├── calculators/     # Mathematical and meteorological calculations
+├── configpanel/     # Federated React config panel (bundled by webpack to public/)
 ├── constants/       # Constant values and configuration defaults
 ├── mappers/         # Data transformation and path mapping
+├── notifications/   # Severe-weather notification state machine
 ├── services/        # Core services (Weather, AccuWeather, Signal K)
 ├── types/           # TypeScript type definitions
-├── utils/           # Utility functions (validation, conversion)
+├── utils/           # Utility functions (validation, conversion, SK delta primitives)
 └── __tests__/       # Test files mirroring source structure
 ```
 
@@ -260,7 +262,7 @@ Fixes #456
 2. ✅ **No linting errors**: `npm run lint`
 3. ✅ **Type checking passes**: `npm run type-check`
 4. ✅ **Code is formatted**: `npm run format`
-5. ✅ **Branch is up to date** with `master`
+5. ✅ **Branch is up to date** with `main`
 
 ### PR Requirements
 
@@ -276,15 +278,15 @@ Fixes #456
 1. Automated checks must pass (CI/CD pipeline)
 2. At least one maintainer approval required
 3. All review comments must be addressed
-4. Branch must be up to date with `master`
+4. Branch must be up to date with `main`
 
 ### After Merge
 
 1. Delete your feature branch
 2. Update your local repository:
    ```bash
-   git checkout master
-   git pull upstream master
+   git checkout main
+   git pull upstream main
    ```
 
 ## Development Tips

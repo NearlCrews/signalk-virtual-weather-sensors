@@ -130,9 +130,9 @@ export default function createPlugin(app: ServerAPI): Plugin {
 ### Build and Bundling
 
 #### esbuild 0.28+
-- **Purpose**: Fast, modern JavaScript bundler
+- **Purpose**: Fast, modern JavaScript bundler for the plugin runtime
 - **Configuration**: [`esbuild.config.js`](esbuild.config.js)
-- **Performance**: ~68 KB bundle in ~15 ms build time
+- **Performance**: ~80 KB bundle in tens of milliseconds (the build script logs the live size after every run)
 - **Features**:
   - ES2023 target compilation
   - Source map generation
@@ -141,9 +141,10 @@ export default function createPlugin(app: ServerAPI): Plugin {
   - Banner injection for plugin metadata
 
 **Build Outputs:**
-- `dist/index.js`: main bundle (~68 KB)
+- `dist/index.js`: main plugin bundle (~80 KB)
 - `dist/index.js.map`: source map
 - `dist/index.d.ts` and per-source `*.d.ts`: TypeScript declarations
+- `public/remoteEntry.js` plus federated chunks (.mjs): the React config panel, bundled by webpack via `ModuleFederationPlugin` (see `webpack.config.cjs`). Independent of the esbuild bundle above; both are produced by `npm run build`.
 
 ### Code Quality
 
@@ -194,15 +195,20 @@ export default function createPlugin(app: ServerAPI): Plugin {
 ```
 src/__tests__/
 ├── setup.ts                          # Global test configuration + mock factories
-├── index.test.ts                     # Plugin entry / lifecycle / meta-once invariant
+├── index.test.ts                     # Plugin entry / lifecycle / meta-once invariant / panel REST routes
 ├── calculators/
 │   └── WindCalculator.test.ts        # Vector wind / heat index / dew point
 ├── mappers/
-│   └── NMEA2000PathMapper.test.ts    # Delta build + meta delta
+│   ├── NMEA2000PathMapper.test.ts    # Delta build + meta delta
+│   └── delta-schema.test.ts          # Ajv conformance against the SK 1.8.2 JSON schema
+├── notifications/
+│   └── WeatherNotifier.test.ts       # Transition state machine across hazard bands
 ├── services/
 │   ├── WeatherService.test.ts        # Orchestration / lifecycle
 │   ├── SignalKService.test.ts        # Navigation data + caching
 │   └── AccuWeatherService.test.ts    # API integration + retry/error paths
+├── integration/
+│   └── weather-flow.integration.test.ts  # End-to-end smoke against stubbed global.fetch
 └── utils/
     ├── conversions.test.ts           # Unit conversions
     └── validation.test.ts            # Sanitization + validators
@@ -251,39 +257,49 @@ src/__tests__/
 ```
 signalk-virtual-weather-sensors/
 ├── src/
-│   ├── index.ts                  # Main plugin entry point
-│   ├── types/
-│   │   └── index.ts             # TypeScript type definitions
-│   ├── services/
-│   │   ├── WeatherService.ts    # Main orchestration service
-│   │   ├── AccuWeatherService.ts # API integration
-│   │   └── SignalKService.ts    # Vessel data access
+│   ├── index.ts                       # Plugin entry: lifecycle, schema, emission timer, REST routes
 │   ├── calculators/
-│   │   └── WindCalculator.ts    # Vector wind calculations
-│   ├── mappers/
-│   │   └── NMEA2000PathMapper.ts # Path mapping logic
-│   ├── utils/
-│   │   ├── conversions.ts       # Unit conversions
-│   │   └── validation.ts        # Data validation
+│   │   └── WindCalculator.ts          # Vector wind, wind chill, heat index, dew point
+│   ├── configpanel/                   # Federated React config panel
+│   │   ├── index.js                   # Module Federation entry
+│   │   └── PluginConfigurationPanel.jsx
 │   ├── constants/
-│   │   └── index.ts             # Constants and defaults
-│   └── __tests__/               # Test suite
-├── dist/                         # Build output
-├── coverage/                     # Test coverage reports
+│   │   ├── index.ts                   # TS constants (PGNs, paths, validation limits)
+│   │   ├── notifications-shared.js    # Shared JS module: labels, defaults, API_KEY_MIN_LENGTH
+│   │   └── notifications-shared.d.ts  # Type shim for the .js module
+│   ├── mappers/
+│   │   └── NMEA2000PathMapper.ts      # WeatherData → SK delta + one-shot meta delta
+│   ├── notifications/
+│   │   └── WeatherNotifier.ts         # Severe-weather transition state machine
+│   ├── services/
+│   │   ├── WeatherService.ts          # Orchestration: fetch → enhance → emit
+│   │   ├── AccuWeatherService.ts      # AccuWeather API client + rolling 24h quota
+│   │   └── SignalKService.ts          # Vessel navigation data accessors
+│   ├── types/
+│   │   └── index.ts                   # All public interfaces
+│   ├── utils/
+│   │   ├── conversions.ts             # Unit conversions + math helpers
+│   │   ├── validation.ts              # Validators + NMEA2000 sanitisation
+│   │   └── skDelta.ts                 # Shared SK delta primitives (pv, me, buildValuesDelta)
+│   └── __tests__/                     # Test suite mirroring source layout
+├── dist/                              # esbuild output (plugin runtime)
+├── public/                            # webpack output (federated config panel)
+├── examples/                          # Sample plugin configurations (JSON)
+├── docs/                              # Long-form docs (API key spike, manual smoke test, etc.)
+├── coverage/                          # Test coverage reports
 ├── .github/
-│   └── workflows/
-│       └── ci.yml               # CI/CD pipeline
-├── .husky/
-│   └── pre-commit               # Git pre-commit hook
-├── biome.json                   # Biome configuration
-├── tsconfig.json                # TypeScript configuration
-├── vitest.config.ts             # Vitest configuration
-├── esbuild.config.js            # esbuild configuration
-├── package.json                 # Dependencies and scripts
-├── README.md                    # User documentation
-├── CHANGELOG.md                 # Version history
-├── DEVELOPMENT.md               # This file
-└── LICENSE                      # Apache 2.0 license
+│   └── workflows/                     # CI, CodeQL, publish
+├── .husky/pre-commit                  # Pre-commit hook (runs npm run validate)
+├── biome.json                         # Biome configuration
+├── tsconfig.json                      # TypeScript configuration
+├── vitest.config.ts                   # Vitest configuration
+├── esbuild.config.js                  # esbuild configuration (plugin runtime)
+├── webpack.config.cjs                 # webpack configuration (config panel; .cjs because package is "type": "module")
+├── package.json                       # Dependencies and scripts
+├── README.md                          # User documentation
+├── CHANGELOG.md                       # Version history
+├── DEVELOPMENT.md                     # This file
+└── LICENSE                            # Apache 2.0 license
 ```
 
 ## 🔧 Development Workflow
@@ -486,7 +502,7 @@ This plugin adheres to the [Signal K 1.8.2 specification](https://signalk.org/sp
 | Status Reporting | ✅ | `app.setPluginStatus` / `app.setPluginError` (called unconditionally; both are required members of `ServerAPI` 2.x). Live banner string from `WeatherService.formatStatusBanner()`: `Running, last update Nm ago (N updates, K API requests, K/Q today)`, with a `Running [quota 90% used]` warning prefix and a `setPluginError` quota-exhausted state. `emitWeatherTick` re-pushes the banner on every fresh tick so the `Nm ago` age and quota counters stay current; the same refresh subsumes the prior stale-data error path (the dead `staleErrorActive` flag was removed in v1.4.2), and the refresh is skipped while `WeatherService.isQuotaExhausted()` is true so the quota-exhausted error is not clobbered. v1.4.3 added a `setBanner()` dedupe layer so consecutive identical `(kind, message)` pushes coalesce to a single SK call. |
 | Notifications | ✅ | Opt-in `notifications.environment.*` deltas per SK 1.8.2 notifications.html (v1.4.3). 11 distinct hazard paths (`wind.gale|storm|hurricane`, `visibility.low|veryLow`, `heat.caution|high|extreme`, `cold.caution|extreme`, `weather.severe`). Value shape `{ state, method, message, timestamp }`. Transition state machine in `WeatherNotifier`: a band is emitted only on entry / exit, so unchanged snapshots never write to the bus. N2K Alert PGN 126983 / 126985 bridging requires the separate `signalk-to-nmea2000` plugin. |
 | `handleMessage` versioning | ✅ | `app.handleMessage(id, delta, SKVersion.v1)` |
-| Logging channel separation | ✅ | All log levels go through `app.debug`. `app.setPluginError` is reserved for the Admin UI status banner, separate from log output |
+| Logging channel separation | ✅ | `debug` and `info` go through `app.debug` (gated by the server's `DEBUG=signalk-virtual-weather-sensors` setting); `warn` and `error` go through `app.error` so they surface in production logs without enabling DEBUG (see `createLogger` in `src/index.ts`). `app.setPluginError` is reserved for the Admin UI status banner, separate from log output. |
 
 ### Wind Semantics
 

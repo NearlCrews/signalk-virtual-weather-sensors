@@ -23,21 +23,18 @@ defined in `signalk-server/src/categories.ts`.
 
 ## Verification
 
-Pulled from the live npm registry on 2026-05-10:
+Pulled from the live npm registry on 2026-05-10. Re-run the curl below for the
+current version; the table records the snapshot at the time of the audit.
 
 | Field                | Value                                                                                                                     |
 | -------------------- | ------------------------------------------------------------------------------------------------------------------------- |
 | Package              | `signalk-virtual-weather-sensors`                                                                                         |
-| Latest version       | 1.3.2                                                                                                                     |
-| Published            | 2026-05-09T04:51:16Z                                                                                                      |
+| Latest version       | 1.3.2 (at audit time; latest published is now 1.5.1, see CHANGELOG.md)                                                    |
+| Published            | 2026-05-09T04:51:16Z (1.3.2 snapshot)                                                                                     |
 | Description          | Signal K plugin that provides comprehensive weather data from AccuWeather API with calculated wind values and NMEA2000-compatible environmental measurements |
-| Display name         | Signal K Virtual Weather Sensors                                                                                          |
-| Categories           | Weather (`signalk-category-weather`)                                                                                      |
+| Display name         | Virtual Weather Sensors (trimmed from `Signal K Virtual Weather Sensors` in v1.4.2)                                       |
+| Categories           | Weather (`signalk-category-weather`); NMEA 2000 (`signalk-category-nmea-2000`) added in v1.4.1                            |
 | Discoverable via API | Yes: returned by the same `keywords:signalk-node-server-plugin` search the server uses                                    |
-
-The next published release (1.4.0, currently `[Unreleased]`) adds a second
-category, `signalk-category-nmea-2000`, so the plugin will surface under both
-"Weather" and "NMEA 2000" once that version ships.
 
 ## Reproducing the check
 

@@ -102,7 +102,7 @@ None tracked. Branch coverage held above the 80% threshold through v1.4.3.
 
 - [x] **Dependabot configured** for npm + GitHub Actions, weekly cadence *(v1.4.1, see `.github/dependabot.yml`)*
 - [x] **Code quality baseline** *(v1.1.0 onwards)*
-  - 263 tests across 11 files (current; baseline 206/8)
+  - 267 tests across 11 files (current; baseline 206/8)
   - Mutation score 67.44% across the pure-function modules (calculators + utils);
     `WindCalculator` 74%, `conversions` 95%, `validation` 57%
   - debug/info routed through `app.debug`; warn/error through `app.error`
