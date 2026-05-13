@@ -41,12 +41,21 @@ const STALE_OBSERVATION_THRESHOLD_MS = 60 * 60 * 1000;
 /** Validation pattern for AccuWeather location keys (URL path segment). */
 const LOCATION_KEY_PATTERN = /^[a-zA-Z0-9_-]+$/;
 
-/** Strip control characters and truncate a string from the API to a safe length for downstream consumers. */
-function capString(value: string, maxLength: number): string {
+/**
+ * Strip control characters and truncate a string from the API to a safe length
+ * for downstream consumers. Truncation walks code points (via `Array.from`)
+ * so a surrogate-pair character (emoji, CJK supplementary) at the boundary
+ * cannot leave a lone surrogate that breaks JSON-encoded downstream consumers.
+ * The runtime `typeof` guard catches real-world API responses where a field
+ * typed `string` arrives as null/undefined/number; the response schema is a
+ * contract for what we use, not a guarantee the wire matches it.
+ */
+function capString(value: unknown, maxLength: number): string {
   if (typeof value !== 'string') return '';
   // biome-ignore lint/suspicious/noControlCharactersInRegex: deliberately stripping injection vectors
   const stripped = value.replace(/[\x00-\x1f\x7f]/g, '');
-  return stripped.length > maxLength ? stripped.slice(0, maxLength) : stripped;
+  if (stripped.length <= maxLength) return stripped;
+  return Array.from(stripped).slice(0, maxLength).join('');
 }
 
 /**
@@ -476,12 +485,6 @@ export class AccuWeatherService {
         maxAttempts: this.config.retryAttempts,
       });
 
-      // Count every fetch attempt (initial + retries). Off the emission hot
-      // path: this fires at most once per AccuWeather call, default cadence
-      // five minutes. Cheap integer increment, no allocation.
-      this.requestCount++;
-      this.recordRequestInWindow();
-
       const response = await fetch(url.toString(), {
         method: 'GET',
         headers: {
@@ -492,6 +495,14 @@ export class AccuWeatherService {
       });
 
       clearTimeout(timeout);
+
+      // Counted after the response lands so timeouts and network errors do
+      // not consume quota (AccuWeather's own quota only charges for requests
+      // that reach their service). Error responses (401, 403, 429, 503)
+      // still count because they came back from AccuWeather. Off the
+      // emission hot path: at most once per fetch, default cadence 30 minutes.
+      this.requestCount++;
+      this.recordRequestInWindow();
 
       if (!response.ok) {
         await this.handleApiError(response, attempt);
@@ -613,7 +624,9 @@ export class AccuWeatherService {
       const errorData = await this.readBoundedJson<{ message?: string }>(response);
       message = errorData.message || response.statusText;
     } catch (parseError) {
-      this.logger('debug', 'API error response was not JSON, falling back to statusText', {
+      // Surface malformed error bodies by default so operators see upstream
+      // misbehaviour without needing to enable debug logging.
+      this.logger('warn', 'API error response was not JSON, falling back to statusText', {
         status: response.status,
         parseError: toErrorMessage(parseError),
       });

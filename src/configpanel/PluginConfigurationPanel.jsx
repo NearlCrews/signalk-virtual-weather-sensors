@@ -17,11 +17,17 @@
 
 import React, { useCallback, useEffect, useState } from 'react';
 // Plain ESM JS shared with the TS plugin runtime so the federated panel and
-// the rjsf schema cannot drift on label wording or default values.
+// the rjsf schema cannot drift on label wording, numeric defaults, or key
+// validation bounds.
 import {
+  API_KEY_MIN_LENGTH,
+  CONFIG_DEFAULTS,
   DEFAULT_NOTIFICATIONS,
   NOTIFICATION_LABELS,
 } from '../constants/notifications-shared.js';
+
+const COLOR_OK = '#10b981';
+const COLOR_ERR = '#ef4444';
 
 // All styles live in a single `S` object: no CSS-in-JS library, no Tailwind,
 // no stylesheets shipped in the bundle. Mirrors the QuestDB plugin convention.
@@ -159,11 +165,18 @@ export default function PluginConfigurationPanel({ configuration, save }) {
 
   // Form state: one useState per editable field, mirroring the QuestDB
   // convention. Sub-objects (notifications) get their own state and are
-  // re-assembled in doSave.
+  // re-assembled in doSave. Defaults flow from the shared module so the panel
+  // and the rjsf schema can't drift on what "default" means.
   const [accuWeatherApiKey, setAccuWeatherApiKey] = useState(cfg.accuWeatherApiKey || '');
-  const [updateFrequency, setUpdateFrequency] = useState(cfg.updateFrequency || 30);
-  const [emissionInterval, setEmissionInterval] = useState(cfg.emissionInterval || 5);
-  const [dailyApiQuota, setDailyApiQuota] = useState(cfg.dailyApiQuota ?? 50);
+  const [updateFrequency, setUpdateFrequency] = useState(
+    cfg.updateFrequency ?? CONFIG_DEFAULTS.UPDATE_FREQUENCY
+  );
+  const [emissionInterval, setEmissionInterval] = useState(
+    cfg.emissionInterval ?? CONFIG_DEFAULTS.EMISSION_INTERVAL
+  );
+  const [dailyApiQuota, setDailyApiQuota] = useState(
+    cfg.dailyApiQuota ?? CONFIG_DEFAULTS.DAILY_API_QUOTA
+  );
   const [notifications, setNotifications] = useState({
     ...DEFAULT_NOTIFICATIONS,
     ...(cfg.notifications || {}),
@@ -202,11 +215,32 @@ export default function PluginConfigurationPanel({ configuration, save }) {
   }, []);
 
   useEffect(() => {
-    fetchStatus();
+    // Skip polling when the admin tab is hidden: with multiple admin tabs
+    // open across the fleet a hidden tab still polls and wastes CPU on the
+    // SK server (especially noticeable on Pi-class hardware).
+    const tickIfVisible = () => {
+      if (typeof document === 'undefined' || document.visibilityState === 'visible') {
+        fetchStatus();
+      }
+    };
+    tickIfVisible();
     // 10 s poll: status banner age advances per minute, quota updates on
     // each fetch (default 30 min cadence), so anything faster is wasted.
-    const id = setInterval(fetchStatus, 10_000);
-    return () => clearInterval(id);
+    const id = setInterval(tickIfVisible, 10_000);
+    const onVisibility = () => {
+      // Fetch immediately on becoming visible so the operator sees fresh
+      // state without waiting up to 10 s for the next interval tick.
+      if (document.visibilityState === 'visible') fetchStatus();
+    };
+    if (typeof document !== 'undefined') {
+      document.addEventListener('visibilitychange', onVisibility);
+    }
+    return () => {
+      clearInterval(id);
+      if (typeof document !== 'undefined') {
+        document.removeEventListener('visibilitychange', onVisibility);
+      }
+    };
   }, [fetchStatus]);
 
   const updateNotification = (key, value) => {
@@ -215,8 +249,11 @@ export default function PluginConfigurationPanel({ configuration, save }) {
 
   const doTestKey = async () => {
     const trimmed = accuWeatherApiKey.trim();
-    if (trimmed.length < 20) {
-      setTestKey({ state: 'error', message: 'Key must be at least 20 characters.' });
+    if (trimmed.length < API_KEY_MIN_LENGTH) {
+      setTestKey({
+        state: 'error',
+        message: `Key must be at least ${API_KEY_MIN_LENGTH} characters.`,
+      });
       return;
     }
     setTestKey({ state: 'pending', message: 'Testing key against AccuWeather...' });
@@ -246,6 +283,9 @@ export default function PluginConfigurationPanel({ configuration, save }) {
   const doSave = async () => {
     // The host's save() may be sync OR return a Promise; wrap to handle both
     // and surface a real failure instead of an optimistic "Saved." that lied.
+    // SK admin save() typically resolves with no value regardless of
+    // server-side outcome, so we confirm by polling /api/status afterwards
+    // and only report success when the plugin came back running.
     try {
       await Promise.resolve(
         save({
@@ -256,8 +296,27 @@ export default function PluginConfigurationPanel({ configuration, save }) {
           notifications: { ...notifications },
         })
       );
+      setAction({ message: 'Saving...', isError: false });
+      // Give the server a moment to restart before re-polling.
+      await new Promise((resolve) => setTimeout(resolve, 1500));
+      try {
+        const res = await fetch(`${API_BASE}/status`);
+        if (res.ok) {
+          const data = await res.json();
+          setStatus(data);
+          setAction({
+            message: data.running
+              ? 'Saved. Plugin restarted with the new configuration.'
+              : `Saved, but the plugin did not come back online: ${data.banner || 'unknown'}.`,
+            isError: !data.running,
+          });
+          return;
+        }
+      } catch {
+        // Status check failed; fall through to the optimistic message.
+      }
       setAction({
-        message: 'Saved. Plugin will restart with the new configuration.',
+        message: 'Saved. Plugin should restart with the new configuration.',
         isError: false,
       });
     } catch (err) {
@@ -269,7 +328,7 @@ export default function PluginConfigurationPanel({ configuration, save }) {
   };
 
   const isRunning = status && status.running;
-  const indicatorColor = !status ? '#9ca3af' : isRunning ? '#10b981' : '#ef4444';
+  const indicatorColor = !status ? '#9ca3af' : isRunning ? COLOR_OK : COLOR_ERR;
   const stateLabel = !status ? 'Unknown' : isRunning ? 'Running' : 'Not running';
 
   return (
@@ -344,13 +403,13 @@ export default function PluginConfigurationPanel({ configuration, save }) {
       </div>
       <div style={S.help}>
         Get one free at <a href="https://developer.accuweather.com/" target="_blank" rel="noreferrer">developer.accuweather.com</a>.
-        Minimum 20 characters.
+        Minimum {API_KEY_MIN_LENGTH} characters.
       </div>
       {testKey.state && testKey.state !== 'pending' && (
         <div
           style={{
             ...S.status,
-            color: testKey.state === 'ok' ? '#10b981' : '#ef4444',
+            color: testKey.state === 'ok' ? COLOR_OK : COLOR_ERR,
             marginLeft: 232,
           }}
         >
@@ -366,8 +425,8 @@ export default function PluginConfigurationPanel({ configuration, save }) {
         <input
           id="vws-update"
           type="number"
-          min={1}
-          max={60}
+          min={CONFIG_DEFAULTS.UPDATE_FREQUENCY_MIN}
+          max={CONFIG_DEFAULTS.UPDATE_FREQUENCY_MAX}
           value={updateFrequency}
           onChange={(e) => setUpdateFrequency(e.target.value)}
           style={S.inputNumber}
@@ -383,8 +442,8 @@ export default function PluginConfigurationPanel({ configuration, save }) {
         <input
           id="vws-emission"
           type="number"
-          min={1}
-          max={60}
+          min={CONFIG_DEFAULTS.EMISSION_INTERVAL_MIN}
+          max={CONFIG_DEFAULTS.EMISSION_INTERVAL_MAX}
           value={emissionInterval}
           onChange={(e) => setEmissionInterval(e.target.value)}
           style={S.inputNumber}
@@ -401,8 +460,8 @@ export default function PluginConfigurationPanel({ configuration, save }) {
         <input
           id="vws-quota"
           type="number"
-          min={0}
-          max={1000}
+          min={CONFIG_DEFAULTS.DAILY_API_QUOTA_MIN}
+          max={CONFIG_DEFAULTS.DAILY_API_QUOTA_MAX}
           value={dailyApiQuota}
           onChange={(e) => setDailyApiQuota(e.target.value)}
           style={S.inputNumber}
@@ -450,7 +509,7 @@ export default function PluginConfigurationPanel({ configuration, save }) {
         <div
           style={{
             ...S.status,
-            color: action.isError ? '#ef4444' : '#10b981',
+            color: action.isError ? COLOR_ERR : COLOR_OK,
             marginTop: 16,
           }}
         >

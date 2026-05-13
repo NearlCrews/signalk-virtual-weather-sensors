@@ -1,7 +1,8 @@
 /**
- * Shared notification labels and defaults consumed by BOTH the TypeScript
- * plugin runtime (src/index.ts schema, src/constants/index.ts defaults) AND
- * the JSX federated config panel (src/configpanel/PluginConfigurationPanel.jsx).
+ * Shared notification labels, configuration defaults, and validation constants
+ * consumed by BOTH the TypeScript plugin runtime (src/index.ts schema,
+ * src/constants/index.ts defaults, src/utils/validation.ts) AND the JSX
+ * federated config panel (src/configpanel/PluginConfigurationPanel.jsx).
  *
  * Plain ESM JavaScript so the JSX webpack bundle (which only has
  * @babel/preset-react, no TypeScript loader) can import it directly.
@@ -31,3 +32,24 @@ export const DEFAULT_NOTIFICATIONS = Object.freeze({
   cold: true,
   weather: true,
 });
+
+/**
+ * Numeric config defaults and bounds shared by the rjsf schema, the runtime
+ * sanitizer, and the federated panel. Single source of truth: the panel and
+ * the TS runtime cannot drift on the default fetch cadence, broadcast cadence,
+ * or quota cap.
+ */
+export const CONFIG_DEFAULTS = Object.freeze({
+  UPDATE_FREQUENCY_MIN: 1,
+  UPDATE_FREQUENCY_MAX: 60,
+  UPDATE_FREQUENCY: 30,
+  EMISSION_INTERVAL_MIN: 1,
+  EMISSION_INTERVAL_MAX: 60,
+  EMISSION_INTERVAL: 5,
+  DAILY_API_QUOTA_MIN: 0,
+  DAILY_API_QUOTA_MAX: 1000,
+  DAILY_API_QUOTA: 50,
+});
+
+/** Minimum length for any plausible AccuWeather API key. */
+export const API_KEY_MIN_LENGTH = 20;

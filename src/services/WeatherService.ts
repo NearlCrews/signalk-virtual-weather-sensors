@@ -15,13 +15,14 @@ import {
   type VesselNavigationData,
   type WeatherData,
 } from '../types/index.js';
-import { toErrorMessage } from '../utils/conversions.js';
+import { msToWholeMinutes, toErrorMessage } from '../utils/conversions.js';
 import { AccuWeatherService } from './AccuWeatherService.js';
 import { SignalKService } from './SignalKService.js';
 
 /**
- * Public, stable shape returned by `getServiceStatus()` so callers don't
- * depend on the internal types of `AccuWeatherService` / `SignalKService`.
+ * Public, stable shape returned by `getServiceStatus()`. The nested health and
+ * cache shapes are derived from the underlying service methods so the contract
+ * stays in lockstep with what those services actually return.
  */
 export interface WeatherServiceStatus {
   readonly state: PluginState;
@@ -29,15 +30,8 @@ export interface WeatherServiceStatus {
   readonly updateCount: number;
   readonly errorCount: number;
   readonly hasWeatherData: boolean;
-  readonly signalKHealth: {
-    readonly status: PluginState;
-    readonly dataAge: number | null;
-    readonly isStale: boolean;
-    readonly hasComplete: boolean;
-  };
-  readonly cacheStats: {
-    readonly size: number;
-  };
+  readonly signalKHealth: ReturnType<SignalKService['getHealthStatus']>;
+  readonly cacheStats: ReturnType<AccuWeatherService['getCacheStats']>;
   readonly apiRequestCount: number;
 }
 
@@ -64,6 +58,19 @@ export class WeatherService {
   // Performance monitoring
   private updateCount = 0;
   private errorCount = 0;
+  /**
+   * Consecutive fetch failures since the last success. Once it crosses
+   * `CONSECUTIVE_FAILURE_LIMIT`, a `setPluginError` is published so operators
+   * see the underlying error rather than the stale-data banner kicking in
+   * after 2x updateFrequency.
+   */
+  private consecutiveFailures = 0;
+  /**
+   * True once an AccuWeather 401/403 has been seen: the key is wrong or the
+   * plan is revoked, so retrying burns quota with no chance of success. The
+   * update timer is cleared and subsequent forceUpdate calls return early.
+   */
+  private apiKeyRejected = false;
 
   constructor(
     app: ServerAPI,
@@ -226,52 +233,55 @@ export class WeatherService {
 
   /**
    * Admin UI status banner string. Format:
-   *   "Running, last update Nm ago (N updates, K API requests)"
-   * or "Running, awaiting first update" before the first fetch. The API
-   * request counter is appended only when non-zero so the pre-fetch and
-   * "no requests yet" cases both stay terse. Lives here so the format and
-   * the underlying counters stay together.
+   *   "Running, last update Nm ago (N updates, K API requests, K/Q today)"
+   * or "Running, awaiting first update (K/Q today)" before the first fetch.
+   * Segments are assembled from a `string[]` and joined with ', ' so each
+   * piece is independent: the API-request counter and the quota suffix drop
+   * out cleanly when their inputs are zero or the cap is disabled, without
+   * needing a regex strip on the leading separator.
    *
-   * When `dailyApiQuota > 0` the suffix gains a ", K/Q today" segment, where
-   * K is the rolling 24h count from `AccuWeatherService.getRequestCountLast24h()`
-   * and Q is the configured quota. Crossing `API_QUOTA.WARN_RATIO` switches
-   * the banner prefix to a quota-warning variant so operators see the cap is
-   * approaching even when no setPluginError is active yet.
+   * Crossing `API_QUOTA.WARN_RATIO` switches the banner prefix to a
+   * quota-warning variant so operators see the cap is approaching even when
+   * no setPluginError is active yet.
    */
   public formatStatusBanner(): string {
-    const ageMs = this.getDataAgeMs();
     const prefix = this.shouldShowQuotaWarning()
       ? PLUGIN.STATUS.RUNNING_QUOTA_WARN
       : PLUGIN.STATUS.RUNNING;
 
+    const ageMs = this.getDataAgeMs();
     if (ageMs === null) {
-      const quotaSuffix = this.formatQuotaSuffix();
+      const quotaSegment = this.formatQuotaSegment();
       const head = `${prefix}, awaiting first update`;
-      return quotaSuffix ? `${head} (${quotaSuffix.replace(/^, /, '')})` : head;
+      return quotaSegment ? `${head} (${quotaSegment})` : head;
     }
-    const ageMin = Math.floor(ageMs / 60_000);
+
+    const ageMin = msToWholeMinutes(ageMs);
     const ageLabel = ageMin <= 0 ? 'just now' : `${ageMin}m ago`;
     const requestCount = this.accuWeatherService.getRequestCount();
-    const updatesLabel = `${this.updateCount} ${this.updateCount === 1 ? 'update' : 'updates'}`;
-    const requestsLabel =
-      requestCount > 0
-        ? `, ${requestCount} API ${requestCount === 1 ? 'request' : 'requests'}`
-        : '';
-    const counters = `${updatesLabel}${requestsLabel}`;
-    return `${prefix}, last update ${ageLabel} (${counters}${this.formatQuotaSuffix()})`;
+
+    const counters: string[] = [
+      `${this.updateCount} ${this.updateCount === 1 ? 'update' : 'updates'}`,
+    ];
+    if (requestCount > 0) {
+      counters.push(`${requestCount} API ${requestCount === 1 ? 'request' : 'requests'}`);
+    }
+    const quotaSegment = this.formatQuotaSegment();
+    if (quotaSegment) counters.push(quotaSegment);
+
+    return `${prefix}, last update ${ageLabel} (${counters.join(', ')})`;
   }
 
   /**
-   * `, K/Q today` segment for the banner suffix when `dailyApiQuota > 0`,
-   * otherwise an empty string so the existing format stays byte-identical
-   * with the cap disabled. Pulls the rolling 24h count fresh on each call
-   * so the displayed value reflects bucket rotation.
+   * `K/Q today` segment (no leading separator) when `dailyApiQuota > 0`,
+   * otherwise empty. Pulls the rolling 24h count fresh on each call so the
+   * displayed value reflects bucket rotation.
    * @private
    */
-  private formatQuotaSuffix(): string {
+  private formatQuotaSegment(): string {
     if (this.config.dailyApiQuota <= 0) return '';
     const used = this.accuWeatherService.getRequestCountLast24h();
-    return `, ${used}/${this.config.dailyApiQuota} today`;
+    return `${used}/${this.config.dailyApiQuota} today`;
   }
 
   /**
@@ -332,6 +342,29 @@ export class WeatherService {
   }
 
   /**
+   * Trip threshold for the consecutive-failure escalation in
+   * `updateWeatherData`. Three consecutive failures at default cadence is ~90
+   * minutes of dead air, well before the 2x stale-data window kicks in.
+   */
+  private static readonly CONSECUTIVE_FAILURE_LIMIT = 3;
+
+  /**
+   * Substrings tagged onto error messages by `AccuWeatherService.handleApiError`
+   * that indicate the configured API key is wrong, revoked, or out of plan.
+   * These errors are not retryable: any subsequent fetch would also fail and
+   * burn quota.
+   */
+  private static readonly AUTH_ERROR_CODES: ReadonlyArray<string> = [
+    ERROR_CODES.NETWORK.API_UNAUTHORIZED,
+    ERROR_CODES.NETWORK.API_FORBIDDEN,
+  ];
+
+  private isAuthError(error: unknown): boolean {
+    if (!(error instanceof Error)) return false;
+    return WeatherService.AUTH_ERROR_CODES.some((code) => error.message.includes(code));
+  }
+
+  /**
    * Calculate interval with jitter to avoid synchronized API requests
    * Adds ±10% random variation to the interval
    * @private
@@ -375,6 +408,14 @@ export class WeatherService {
    */
   private async updateWeatherData(): Promise<void> {
     const startTime = Date.now();
+
+    // Bad key has been seen previously: do not refetch. The update timer is
+    // already cleared and an error banner is published; this guard catches a
+    // racing initialUpdateTimer callback or a manual forceUpdate.
+    if (this.apiKeyRejected) {
+      this.logger('debug', 'Skipping weather update: API key was rejected');
+      return;
+    }
 
     // Daily-quota guard: when the rolling 24h request count meets the cap,
     // skip the fetch entirely. The existing stale-data error path
@@ -425,6 +466,9 @@ export class WeatherService {
       this.currentWeatherData = enhancedWeatherData;
       this.lastUpdate = new Date();
       this.updateCount++;
+      // Reset failure streaks on any successful fetch so transient outages do
+      // not leave the plugin in an error state once recovery happens.
+      this.consecutiveFailures = 0;
 
       // Cold-start UX: the plugin entry pushes "Running, awaiting first update"
       // during start(), and the emission timer wouldn't re-push the banner
@@ -457,16 +501,46 @@ export class WeatherService {
       }
     } catch (error) {
       this.errorCount++;
+      this.consecutiveFailures++;
       const errorMessage = toErrorMessage(error);
 
       this.logger('error', 'Weather data update failed', {
         error: errorMessage,
         errorCount: this.errorCount,
+        consecutiveFailures: this.consecutiveFailures,
         processingTimeMs: Date.now() - startTime,
       });
 
+      this.escalateFetchError(error, errorMessage);
+
       // Keep last known data on error
       throw error;
+    }
+  }
+
+  /**
+   * Translate a fetch failure into the right operator-facing banner:
+   *  - 401/403: the key is dead, so stop the timer and surface "rejected".
+   *  - Three consecutive non-auth failures: surface the underlying error so
+   *    operators don't wait for the 2x stale-data watchdog to kick in.
+   * @private
+   */
+  private escalateFetchError(error: unknown, errorMessage: string): void {
+    if (this.isAuthError(error)) {
+      this.apiKeyRejected = true;
+      if (this.updateTimer) {
+        clearInterval(this.updateTimer);
+        this.updateTimer = null;
+      }
+      this.app.setPluginError(
+        `AccuWeather rejected the configured API key. Update the key in plugin settings: ${errorMessage}`
+      );
+      return;
+    }
+    if (this.consecutiveFailures >= WeatherService.CONSECUTIVE_FAILURE_LIMIT) {
+      this.app.setPluginError(
+        `Weather updates failing (${this.consecutiveFailures} consecutive): ${errorMessage}`
+      );
     }
   }
 

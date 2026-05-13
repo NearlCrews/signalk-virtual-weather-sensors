@@ -9,143 +9,97 @@ export function toErrorMessage(error: unknown): string {
 /** Cast a plain ISO 8601 string to the branded `@signalk/server-api` Timestamp type. */
 export const asTimestamp = (ts: string): Timestamp => ts as Timestamp;
 
-const TWO_PI = 2 * Math.PI;
+/** 2π precomputed: shared by angle normalizers and the NMEA2000 sanitizer. */
+export const TWO_PI = 2 * Math.PI;
 
-/**
- * Temperature conversion utilities
- */
+/** Floor-divide a millisecond duration to whole minutes. */
+export function msToWholeMinutes(ms: number): number {
+  return Math.floor(ms / 60_000);
+}
 
-/**
- * Convert Celsius to Kelvin
- */
 export function celsiusToKelvin(celsius: number): number {
   if (!Number.isFinite(celsius)) return 0;
   return celsius + UNITS.TEMPERATURE.CELSIUS_TO_KELVIN;
 }
 
-/**
- * Convert Kelvin to Celsius
- */
 export function kelvinToCelsius(kelvin: number): number {
   if (!Number.isFinite(kelvin)) return 0;
   return kelvin - UNITS.TEMPERATURE.CELSIUS_TO_KELVIN;
 }
 
-/**
- * Convert Kelvin to Fahrenheit
- */
 export function kelvinToFahrenheit(kelvin: number): number {
   if (!Number.isFinite(kelvin)) return 32;
   const celsius = kelvin - UNITS.TEMPERATURE.CELSIUS_TO_KELVIN;
   return UNITS.TEMPERATURE.CELSIUS_TO_FAHRENHEIT(celsius);
 }
 
-/**
- * Convert Fahrenheit to Kelvin
- */
 export function fahrenheitToKelvin(fahrenheit: number): number {
   if (!Number.isFinite(fahrenheit)) return UNITS.TEMPERATURE.CELSIUS_TO_KELVIN;
   const celsius = UNITS.TEMPERATURE.FAHRENHEIT_TO_CELSIUS(fahrenheit);
   return celsius + UNITS.TEMPERATURE.CELSIUS_TO_KELVIN;
 }
 
-/**
- * Pressure conversion utilities
- */
-
-/** Convert millibars to Pascals. */
 export function millibarsToPA(millibars: number): number {
   if (!Number.isFinite(millibars)) return 0;
   return millibars * UNITS.PRESSURE.MILLIBAR_TO_PASCAL;
 }
 
-/** Convert km/h to m/s. */
 export function kmhToMS(kmh: number): number {
   if (!Number.isFinite(kmh)) return 0;
   return kmh * UNITS.WIND_SPEED.KMH_TO_MS;
 }
 
-/** Convert m/s to km/h. */
 export function msToKMH(ms: number): number {
   if (!Number.isFinite(ms)) return 0;
   return ms / UNITS.WIND_SPEED.KMH_TO_MS;
 }
 
-/** Convert m/s to knots. */
 export function msToKnots(ms: number): number {
   if (!Number.isFinite(ms)) return 0;
   return ms / UNITS.WIND_SPEED.KNOTS_TO_MS;
 }
 
-/**
- * Angular conversion utilities
- */
-
-/**
- * Convert degrees to radians
- */
 export function degreesToRadians(degrees: number): number {
   if (!Number.isFinite(degrees)) return 0;
   return degrees * UNITS.ANGLE.DEGREES_TO_RADIANS;
 }
 
-/**
- * Convert radians to degrees
- */
 export function radiansToDegrees(radians: number): number {
   if (!Number.isFinite(radians)) return 0;
   return radians * UNITS.ANGLE.RADIANS_TO_DEGREES;
 }
 
-/**
- * Normalize angle to [0, 2π) range
- */
+/** Normalize angle to [0, 2π) range. */
 export function normalizeAngle0To2Pi(radians: number): number {
   if (!Number.isFinite(radians)) return 0;
   return ((radians % TWO_PI) + TWO_PI) % TWO_PI;
 }
 
-/**
- * Normalize angle to (-π, π] range
- */
+/** Normalize angle to (-π, π] range. Exact 0 maps to π to match the legacy while-loop behaviour. */
 export function normalizeAnglePiToPi(radians: number): number {
   if (!Number.isFinite(radians)) return 0;
   const wrapped = (((radians + Math.PI) % TWO_PI) + TWO_PI) % TWO_PI;
-  // wrapped is in [0, 2π); shift to (-π, π]. Map exact 0 → π so behavior matches the
-  // legacy while-loop form which never returned -π.
   return wrapped === 0 ? Math.PI : wrapped - Math.PI;
 }
 
-/**
- * Humidity conversion utilities
- */
-
-/**
- * Clamp a value between min and max bounds. Non-finite input clamps to `min`.
- */
+/** Clamp a value between min and max bounds. Non-finite input clamps to `min`. */
 export function clamp(value: number, min: number, max: number): number {
   if (!Number.isFinite(value)) return min;
   return Math.max(min, Math.min(max, value));
 }
 
-/** Convert percentage (0-100) to ratio (0-1). */
 export function percentageToRatio(percentage: number): number {
   return clamp(percentage / 100, 0, 1);
 }
 
-/** Convert ratio (0-1) to percentage (0-100). */
 export function ratioToPercentage(ratio: number): number {
   return clamp(ratio * 100, 0, 100);
 }
 
-/**
- * Check if a value is within specified bounds
- */
 export function isWithinBounds(value: number, min: number, max: number): boolean {
   return Number.isFinite(value) && value >= min && value <= max;
 }
 
-/** Validate temperature value. */
 export function isValidTemperature(temperature: number): boolean {
   return isWithinBounds(
     temperature,
@@ -154,23 +108,14 @@ export function isValidTemperature(temperature: number): boolean {
   );
 }
 
-/**
- * Validate pressure value
- */
 export function isValidPressure(pressure: number): boolean {
   return isWithinBounds(pressure, VALIDATION_LIMITS.PRESSURE.MIN, VALIDATION_LIMITS.PRESSURE.MAX);
 }
 
-/**
- * Validate humidity value (as ratio)
- */
 export function isValidHumidity(humidity: number): boolean {
   return isWithinBounds(humidity, VALIDATION_LIMITS.HUMIDITY.MIN, VALIDATION_LIMITS.HUMIDITY.MAX);
 }
 
-/**
- * Validate wind speed
- */
 export function isValidWindSpeed(windSpeed: number): boolean {
   return isWithinBounds(
     windSpeed,
@@ -179,9 +124,6 @@ export function isValidWindSpeed(windSpeed: number): boolean {
   );
 }
 
-/**
- * Validate wind direction (in radians)
- */
 export function isValidWindDirection(windDirection: number): boolean {
   return isWithinBounds(
     windDirection,
@@ -190,9 +132,6 @@ export function isValidWindDirection(windDirection: number): boolean {
   );
 }
 
-/**
- * Validate geographic coordinates
- */
 export function isValidCoordinates(latitude: number, longitude: number): boolean {
   return (
     isWithinBounds(
@@ -287,41 +226,31 @@ export function calculateAirDensity(
   return density;
 }
 
-/** Beaufort scale thresholds (wind speed in m/s). */
-const BEAUFORT_THRESHOLDS = [
-  { max: 0.3, scale: 0 }, // Calm
-  { max: 1.6, scale: 1 }, // Light air
-  { max: 3.4, scale: 2 }, // Light breeze
-  { max: 5.5, scale: 3 }, // Gentle breeze
-  { max: 8.0, scale: 4 }, // Moderate breeze
-  { max: 10.8, scale: 5 }, // Fresh breeze
-  { max: 13.9, scale: 6 }, // Strong breeze
-  { max: 17.2, scale: 7 }, // Near gale
-  { max: 20.8, scale: 8 }, // Gale
-  { max: 24.5, scale: 9 }, // Severe gale
-  { max: 28.5, scale: 10 }, // Storm
-  { max: 32.7, scale: 11 }, // Violent storm
-] as const;
+/**
+ * Beaufort scale ceiling speeds in m/s, indexed by Beaufort number (0..11).
+ * `effectiveWindSpeed < BEAUFORT_THRESHOLDS[i]` activates scale `i`; anything
+ * above the last ceiling is hurricane (12).
+ */
+const BEAUFORT_THRESHOLDS: ReadonlyArray<number> = [
+  0.3, 1.6, 3.4, 5.5, 8.0, 10.8, 13.9, 17.2, 20.8, 24.5, 28.5, 32.7,
+];
 
 /**
- * Calculate Beaufort wind scale from wind speed
- * @param windSpeed Wind speed in m/s
- * @param gustSpeed Optional gust speed in m/s (uses higher of the two)
- * @returns Beaufort scale (0-12)
+ * Calculate Beaufort wind scale from sustained wind speed, taking the higher
+ * of sustained and gust when both are provided.
  */
 export function calculateBeaufortScale(windSpeed: number, gustSpeed?: number): number {
-  // Use the higher of sustained or gust speed for classification
   const effectiveWindSpeed = gustSpeed !== undefined ? Math.max(windSpeed, gustSpeed) : windSpeed;
 
   if (!Number.isFinite(effectiveWindSpeed) || effectiveWindSpeed < 0) {
     return 0;
   }
 
-  for (const threshold of BEAUFORT_THRESHOLDS) {
-    if (effectiveWindSpeed < threshold.max) {
-      return threshold.scale;
+  for (let i = 0; i < BEAUFORT_THRESHOLDS.length; i++) {
+    if (effectiveWindSpeed < (BEAUFORT_THRESHOLDS[i] as number)) {
+      return i;
     }
   }
 
-  return 12; // Hurricane
+  return 12;
 }

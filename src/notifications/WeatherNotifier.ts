@@ -145,18 +145,21 @@ export class WeatherNotifier {
    * (e.g. `Thunderstorms: Severe thunderstorms approaching`) so the operator
    * sees the underlying condition rather than just the icon-derived label.
    * Empty array is the common case: no enabled band transitioned this tick.
+   *
+   * Timestamps and per-band message strings are computed lazily inside
+   * `maybeTransition`: when no band transitions (the steady-state norm) the
+   * notifier allocates nothing.
    */
   public evaluate(data: WeatherData): PathValue[] {
     if (!this.config.enabled) return [];
 
     const transitions: PathValue[] = [];
-    const timestamp = new Date().toISOString();
 
-    if (this.config.wind) this.evaluateWind(data, timestamp, transitions);
-    if (this.config.visibility) this.evaluateVisibility(data, timestamp, transitions);
-    if (this.config.heat) this.evaluateHeat(data, timestamp, transitions);
-    if (this.config.cold) this.evaluateCold(data, timestamp, transitions);
-    if (this.config.weather) this.evaluateSevereCondition(data, timestamp, transitions);
+    if (this.config.wind) this.evaluateWind(data, transitions);
+    if (this.config.visibility) this.evaluateVisibility(data, transitions);
+    if (this.config.heat) this.evaluateHeat(data, transitions);
+    if (this.config.cold) this.evaluateCold(data, transitions);
+    if (this.config.weather) this.evaluateSevereCondition(data, transitions);
 
     if (transitions.length > 0) {
       this.logger('info', 'Weather notifications transitioned', {
@@ -194,35 +197,33 @@ export class WeatherNotifier {
    * independently. Each band is active when Beaufort >= its threshold, so
    * during a hurricane all three are concurrently active.
    */
-  private evaluateWind(data: WeatherData, timestamp: string, out: PathValue[]): void {
+  private evaluateWind(data: WeatherData, out: PathValue[]): void {
     const bft = data.beaufortScale;
     if (bft === undefined) return;
-    this.evaluateAscendingBands(WIND_BANDS, bft, `Beaufort ${bft}`, timestamp, out);
+    this.evaluateAscendingBands(WIND_BANDS, bft, () => `Beaufort ${bft}`, out);
   }
 
   /**
    * Visibility: low (1 nm, warn) and very-low (0.5 nm, alarm) tracked
    * independently. SOLAS uses 1 nm as the restricted-visibility threshold.
    */
-  private evaluateVisibility(data: WeatherData, timestamp: string, out: PathValue[]): void {
+  private evaluateVisibility(data: WeatherData, out: PathValue[]): void {
     const vis = data.visibility;
     if (vis === undefined) return;
 
     const { LOW_M, VERY_LOW_M } = NOTIFICATION_THRESHOLDS.VISIBILITY;
-    const visKm = (vis / UNITS.LENGTH.KM_TO_M).toFixed(1);
+    const visKm = () => (vis / UNITS.LENGTH.KM_TO_M).toFixed(1);
 
     this.maybeTransition(
       NOTIFICATION_PATHS.VISIBILITY_LOW,
       vis < LOW_M ? 'warn' : 'normal',
-      `Reduced visibility: ${visKm} km`,
-      timestamp,
+      () => `Reduced visibility: ${visKm()} km`,
       out
     );
     this.maybeTransition(
       NOTIFICATION_PATHS.VISIBILITY_VERY_LOW,
       vis < VERY_LOW_M ? 'alarm' : 'normal',
-      `Very low visibility: ${visKm} km`,
-      timestamp,
+      () => `Very low visibility: ${visKm()} km`,
       out
     );
   }
@@ -231,33 +232,30 @@ export class WeatherNotifier {
    * Heat stress: caution (HSI 2, warn), high (HSI 3, alarm), extreme
    * (HSI 4, emergency). Driven by AccuWeather wet-bulb globe temperature.
    */
-  private evaluateHeat(data: WeatherData, timestamp: string, out: PathValue[]): void {
+  private evaluateHeat(data: WeatherData, out: PathValue[]): void {
     const hsi = data.heatStressIndex;
     if (hsi === undefined) return;
-    this.evaluateAscendingBands(HEAT_BANDS, hsi, `index ${hsi}`, timestamp, out);
+    this.evaluateAscendingBands(HEAT_BANDS, hsi, () => `index ${hsi}`, out);
   }
 
   /**
    * Drive a set of ascending bands against one numeric reading. Each band
    * activates with its declared state when `value >= band.threshold`,
-   * clears with `normal` otherwise. The label/scalar suffix (e.g.
-   * `Beaufort 12`, `index 4`) is appended to each band's `prefix` so the
-   * notification message identifies the band and the underlying reading.
-   * Visibility and cold use a `<` comparator and live in their own methods.
+   * clears with `normal` otherwise. The scalar-suffix producer is invoked
+   * lazily inside `maybeTransition` only when a transition actually fires,
+   * so steady-state evaluations skip string formatting entirely.
    */
   private evaluateAscendingBands(
     bands: ReadonlyArray<AscendingBand>,
     value: number,
-    scalarSuffix: string,
-    timestamp: string,
+    scalarSuffix: () => string,
     out: PathValue[]
   ): void {
     for (const band of bands) {
       this.maybeTransition(
         band.path,
         value >= band.threshold ? band.state : 'normal',
-        `${band.prefix}: ${scalarSuffix}`,
-        timestamp,
+        () => `${band.prefix}: ${scalarSuffix()}`,
         out
       );
     }
@@ -267,25 +265,23 @@ export class WeatherNotifier {
    * Cold: caution (wind chill < 0 C, warn) and extreme (< -20 C, alarm).
    * Wind chill stored in Kelvin; thresholds compare directly.
    */
-  private evaluateCold(data: WeatherData, timestamp: string, out: PathValue[]): void {
+  private evaluateCold(data: WeatherData, out: PathValue[]): void {
     const windChillK = data.windChill;
     if (!Number.isFinite(windChillK)) return;
 
     const { CAUTION_K, EXTREME_K } = NOTIFICATION_THRESHOLDS.COLD;
-    const tempC = kelvinToCelsius(windChillK).toFixed(0);
+    const tempC = () => kelvinToCelsius(windChillK).toFixed(0);
 
     this.maybeTransition(
       NOTIFICATION_PATHS.COLD_CAUTION,
       windChillK < CAUTION_K ? 'warn' : 'normal',
-      `Cold exposure caution: wind chill ${tempC} C`,
-      timestamp,
+      () => `Cold exposure caution: wind chill ${tempC()} C`,
       out
     );
     this.maybeTransition(
       NOTIFICATION_PATHS.COLD_EXTREME,
       windChillK < EXTREME_K ? 'alarm' : 'normal',
-      `Extreme cold exposure: wind chill ${tempC} C`,
-      timestamp,
+      () => `Extreme cold exposure: wind chill ${tempC()} C`,
       out
     );
   }
@@ -294,30 +290,24 @@ export class WeatherNotifier {
    * Severe weather condition: single path whose state varies by icon code.
    * Returns to `normal` whenever the current icon falls outside the severity
    * table. Description comes from the response's `WeatherText` so consumers
-   * see the operator-friendly phrase rather than a numeric code.
+   * see the operator-friendly phrase rather than a numeric code; on exit
+   * the message is empty so consumers see `state: 'normal'` without a fake
+   * "No severe weather" phrase being parsed as a real condition.
    */
-  private evaluateSevereCondition(data: WeatherData, timestamp: string, out: PathValue[]): void {
+  private evaluateSevereCondition(data: WeatherData, out: PathValue[]): void {
     const icon = data.weatherIcon;
     const severity = icon !== undefined ? WEATHER_ICON_SEVERITY.get(icon) : undefined;
-    const description = data.description?.trim();
+    const description = data.description?.trim() ?? '';
 
     if (severity === undefined) {
-      this.maybeTransition(
-        NOTIFICATION_PATHS.WEATHER_SEVERE,
-        'normal',
-        description || 'No severe weather',
-        timestamp,
-        out
-      );
+      this.maybeTransition(NOTIFICATION_PATHS.WEATHER_SEVERE, 'normal', () => '', out);
       return;
     }
 
-    const message = description ? `${severity.label}: ${description}` : severity.label;
     this.maybeTransition(
       NOTIFICATION_PATHS.WEATHER_SEVERE,
       severity.state,
-      message,
-      timestamp,
+      () => (description ? `${severity.label}: ${description}` : severity.label),
       out
     );
   }
@@ -326,13 +316,14 @@ export class WeatherNotifier {
    * Push a notification PathValue onto `out` if and only if the desired state
    * differs from the last state emitted for this path. The very first
    * evaluation against `normal` is a no-op (we have not emitted anything yet,
-   * so there is nothing to clear): only true entries / exits surface.
+   * so there is nothing to clear): only true entries / exits surface. The
+   * message producer and the transition timestamp are computed lazily so the
+   * steady-state case allocates no strings.
    */
   private maybeTransition(
     path: string,
     desired: NotificationState,
-    message: string,
-    timestamp: string,
+    message: () => string,
     out: PathValue[]
   ): void {
     const prior = this.lastState.get(path);
@@ -349,8 +340,8 @@ export class WeatherNotifier {
     const value: NotificationValue = {
       state: desired,
       method: methodsFor(desired),
-      message,
-      timestamp,
+      message: message(),
+      timestamp: new Date().toISOString(),
     };
     out.push(pv(path, value));
   }

@@ -4,7 +4,7 @@
  */
 
 import type { Delta, Meta, PathValue } from '@signalk/server-api';
-import { SIGNALK_PATHS, UNITS } from '../constants/index.js';
+import { NOTIFICATION_PATHS, SIGNALK_PATHS, UNITS } from '../constants/index.js';
 import type { Logger, WeatherData } from '../types/index.js';
 import { buildMetaDelta as buildSkMetaDelta, buildValuesDelta, me, pv } from '../utils/skDelta.js';
 import { NMEA2000Validator } from '../utils/validation.js';
@@ -106,6 +106,60 @@ const NON_CANONICAL_META: ReadonlyArray<Meta> = [
 ];
 
 /**
+ * Meta for each `notifications.environment.*` path the plugin emits. Lets
+ * consumer UIs render the alert with a human label instead of the bare path,
+ * and documents the threshold that activates each band so operators can map
+ * SK notifications back to plugin behaviour without consulting the source.
+ */
+const NOTIFICATION_META: ReadonlyArray<Meta> = [
+  me(NOTIFICATION_PATHS.WIND_GALE, {
+    displayName: 'Wind, gale-force',
+    description: 'Sustained Beaufort 8 or higher (gale): warn state.',
+  }),
+  me(NOTIFICATION_PATHS.WIND_STORM, {
+    displayName: 'Wind, storm-force',
+    description: 'Sustained Beaufort 10 or higher (storm): alarm state.',
+  }),
+  me(NOTIFICATION_PATHS.WIND_HURRICANE, {
+    displayName: 'Wind, hurricane-force',
+    description: 'Sustained Beaufort 12 (hurricane): emergency state.',
+  }),
+  me(NOTIFICATION_PATHS.VISIBILITY_LOW, {
+    displayName: 'Visibility, reduced',
+    description: 'Visibility below 1 nautical mile (SOLAS restricted-visibility threshold).',
+  }),
+  me(NOTIFICATION_PATHS.VISIBILITY_VERY_LOW, {
+    displayName: 'Visibility, very low',
+    description: 'Visibility below 0.5 nautical miles: alarm state.',
+  }),
+  me(NOTIFICATION_PATHS.HEAT_CAUTION, {
+    displayName: 'Heat stress, caution',
+    description: 'WBGT-derived heat-stress index reaches caution band (HSI 2).',
+  }),
+  me(NOTIFICATION_PATHS.HEAT_HIGH, {
+    displayName: 'Heat stress, high',
+    description: 'WBGT-derived heat-stress index reaches high band (HSI 3): alarm state.',
+  }),
+  me(NOTIFICATION_PATHS.HEAT_EXTREME, {
+    displayName: 'Heat stress, extreme',
+    description: 'WBGT-derived heat-stress index reaches extreme band (HSI 4): emergency state.',
+  }),
+  me(NOTIFICATION_PATHS.COLD_CAUTION, {
+    displayName: 'Cold exposure, caution',
+    description: 'Wind chill below 0 C: warn state.',
+  }),
+  me(NOTIFICATION_PATHS.COLD_EXTREME, {
+    displayName: 'Cold exposure, extreme',
+    description: 'Wind chill below -20 C: alarm state.',
+  }),
+  me(NOTIFICATION_PATHS.WEATHER_SEVERE, {
+    displayName: 'Severe weather',
+    description:
+      'Active when the current AccuWeather icon code maps to a hazard category (thunderstorm, ice, freezing rain, etc.).',
+  }),
+];
+
+/**
  * NMEA2000 Path Mapper Service
  * Provides comprehensive mapping of weather data to NMEA2000-compatible Signal K paths
  */
@@ -154,12 +208,12 @@ export class NMEA2000PathMapper {
   }
 
   /**
-   * One-shot meta delta describing every non-canonical path this plugin
-   * emits. Caller is responsible for sending it exactly once per mapper
-   * instance.
+   * One-shot meta delta describing every non-canonical measurement path AND
+   * every notifications.environment.* path this plugin emits. Caller is
+   * responsible for sending it exactly once per mapper instance.
    */
   public buildMetaDelta(): Delta {
-    return buildSkMetaDelta([...NON_CANONICAL_META]);
+    return buildSkMetaDelta([...NON_CANONICAL_META, ...NOTIFICATION_META]);
   }
 
   private addCoreEnvironmentalPaths(values: PathValue[], data: WeatherData): void {

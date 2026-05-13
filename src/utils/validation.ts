@@ -1,6 +1,8 @@
 import {
+  API_KEY_MIN_LENGTH,
   BEAUFORT_LIMITS,
   CLOUD_CEILING_LIMITS_M,
+  CONFIG_DEFAULTS,
   DEFAULT_CONFIG,
   HEAT_STRESS_INDEX_LIMITS,
   NMEA2000_LIMITS,
@@ -13,11 +15,20 @@ import type { NotificationsConfig, PluginConfiguration, WeatherData } from '../t
 import {
   celsiusToKelvin,
   clamp,
+  isValidHumidity,
+  isValidPressure,
+  isValidTemperature,
+  isValidWindDirection,
+  isValidWindSpeed,
   isWithinBounds,
   kelvinToCelsius,
   normalizeAngle0To2Pi,
   normalizeAnglePiToPi,
+  TWO_PI,
 } from './conversions.js';
+
+/** Re-export so callers outside this module don't need to know it lives in the shared JS module. */
+export { API_KEY_MIN_LENGTH };
 
 /** NMEA2000 temperature bounds expressed in Kelvin (precomputed to avoid C↔K work on the hot path). */
 const NMEA2000_TEMP_K_MIN = celsiusToKelvin(NMEA2000_LIMITS.TEMPERATURE_C.MIN);
@@ -42,13 +53,6 @@ export interface ValidationResult {
   readonly warnings: ReadonlyArray<string>;
 }
 
-/**
- * Weather Data Validation Functions
- */
-
-/**
- * Validate temperature field
- */
 function validateTemperatureField(
   data: Partial<WeatherData>,
   errors: string[],
@@ -59,19 +63,13 @@ function validateTemperatureField(
     return;
   }
 
-  if (
-    data.temperature < VALIDATION_LIMITS.TEMPERATURE.MIN ||
-    data.temperature > VALIDATION_LIMITS.TEMPERATURE.MAX
-  ) {
+  if (!isValidTemperature(data.temperature)) {
     warnings.push(
       `Temperature ${data.temperature}K is outside expected range (${VALIDATION_LIMITS.TEMPERATURE.MIN}-${VALIDATION_LIMITS.TEMPERATURE.MAX}K)`
     );
   }
 }
 
-/**
- * Validate pressure field
- */
 function validatePressureField(
   data: Partial<WeatherData>,
   errors: string[],
@@ -82,38 +80,26 @@ function validatePressureField(
     return;
   }
 
-  if (
-    data.pressure < VALIDATION_LIMITS.PRESSURE.MIN ||
-    data.pressure > VALIDATION_LIMITS.PRESSURE.MAX
-  ) {
+  if (!isValidPressure(data.pressure)) {
     warnings.push(
       `Pressure ${data.pressure}Pa is outside expected range (${VALIDATION_LIMITS.PRESSURE.MIN}-${VALIDATION_LIMITS.PRESSURE.MAX}Pa)`
     );
   }
 }
 
-/**
- * Validate humidity field
- */
 function validateHumidityField(data: Partial<WeatherData>, errors: string[]): void {
   if (data.humidity === undefined || !Number.isFinite(data.humidity)) {
     errors.push('Humidity is required and must be a finite number');
     return;
   }
 
-  if (
-    data.humidity < VALIDATION_LIMITS.HUMIDITY.MIN ||
-    data.humidity > VALIDATION_LIMITS.HUMIDITY.MAX
-  ) {
+  if (!isValidHumidity(data.humidity)) {
     errors.push(
       `Humidity ${data.humidity} must be between ${VALIDATION_LIMITS.HUMIDITY.MIN} and ${VALIDATION_LIMITS.HUMIDITY.MAX}`
     );
   }
 }
 
-/**
- * Validate wind fields
- */
 function validateWindFields(
   data: Partial<WeatherData>,
   errors: string[],
@@ -121,10 +107,7 @@ function validateWindFields(
 ): void {
   if (data.windSpeed === undefined || !Number.isFinite(data.windSpeed)) {
     errors.push('Wind speed is required and must be a finite number');
-  } else if (
-    data.windSpeed < VALIDATION_LIMITS.WIND_SPEED.MIN ||
-    data.windSpeed > VALIDATION_LIMITS.WIND_SPEED.MAX
-  ) {
+  } else if (!isValidWindSpeed(data.windSpeed)) {
     warnings.push(
       `Wind speed ${data.windSpeed}m/s is outside expected range (${VALIDATION_LIMITS.WIND_SPEED.MIN}-${VALIDATION_LIMITS.WIND_SPEED.MAX}m/s)`
     );
@@ -132,10 +115,7 @@ function validateWindFields(
 
   if (data.windDirection === undefined || !Number.isFinite(data.windDirection)) {
     errors.push('Wind direction is required and must be a finite number');
-  } else if (
-    data.windDirection < VALIDATION_LIMITS.WIND_DIRECTION.MIN ||
-    data.windDirection > VALIDATION_LIMITS.WIND_DIRECTION.MAX
-  ) {
+  } else if (!isValidWindDirection(data.windDirection)) {
     errors.push(
       `Wind direction ${data.windDirection} must be between ${VALIDATION_LIMITS.WIND_DIRECTION.MIN} and ${VALIDATION_LIMITS.WIND_DIRECTION.MAX} radians`
     );
@@ -228,12 +208,6 @@ export function validateWeatherData(data: Partial<WeatherData>): ValidationResul
   };
 }
 
-/**
- * Plugin Configuration Validation Functions
- */
-
-/** Minimum length for any plausible AccuWeather API key. */
-export const API_KEY_MIN_LENGTH = 20;
 /** Disallowed control/whitespace characters in API keys (catches paste mistakes). */
 // biome-ignore lint/suspicious/noControlCharactersInRegex: deliberately matching paste-error control chars
 const API_KEY_INVALID_CHARS = /[\s\x00-\x1f\x7f]/;
@@ -404,19 +378,28 @@ function sanitizeNotifications(input: unknown): NotificationsConfig {
 }
 
 /**
- * Sanitize and normalize configuration with defaults. `dailyApiQuota` uses
- * `??` (not `||`) because 0 is the meaningful "no cap" value and would
- * otherwise be replaced by the default.
+ * Sanitize and normalize configuration with defaults. All numeric fields use
+ * `??` (not `||`) so an explicit 0 (the documented "no cap" sentinel for
+ * `dailyApiQuota`) survives the coercion. The lower-bound clamp catches any
+ * invalid sub-min value that slips past the validator.
  */
 export function sanitizeConfiguration(config: Partial<PluginConfiguration>): PluginConfiguration {
   return {
     accuWeatherApiKey: config.accuWeatherApiKey?.trim() || '',
-    updateFrequency: clamp(config.updateFrequency || DEFAULT_CONFIG.UPDATE_FREQUENCY, 1, 60),
-    emissionInterval: clamp(config.emissionInterval || DEFAULT_CONFIG.EMISSION_INTERVAL, 1, 60),
+    updateFrequency: clamp(
+      config.updateFrequency ?? DEFAULT_CONFIG.UPDATE_FREQUENCY,
+      CONFIG_DEFAULTS.UPDATE_FREQUENCY_MIN,
+      CONFIG_DEFAULTS.UPDATE_FREQUENCY_MAX
+    ),
+    emissionInterval: clamp(
+      config.emissionInterval ?? DEFAULT_CONFIG.EMISSION_INTERVAL,
+      CONFIG_DEFAULTS.EMISSION_INTERVAL_MIN,
+      CONFIG_DEFAULTS.EMISSION_INTERVAL_MAX
+    ),
     dailyApiQuota: clamp(
       config.dailyApiQuota ?? DEFAULT_CONFIG.DAILY_API_QUOTA,
-      0,
-      DEFAULT_CONFIG.DAILY_API_QUOTA_MAX
+      CONFIG_DEFAULTS.DAILY_API_QUOTA_MIN,
+      CONFIG_DEFAULTS.DAILY_API_QUOTA_MAX
     ),
     notifications: sanitizeNotifications(config.notifications),
   };
@@ -576,7 +559,6 @@ type SanitizableNumericKey = {
   [K in keyof WeatherData]-?: WeatherData[K] extends number | undefined ? K : never;
 }[keyof WeatherData];
 
-const TWO_PI = 2 * Math.PI;
 const TEMP_K_BOUNDS = [NMEA2000_TEMP_K_MIN, NMEA2000_TEMP_K_MAX] as const;
 const WIND_SPEED_BOUNDS = [0, NMEA2000_LIMITS.WIND_SPEED_MAX_MS] as const;
 const HUMIDITY_BOUNDS = [VALIDATION_LIMITS.HUMIDITY.MIN, VALIDATION_LIMITS.HUMIDITY.MAX] as const;

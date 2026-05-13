@@ -3,9 +3,14 @@
  * Centralized configuration values and NMEA2000 specifications
  */
 
-import { DEFAULT_NOTIFICATIONS } from './notifications-shared.js';
+import { CONFIG_DEFAULTS, DEFAULT_NOTIFICATIONS } from './notifications-shared.js';
 
-export { DEFAULT_NOTIFICATIONS, NOTIFICATION_LABELS } from './notifications-shared.js';
+export {
+  API_KEY_MIN_LENGTH,
+  CONFIG_DEFAULTS,
+  DEFAULT_NOTIFICATIONS,
+  NOTIFICATION_LABELS,
+} from './notifications-shared.js';
 
 /**
  * Fixed reference point used by the admin-UI panel's `/api/test-key`
@@ -52,26 +57,20 @@ export const PLUGIN = {
 // Default Configuration Values
 // ===============================
 
-/** Default plugin configuration settings */
+/**
+ * Default plugin configuration settings. Numeric defaults and bounds live in
+ * `notifications-shared.js` (`CONFIG_DEFAULTS`) so the rjsf schema, the
+ * runtime sanitizer, and the federated JSX panel cannot drift.
+ *
+ * INVARIANT: if `UPDATE_FREQUENCY` drops below `Math.ceil(1440 / DAILY_API_QUOTA)`
+ * minutes the plugin will exhaust the quota inside any rolling 24h window and
+ * pause fetches.
+ */
 export const DEFAULT_CONFIG = {
-  /**
-   * Default fetch cadence: 30 minutes yields 48 AccuWeather calls/day
-   * (24h * 60min / 30 = 48), which fits inside the free-tier 50/day quota
-   * with headroom. Operators on paid tiers commonly lower this to 5 to 15
-   * minutes via the admin UI. INVARIANT: if `UPDATE_FREQUENCY` drops below
-   * `Math.ceil(1440 / DAILY_API_QUOTA)` minutes the plugin will exhaust the
-   * quota inside any rolling 24h window and pause fetches.
-   */
-  UPDATE_FREQUENCY: 30, // minutes
-  EMISSION_INTERVAL: 5, // seconds
-  /**
-   * AccuWeather free tier allows 50 calls/day. Operators on a paid tier can
-   * raise this in plugin settings (max 1000); setting it to 0 disables the cap
-   * entirely. Paired with `UPDATE_FREQUENCY`: see the invariant note there.
-   */
-  DAILY_API_QUOTA: 50,
-  /** Maximum value accepted for `dailyApiQuota` in plugin settings. */
-  DAILY_API_QUOTA_MAX: 1000,
+  UPDATE_FREQUENCY: CONFIG_DEFAULTS.UPDATE_FREQUENCY, // minutes
+  EMISSION_INTERVAL: CONFIG_DEFAULTS.EMISSION_INTERVAL, // seconds
+  DAILY_API_QUOTA: CONFIG_DEFAULTS.DAILY_API_QUOTA,
+  DAILY_API_QUOTA_MAX: CONFIG_DEFAULTS.DAILY_API_QUOTA_MAX,
   LOCATION_CACHE_TIMEOUT: 3600, // seconds (1 hour)
   REQUEST_TIMEOUT: 10000, // milliseconds
   RETRY_ATTEMPTS: 3,

@@ -166,10 +166,10 @@ export interface PluginConfiguration {
   /** AccuWeather API key (required) */
   readonly accuWeatherApiKey: string;
 
-  /** Weather data update frequency in minutes (default: 5) */
+  /** Weather data update frequency in minutes (default: 30; see CONFIG_DEFAULTS). */
   readonly updateFrequency: number;
 
-  /** NMEA2000 emission interval in seconds (default: 5) */
+  /** NMEA2000 emission interval in seconds (default: 5; see CONFIG_DEFAULTS). */
   readonly emissionInterval: number;
 
   /**

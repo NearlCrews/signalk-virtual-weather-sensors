@@ -13,6 +13,8 @@ import {
 } from '@signalk/server-api';
 import type { IRouter, Request, Response } from 'express';
 import {
+  API_KEY_MIN_LENGTH,
+  CONFIG_DEFAULTS,
   DEFAULT_CONFIG,
   ERROR_CODES,
   NOTIFICATION_LABELS,
@@ -31,9 +33,9 @@ import type {
   PluginState,
   WeatherData,
 } from './types/index.js';
-import { asTimestamp, toErrorMessage } from './utils/conversions.js';
+import { asTimestamp, msToWholeMinutes, toErrorMessage } from './utils/conversions.js';
 import { buildValuesDelta } from './utils/skDelta.js';
-import { API_KEY_MIN_LENGTH, ConfigurationValidator } from './utils/validation.js';
+import { ConfigurationValidator } from './utils/validation.js';
 
 /** Distinguishes a banner string pushed via setPluginStatus from one pushed via setPluginError. */
 type BannerKind = 'status' | 'error';
@@ -166,34 +168,34 @@ export default function createPlugin(app: ServerAPI): Plugin {
           title: 'AccuWeather API Key',
           description: 'Get your API key at https://developer.accuweather.com/',
           default: '',
-          minLength: 20,
+          minLength: API_KEY_MIN_LENGTH,
         },
         updateFrequency: {
           type: 'integer',
           title: 'Weather Update Frequency (minutes)',
           description:
             'How often to fetch new weather data from AccuWeather. Each tick costs one API call (location lookups are cached).',
-          default: DEFAULT_CONFIG.UPDATE_FREQUENCY,
-          minimum: 1,
-          maximum: 60,
+          default: CONFIG_DEFAULTS.UPDATE_FREQUENCY,
+          minimum: CONFIG_DEFAULTS.UPDATE_FREQUENCY_MIN,
+          maximum: CONFIG_DEFAULTS.UPDATE_FREQUENCY_MAX,
         },
         emissionInterval: {
           type: 'integer',
           title: 'Broadcast Interval (seconds)',
           description:
             'How often the cached weather payload is re-emitted to the Signal K bus so NMEA2000 listeners keep seeing fresh deltas.',
-          default: DEFAULT_CONFIG.EMISSION_INTERVAL,
-          minimum: 1,
-          maximum: 60,
+          default: CONFIG_DEFAULTS.EMISSION_INTERVAL,
+          minimum: CONFIG_DEFAULTS.EMISSION_INTERVAL_MIN,
+          maximum: CONFIG_DEFAULTS.EMISSION_INTERVAL_MAX,
         },
         dailyApiQuota: {
           type: 'integer',
           title: 'Daily API Call Quota',
           description:
             'Cap on AccuWeather calls in any rolling 24-hour window. AccuWeather free tier allows 50/day. Set to 0 to disable the cap and quota warnings.',
-          default: DEFAULT_CONFIG.DAILY_API_QUOTA,
-          minimum: 0,
-          maximum: DEFAULT_CONFIG.DAILY_API_QUOTA_MAX,
+          default: CONFIG_DEFAULTS.DAILY_API_QUOTA,
+          minimum: CONFIG_DEFAULTS.DAILY_API_QUOTA_MIN,
+          maximum: CONFIG_DEFAULTS.DAILY_API_QUOTA_MAX,
         },
         notifications: {
           type: 'object',
@@ -471,7 +473,7 @@ function emitWeatherTick(instance: PluginInstance, app: ServerAPI, maxStalenessM
     // Floor (not round) so a delta that has crossed the threshold by, say,
     // 30 seconds reports the actual whole minute since last update, not the
     // next minute up. Pluralize for the "1 minute ago" boundary.
-    const ageMin = Math.floor(ageMs / 60_000);
+    const ageMin = msToWholeMinutes(ageMs);
     const unit = ageMin === 1 ? 'minute' : 'minutes';
     setBanner(instance, app, 'error', `Weather data stale: last update ${ageMin} ${unit} ago`);
     return;
@@ -490,11 +492,9 @@ function emitWeatherTick(instance: PluginInstance, app: ServerAPI, maxStalenessM
   // would waste CPU on the steady-state case.
   let notificationValues: PathValue[] = [];
   if (weatherData !== instance.cachedWeatherDataRef) {
-    instance.cachedDelta = instance.pathMapper.mapToSignalKPaths(weatherData);
-    instance.cachedWeatherDataRef = weatherData;
-    if (instance.notifier) {
-      notificationValues = instance.notifier.evaluate(weatherData);
-    }
+    const refreshed = refreshCachedDelta(instance, app, weatherData);
+    if (refreshed === null) return;
+    notificationValues = refreshed;
   }
 
   if (!instance.cachedDelta) {
@@ -518,6 +518,38 @@ function emitWeatherTick(instance: PluginInstance, app: ServerAPI, maxStalenessM
   if (!instance.metaEmitted) {
     app.handleMessage(PLUGIN.NAME, instance.pathMapper.buildMetaDelta(), SKVersion.v1);
     instance.metaEmitted = true;
+  }
+}
+
+/**
+ * Rebuild the cached values delta from new weather data and run the notifier.
+ * Returns the notifier's transitions, or `null` if mapping failed (in which
+ * case the cached delta is cleared and an error banner is published so the
+ * caller can short-circuit the tick).
+ * @private
+ */
+function refreshCachedDelta(
+  instance: PluginInstance,
+  app: ServerAPI,
+  weatherData: WeatherData
+): PathValue[] | null {
+  const pathMapper = instance.pathMapper;
+  if (!pathMapper) return [];
+  try {
+    instance.cachedDelta = pathMapper.mapToSignalKPaths(weatherData);
+    instance.cachedWeatherDataRef = weatherData;
+    return instance.notifier?.evaluate(weatherData) ?? [];
+  } catch (error) {
+    // Mapper failure: drop the cached delta so we stop emitting stale data
+    // with a fresh timestamp (which would hide the failure from operators).
+    const errorMessage = toErrorMessage(error);
+    instance.logger('error', 'Mapping weather data to Signal K paths failed', {
+      error: errorMessage,
+    });
+    instance.cachedDelta = null;
+    instance.cachedWeatherDataRef = null;
+    setBanner(instance, app, 'error', `Weather mapping failed: ${errorMessage}`);
+    return null;
   }
 }
 
@@ -711,13 +743,35 @@ function registerPanelRoutes(router: IRouter, instance: PluginInstance): void {
       banner: ws.formatStatusBanner(),
       updates: snapshot.updateCount,
       quotaUsedLast24h: ws.getRequestCountLast24h(),
-      lastUpdateMinutesAgo: ageMs === null ? null : Math.floor(ageMs / 60_000),
+      lastUpdateMinutesAgo: ageMs === null ? null : msToWholeMinutes(ageMs),
       activeNotifications: instance.notifier?.getActiveCount() ?? 0,
     };
     res.json(payload);
   });
 
+  // Token-bucket-style rate limiter for /api/test-key. The endpoint costs one
+  // upstream AccuWeather call per request and is unauthenticated (mounted by
+  // signalk-server under the admin auth boundary, but at the panel-router
+  // level any LAN client with admin access could drive it), so a flood would
+  // burn the operator's quota. 10 calls/minute leaves the panel UX
+  // comfortable while capping abuse at well under the 50/day free-tier limit.
+  const TEST_KEY_RATE_LIMIT = 10;
+  const TEST_KEY_WINDOW_MS = 60_000;
+  const testKeyHits: number[] = [];
+
   router.post('/api/test-key', async (req: Request, res: Response) => {
+    const now = Date.now();
+    while (testKeyHits.length > 0 && now - (testKeyHits[0] as number) > TEST_KEY_WINDOW_MS) {
+      testKeyHits.shift();
+    }
+    if (testKeyHits.length >= TEST_KEY_RATE_LIMIT) {
+      res.status(429).json({
+        ok: false,
+        message: 'Too many key-test requests. Try again in a minute.',
+      });
+      return;
+    }
+
     // express.json() body-parser is wired by signalk-server before plugin
     // routers run; the body is therefore the parsed JSON object.
     const body = (req.body ?? {}) as { apiKey?: unknown };
@@ -729,13 +783,32 @@ function registerPanelRoutes(router: IRouter, instance: PluginInstance): void {
       });
       return;
     }
+    testKeyHits.push(now);
     try {
       const result = await testApiKey(apiKey);
       res.json(result);
     } catch (error) {
-      res.status(500).json({ ok: false, message: `Test failed: ${toErrorMessage(error)}` });
+      // Server-side log carries the full error; the client gets a sanitized
+      // single-line message bounded in length to avoid leaking URL fragments
+      // or stack-derived text to any LAN-side caller.
+      const fullMessage = toErrorMessage(error);
+      instance.logger('error', 'Test-key endpoint failed', { error: fullMessage });
+      res.status(500).json({ ok: false, message: sanitizeClientErrorMessage(fullMessage) });
     }
   });
+}
+
+/**
+ * Trim and bound an error message before returning it to a panel client.
+ * Strips control characters that could break JSON-encoded log viewers and
+ * caps the length so any URL fragments or stack traces never reach the wire.
+ * @private
+ */
+function sanitizeClientErrorMessage(raw: string): string {
+  // biome-ignore lint/suspicious/noControlCharactersInRegex: deliberately strip control chars
+  const stripped = raw.replace(/[\x00-\x1f\x7f]/g, ' ').trim();
+  const MAX_LEN = 256;
+  return stripped.length > MAX_LEN ? `${stripped.slice(0, MAX_LEN)}...` : stripped;
 }
 
 /**
