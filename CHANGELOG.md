@@ -5,6 +5,62 @@ All notable changes to the signalk-virtual-weather-sensors project will be docum
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.5.2] - 2026-05-12
+
+Maintenance release rolling up a 5-agent simplify pass, a SignalK-expert
+path audit, error-handling and safety hardening, and notification-message
+enrichment. No breaking changes; existing `notifications.environment.*`
+deltas now carry richer `message` text but the same value shape. 275 tests
+pass (was 267; 8 new for the enriched messages in `WeatherNotifier.test.ts`).
+
+### Added
+
+- **Enriched notification messages.** Each `notifications.environment.*` band's `message` field now packs adjacent readings the operator can act on without subscribing to extra paths. Wind: `Gale-force wind: Bf9 from SW, 19 m/s, gusts 27 m/s, 998 hPa`. Visibility: `Reduced visibility: 0.8 km, ceiling 90 m, rain 2.5 mm/h`. Heat: `High heat stress: HSI 3, WBGT 32 C, RH 78%, RealFeel 35 C`. Cold: `Cold exposure caution: wind chill -2 C, air 1 C, wind 12 m/s`. Severe: `Thunderstorms: Severe thunderstorms approaching, 998 hPa`. Optional segments drop out cleanly when AccuWeather doesn't provide them (free-tier responses without a WindGust block omit `gusts ...`; calm winds where gust <= sustained likewise suppress it). Every message is capped at `MAX_MESSAGE_LENGTH = 80` chars (with `…` truncation on overflow) so it renders across the chartplotter fleet bridged via `signalk-to-nmea2000` to NMEA 2000 Alert PGN 126985 (Garmin GMI ~32, Raymarine ~80, B&G Zeus ~80, Furuno ~64). Wind direction renders as a 16-point cardinal label.
+- **Notification meta**. `NMEA2000PathMapper.buildMetaDelta()` now also ships meta entries for every `notifications.environment.*` path (displayName + description for each of the 11 bands) so plotters render the alert with a human label rather than the bare path.
+- **Shared config defaults module.** `src/constants/notifications-shared.js` now also exports `CONFIG_DEFAULTS` (UPDATE_FREQUENCY, EMISSION_INTERVAL, DAILY_API_QUOTA plus their min/max bounds) and `API_KEY_MIN_LENGTH`. The rjsf schema in `src/index.ts`, the runtime sanitiser in `src/utils/validation.ts`, and the federated React panel all import from one source: numeric defaults and the 20-char API-key floor can no longer drift between code paths.
+- **`isFiniteNumber` type guard** in `WeatherNotifier.ts` collapses the repeated `value !== undefined && Number.isFinite(value)` pattern.
+
+### Changed
+
+- **Safety: bad API keys stop the update timer.** A 401/403 from AccuWeather inside `WeatherService.updateWeatherData` now flags the key rejected, clears the periodic-update timer, and trips `setPluginError("AccuWeather rejected the configured API key. Update the key in plugin settings: ...")`. Previously the plugin retried every `updateFrequency` minutes against a known-bad key, burning the daily quota before any actionable error surfaced. (HIGH)
+- **Safety: consecutive-failure escalation.** Three consecutive non-auth fetch failures now trip `setPluginError("Weather updates failing (N consecutive): ...")` so operators see the underlying error before the 2x-staleness watchdog kicks in at twice the `updateFrequency`. (HIGH)
+- **Safety: mapper errors drop the cached delta.** A throw inside `mapToSignalKPaths` (during `emitWeatherTick`) now clears `instance.cachedDelta` and publishes an error banner instead of continuing to emit stale data with a fresh emission timestamp. (HIGH)
+- **AccuWeather request-count timing.** `requestCount` and the rolling-24h-window bucket no longer increment until after `fetch()` returns a response. Network timeouts and connection refusals no longer count against the operator's daily quota. (MED)
+- **`/api/test-key` rate limit.** The federated panel's key-test endpoint now caps at 10 requests per rolling 60 s with a 429 on overflow, and 500 responses go through a length-bounded sanitiser that strips control chars. Prevents a LAN-side client from draining the quota with `curl POST` floods. (MED)
+- **`capString` truncation is now code-point safe.** AccuWeather descriptions with emoji or CJK supplementary characters at the truncation boundary no longer leave a lone surrogate that would break JSON-encoded downstream consumers. (LOW)
+- **`environment.weather.gustFactor` meta:** dropped `units: 'ratio'` because the value routinely exceeds 1 (gust > sustained); strict consumers that clamp ratio paths to [0, 1] for percent-style rendering would mis-render values above 1. Now follows the same convention as `uvIndex`, `beaufortScale`, `heatStressIndex` (no `units`, dimensionless).
+- **`environment.weather.temperatureDeparture24h` meta description** now explicitly states the value is a temperature DELTA (not absolute K) and warns consumers against applying a K-to-C subtraction.
+- **`sanitizeConfiguration` uses `??` consistently** for `updateFrequency` / `emissionInterval` (was `||`), so an explicit 0 cannot be silently coerced to the default. The lower-bound clamp at 1 still rejects sub-min values.
+- **`NUMERIC_FIELD_RULES` covers every emitted numeric leaf.** Added rows for `absoluteHumidity`, `airDensityEnhanced`, `windGustFactor`, and `temperatureDeparture24h` so the mapper's "every emitted leaf is sanitized" docstring claim is now literally true. The four bounds are wide enough never to clamp a meteorologically plausible value but tight enough to catch obvious numerical garbage. Angle fields (`windDirection`, `apparentWindAngle`) remain handled inline via wrap-around normalization, and the rule-table docstring now says so explicitly.
+- **`WeatherServiceStatus` uses `ReturnType<>`.** The nested `signalKHealth` and `cacheStats` shapes are derived from the underlying service methods so the public contract tracks the service signatures automatically.
+- **Federated panel: visibility-aware polling.** `/api/status` polling pauses when `document.visibilityState !== 'visible'` and resumes immediately on `visibilitychange`. Saves CPU on multi-tab admin UIs.
+- **Federated panel: save verification.** `doSave` now re-fetches `/api/status` after the host's save callback resolves and only reports success when `running === true`. A silent server-side save failure no longer produces a green "Saved" banner.
+- **JSON parse errors on AccuWeather error bodies** now log at `warn` (was `debug`), so malformed-body cases surface without enabling DEBUG.
+- **Notification severe-exit message is empty.** When the icon falls outside the severity table the bus sees `state: 'normal'` with an empty `message` instead of the literal phrase `"No severe weather"`, which downstream parsers were treating as a real condition.
+
+### Refactored
+
+- **5-agent simplify pass and 3-agent follow-up.** Consolidated `TWO_PI` to a single export from `src/utils/conversions.ts`; added `msToWholeMinutes` and used it at 3 sites (was three inline `Math.floor(ms / 60_000)`); replaced inline range checks in `src/utils/validation.ts` with the existing `isValidTemperature` / `isValidPressure` / `isValidHumidity` / `isValidWindSpeed` / `isValidWindDirection` predicates from `conversions.ts`; refactored `WeatherService.formatStatusBanner` to build segments via `string[]` + `join(', ')` (regex strip on the leading separator is gone); flattened `BEAUFORT_THRESHOLDS` to a `readonly number[]` indexed by Beaufort number; lazy-ified the wall-clock timestamp and per-band message strings in `WeatherNotifier` so steady-state evaluations allocate nothing; dropped redundant 2nd params from the 5 `format*Suffix` helpers; replaced the file-local `ratioToPercent` with `Math.round(ratioToPercentage(...))` from conversions.ts; routed `paToHpa` through `UNITS.PRESSURE.MILLIBAR_TO_PASCAL` instead of a bare 100.
+
+### Docs
+
+- **README, CLAUDE.md**: new notification-message sample table; the 80-char cap and the chartplotter rationale are documented; per-band fields list.
+- **DEVELOPMENT.md**: bundle size, Build Outputs (incl. the federated panel `public/`), Project Structure (now includes `configpanel/`, `notifications/`, `examples/`, `docs/`, `public/`, `webpack.config.cjs`), corrected SK-compliance row that previously claimed all log levels go through `app.debug` (warn/error actually go through `app.error`), refreshed Test Structure block.
+- **CONTRIBUTING.md, RELEASE.md**: `master` to `main` (default branch renamed 2026-05-12 was unreflected); added `configpanel/` and `notifications/` to file-organisation.
+- **SECURITY.md**: supported versions 1.4.x to 1.5.x.
+- **docs/manual-server-test.md**: default `updateFrequency` 5 to 30; auth-rejection banner text matches the new "AccuWeather rejected the configured API key" escalation.
+- **docs/app-store-status.md**: noted that the 1.3.2 snapshot is from the audit; current latest is 1.5.x.
+- **`.github/pull_request_template.md`**: redirected the broken compliance-checklist anchor to `DEVELOPMENT.md#-signal-k-standards-compliance`.
+- **CLAUDE.md spec-compliance bullet**: "once per plugin lifetime" tightened to "once per start() cycle".
+
+### Dependencies
+
+- Dev-deps bumped: `@types/node` ^25.6.2 to ^25.7.0, `@vitest/coverage-v8` / `@vitest/ui` / `vitest` ^4.0.17 to ^4.1.6, `react` ^19.2.4 to ^19.2.6, `webpack` ^5.105.4 to ^5.106.2. No prod dep changes. `npm audit` clean.
+
+### Repo hygiene
+
+- `.remember/` added to root `.gitignore` (the redundant `.remember/.gitignore` containing `*` was removed).
+
 ## [1.5.1] - 2026-05-12
 
 Critical fix for the v1.5.0 federated config panel, plus follow-up refinements from a third simplify pass. Operators on v1.5.0 saw a silent `Could not load module signalk-virtual-weather-sensors` in the admin UI console with the panel never rendering: the panel chunks all served 200 OK but the Module Federation library type was wrong for an ESM package. Plus a UX rename, a deduplication of label strings between the panel and the schema, and a typed `/api/status` payload. 267 tests pass (was 266; 1 new for the long-key-rejected path through `/api/test-key`).
