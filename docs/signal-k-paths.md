@@ -86,7 +86,7 @@ Wind Chill, and Heat Index. The other temperature paths this plugin emits
 
 | PGN | Description | Source paths emitted by this plugin |
 |-----|-------------|-------------------------------------|
-| 130306 | Wind Data | `environment.wind.speedOverGround`, `directionTrue`. The plugin's apparent wind and gust are producer-namespaced (`environment.weather.windSpeedApparent`, `windAngleApparent`, `speedGust`) and are not consumed by the current cannon release |
+| 130306 | Wind Data | `environment.wind.speedOverGround`, `directionTrue` only. Apparent wind and gust are producer-namespaced (`environment.weather.windSpeedApparent` / `windAngleApparent` / `speedGust`) and do NOT bridge to NMEA2000: the cannon's 130306 wind conversion reads the canonical `environment.wind.speedApparent` / `angleApparent` leaves, which this plugin no longer emits. A real anemometer should feed 130306 apparent wind |
 | 130311 | Environmental Parameters | `environment.outside.pressure` |
 | 130312 | Temperature (enum-routed) | `environment.outside.temperature`, `dewPointTemperature`, `apparentWindChillTemperature`, `heatIndexTemperature` |
 | 130313 | Humidity | `environment.outside.relativeHumidity` |
