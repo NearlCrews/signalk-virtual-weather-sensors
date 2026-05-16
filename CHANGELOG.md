@@ -5,6 +5,24 @@ All notable changes to the signalk-virtual-weather-sensors project will be docum
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.5.3] - 2026-05-16
+
+Documentation and maintenance release. The README is restructured for a
+cleaner npm and GitHub landing page, reference material moves into `docs/`,
+and a 4-agent full-codebase simplify pass removes duplication. No behavioral
+changes: all 275 tests pass and every `environment.*` / `notifications.*`
+delta keeps the same shape.
+
+### Changed
+
+- **README restructured** from 245 to 129 lines so it reads as a landing page rather than a reference manual. The three Signal K path tables, the PGN table, and the two notification tables move into a new `docs/signal-k-paths.md`; the seven-entry troubleshooting catalog moves into a new `docs/troubleshooting.md`. A new Requirements section surfaces the Signal K server version, AccuWeather key, and GPS-position prerequisites. The data-flow diagram moves into `DEVELOPMENT.md`.
+- **Codebase simplify pass (4 review agents).** Behavior-preserving dedup: `SignalKService.getVesselNavigationData` delegates to `getCachedNavigationData` instead of duplicating the navigation-data assembly; `WeatherNotifier` gains a shared `evaluateDescendingBands` with `VISIBILITY_BANDS` / `COLD_BANDS` tables, replacing the copy-pasted visibility/cold evaluators; `validation.ts` numeric-config validators collapse into one `NUMERIC_CONFIG_RULES` table and the field validators share a `requireFiniteField` guard; `WeatherService.formatStatusBanner` reads the rolling 24h request count once per build; the federated panel's `doSave` routes through `fetchStatus`. Gas constants and standard air density in `conversions.ts` are now named module constants.
+
+### Removed
+
+- **Dead code.** `NMEA2000PathMapper.countEnhancedFields` and its 19-entry `ENHANCED_PATHS` set, which ran on every emission tick only to feed a debug-log counter.
+- **Stale docs.** `docs/app-store-status.md` (a Signal K App Store verification snapshot pinned to v1.3.2) and `TODO.md` (mostly completed checkboxes duplicating this changelog).
+
 ## [1.5.2] - 2026-05-12
 
 Maintenance release rolling up a 5-agent simplify pass, a SignalK-expert
