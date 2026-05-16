@@ -298,11 +298,9 @@ export class AccuWeatherService {
       typeof rawWindChillC === 'number'
         ? celsiusToKelvin(rawWindChillC)
         : sharedWindCalculator.calculateWindChill(temperature, windSpeed);
-    // Heat index is computed (NWS Rothfusz) from air temperature and humidity.
-    // AccuWeather RealFeel is a different, proprietary all-season index that
-    // can fall below air temperature, so it must not occupy the canonical
-    // environment.outside.heatIndexTemperature leaf; RealFeel is published
-    // separately on environment.weather.realFeel.
+    // Heat index is computed (NWS Rothfusz), not AccuWeather RealFeel: RealFeel
+    // can fall below air temperature, so it cannot occupy the canonical
+    // heatIndexTemperature leaf. RealFeel ships on environment.weather.realFeel.
     const heatIndex = sharedWindCalculator.calculateHeatIndex(temperature, humidity);
 
     const enhancedTemps = extractEnhancedTemperatures(conditions);

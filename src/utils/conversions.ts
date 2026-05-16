@@ -232,6 +232,9 @@ export function calculateAirDensity(
  * into a lone surrogate that would break a JSON-encoded downstream consumer.
  */
 export function truncateToCodePoints(value: string, maxCodePoints: number): string {
+  // UTF-16 length is an upper bound on code-point count, so a short string can
+  // skip the code-point array allocation entirely.
+  if (value.length <= maxCodePoints) return value;
   const points = Array.from(value);
   return points.length <= maxCodePoints ? value : points.slice(0, maxCodePoints).join('');
 }

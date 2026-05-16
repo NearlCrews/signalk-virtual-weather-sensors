@@ -289,14 +289,10 @@ export class NMEA2000PathMapper {
   }
 
   private addWindPaths(values: PathValue[], data: WeatherData): void {
-    // AccuWeather wind is ground-referenced. The plugin emits only the two
-    // canonical environment.wind leaves it can source accurately:
-    // speedOverGround and directionTrue. speedTrue (water-referenced) is
-    // deliberately not emitted: it would clobber a real anemometer feed on a
-    // moving vessel. The calculated apparent wind is doubly synthetic
-    // (regional ground wind plus vessel motion), so it is published on
-    // producer-namespaced environment.weather.* paths rather than the
-    // canonical speedApparent / angleApparent leaves a masthead instrument owns.
+    // AccuWeather wind is ground-referenced: emit only speedOverGround and
+    // directionTrue. speedTrue and the canonical apparent leaves are left
+    // unset so they cannot clobber a real anemometer feed. Calculated apparent
+    // wind goes on producer-namespaced environment.weather.* paths instead.
     values.push(
       pv(SIGNALK_PATHS.ENVIRONMENT.WIND.SPEED_OVER_GROUND, data.windSpeed),
       pv(SIGNALK_PATHS.ENVIRONMENT.WIND.DIRECTION_TRUE, data.windDirection)
