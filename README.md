@@ -5,238 +5,122 @@
 [![License](https://img.shields.io/github/license/NearlCrews/signalk-virtual-weather-sensors.svg)](https://github.com/NearlCrews/signalk-virtual-weather-sensors/blob/main/LICENSE)
 [![CI](https://github.com/NearlCrews/signalk-virtual-weather-sensors/actions/workflows/ci.yml/badge.svg)](https://github.com/NearlCrews/signalk-virtual-weather-sensors/actions/workflows/ci.yml)
 
-A Signal K plugin that fetches weather data from the AccuWeather API and emits it as Signal K deltas conforming to the [Signal K 1.8.2 specification](https://signalk.org/specification/1.8.2/doc/), with paths aligned for NMEA2000 emission via a companion plugin. Provides 24+ environmental data points including temperatures, wind, atmospheric conditions, and marine safety indices.
+Fetches weather data for your vessel's current position from the AccuWeather
+API and emits it as Signal K deltas: 24+ environmental data points including
+temperatures, wind, atmospheric conditions, and marine safety indices. Paths
+follow the [Signal K 1.8.2 specification](https://signalk.org/specification/1.8.2/doc/)
+and align with NMEA2000 emission via a companion plugin. A free AccuWeather API
+key is required.
 
 ## Features
 
-- **24+ weather data points** from AccuWeather: 8 temperature paths, wind (speed-over-ground, direction, gust, derived Beaufort), atmospheric conditions (pressure, relative humidity, UV, visibility, clouds), and precipitation
-- **Spec-compliant Signal K paths** following the 1.8.2 vocabulary (`relativeHumidity`, `apparentWindChillTemperature`, etc.). Anything not in the 1.8.2 vocabulary (Beaufort scale, gust factor, heat stress index, AccuWeather extensions like UV, visibility, cloud cover) lives under a producer-namespaced `environment.weather.*` branch, so the canonical `environment.outside` and `environment.wind` containers hold only spec leaves and consumers walking them never trip over a non-leaf object.
-- **Severe-weather notifications** (opt-in, off by default) under `notifications.environment.*`: gale / storm / hurricane wind bands, low / very-low visibility, heat-stress and cold-exposure tiers, and a severe-condition path driven by AccuWeather's `WeatherIcon` codes (thunderstorm / ice / freezing rain). Transition-only state machine: each band fires once on entry and once on exit, so the bus never sees a flapping notification path.
-- **React config panel** (since v1.5.0) loaded by the Signal K Admin UI v2.13+ via the `signalk-plugin-configurator` keyword: live status card (banner + counters), inline "Test" button that probes AccuWeather with a single location-search call, sectioned form with dependency-aware notification toggles. The original JSON-schema form is preserved as a fallback for older admin UIs.
-- **`$source: 'accuweather'`** on every delta, so users can configure source priorities to prefer real onboard sensors over the API feed when both are present.
-- **One-shot meta delta** on plugin start describing units and labels for non-canonical paths, so the Signal K Admin UI and Instrument Panel render them correctly.
-- **Apparent wind calculation** from true wind + vessel motion vectors
-- **NMEA2000 alignment** with [`signalk-nmea2000-emitter-cannon`](https://github.com/NearlCrews/signalk-nmea2000-emitter-cannon) PGN conventions (130306, 130311, 130312, 130313)
-- **Interval-based emission** (default 5s) for reliable NMEA2000 network recognition
-- **Delta caching**: only rebuilds the Signal K delta when weather data actually changes
-- **Banner dedupe**: identical `setPluginStatus` / `setPluginError` strings within the same minute are coalesced so a flapping API can never flap the admin UI banner
-- **Rate limit handling** with Retry-After header support and linear backoff fallback
-- **Bounded responses**: 1 MiB cap on AccuWeather response bodies plus schema validation before use
-- **API key sanitization** in log output
+- 24+ weather data points: temperatures, wind, pressure, humidity, UV,
+  visibility, cloud cover, and precipitation
+- Spec-compliant Signal K paths, with AccuWeather extensions and derived values
+  on a producer-namespaced `environment.weather.*` branch
+- Apparent wind calculated from true wind and vessel motion
+- Severe-weather notifications (opt-in, off by default) for wind, visibility,
+  heat, cold, and severe conditions
+- React config panel in the Admin UI with a live status card and inline API
+  key test, with a JSON-schema form fallback for older Admin UIs
+- NMEA2000 path alignment for bridging via a companion emitter plugin
+- `$source: 'accuweather'` on every delta, so real onboard sensors can win on
+  source priority
+
+## Requirements
+
+- Signal K server 2.0.0 or newer
+- A free AccuWeather API key from [developer.accuweather.com](https://developer.accuweather.com/)
+- A GPS position published on `navigation.position` (the plugin queries
+  AccuWeather for the vessel's current location)
 
 ## Installation
 
-### From npm
+Install from the Signal K Admin UI under **Appstore -> Available**, or from npm:
 
 ```bash
 npm install signalk-virtual-weather-sensors
 ```
 
-### From source
+From source:
 
 ```bash
 git clone https://github.com/NearlCrews/signalk-virtual-weather-sensors.git
 cd signalk-virtual-weather-sensors
 npm install
 npm run build
-```
-
-Then symlink or copy into your Signal K server's plugin directory:
-
-```bash
 ln -s "$(pwd)" ~/.signalk/node_modules/signalk-virtual-weather-sensors
 ```
 
 ## Configuration
 
+Configure in the Signal K Admin UI under **Server -> Plugin Config**.
+
 | Setting | Description | Default | Range |
 |---------|-------------|---------|-------|
-| **AccuWeather API Key** | Required. Get one free at [developer.accuweather.com](https://developer.accuweather.com/) | n/a | n/a |
-| **Update Frequency** | How often to fetch new weather data (minutes). At the default 30 minutes the plugin uses 48 calls/day, within the AccuWeather free-tier 50/day cap. | 30 | 1 to 60 |
-| **Emission Interval** | How often to emit the current data to the NMEA2000 network (seconds) | 5 | 1 to 60 |
-| **Daily API Call Quota** | Cap on AccuWeather calls per rolling 24-hour window. The status banner shows `K/Q today` and switches to a warning prefix at 90% usage; at 100% the plugin pauses fetches and surfaces a setPluginError until usage drops below the cap. Set to 0 to disable the cap entirely. | 50 | 0 to 1000 |
-| **Severe-weather notifications** | Opt-in toggle plus per-category sub-toggles (wind, visibility, heat, cold, severe condition). When enabled, emits Signal K notifications under `notifications.environment.*` on hazard transitions. Master is off by default; sub-toggles default to on. See "Notifications" below. | master off, sub-toggles on | boolean |
+| AccuWeather API Key | Required. Free key from AccuWeather. | n/a | n/a |
+| Update Frequency | Minutes between weather fetches. The default 30 uses 48 calls/day, inside the free-tier 50/day cap. | 30 | 1 to 60 |
+| Emission Interval | Seconds between delta emissions to the NMEA2000 network. | 5 | 1 to 60 |
+| Daily API Call Quota | Cap on AccuWeather calls per rolling 24h window. 0 disables the cap. | 50 | 0 to 1000 |
+| Severe-weather notifications | Master toggle plus per-category sub-toggles (wind, visibility, heat, cold, severe). | master off, sub-toggles on | boolean |
 
-## Signal K Paths
+## What it emits
 
-Paths marked **canonical** are defined in the [Signal K 1.8.2 vocabulary](https://signalk.org/specification/1.8.2/doc/vesselsBranch.html) and live under `environment.outside.*` or `environment.wind.*`. Everything else (AccuWeather extensions like UV, visibility, cloud cover, plus plugin-derived values like Beaufort scale and heat stress) lives under a producer-namespaced `environment.weather.*` branch, so the canonical containers stay leaf-only as the spec requires. The plugin ships a one-shot Signal K `meta` block describing units and labels for every non-canonical path.
+The plugin emits 24+ data points under three namespaces: canonical
+`environment.outside.*` and `environment.wind.*` paths from the Signal K 1.8.2
+vocabulary, plus a producer-namespaced `environment.weather.*` branch for
+AccuWeather extensions and plugin-derived values (Beaufort scale, heat stress,
+and more). A one-shot meta delta on start describes units and labels for the
+non-canonical paths.
 
-### Core Environmental (canonical)
+See [docs/signal-k-paths.md](docs/signal-k-paths.md) for the full path, PGN,
+and notification reference.
 
-| Path | Unit | Description |
-|------|------|-------------|
-| `environment.outside.temperature` | K | Air temperature |
-| `environment.outside.pressure` | Pa | Atmospheric pressure |
-| `environment.outside.relativeHumidity` | ratio (0 to 1) | Relative humidity |
-| `environment.outside.dewPointTemperature` | K | Dew point |
-| `environment.outside.apparentWindChillTemperature` | K | Wind chill referenced to observed wind |
-| `environment.outside.heatIndexTemperature` | K | Heat index (RealFeel) |
-| `environment.outside.airDensity` | kg/m3 | Calculated air density |
+## NMEA2000 integration
 
-### Wind (canonical)
-
-| Path | Unit | Description |
-|------|------|-------------|
-| `environment.wind.speedOverGround` | m/s | Ground-referenced wind speed (AccuWeather is ground-referenced; this plugin does not emit `speedTrue`) |
-| `environment.wind.directionTrue` | rad | True wind direction |
-| `environment.wind.speedApparent` | m/s | Apparent wind speed (calculated from vessel motion) |
-| `environment.wind.angleApparent` | rad | Apparent wind angle relative to bow (omitted when no heading is available) |
-
-### Weather extensions (`environment.weather.*`, producer namespace)
-
-Everything in this section is outside the 1.8.2 vocabulary. The plugin ships meta describing units and labels.
-
-| Path | Unit | Description |
-|------|------|-------------|
-| `environment.weather.realFeelShade` | K | RealFeel in shade |
-| `environment.weather.wetBulbTemperature` | K | Wet bulb |
-| `environment.weather.wetBulbGlobeTemperature` | K | Wet bulb globe (heat stress) |
-| `environment.weather.apparentTemperature` | K | AccuWeather apparent temperature |
-| `environment.weather.absoluteHumidity` | kg/m3 | Calculated absolute humidity |
-| `environment.weather.uvIndex` | (unitless) | WHO solar UV scale: 0..2 low, 3..5 moderate, 6..7 high, 8..10 very high, 11+ extreme |
-| `environment.weather.visibility` | m | Visibility distance |
-| `environment.weather.cloudCover` | ratio (0 to 1) | Cloud coverage |
-| `environment.weather.cloudCeiling` | m | Cloud base height |
-| `environment.weather.temperatureDeparture24h` | K | 24-hour temperature change |
-| `environment.weather.precipitationLastHour` | m | Precipitation depth in the last hour |
-| `environment.weather.precipitationCurrent` | m/s | Current precipitation rate |
-| `environment.weather.speedGust` | m/s | Wind gust speed |
-| `environment.weather.gustFactor` | ratio | Gust / sustained ratio |
-| `environment.weather.beaufortScale` | (unitless) | Beaufort scale category (0..12) |
-| `environment.weather.heatStressIndex` | (unitless) | WBGT-derived heat-stress category: 0 low (<27 C), 1 moderate (27..29 C), 2 high (29..31 C), 3 very high (31..33 C), 4 extreme (>=33 C) |
+This plugin outputs Signal K deltas only. To bridge them onto a physical
+NMEA2000 bus, pair it with an emitter plugin such as
+[`signalk-nmea2000-emitter-cannon`](https://github.com/NearlCrews/signalk-nmea2000-emitter-cannon),
+which covers PGNs 130306, 130311, 130312, and 130313. See
+[docs/signal-k-paths.md](docs/signal-k-paths.md#nmea2000-pgn-coverage) for
+per-PGN path mapping.
 
 ## Notifications
 
-Severe-weather notifications under `notifications.environment.*` are opt-in (master toggle off by default). When enabled, the plugin emits one Signal K notification delta per hazard band transition (entry into / exit from the band). Bands are tracked independently so a single weather event can light up multiple paths concurrently.
-
-| Path | State | Trigger |
-|------|-------|---------|
-| `notifications.environment.wind.gale` | `warn` | Beaufort >= 8 |
-| `notifications.environment.wind.storm` | `alarm` | Beaufort >= 10 |
-| `notifications.environment.wind.hurricane` | `emergency` | Beaufort >= 12 |
-| `notifications.environment.visibility.low` | `warn` | Visibility under 1 nm (1852 m) |
-| `notifications.environment.visibility.veryLow` | `alarm` | Visibility under 0.5 nm (926 m) |
-| `notifications.environment.heat.caution` | `warn` | Heat-stress index >= 2 |
-| `notifications.environment.heat.high` | `alarm` | Heat-stress index >= 3 |
-| `notifications.environment.heat.extreme` | `emergency` | Heat-stress index >= 4 |
-| `notifications.environment.cold.caution` | `warn` | Wind chill below 0 C |
-| `notifications.environment.cold.extreme` | `alarm` | Wind chill below -20 C |
-| `notifications.environment.weather.severe` | `warn` or `alarm` | AccuWeather `WeatherIcon` 15-17 thunderstorms (warn), 24 ice (alarm), 25-26 sleet / freezing rain (warn), 22-23 / 29 / 41-44 snow / thunderstorms (warn) |
-
-Each notification value follows the SK 1.8.2 shape `{ state, method, message, timestamp }`. `state: 'normal'` is written on exit so plotter UIs clear the alert. `method` is `['visual']` for `warn` and `['visual', 'sound']` for `alarm` / `emergency`.
-
-The `message` field packs adjacent context so a chartplotter banner is actionable on its own:
-
-| Band | Sample message |
-|------|----------------|
-| Wind | `Gale-force wind: Bf9 from SW, 19 m/s, gusts 27 m/s, 998 hPa` |
-| Visibility | `Reduced visibility: 0.8 km, ceiling 90 m, rain 2.5 mm/h` |
-| Heat | `High heat stress: HSI 3, WBGT 32 C, RH 78%, RealFeel 35 C` |
-| Cold | `Cold exposure caution: wind chill -2 C, air 1 C, wind 12 m/s` |
-| Severe | `Thunderstorms: Severe thunderstorms approaching, 998 hPa` |
-
-Optional fields drop out cleanly when AccuWeather doesn't provide them: a wind notification on a free-tier key with no gust block just omits the `gusts ...` segment. Every message is capped at 80 characters (with a `…` suffix on overflow) so it renders cleanly across the chartplotter fleet that bridges through `signalk-to-nmea2000` to NMEA 2000 Alert PGN 126985.
-
-### Bridging to NMEA 2000 Alert PGNs
-
-Signal K notifications round-trip to N2K Alert PGNs 126983 (Alert) and 126985 (Alert Text) only when the separate `signalk-to-nmea2000` plugin is installed on the server. This plugin produces SK-native deltas only: it does not bridge to N2K itself. Notifications still render in the Signal K Data Browser and any SK webapp regardless.
-
-## NMEA2000 Integration
-
-This plugin outputs Signal K deltas only. To bridge them onto a physical NMEA2000 bus, pair with an emitter plugin such as [`signalk-nmea2000-emitter-cannon`](https://github.com/NearlCrews/signalk-nmea2000-emitter-cannon). Instance numbers and PGN priority are assigned by the emitter; this plugin does not embed them in the deltas it produces.
-
-### PGN Coverage (when paired with `signalk-nmea2000-emitter-cannon`)
-
-PGN 130312 has fixed enum slots for Outside Temperature, Dew Point, Apparent Wind Chill, and Heat Index. The other temperature paths this plugin emits (RealFeel shade, wet bulb, wet bulb globe, AccuWeather apparent) have no PGN 130312 enum slot, so they reach Signal K consumers but do not bridge to PGN 130312 on the bus.
-
-| PGN | Description | Source paths emitted by this plugin |
-|-----|-------------|-------------------------------------|
-| 130306 | Wind Data | `environment.wind.speedOverGround`, `directionTrue`, `speedApparent`, `angleApparent` (`environment.weather.speedGust` is emitted but the current cannon release does not subscribe to it) |
-| 130311 | Environmental Parameters | `environment.outside.pressure` |
-| 130312 | Temperature (enum-routed) | `environment.outside.temperature`, `dewPointTemperature`, `apparentWindChillTemperature`, `heatIndexTemperature` |
-| 130313 | Humidity | `environment.outside.relativeHumidity` |
-
-## Data Flow
-
-```
-AccuWeather API --> AccuWeatherService (extract + convert to SI units)
-                         |
-                    WeatherService (add apparent wind from vessel motion)
-                         |
-                    NMEA2000PathMapper (validate, sanitize, map to SK paths)
-                         |
-                    index.ts emission timer (emit cached delta every N seconds)
-                         |
-                    Signal K server --> NMEA2000 emitter --> marine electronics
-```
+Severe-weather notifications under `notifications.environment.*` are opt-in and
+off by default. When enabled, the plugin emits one Signal K notification per
+hazard band transition (entry and exit) across wind, visibility, heat, cold,
+and severe-condition categories. Each message packs actionable context (for
+example `Gale-force wind: Bf9 from SW, 19 m/s, gusts 27 m/s, 998 hPa`).
+Bridging to NMEA 2000 Alert PGNs requires the separate `signalk-to-nmea2000`
+plugin. See [docs/signal-k-paths.md](docs/signal-k-paths.md#notifications) for
+the full band, trigger, and message reference.
 
 ## Troubleshooting
 
-### `API_UNAUTHORIZED: Invalid API key` (HTTP 401)
-The AccuWeather server rejected the key. The plugin status banner will show this string and no weather deltas will be emitted.
-**What to check**: log into [developer.accuweather.com](https://developer.accuweather.com/), open *My Apps*, confirm the key is active and copy it again (no leading or trailing whitespace). Keys are at least 20 characters.
+Common issues, shown as a status banner in the Admin UI:
 
-### `API_FORBIDDEN: API access forbidden` (HTTP 403)
-The key is valid but not authorized for the *Current Conditions* endpoint, or the request came from a blocked IP.
-**What to check**: confirm the key's plan includes *Current Conditions* in the AccuWeather portal. Trial keys expire 30 days after creation. If you proxy outbound traffic, confirm the egress IP is not on AccuWeather's block list.
+- **Invalid API key (HTTP 401)**: re-copy the key from AccuWeather with no
+  surrounding whitespace.
+- **Rate limit / quota reached**: raise `updateFrequency` or `dailyApiQuota`;
+  the free tier allows 50 calls/day.
+- **No position available**: confirm a GPS source publishes
+  `navigation.position` in the Data Browser.
 
-### `API_RATE_LIMIT: Rate limit exceeded` (HTTP 429)
-The free tier allows 50 calls per day. Each `updateFrequency` tick costs 1 call (location lookups are cached for 2 hours, so they rarely cost extra).
-**What to check**: the default `updateFrequency: 30` minutes uses 48 calls/day, which sits inside the free-tier 50/day cap. If you have lowered `updateFrequency` below 30, raise it back: at 5 minutes the plugin would burn 288 calls/day. See `examples/slow-update.json` for an ultra-conservative 60-minute profile (24 calls/day) suitable when the key is shared with other AccuWeather consumers.
+See [docs/troubleshooting.md](docs/troubleshooting.md) for the full guide.
 
-### `RESPONSE_TOO_LARGE: AccuWeather response is N bytes`
-The plugin caps response bodies at 1 MiB to defend against runaway upstream payloads. AccuWeather Current Conditions responses are normally a few kilobytes, so this almost always indicates a misrouted response (proxy error page, captive portal).
-**What to check**: confirm the Signal K server can reach `dataservice.accuweather.com` directly without an HTML interstitial.
+## Documentation
 
-### `Running [quota 90% used]` (warning prefix in the status banner)
-The rolling 24-hour API request count has crossed 90% of `dailyApiQuota`. The plugin still fetches normally; this is a soft warning so operators can raise the quota or `updateFrequency` before fetches actually pause.
-**What to check**: the suffix `K/Q today` shows the live count. Either raise `dailyApiQuota` (paid-tier keys typically allow 25k+/day) or increase `updateFrequency` to spend the remaining headroom more slowly.
-
-### `AccuWeather daily quota reached (K/Q in last 24h)`
-The rolling 24-hour count has hit `dailyApiQuota`. The plugin emits a `setPluginError`, skips new fetches, and serves the last good weather payload until the rolling window drops below the cap. The full banner text is `AccuWeather daily quota reached (K/Q in last 24h). Fetches paused until the rolling window drops below the cap. To resume sooner, raise dailyApiQuota or increase updateFrequency.`
-**What to check**: the cap is per rolling 24h, NOT calendar day, so the plugin resumes fetches gradually as the oldest hourly buckets age out. To resume immediately, either raise `dailyApiQuota` and restart the plugin, or set `dailyApiQuota: 0` to disable the cap entirely.
-
-### `Weather data stale: last update N minutes ago`
-The plugin emits this banner when the last successful fetch is older than `2 × updateFrequency`. The unit pluralizes correctly: "1 minute ago" for the boundary case, "N minutes ago" otherwise. The most common causes are upstream API errors, network outages, and missing GPS position.
-**What to check**: the Signal K server logs will show the underlying error code from the previous list. The banner clears automatically once the next fetch succeeds.
-
-### `No position available for weather data`
-The plugin throws this when `navigation.position` on the self vessel is null, undefined, or comes from an excluded source (currently any source label containing `node-red`). There is no fixed-coordinates fallback.
-**What to check**: confirm a GPS source is publishing `navigation.position` in the Signal K data browser. Note that any source whose label contains `node-red` is deliberately ignored to avoid feedback loops, so a Node-RED-published position will not be picked up; use a different source label or a real GPS/AIS feed.
-
-## Development
-
-See [DEVELOPMENT.md](DEVELOPMENT.md) for full details.
-
-```bash
-npm run build          # Clean build (types + bundle)
-npm run dev            # Watch mode with hot reload
-npm run test           # Tests in watch mode
-npm run test:run       # Tests once
-npm run test:coverage  # Coverage report (80% thresholds)
-npm run lint           # Biome check
-npm run lint:fix       # Auto-fix
-npm run validate       # Type-check + lint + tests (runs on pre-commit)
-```
-
-### Tech Stack
-
-- TypeScript 6.0 (strict, ES2023, ESM)
-- Node.js 20.18+
-- `@signalk/server-api` 2.24+ (declared as a `peerDependency`; the Signal K server provides it at runtime)
-- esbuild 0.28 for bundling
-- Biome 2.4 for linting/formatting
-- Vitest 4.1 for testing (275 tests across 11 files; Stryker.js for opt-in mutation testing)
-- React 19 + webpack 5 + Module Federation for the federated config panel (`src/configpanel/`, bundled to `public/`)
-- Husky + lint-staged for pre-commit hooks
+- [Signal K paths, PGNs, and notifications](docs/signal-k-paths.md)
+- [Troubleshooting](docs/troubleshooting.md)
+- [Development guide](DEVELOPMENT.md)
+- [Changelog](CHANGELOG.md)
+- [Contributing](CONTRIBUTING.md)
+- [Security policy](SECURITY.md)
 
 ## License
 
 Apache-2.0: see [LICENSE](LICENSE).
-
-## Contributing
-
-See [CONTRIBUTING.md](CONTRIBUTING.md). Pre-commit hooks enforce formatting and tests automatically.
 
 ## Support
 

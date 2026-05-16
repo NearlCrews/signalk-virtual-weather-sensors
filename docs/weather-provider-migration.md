@@ -6,7 +6,7 @@
 
 ## Current state
 
-26 paths pushed per tick (full list: [README "Signal K Paths"](../README.md#signal-k-paths)): 7 canonical `environment.outside.*`, 4 canonical `environment.wind.*`, 16 producer-namespaced `environment.weather.*`. `$source: 'accuweather'` is stamped on every delta; a one-shot meta delta describes units for the producer-namespace leaves.
+26 paths pushed per tick (full list: [Signal K paths reference](signal-k-paths.md)): 7 canonical `environment.outside.*`, 4 canonical `environment.wind.*`, 16 producer-namespaced `environment.weather.*`. `$source: 'accuweather'` is stamped on every delta; a one-shot meta delta describes units for the producer-namespace leaves.
 
 ## WeatherDataModel coverage
 

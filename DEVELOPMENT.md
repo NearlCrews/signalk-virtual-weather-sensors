@@ -302,6 +302,24 @@ signalk-virtual-weather-sensors/
 └── LICENSE                            # Apache 2.0 license
 ```
 
+## 🔁 Data Flow
+
+```
+AccuWeather API --> AccuWeatherService (extract + convert to SI units)
+                         |
+                    WeatherService (add apparent wind from vessel motion)
+                         |
+                    NMEA2000PathMapper (validate, sanitize, map to SK paths)
+                         |
+                    index.ts emission timer (emit cached delta every N seconds)
+                         |
+                    Signal K server --> NMEA2000 emitter --> marine electronics
+```
+
+The plugin uses interval-based emission (default 5s) for reliable NMEA2000
+network recognition, combined with event-driven updates when new weather data
+arrives. The Signal K delta is rebuilt only when weather data actually changes.
+
 ## 🔧 Development Workflow
 
 ### Initial Setup
@@ -516,7 +534,7 @@ Wind direction is referenced to true north per the WMO surface-wind convention (
 
 The plugin emits `environment.outside.relativeHumidity` (the canonical 1.8.2 path) as a ratio in `[0, 1]`. AccuWeather returns relative humidity as a percentage; the value is converted to a ratio in `AccuWeatherService.transformWeatherData` via `percentageToRatio()` before reaching the mapper. The companion `signalk-nmea2000-emitter-cannon` plugin handles the conversion to the percentage format expected on the NMEA2000 wire (PGN 130313).
 
-For complete compliance documentation and TODO items, see [`TODO.md`](TODO.md).
+For the full path, PGN, and notification reference, see [`docs/signal-k-paths.md`](docs/signal-k-paths.md).
 
 ## 📚 Additional Resources
 
@@ -524,7 +542,8 @@ For complete compliance documentation and TODO items, see [`TODO.md`](TODO.md).
 
 - [README.md](README.md) - User documentation and installation
 - [CHANGELOG.md](CHANGELOG.md) - Version history and migration guides
-- [TODO.md](TODO.md) - Remaining tasks and compliance notes
+- [docs/signal-k-paths.md](docs/signal-k-paths.md) - Full path, PGN, and notification reference
+- [docs/troubleshooting.md](docs/troubleshooting.md) - Status banner troubleshooting guide
 - [LICENSE](LICENSE) - Apache 2.0 license
 
 ### External Links
