@@ -560,25 +560,25 @@ export default function PluginConfigurationPanel({ configuration, save }) {
         ))}
       </Section>
 
-      {/* Action bar: save status above the button so the operator sees the
-          confirmation message without scrolling. */}
-      {action.message && (
-        <div
-          style={{
-            ...S.status,
-            color: action.isError ? COLOR_ERR : COLOR_OK,
-            marginTop: 16,
-          }}
-        >
-          {action.message}
-        </div>
-      )}
-
+      {/* Action bar: save status below the button so the button never shifts
+          when a "Saving..." / "Saved" message appears or clears. */}
       <div style={{ marginTop: 24 }}>
         <button type="button" onClick={doSave} style={{ ...S.btn, ...S.btnPrimary }}>
           Save Configuration
         </button>
       </div>
+
+      {action.message && (
+        <div
+          style={{
+            ...S.status,
+            color: action.isError ? COLOR_ERR : COLOR_OK,
+            marginTop: 12,
+          }}
+        >
+          {action.message}
+        </div>
+      )}
     </div>
   );
 }
