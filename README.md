@@ -12,17 +12,23 @@ follow the [Signal K 1.8.2 specification](https://signalk.org/specification/1.8.
 and align with NMEA2000 emission via a companion plugin. A free AccuWeather API
 key is required.
 
-## What's New in v1.5.3
+## What's New in v1.6.0
 
-Documentation and maintenance release. The README is restructured into a
-cleaner npm and GitHub landing page, reference material moves into `docs/`,
-and a full-codebase simplify pass removes duplication. No behavioral changes:
-all 275 tests pass and every `environment.*` and `notifications.*` delta keeps
-the same shape, so no action is required on upgrade.
+A correctness and review release. Calculated apparent wind moves off the
+canonical `environment.wind.speedApparent` / `angleApparent` leaves to
+producer-namespaced `environment.weather.windSpeedApparent` /
+`windAngleApparent`, and `environment.outside.heatIndexTemperature` now
+carries a computed NWS heat index instead of AccuWeather RealFeel (RealFeel
+ships on the new `environment.weather.realFeel` path). Beaufort scale and the
+wind notification bands use sustained wind only, the heat-stress bands tighten
+to the US military WBGT cutoffs, and the Admin UI config panel gains
+collapsible sections. Consumers subscribed to the old apparent-wind leaves
+should re-point at the new paths; the delta envelope and notification value
+shape are unchanged, and 272 tests pass.
 
-See the [Changelog](CHANGELOG.md#153---2026-05-16) for the full Added /
+See the [Changelog](CHANGELOG.md#160---2026-05-16) for the full Added /
 Changed / Removed detail, or the
-[GitHub release](https://github.com/NearlCrews/signalk-virtual-weather-sensors/releases/tag/v1.5.3).
+[GitHub release](https://github.com/NearlCrews/signalk-virtual-weather-sensors/releases/tag/v1.6.0).
 
 ## Features
 

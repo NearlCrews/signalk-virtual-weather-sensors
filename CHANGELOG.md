@@ -5,7 +5,7 @@ All notable changes to the signalk-virtual-weather-sensors project will be docum
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.6.0] - 2026-05-16
 
 Documentation reorganization plus a three-expert codebase review (Signal K
 compliance, weather science, code quality) and its follow-up simplify pass.
