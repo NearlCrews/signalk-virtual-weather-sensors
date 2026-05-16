@@ -29,22 +29,43 @@ import {
 const COLOR_OK = '#10b981';
 const COLOR_ERR = '#ef4444';
 
+// Typography shared by the plain and collapsible section headers.
+const SECTION_TITLE_TYPE = {
+  fontSize: 13,
+  fontWeight: 600,
+  color: '#888',
+  textTransform: 'uppercase',
+  letterSpacing: '0.05em',
+  marginBottom: 10,
+  marginTop: 24,
+};
+
 // All styles live in a single `S` object: no CSS-in-JS library, no Tailwind,
 // no stylesheets shipped in the bundle. Mirrors the QuestDB plugin convention.
 const S = {
   root: {
     fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
     color: '#333',
-    padding: '16px 0',
+    padding: '0 0 16px',
   },
-  sectionTitle: {
-    fontSize: 13,
-    fontWeight: 600,
-    color: '#888',
-    textTransform: 'uppercase',
-    letterSpacing: '0.05em',
-    marginBottom: 10,
-    marginTop: 24,
+  sectionTitle: SECTION_TITLE_TYPE,
+  collapsibleTitle: {
+    ...SECTION_TITLE_TYPE,
+    display: 'flex',
+    alignItems: 'center',
+    gap: 6,
+    width: '100%',
+    background: 'none',
+    border: 'none',
+    padding: 0,
+    cursor: 'pointer',
+    textAlign: 'left',
+    fontFamily: 'inherit',
+  },
+  chevron: {
+    display: 'inline-block',
+    fontSize: 10,
+    transition: 'transform 0.15s',
   },
   card: {
     display: 'flex',
@@ -160,6 +181,23 @@ const NOTIFICATION_TOGGLES = Object.entries(NOTIFICATION_LABELS).map(([key, labe
   label,
 }));
 
+/**
+ * Collapsible config section. Sections start collapsed so the panel opens as a
+ * compact summary under the Status block; the operator expands only what they
+ * intend to change.
+ */
+function Section({ title, open, onToggle, children }) {
+  return (
+    <>
+      <button type="button" style={S.collapsibleTitle} onClick={onToggle} aria-expanded={open}>
+        <span style={{ ...S.chevron, transform: open ? 'rotate(90deg)' : 'none' }}>▸</span>
+        {title}
+      </button>
+      {open && children}
+    </>
+  );
+}
+
 export default function PluginConfigurationPanel({ configuration, save }) {
   const cfg = configuration || {};
 
@@ -185,6 +223,16 @@ export default function PluginConfigurationPanel({ configuration, save }) {
   // Live data polled from the plugin's REST surface.
   const [status, setStatus] = useState(null);
   const [statusLoading, setStatusLoading] = useState(true);
+
+  // Config sections collapse by default: the panel opens as a Status summary
+  // and the operator expands only the section they came to edit.
+  const [openSections, setOpenSections] = useState({
+    apiKey: false,
+    cadence: false,
+    notifications: false,
+  });
+  const toggleSection = (key) =>
+    setOpenSections((prev) => ({ ...prev, [key]: !prev[key] }));
 
   // Test-API-key button transient state. `state` is always paired with a
   // `message`, so collapsing into one object eliminates a class of bugs
@@ -333,7 +381,7 @@ export default function PluginConfigurationPanel({ configuration, save }) {
       {/* Live status section: matches the QuestDB pattern of a single header
           card plus a stats grid, so the operator sees runtime state at the
           top of the form before touching any input. */}
-      <div style={S.sectionTitle}>Status</div>
+      <div style={{ ...S.sectionTitle, marginTop: 0 }}>Status</div>
 
       {statusLoading ? (
         <div style={S.empty}>Loading...</div>
@@ -372,133 +420,145 @@ export default function PluginConfigurationPanel({ configuration, save }) {
       )}
 
       {/* API key with inline test button. */}
-      <div style={S.sectionTitle}>AccuWeather API key</div>
-
-      <div style={S.fieldRow}>
-        <label style={S.label} htmlFor="vws-apikey">API key</label>
-        <input
-          id="vws-apikey"
-          type="password"
-          autoComplete="off"
-          placeholder="paste your AccuWeather developer API key"
-          value={accuWeatherApiKey}
-          onChange={(e) => setAccuWeatherApiKey(e.target.value)}
-          style={S.input}
-        />
-        <button
-          type="button"
-          onClick={doTestKey}
-          disabled={testKey.state === 'pending'}
-          style={{
-            ...S.btn,
-            ...S.btnSecondary,
-            ...(testKey.state === 'pending' ? S.btnDisabled : {}),
-          }}
-        >
-          {testKey.state === 'pending' ? 'Testing...' : 'Test'}
-        </button>
-      </div>
-      <div style={S.help}>
-        Get one free at <a href="https://developer.accuweather.com/" target="_blank" rel="noreferrer">developer.accuweather.com</a>.
-        Minimum {API_KEY_MIN_LENGTH} characters.
-      </div>
-      {testKey.state && testKey.state !== 'pending' && (
-        <div
-          style={{
-            ...S.status,
-            color: testKey.state === 'ok' ? COLOR_OK : COLOR_ERR,
-            marginLeft: 232,
-          }}
-        >
-          {testKey.message}
+      <Section
+        title="AccuWeather API key"
+        open={openSections.apiKey}
+        onToggle={() => toggleSection('apiKey')}
+      >
+        <div style={S.fieldRow}>
+          <label style={S.label} htmlFor="vws-apikey">API key</label>
+          <input
+            id="vws-apikey"
+            type="password"
+            autoComplete="off"
+            placeholder="paste your AccuWeather developer API key"
+            value={accuWeatherApiKey}
+            onChange={(e) => setAccuWeatherApiKey(e.target.value)}
+            style={S.input}
+          />
+          <button
+            type="button"
+            onClick={doTestKey}
+            disabled={testKey.state === 'pending'}
+            style={{
+              ...S.btn,
+              ...S.btnSecondary,
+              ...(testKey.state === 'pending' ? S.btnDisabled : {}),
+            }}
+          >
+            {testKey.state === 'pending' ? 'Testing...' : 'Test'}
+          </button>
         </div>
-      )}
+        <div style={S.help}>
+          Get one free at <a href="https://developer.accuweather.com/" target="_blank" rel="noreferrer">developer.accuweather.com</a>.
+          Minimum {API_KEY_MIN_LENGTH} characters.
+        </div>
+        {testKey.state && testKey.state !== 'pending' && (
+          <div
+            style={{
+              ...S.status,
+              color: testKey.state === 'ok' ? COLOR_OK : COLOR_ERR,
+              marginLeft: 232,
+            }}
+          >
+            {testKey.message}
+          </div>
+        )}
+      </Section>
 
       {/* Fetch cadence: updateFrequency + emissionInterval + dailyApiQuota. */}
-      <div style={S.sectionTitle}>Fetch and emission cadence</div>
+      <Section
+        title="Fetch and emission cadence"
+        open={openSections.cadence}
+        onToggle={() => toggleSection('cadence')}
+      >
+        <div style={S.fieldRow}>
+          <label style={S.label} htmlFor="vws-update">Weather update frequency</label>
+          <input
+            id="vws-update"
+            type="number"
+            min={CONFIG_DEFAULTS.UPDATE_FREQUENCY_MIN}
+            max={CONFIG_DEFAULTS.UPDATE_FREQUENCY_MAX}
+            value={updateFrequency}
+            onChange={(e) => setUpdateFrequency(e.target.value)}
+            style={S.inputNumber}
+          />
+          <span style={{ fontSize: 13, color: '#666' }}>minutes</span>
+        </div>
+        <div style={S.help}>
+          Each fetch costs one AccuWeather API call. 30 min uses 48 calls/day, comfortably under the free-tier 50/day cap.
+        </div>
 
-      <div style={S.fieldRow}>
-        <label style={S.label} htmlFor="vws-update">Weather update frequency</label>
-        <input
-          id="vws-update"
-          type="number"
-          min={CONFIG_DEFAULTS.UPDATE_FREQUENCY_MIN}
-          max={CONFIG_DEFAULTS.UPDATE_FREQUENCY_MAX}
-          value={updateFrequency}
-          onChange={(e) => setUpdateFrequency(e.target.value)}
-          style={S.inputNumber}
-        />
-        <span style={{ fontSize: 13, color: '#666' }}>minutes</span>
-      </div>
-      <div style={S.help}>
-        Each fetch costs one AccuWeather API call. 30 min uses 48 calls/day, comfortably under the free-tier 50/day cap.
-      </div>
+        <div style={S.fieldRow}>
+          <label style={S.label} htmlFor="vws-emission">NMEA2000 broadcast interval</label>
+          <input
+            id="vws-emission"
+            type="number"
+            min={CONFIG_DEFAULTS.EMISSION_INTERVAL_MIN}
+            max={CONFIG_DEFAULTS.EMISSION_INTERVAL_MAX}
+            value={emissionInterval}
+            onChange={(e) => setEmissionInterval(e.target.value)}
+            style={S.inputNumber}
+          />
+          <span style={{ fontSize: 13, color: '#666' }}>seconds</span>
+        </div>
+        <div style={S.help}>
+          How often the cached weather payload is re-emitted to the Signal K bus.
+          Independent of the AccuWeather fetch cadence.
+        </div>
 
-      <div style={S.fieldRow}>
-        <label style={S.label} htmlFor="vws-emission">NMEA2000 broadcast interval</label>
-        <input
-          id="vws-emission"
-          type="number"
-          min={CONFIG_DEFAULTS.EMISSION_INTERVAL_MIN}
-          max={CONFIG_DEFAULTS.EMISSION_INTERVAL_MAX}
-          value={emissionInterval}
-          onChange={(e) => setEmissionInterval(e.target.value)}
-          style={S.inputNumber}
-        />
-        <span style={{ fontSize: 13, color: '#666' }}>seconds</span>
-      </div>
-      <div style={S.help}>
-        How often the cached weather payload is re-emitted to the Signal K bus.
-        Independent of the AccuWeather fetch cadence.
-      </div>
-
-      <div style={S.fieldRow}>
-        <label style={S.label} htmlFor="vws-quota">Daily API call quota</label>
-        <input
-          id="vws-quota"
-          type="number"
-          min={CONFIG_DEFAULTS.DAILY_API_QUOTA_MIN}
-          max={CONFIG_DEFAULTS.DAILY_API_QUOTA_MAX}
-          value={dailyApiQuota}
-          onChange={(e) => setDailyApiQuota(e.target.value)}
-          style={S.inputNumber}
-        />
-        <span style={{ fontSize: 13, color: '#666' }}>calls / 24h (0 = no cap)</span>
-      </div>
-      <div style={S.help}>
-        At 90% usage the banner warns; at 100% fetches pause until the rolling window drops.
-      </div>
+        <div style={S.fieldRow}>
+          <label style={S.label} htmlFor="vws-quota">Daily API call quota</label>
+          <input
+            id="vws-quota"
+            type="number"
+            min={CONFIG_DEFAULTS.DAILY_API_QUOTA_MIN}
+            max={CONFIG_DEFAULTS.DAILY_API_QUOTA_MAX}
+            value={dailyApiQuota}
+            onChange={(e) => setDailyApiQuota(e.target.value)}
+            style={S.inputNumber}
+          />
+          <span style={{ fontSize: 13, color: '#666' }}>calls / 24h (0 = no cap)</span>
+        </div>
+        <div style={S.help}>
+          At 90% usage the banner warns; at 100% fetches pause until the rolling window drops.
+        </div>
+      </Section>
 
       {/* Notifications: master toggle gates 5 sub-toggles so an "all on / all off"
           flick is one click without losing per-category granularity. */}
-      <div style={S.sectionTitle}>Severe-weather notifications</div>
-
-      <div style={S.checkboxRow}>
-        <input
-          id="vws-notif-enabled"
-          type="checkbox"
-          checked={notifications.enabled}
-          onChange={(e) => updateNotification('enabled', e.target.checked)}
-        />
-        <label htmlFor="vws-notif-enabled" style={{ ...S.checkboxLabel, fontWeight: 600 }}>
-          Enable PGN notifications
-        </label>
-      </div>
-
-      {NOTIFICATION_TOGGLES.map((row) => (
-        <div key={row.key} style={{ ...S.checkboxRow, opacity: notifications.enabled ? 1 : 0.5 }}>
+      <Section
+        title="Severe-weather notifications"
+        open={openSections.notifications}
+        onToggle={() => toggleSection('notifications')}
+      >
+        <div style={S.checkboxRow}>
           <input
-            id={`vws-notif-${row.key}`}
+            id="vws-notif-enabled"
             type="checkbox"
-            checked={!!notifications[row.key]}
-            disabled={!notifications.enabled}
-            onChange={(e) => updateNotification(row.key, e.target.checked)}
+            checked={notifications.enabled}
+            onChange={(e) => updateNotification('enabled', e.target.checked)}
           />
-          <label htmlFor={`vws-notif-${row.key}`} style={S.checkboxLabel}>
-            {row.label}
+          <label htmlFor="vws-notif-enabled" style={{ ...S.checkboxLabel, fontWeight: 600 }}>
+            Enable PGN notifications
           </label>
         </div>
-      ))}
+
+        {NOTIFICATION_TOGGLES.map((row) => (
+          <div key={row.key} style={{ ...S.checkboxRow, opacity: notifications.enabled ? 1 : 0.5 }}>
+            <input
+              id={`vws-notif-${row.key}`}
+              type="checkbox"
+              checked={!!notifications[row.key]}
+              disabled={!notifications.enabled}
+              onChange={(e) => updateNotification(row.key, e.target.checked)}
+            />
+            <label htmlFor={`vws-notif-${row.key}`} style={S.checkboxLabel}>
+              {row.label}
+            </label>
+          </div>
+        ))}
+      </Section>
 
       {/* Action bar: save status above the button so the operator sees the
           confirmation message without scrolling. */}

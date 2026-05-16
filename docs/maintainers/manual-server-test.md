@@ -16,6 +16,7 @@ Reproducible end-to-end check of `signalk-virtual-weather-sensors` running again
 
 - [ ] Open **Server -> Plugin Config -> Signal K Virtual Weather Sensors**.
 - [ ] Toggle **Active** on.
+- [ ] The panel shows a **Status** card followed by three collapsed sections (**AccuWeather API key**, **Fetch and emission cadence**, **Severe-weather notifications**). Click a section header to expand it before editing its fields.
 - [ ] Paste the AccuWeather key into **AccuWeather API Key**.
 - [ ] Leave **Update Frequency (minutes)** at the default `30` for the test run (or temporarily lower it to 1 to speed up verification, then restore before regular use).
 - [ ] Leave **Emission Interval (seconds)** at the default `5` for the test run.
@@ -35,7 +36,7 @@ Open **Server -> Data Browser**. Filter by `vessels.self`. For each path below c
 - [ ] `environment.outside.relativeHumidity` (ratio 0 to 1)
 - [ ] `environment.outside.dewPointTemperature` (K)
 - [ ] `environment.outside.apparentWindChillTemperature` (K)
-- [ ] `environment.outside.heatIndexTemperature` (K)
+- [ ] `environment.outside.heatIndexTemperature` (K, computed NWS heat index, not AccuWeather RealFeel)
 - [ ] `environment.outside.airDensity` (kg/m3, roughly 1.0 to 1.4)
 
 ### Canonical `environment.wind.*`
@@ -43,7 +44,7 @@ Open **Server -> Data Browser**. Filter by `vessels.self`. For each path below c
 - [ ] `environment.wind.speedOverGround` (m/s)
 - [ ] `environment.wind.directionTrue` (rad, 0 to ~6.28)
 - [ ] **`environment.wind.speedTrue` is absent.** AccuWeather wind is ground-referenced; the plugin deliberately does not emit `speedTrue`. Its presence would indicate a regression.
-- [ ] `environment.wind.speedApparent` and `environment.wind.angleApparent` appear **only when** `vessels.self.navigation.headingTrue` and `navigation.speedOverGround` are both present. If they are missing, confirm one of those upstream paths is also missing (expected behavior, not a bug).
+- [ ] **`environment.wind.speedApparent` and `environment.wind.angleApparent` are absent.** Calculated apparent wind is producer-namespaced (`environment.weather.windSpeedApparent` / `windAngleApparent`, listed below); it deliberately does not squat the canonical apparent leaves a masthead anemometer owns.
 
 ### Producer-namespaced `environment.weather.*`
 
@@ -52,6 +53,7 @@ Open **Server -> Data Browser**. Filter by `vessels.self`. For each path below c
 - [ ] `environment.weather.cloudCover` (ratio 0 to 1)
 - [ ] `environment.weather.cloudCeiling` (m)
 - [ ] `environment.weather.absoluteHumidity` (kg/m3)
+- [ ] `environment.weather.realFeel` (K, AccuWeather RealFeel; may be absent on free-tier)
 - [ ] `environment.weather.realFeelShade` (K)
 - [ ] `environment.weather.wetBulbTemperature` (K)
 - [ ] `environment.weather.wetBulbGlobeTemperature` (K)
@@ -61,6 +63,8 @@ Open **Server -> Data Browser**. Filter by `vessels.self`. For each path below c
 - [ ] `environment.weather.precipitationCurrent` (m/s, may be absent on free-tier)
 - [ ] `environment.weather.speedGust` (m/s)
 - [ ] `environment.weather.gustFactor` (ratio, may be absent when wind is calm)
+- [ ] `environment.weather.windSpeedApparent` (m/s, present only when `navigation.speedOverGround` and a course over ground are available)
+- [ ] `environment.weather.windAngleApparent` (rad, -pi..pi, negative to port)
 - [ ] `environment.weather.beaufortScale` (0..12)
 - [ ] `environment.weather.heatStressIndex` (0..4, present only when WBGT is)
 

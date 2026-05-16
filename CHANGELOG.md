@@ -9,12 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 Documentation reorganization plus a three-expert codebase review (Signal K
 compliance, weather science, code quality) and its follow-up simplify pass.
-Several consumer-visible path and value changes are listed under Changed;
-there is no change to the delta envelope or the notification value shape.
-272 tests pass.
+The Admin UI config panel also gained collapsible sections. Several
+consumer-visible path and value changes are listed under Changed; there is
+no change to the delta envelope or the notification value shape. 272 tests
+pass.
 
 ### Changed
 
+- **Admin UI config panel sections collapse by default.** The panel opens as a compact Status summary; the API key, fetch-cadence, and notification sections each expand on click. The gap above the Status header was tightened so the panel sits flush under the host page heading.
 - **Apparent wind moved off the canonical wind leaves.** The plugin's calculated apparent wind is no longer emitted on `environment.wind.speedApparent` / `angleApparent`; it now uses producer-namespaced `environment.weather.windSpeedApparent` and `environment.weather.windAngleApparent`. The value is doubly synthetic (AccuWeather regional ground wind plus vessel motion) and was squatting the canonical leaves a real masthead anemometer owns. The apparent-wind angle now references true heading rather than course over ground.
 - **`environment.outside.heatIndexTemperature` now carries a computed NWS Rothfusz heat index** from air temperature and humidity, instead of AccuWeather RealFeel. RealFeel is a proprietary all-season index that can read below air temperature, which is physically impossible for a heat index. AccuWeather RealFeel is now published on `environment.weather.realFeel`.
 - **Beaufort scale and the wind notification bands use sustained wind only**, per the WMO definition. A gust no longer inflates the reported Beaufort force or trips a gale / storm / hurricane alarm.
