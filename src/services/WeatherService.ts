@@ -35,6 +35,12 @@ export interface WeatherServiceStatus {
   readonly apiRequestCount: number;
 }
 
+/** Apparent-wind result. Either field is absent when it cannot be derived. */
+interface ApparentWind {
+  readonly apparentWindSpeed?: number;
+  readonly apparentWindAngle?: number;
+}
+
 /**
  * Main Weather Service orchestrating all weather data operations
  * Coordinates AccuWeather API, vessel navigation, and wind calculations
@@ -95,7 +101,7 @@ export class WeatherService {
     this.accuWeatherService =
       accuWeatherService ?? new AccuWeatherService(this.config.accuWeatherApiKey, this.logger);
     this.signalKService = signalKService ?? new SignalKService(this.app, this.logger);
-    this.windCalculator = windCalculator ?? this.createBasicWindCalculator();
+    this.windCalculator = windCalculator ?? new WindCalculator(this.logger);
 
     this.logger('info', 'WeatherService initialized successfully');
   }
@@ -245,13 +251,14 @@ export class WeatherService {
    * no setPluginError is active yet.
    */
   public formatStatusBanner(): string {
-    const prefix = this.shouldShowQuotaWarning()
+    const used = this.accuWeatherService.getRequestCountLast24h();
+    const prefix = this.shouldShowQuotaWarning(used)
       ? PLUGIN.STATUS.RUNNING_QUOTA_WARN
       : PLUGIN.STATUS.RUNNING;
 
     const ageMs = this.getDataAgeMs();
     if (ageMs === null) {
-      const quotaSegment = this.formatQuotaSegment();
+      const quotaSegment = this.formatQuotaSegment(used);
       const head = `${prefix}, awaiting first update`;
       return quotaSegment ? `${head} (${quotaSegment})` : head;
     }
@@ -266,7 +273,7 @@ export class WeatherService {
     if (requestCount > 0) {
       counters.push(`${requestCount} API ${requestCount === 1 ? 'request' : 'requests'}`);
     }
-    const quotaSegment = this.formatQuotaSegment();
+    const quotaSegment = this.formatQuotaSegment(used);
     if (quotaSegment) counters.push(quotaSegment);
 
     return `${prefix}, last update ${ageLabel} (${counters.join(', ')})`;
@@ -274,24 +281,21 @@ export class WeatherService {
 
   /**
    * `K/Q today` segment (no leading separator) when `dailyApiQuota > 0`,
-   * otherwise empty. Pulls the rolling 24h count fresh on each call so the
-   * displayed value reflects bucket rotation.
+   * otherwise empty. `used` is the rolling 24h count, read once by the caller.
    * @private
    */
-  private formatQuotaSegment(): string {
+  private formatQuotaSegment(used: number): string {
     if (this.config.dailyApiQuota <= 0) return '';
-    const used = this.accuWeatherService.getRequestCountLast24h();
     return `${used}/${this.config.dailyApiQuota} today`;
   }
 
   /**
-   * True when the rolling 24h request count has crossed `WARN_RATIO` of the
-   * configured quota. Returns false when the cap is disabled (`dailyApiQuota = 0`).
+   * True when the rolling 24h request count `used` has crossed `WARN_RATIO` of
+   * the configured quota. Returns false when the cap is disabled.
    * @private
    */
-  private shouldShowQuotaWarning(): boolean {
+  private shouldShowQuotaWarning(used: number): boolean {
     if (this.config.dailyApiQuota <= 0) return false;
-    const used = this.accuWeatherService.getRequestCountLast24h();
     return used / this.config.dailyApiQuota >= API_QUOTA.WARN_RATIO;
   }
 
@@ -424,13 +428,9 @@ export class WeatherService {
     // here so operators see WHY the plugin paused (rather than a generic
     // stale-data message) the moment the cap is hit.
     if (this.isQuotaExhausted()) {
-      const used = this.accuWeatherService.getRequestCountLast24h();
-      const quota = this.config.dailyApiQuota;
-      this.logger('warn', 'Skipping weather update: daily API quota reached', {
-        used,
-        quota,
-      });
-      this.app.setPluginError(this.formatQuotaExhaustedMessage());
+      const message = this.formatQuotaExhaustedMessage();
+      this.logger('warn', 'Skipping weather update: daily API quota reached', { message });
+      this.app.setPluginError(message);
       return;
     }
 
@@ -581,7 +581,7 @@ export class WeatherService {
   private calculateApparentWindData(
     weatherData: WeatherData,
     vesselData: VesselNavigationData
-  ): { apparentWindSpeed?: number; apparentWindAngle?: number } {
+  ): ApparentWind {
     if (isCompleteNavigationData(vesselData)) {
       return this.calculateApparentWindWithCompleteData(weatherData, vesselData);
     }
@@ -602,7 +602,7 @@ export class WeatherService {
       readonly speedOverGround: number;
       readonly courseOverGroundTrue: number;
     }
-  ): { apparentWindSpeed?: number; apparentWindAngle?: number } {
+  ): ApparentWind {
     const { speedOverGround, courseOverGroundTrue } = vesselData;
 
     try {
@@ -649,7 +649,7 @@ export class WeatherService {
   private calculateApparentWindFallback(
     weatherData: WeatherData,
     vesselData: VesselNavigationData
-  ): { apparentWindSpeed?: number; apparentWindAngle?: number } {
+  ): ApparentWind {
     if (!vesselData.isComplete) {
       this.logger('debug', 'Cannot calculate apparent wind - incomplete vessel data', {
         hasPosition: !!vesselData.position,
@@ -685,13 +685,5 @@ export class WeatherService {
       return null;
     }
     return this.windCalculator.normalizeAngle(windDirection - vesselHeading);
-  }
-
-  /**
-   * Create wind calculator instance
-   * @private
-   */
-  private createBasicWindCalculator(): WindCalculator {
-    return new WindCalculator(this.logger);
   }
 }

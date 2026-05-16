@@ -53,15 +53,28 @@ export interface ValidationResult {
   readonly warnings: ReadonlyArray<string>;
 }
 
+/**
+ * Push a "required and must be a finite number" error for a missing or
+ * non-finite numeric field, and narrow the value to `number` when present.
+ */
+function requireFiniteField(
+  value: number | undefined,
+  name: string,
+  errors: string[]
+): value is number {
+  if (value === undefined || !Number.isFinite(value)) {
+    errors.push(`${name} is required and must be a finite number`);
+    return false;
+  }
+  return true;
+}
+
 function validateTemperatureField(
   data: Partial<WeatherData>,
   errors: string[],
   warnings: string[]
 ): void {
-  if (data.temperature === undefined || !Number.isFinite(data.temperature)) {
-    errors.push('Temperature is required and must be a finite number');
-    return;
-  }
+  if (!requireFiniteField(data.temperature, 'Temperature', errors)) return;
 
   if (!isValidTemperature(data.temperature)) {
     warnings.push(
@@ -75,10 +88,7 @@ function validatePressureField(
   errors: string[],
   warnings: string[]
 ): void {
-  if (data.pressure === undefined || !Number.isFinite(data.pressure)) {
-    errors.push('Pressure is required and must be a finite number');
-    return;
-  }
+  if (!requireFiniteField(data.pressure, 'Pressure', errors)) return;
 
   if (!isValidPressure(data.pressure)) {
     warnings.push(
@@ -88,10 +98,7 @@ function validatePressureField(
 }
 
 function validateHumidityField(data: Partial<WeatherData>, errors: string[]): void {
-  if (data.humidity === undefined || !Number.isFinite(data.humidity)) {
-    errors.push('Humidity is required and must be a finite number');
-    return;
-  }
+  if (!requireFiniteField(data.humidity, 'Humidity', errors)) return;
 
   if (!isValidHumidity(data.humidity)) {
     errors.push(
@@ -105,17 +112,19 @@ function validateWindFields(
   errors: string[],
   warnings: string[]
 ): void {
-  if (data.windSpeed === undefined || !Number.isFinite(data.windSpeed)) {
-    errors.push('Wind speed is required and must be a finite number');
-  } else if (!isValidWindSpeed(data.windSpeed)) {
+  if (
+    requireFiniteField(data.windSpeed, 'Wind speed', errors) &&
+    !isValidWindSpeed(data.windSpeed)
+  ) {
     warnings.push(
       `Wind speed ${data.windSpeed}m/s is outside expected range (${VALIDATION_LIMITS.WIND_SPEED.MIN}-${VALIDATION_LIMITS.WIND_SPEED.MAX}m/s)`
     );
   }
 
-  if (data.windDirection === undefined || !Number.isFinite(data.windDirection)) {
-    errors.push('Wind direction is required and must be a finite number');
-  } else if (!isValidWindDirection(data.windDirection)) {
+  if (
+    requireFiniteField(data.windDirection, 'Wind direction', errors) &&
+    !isValidWindDirection(data.windDirection)
+  ) {
     errors.push(
       `Wind direction ${data.windDirection} must be between ${VALIDATION_LIMITS.WIND_DIRECTION.MIN} and ${VALIDATION_LIMITS.WIND_DIRECTION.MAX} radians`
     );
@@ -262,79 +271,66 @@ function validateApiKey(
 }
 
 /**
- * Validate update frequency field.
- *
- * Note: the admin UI schema in `index.ts` already enforces 1 to 60. The
- * runtime warn-instead-of-error for > 60 is deliberate tolerance for
- * hand-edited plugin config (e.g. operator pre-load before booting the
- * server). `sanitizeConfiguration` clamps the actual value used at runtime,
- * so the warning is purely advisory.
+ * Range rule for one numeric config field. A sub-`min` value is a hard error;
+ * an above-`max` value is a warning, not an error: the admin UI schema in
+ * `index.ts` already enforces the tighter bounds, and `sanitizeConfiguration`
+ * clamps the runtime value, so the warning is advisory tolerance for
+ * hand-edited plugin config.
  */
-function validateUpdateFrequency(
-  config: Partial<PluginConfiguration>,
-  errors: string[],
-  warnings: string[]
-): void {
-  if (config.updateFrequency === undefined) return;
-
-  if (typeof config.updateFrequency !== 'number' || !Number.isFinite(config.updateFrequency)) {
-    errors.push('Update frequency must be a finite number');
-    return;
-  }
-
-  if (config.updateFrequency < 1) {
-    errors.push('Update frequency must be at least 1 minute');
-  } else if (config.updateFrequency > 60) {
-    warnings.push('Update frequency over 60 minutes may result in stale data');
-  }
+interface NumericConfigRule {
+  readonly key: 'updateFrequency' | 'emissionInterval' | 'dailyApiQuota';
+  readonly notFiniteError: string;
+  readonly min: number;
+  readonly belowMinError: string;
+  readonly max: number;
+  readonly aboveMaxWarning: string;
 }
 
-/**
- * Validate emission interval field. Same hand-edited-config tolerance as
- * `validateUpdateFrequency`: schema bounds are stricter, the runtime warns
- * and `sanitizeConfiguration` clamps.
- */
-function validateEmissionInterval(
+const NUMERIC_CONFIG_RULES: ReadonlyArray<NumericConfigRule> = [
+  {
+    key: 'updateFrequency',
+    notFiniteError: 'Update frequency must be a finite number',
+    min: 1,
+    belowMinError: 'Update frequency must be at least 1 minute',
+    max: 60,
+    aboveMaxWarning: 'Update frequency over 60 minutes may result in stale data',
+  },
+  {
+    key: 'emissionInterval',
+    notFiniteError: 'Emission interval must be a finite number',
+    min: 1,
+    belowMinError: 'Emission interval must be at least 1 second',
+    max: 60,
+    aboveMaxWarning: 'Emission interval over 60 seconds may not be suitable for real-time NMEA2000',
+  },
+  {
+    key: 'dailyApiQuota',
+    notFiniteError: 'Daily API quota must be a finite number',
+    min: 0,
+    belowMinError: 'Daily API quota must be 0 or greater (0 disables the cap)',
+    max: DEFAULT_CONFIG.DAILY_API_QUOTA_MAX,
+    aboveMaxWarning: `Daily API quota over ${DEFAULT_CONFIG.DAILY_API_QUOTA_MAX} is unusual; clamping to ${DEFAULT_CONFIG.DAILY_API_QUOTA_MAX}`,
+  },
+];
+
+function validateNumericConfigField(
   config: Partial<PluginConfiguration>,
+  rule: NumericConfigRule,
   errors: string[],
   warnings: string[]
 ): void {
-  if (config.emissionInterval === undefined) return;
+  const value = config[rule.key];
+  if (value === undefined) return;
 
-  if (typeof config.emissionInterval !== 'number' || !Number.isFinite(config.emissionInterval)) {
-    errors.push('Emission interval must be a finite number');
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    errors.push(rule.notFiniteError);
     return;
   }
 
-  if (config.emissionInterval < 1) {
-    errors.push('Emission interval must be at least 1 second');
-  } else if (config.emissionInterval > 60) {
-    warnings.push('Emission interval over 60 seconds may not be suitable for real-time NMEA2000');
-  }
-}
-
-/**
- * Validate daily API quota field. Zero is the documented "no cap" sentinel,
- * so accept it without warning.
- */
-function validateDailyApiQuota(
-  config: Partial<PluginConfiguration>,
-  errors: string[],
-  warnings: string[]
-): void {
-  if (config.dailyApiQuota === undefined) return;
-
-  if (typeof config.dailyApiQuota !== 'number' || !Number.isFinite(config.dailyApiQuota)) {
-    errors.push('Daily API quota must be a finite number');
-    return;
-  }
-
-  if (config.dailyApiQuota < 0) {
-    errors.push('Daily API quota must be 0 or greater (0 disables the cap)');
-  } else if (config.dailyApiQuota > DEFAULT_CONFIG.DAILY_API_QUOTA_MAX) {
-    warnings.push(
-      `Daily API quota over ${DEFAULT_CONFIG.DAILY_API_QUOTA_MAX} is unusual; clamping to ${DEFAULT_CONFIG.DAILY_API_QUOTA_MAX}`
-    );
+  if (value < rule.min) {
+    errors.push(rule.belowMinError);
+  } else if (value > rule.max) {
+    warnings.push(rule.aboveMaxWarning);
   }
 }
 
@@ -346,9 +342,9 @@ export function validateConfiguration(config: Partial<PluginConfiguration>): Val
   const warnings: string[] = [];
 
   validateApiKey(config, errors, warnings);
-  validateUpdateFrequency(config, errors, warnings);
-  validateEmissionInterval(config, errors, warnings);
-  validateDailyApiQuota(config, errors, warnings);
+  for (const rule of NUMERIC_CONFIG_RULES) {
+    validateNumericConfigField(config, rule, errors, warnings);
+  }
 
   return {
     isValid: errors.length === 0,

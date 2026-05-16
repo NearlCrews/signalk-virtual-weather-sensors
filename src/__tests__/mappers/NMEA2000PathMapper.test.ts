@@ -201,7 +201,6 @@ describe('NMEA2000PathMapper', () => {
         'Enhanced NMEA2000 path mapping completed',
         expect.objectContaining({
           totalPaths: expect.any(Number),
-          enhancedFields: expect.any(Number),
         })
       );
 

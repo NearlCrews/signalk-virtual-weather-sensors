@@ -202,16 +202,18 @@ export default function PluginConfigurationPanel({ configuration, save }) {
   );
 
   const fetchStatus = useCallback(async () => {
+    let data = null;
     try {
       const res = await fetch(`${API_BASE}/status`);
       if (res.ok) {
-        const data = await res.json();
+        data = await res.json();
         setStatus(data);
       }
     } catch {
       // Offline or plugin not running: leave previous status visible.
     }
     setStatusLoading(false);
+    return data;
   }, []);
 
   useEffect(() => {
@@ -299,22 +301,17 @@ export default function PluginConfigurationPanel({ configuration, save }) {
       setAction({ message: 'Saving...', isError: false });
       // Give the server a moment to restart before re-polling.
       await new Promise((resolve) => setTimeout(resolve, 1500));
-      try {
-        const res = await fetch(`${API_BASE}/status`);
-        if (res.ok) {
-          const data = await res.json();
-          setStatus(data);
-          setAction({
-            message: data.running
-              ? 'Saved. Plugin restarted with the new configuration.'
-              : `Saved, but the plugin did not come back online: ${data.banner || 'unknown'}.`,
-            isError: !data.running,
-          });
-          return;
-        }
-      } catch {
-        // Status check failed; fall through to the optimistic message.
+      const data = await fetchStatus();
+      if (data) {
+        setAction({
+          message: data.running
+            ? 'Saved. Plugin restarted with the new configuration.'
+            : `Saved, but the plugin did not come back online: ${data.banner || 'unknown'}.`,
+          isError: !data.running,
+        });
+        return;
       }
+      // Status check failed or returned non-ok: fall through to optimistic message.
       setAction({
         message: 'Saved. Plugin should restart with the new configuration.',
         isError: false,

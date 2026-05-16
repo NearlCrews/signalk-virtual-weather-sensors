@@ -34,6 +34,9 @@ export const pv = (path: string, value: unknown): PathValue => ({
 /** Build a Signal K Meta entry, casting the plain string path to the branded Path type. */
 export const me = (path: string, value: MetaValue): Meta => ({ path: path as Path, value });
 
+/** Current wall-clock time as a branded ISO 8601 Timestamp. */
+const nowIso = () => asTimestamp(new Date().toISOString());
+
 /**
  * Build a Signal K Delta carrying a single values update with the plugin's
  * standard self-context and `$source`. When `timestamp` is omitted the current
@@ -47,7 +50,7 @@ export function buildValuesDelta(values: PathValue[], timestamp?: string): Delta
     updates: [
       {
         $source: ACCUWEATHER_SOURCE,
-        timestamp: asTimestamp(timestamp ?? new Date().toISOString()),
+        timestamp: timestamp !== undefined ? asTimestamp(timestamp) : nowIso(),
         values,
       },
     ],
@@ -64,7 +67,7 @@ export function buildMetaDelta(meta: Meta[]): Delta {
     updates: [
       {
         $source: ACCUWEATHER_SOURCE,
-        timestamp: asTimestamp(new Date().toISOString()),
+        timestamp: nowIso(),
         meta,
       },
     ],

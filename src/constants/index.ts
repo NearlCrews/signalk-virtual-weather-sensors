@@ -319,7 +319,7 @@ export const ACCUWEATHER = {
 export const NMEA2000_LIMITS = {
   /** NMEA2000 environmental temperature range in Celsius */
   TEMPERATURE_C: { MIN: -40, MAX: 85 },
-  /** Atmospheric pressure range in Pascals (broader than VALIDATION_LIMITS to allow extreme weather) */
+  /** Atmospheric pressure range in Pascals (MAX raised above VALIDATION_LIMITS to allow extreme weather) */
   PRESSURE_PA: { MIN: 80000, MAX: 120000 },
   /** Maximum wind speed in m/s (200 knots, NMEA2000 max) */
   WIND_SPEED_MAX_MS: 102.3,

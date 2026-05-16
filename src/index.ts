@@ -140,9 +140,6 @@ export default function createPlugin(app: ServerAPI): Plugin {
           error: errorMessage,
         });
 
-        // The admin UI plugin list already prefixes banner text with the
-        // plugin's display name, so no need to repeat 'signalk-virtual-weather-sensors'
-        // here.
         setBanner(instance, app, 'error', `Stop failed: ${errorMessage}`);
       }
     },
@@ -236,9 +233,6 @@ export default function createPlugin(app: ServerAPI): Plugin {
           },
         },
       },
-      // `required` is intentionally omitted at the outer level: the SK admin
-      // UI wraps this schema and discards the outer `required` array. See
-      // the schema() docblock above.
     }),
 
     /**

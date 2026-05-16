@@ -28,7 +28,7 @@ export function kelvinToCelsius(kelvin: number): number {
 }
 
 export function kelvinToFahrenheit(kelvin: number): number {
-  if (!Number.isFinite(kelvin)) return 32;
+  if (!Number.isFinite(kelvin)) return UNITS.TEMPERATURE.CELSIUS_TO_FAHRENHEIT(0);
   const celsius = kelvin - UNITS.TEMPERATURE.CELSIUS_TO_KELVIN;
   return UNITS.TEMPERATURE.CELSIUS_TO_FAHRENHEIT(celsius);
 }
@@ -178,11 +178,18 @@ export function calculateAbsoluteHumidity(temperatureK: number, relativeHumidity
   const saturationPressure = calculateSaturationVaporPressure(temperatureK);
   const vaporPressure = relativeHumidity * saturationPressure;
 
-  // Absolute humidity in kg/m³
+  // 0.002166 kg·K/J is the molar mass of water vapour divided by the universal gas constant.
   const absoluteHumidity = (0.002166 * vaporPressure) / temperatureK;
 
   return Math.max(0, absoluteHumidity);
 }
+
+/** Specific gas constant for dry air (J/kg·K). */
+const DRY_AIR_GAS_CONSTANT = 287.058;
+/** Specific gas constant for water vapour (J/kg·K). */
+const WATER_VAPOUR_GAS_CONSTANT = 461.495;
+/** Standard air density at sea level (15°C, 101.325 kPa), in kg/m³. */
+const STANDARD_AIR_DENSITY = 1.225;
 
 /**
  * Calculate air density from temperature, pressure, and humidity
@@ -198,29 +205,22 @@ export function calculateAirDensity(
   relativeHumidity = 0
 ): number {
   if (!Number.isFinite(temperatureK) || !Number.isFinite(pressurePa)) {
-    return 1.225; // Standard air density at sea level
+    return STANDARD_AIR_DENSITY;
   }
 
-  // Gas constants (J/kg·K)
-  const R_d = 287.058; // Specific gas constant for dry air
-  const R_v = 461.495; // Specific gas constant for water vapor
-
-  // Calculate saturation vapor pressure using enhanced formula
   const saturationPressure = calculateSaturationVaporPressure(temperatureK);
-
-  // Actual vapor pressure from relative humidity
   const vaporPressure = relativeHumidity * saturationPressure;
-
-  // Partial pressure of dry air
   const dryAirPressure = pressurePa - vaporPressure;
 
-  // Air density calculation using ideal gas law for mixture
-  // ρ = (p_d / (R_d * T)) + (p_v / (R_v * T))
-  const density = dryAirPressure / (R_d * temperatureK) + vaporPressure / (R_v * temperatureK);
+  // Ideal gas law for a dry-air + water-vapour mixture:
+  // ρ = p_d / (R_d · T) + p_v / (R_v · T)
+  const density =
+    dryAirPressure / (DRY_AIR_GAS_CONSTANT * temperatureK) +
+    vaporPressure / (WATER_VAPOUR_GAS_CONSTANT * temperatureK);
 
-  // Validate result (reasonable range for Earth's atmosphere)
+  // Reject results outside the plausible range for Earth's atmosphere.
   if (!Number.isFinite(density) || density <= 0 || density > 2.0) {
-    return 1.225; // Standard air density at sea level (15°C, 101.325 kPa)
+    return STANDARD_AIR_DENSITY;
   }
 
   return density;

@@ -106,6 +106,10 @@ function msRounded(ms: number): number {
   return Math.round(ms * 10) / 10;
 }
 
+function metersToKm(meters: number): string {
+  return (meters / UNITS.LENGTH.KM_TO_M).toFixed(1);
+}
+
 /**
  * Each `format*Suffix` builder produces the right-hand side of one
  * notification message, packed with adjacent context the operator can act on
@@ -140,7 +144,7 @@ function formatWindSuffix(data: WeatherData): string {
 function formatVisibilitySuffix(data: WeatherData): string {
   const vis = data.visibility;
   if (vis === undefined) return '';
-  const parts: string[] = [`${(vis / UNITS.LENGTH.KM_TO_M).toFixed(1)} km`];
+  const parts: string[] = [`${metersToKm(vis)} km`];
   if (isFiniteNumber(data.cloudCeiling)) {
     parts.push(`ceiling ${Math.round(data.cloudCeiling)} m`);
   }
@@ -228,20 +232,20 @@ const WEATHER_ICON_SEVERITY: ReadonlyMap<number, IconSeverity> = new Map([
 ]);
 
 /**
- * One row of the ascending-band table consumed by
- * {@link WeatherNotifier.evaluateAscendingBands}. The reading is compared
- * `>= threshold`; when true the band activates with `state`, otherwise the
- * band clears with `normal`. `prefix` is the human-readable lead-in for the
- * notification message (e.g. `Gale-force wind`).
+ * One row of a hazard-band table. The band activates with `state` when the
+ * reading crosses `threshold` (compared `>= threshold` for ascending bands
+ * like wind and heat, `< threshold` for descending bands like visibility and
+ * cold); otherwise it clears with `normal`. `prefix` is the human-readable
+ * lead-in for the notification message (e.g. `Gale-force wind`).
  */
-interface AscendingBand {
+interface Band {
   readonly path: string;
   readonly threshold: number;
   readonly state: NotificationState;
   readonly prefix: string;
 }
 
-const WIND_BANDS: ReadonlyArray<AscendingBand> = [
+const WIND_BANDS: ReadonlyArray<Band> = [
   {
     path: NOTIFICATION_PATHS.WIND_GALE,
     threshold: NOTIFICATION_THRESHOLDS.WIND.GALE_BEAUFORT,
@@ -262,7 +266,7 @@ const WIND_BANDS: ReadonlyArray<AscendingBand> = [
   },
 ];
 
-const HEAT_BANDS: ReadonlyArray<AscendingBand> = [
+const HEAT_BANDS: ReadonlyArray<Band> = [
   {
     path: NOTIFICATION_PATHS.HEAT_CAUTION,
     threshold: NOTIFICATION_THRESHOLDS.HEAT_STRESS.CAUTION_INDEX,
@@ -280,6 +284,36 @@ const HEAT_BANDS: ReadonlyArray<AscendingBand> = [
     threshold: NOTIFICATION_THRESHOLDS.HEAT_STRESS.EXTREME_INDEX,
     state: 'emergency',
     prefix: 'Extreme heat stress',
+  },
+];
+
+const VISIBILITY_BANDS: ReadonlyArray<Band> = [
+  {
+    path: NOTIFICATION_PATHS.VISIBILITY_LOW,
+    threshold: NOTIFICATION_THRESHOLDS.VISIBILITY.LOW_M,
+    state: 'warn',
+    prefix: 'Reduced visibility',
+  },
+  {
+    path: NOTIFICATION_PATHS.VISIBILITY_VERY_LOW,
+    threshold: NOTIFICATION_THRESHOLDS.VISIBILITY.VERY_LOW_M,
+    state: 'alarm',
+    prefix: 'Very low visibility',
+  },
+];
+
+const COLD_BANDS: ReadonlyArray<Band> = [
+  {
+    path: NOTIFICATION_PATHS.COLD_CAUTION,
+    threshold: NOTIFICATION_THRESHOLDS.COLD.CAUTION_K,
+    state: 'warn',
+    prefix: 'Cold exposure caution',
+  },
+  {
+    path: NOTIFICATION_PATHS.COLD_EXTREME,
+    threshold: NOTIFICATION_THRESHOLDS.COLD.EXTREME_K,
+    state: 'alarm',
+    prefix: 'Extreme cold exposure',
   },
 ];
 
@@ -372,22 +406,7 @@ export class WeatherNotifier {
   private evaluateVisibility(data: WeatherData, out: PathValue[]): void {
     const vis = data.visibility;
     if (vis === undefined) return;
-
-    const { LOW_M, VERY_LOW_M } = NOTIFICATION_THRESHOLDS.VISIBILITY;
-    const suffix = () => formatVisibilitySuffix(data);
-
-    this.maybeTransition(
-      NOTIFICATION_PATHS.VISIBILITY_LOW,
-      vis < LOW_M ? 'warn' : 'normal',
-      () => `Reduced visibility: ${suffix()}`,
-      out
-    );
-    this.maybeTransition(
-      NOTIFICATION_PATHS.VISIBILITY_VERY_LOW,
-      vis < VERY_LOW_M ? 'alarm' : 'normal',
-      () => `Very low visibility: ${suffix()}`,
-      out
-    );
+    this.evaluateDescendingBands(VISIBILITY_BANDS, vis, () => formatVisibilitySuffix(data), out);
   }
 
   /**
@@ -410,7 +429,7 @@ export class WeatherNotifier {
    * so steady-state evaluations skip string formatting entirely.
    */
   private evaluateAscendingBands(
-    bands: ReadonlyArray<AscendingBand>,
+    bands: ReadonlyArray<Band>,
     value: number,
     scalarSuffix: () => string,
     out: PathValue[]
@@ -426,6 +445,27 @@ export class WeatherNotifier {
   }
 
   /**
+   * Descending counterpart to {@link evaluateAscendingBands}: each band
+   * activates when `value < band.threshold` (visibility and cold both fall
+   * into hazard as the reading drops). The suffix producer is invoked lazily.
+   */
+  private evaluateDescendingBands(
+    bands: ReadonlyArray<Band>,
+    value: number,
+    scalarSuffix: () => string,
+    out: PathValue[]
+  ): void {
+    for (const band of bands) {
+      this.maybeTransition(
+        band.path,
+        value < band.threshold ? band.state : 'normal',
+        () => `${band.prefix}: ${scalarSuffix()}`,
+        out
+      );
+    }
+  }
+
+  /**
    * Cold: caution (wind chill < 0 C, warn) and extreme (< -20 C, alarm).
    * Wind chill stored in Kelvin; thresholds compare directly. The suffix
    * adds air temp and wind speed because wind chill alone undersells the
@@ -434,22 +474,7 @@ export class WeatherNotifier {
   private evaluateCold(data: WeatherData, out: PathValue[]): void {
     const windChillK = data.windChill;
     if (!Number.isFinite(windChillK)) return;
-
-    const { CAUTION_K, EXTREME_K } = NOTIFICATION_THRESHOLDS.COLD;
-    const suffix = () => formatColdSuffix(data);
-
-    this.maybeTransition(
-      NOTIFICATION_PATHS.COLD_CAUTION,
-      windChillK < CAUTION_K ? 'warn' : 'normal',
-      () => `Cold exposure caution: ${suffix()}`,
-      out
-    );
-    this.maybeTransition(
-      NOTIFICATION_PATHS.COLD_EXTREME,
-      windChillK < EXTREME_K ? 'alarm' : 'normal',
-      () => `Extreme cold exposure: ${suffix()}`,
-      out
-    );
+    this.evaluateDescendingBands(COLD_BANDS, windChillK, () => formatColdSuffix(data), out);
   }
 
   /**

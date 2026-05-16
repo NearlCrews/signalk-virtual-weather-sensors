@@ -50,6 +50,7 @@ interface CachedVesselData {
   courseOverGroundTrue: number | null;
   headingTrue: number | null;
   headingMagnetic: number | null;
+  magneticVariation: number | null;
   /** Wall-clock millisecond timestamp of the most recent cache write (null when never written). */
   lastUpdateMs: number | null;
 }
@@ -65,6 +66,7 @@ export class SignalKService {
     courseOverGroundTrue: null,
     headingTrue: null,
     headingMagnetic: null,
+    magneticVariation: null,
     lastUpdateMs: null,
   };
 
@@ -78,52 +80,26 @@ export class SignalKService {
   }
 
   public getVesselNavigationData(): VesselNavigationData {
-    const position = this.getVesselPosition();
-    const speedOverGround = this.getVesselSpeedOverGround();
-    const courseOverGroundTrue = this.getVesselCourseOverGroundTrue();
-    const headingTrue = this.getVesselHeadingTrue();
-    const headingMagnetic = this.getVesselHeadingMagnetic();
-    const magneticVariation = this.getMagneticVariation();
-    const dataAge = this.getDataAge();
-
     this.cachedData = {
-      position,
-      speedOverGround,
-      courseOverGroundTrue,
-      headingTrue,
-      headingMagnetic,
+      position: this.getVesselPosition(),
+      speedOverGround: this.getVesselSpeedOverGround(),
+      courseOverGroundTrue: this.getVesselCourseOverGroundTrue(),
+      headingTrue: this.getVesselHeadingTrue(),
+      headingMagnetic: this.getVesselHeadingMagnetic(),
+      magneticVariation: this.getMagneticVariation(),
       lastUpdateMs: Date.now(),
     };
 
-    const isComplete = !!(
-      position &&
-      typeof speedOverGround === 'number' &&
-      typeof courseOverGroundTrue === 'number'
-    );
-
-    const navigationData: VesselNavigationData = {
-      position: position
-        ? { latitude: position.latitude, longitude: position.longitude }
-        : undefined,
-      speedOverGround: speedOverGround ?? undefined,
-      courseOverGroundTrue: courseOverGroundTrue ?? undefined,
-      headingMagnetic: headingMagnetic ?? undefined,
-      headingTrue: headingTrue ?? undefined,
-      magneticVariation: magneticVariation ?? undefined,
-      isComplete,
-      // Explicit null check: dataAge of 0 ("just updated") is a legitimate
-      // value that the previous `dataAge || undefined` form silently dropped.
-      dataAge: dataAge !== null ? dataAge : undefined,
-    };
+    const navigationData = this.getCachedNavigationData();
 
     this.logger('debug', 'Vessel navigation data retrieved', {
-      hasPosition: !!position,
-      hasSpeed: typeof speedOverGround === 'number',
-      hasCourse: typeof courseOverGroundTrue === 'number',
-      hasHeadingTrue: typeof headingTrue === 'number',
-      hasHeadingMagnetic: typeof headingMagnetic === 'number',
-      isComplete,
-      dataAge,
+      hasPosition: !!navigationData.position,
+      hasSpeed: navigationData.speedOverGround !== undefined,
+      hasCourse: navigationData.courseOverGroundTrue !== undefined,
+      hasHeadingTrue: navigationData.headingTrue !== undefined,
+      hasHeadingMagnetic: navigationData.headingMagnetic !== undefined,
+      isComplete: navigationData.isComplete,
+      dataAge: navigationData.dataAge ?? null,
     });
 
     return navigationData;
@@ -375,6 +351,7 @@ export class SignalKService {
       courseOverGroundTrue: this.cachedData.courseOverGroundTrue ?? undefined,
       headingTrue: this.cachedData.headingTrue ?? undefined,
       headingMagnetic: this.cachedData.headingMagnetic ?? undefined,
+      magneticVariation: this.cachedData.magneticVariation ?? undefined,
       isComplete: !!(
         this.cachedData.position &&
         typeof this.cachedData.speedOverGround === 'number' &&
@@ -426,6 +403,7 @@ export class SignalKService {
       courseOverGroundTrue: null,
       headingTrue: null,
       headingMagnetic: null,
+      magneticVariation: null,
       lastUpdateMs: null,
     };
     this.logger('debug', 'SignalK data cache cleared');
@@ -446,9 +424,9 @@ export class SignalKService {
   }
 
   /**
-   * Check if data source should be excluded (e.g., node-red sources to avoid feedback loops).
-   * 'signalk-node-red' is a substring of 'node-red' is true, so a single check
-   * against 'node-red' covers both. The explicit list keeps intent obvious.
+   * Check if a data source should be excluded to avoid feedback loops. Matches
+   * by lowercased substring, so the single entry `node-red` also covers labels
+   * like `signalk-node-red`.
    * @private
    */
   private isExcludedSource(data: SignalKDataValue): boolean {
@@ -478,7 +456,7 @@ export class SignalKService {
     hasComplete: boolean;
   } {
     const dataAge = this.getDataAge();
-    const isStale = dataAge !== null && dataAge > this.maxDataAge;
+    const isStale = this.isDataStale();
     const cachedData = this.getCachedNavigationData();
 
     return {

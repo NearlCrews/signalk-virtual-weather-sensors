@@ -91,6 +91,16 @@ const REQUEST_WINDOW_HOURS = 24;
 /** Hour expressed in milliseconds, used by the rolling window rotation. */
 const HOUR_MS = 60 * 60 * 1000;
 
+/** Heat-stress index from wet-bulb globe temperature (military/marine WBGT bands). */
+function calculateHeatStressIndex(wetBulbGlobeTemperatureK: number): number {
+  const wbgtC = kelvinToCelsius(wetBulbGlobeTemperatureK);
+  if (wbgtC < 27) return 0;
+  if (wbgtC < 29) return 1;
+  if (wbgtC < 31) return 2;
+  if (wbgtC < 33) return 3;
+  return 4;
+}
+
 export class AccuWeatherService {
   private readonly config: AccuWeatherConfig;
   private readonly logger: Logger;
@@ -253,7 +263,7 @@ export class AccuWeatherService {
     const airDensityEnhanced = calculateAirDensity(temperature, pressure, humidity);
     const heatStressIndex =
       wetBulbGlobeTemperature !== undefined
-        ? this.calculateHeatStressIndex(wetBulbGlobeTemperature)
+        ? calculateHeatStressIndex(wetBulbGlobeTemperature)
         : undefined;
 
     const weatherData: WeatherData = {
@@ -310,20 +320,6 @@ export class AccuWeatherService {
     this.validateWeatherData(weatherData);
 
     return weatherData;
-  }
-
-  /**
-   * Calculate heat stress index from wet bulb globe temperature
-   * @private
-   */
-  private calculateHeatStressIndex(wetBulbGlobeTemperatureK: number): number {
-    const wbgtC = kelvinToCelsius(wetBulbGlobeTemperatureK);
-    // Heat stress categories (military/marine standard)
-    if (wbgtC < 27) return 0;
-    if (wbgtC < 29) return 1;
-    if (wbgtC < 31) return 2;
-    if (wbgtC < 33) return 3;
-    return 4;
   }
 
   /**
