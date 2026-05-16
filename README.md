@@ -12,6 +12,18 @@ follow the [Signal K 1.8.2 specification](https://signalk.org/specification/1.8.
 and align with NMEA2000 emission via a companion plugin. A free AccuWeather API
 key is required.
 
+## What's New in v1.5.3
+
+Documentation and maintenance release. The README is restructured into a
+cleaner npm and GitHub landing page, reference material moves into `docs/`,
+and a full-codebase simplify pass removes duplication. No behavioral changes:
+all 275 tests pass and every `environment.*` and `notifications.*` delta keeps
+the same shape, so no action is required on upgrade.
+
+See the [Changelog](CHANGELOG.md#153---2026-05-16) for the full Added /
+Changed / Removed detail, or the
+[GitHub release](https://github.com/NearlCrews/signalk-virtual-weather-sensors/releases/tag/v1.5.3).
+
 ## Features
 
 - 24+ weather data points: temperatures, wind, pressure, humidity, UV,
@@ -113,10 +125,14 @@ See [docs/troubleshooting.md](docs/troubleshooting.md) for the full guide.
 
 - [Signal K paths, PGNs, and notifications](docs/signal-k-paths.md)
 - [Troubleshooting](docs/troubleshooting.md)
-- [Development guide](DEVELOPMENT.md)
+- [Development guide](docs/DEVELOPMENT.md)
 - [Changelog](CHANGELOG.md)
-- [Contributing](CONTRIBUTING.md)
-- [Security policy](SECURITY.md)
+
+## Contributing
+
+Contributions are welcome. See [CONTRIBUTING.md](.github/CONTRIBUTING.md) for
+development setup, coding standards, and the pull request process. By taking
+part you agree to the [Code of Conduct](.github/CODE_OF_CONDUCT.md).
 
 ## License
 
@@ -126,4 +142,4 @@ Apache-2.0: see [LICENSE](LICENSE).
 
 - [Report a bug](https://github.com/NearlCrews/signalk-virtual-weather-sensors/issues/new?template=bug_report.yml)
 - [Request a feature](https://github.com/NearlCrews/signalk-virtual-weather-sensors/issues/new?template=feature_request.yml)
-- [Security issues](SECURITY.md)
+- [Security issues](.github/SECURITY.md)

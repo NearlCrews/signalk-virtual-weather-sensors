@@ -6,7 +6,7 @@ This document outlines the steps for creating a new release of Signal K Virtual 
 
 Recent 1.4.x and 1.5.x releases used this short flow:
 
-1. Bump `package.json` version and add a `## [X.Y.Z]` section in `CHANGELOG.md` on `main`.
+1. On `main`: bump `package.json` version, add a `## [X.Y.Z]` section in `CHANGELOG.md`, and overwrite the README `## What's New in vX.Y.Z` section with that CHANGELOG entry's lead paragraph (update the heading version and the `#xyz` changelog anchor). The README always carries only the latest release; full history stays in `CHANGELOG.md`.
 2. Run `npm run validate && npm run build` locally.
 3. Commit on `main`: `chore: release vX.Y.Z`.
 4. Run `npm run release`. This script tags `vX.Y.Z`, pushes the tag and the main commit, then runs `npm run create-release` (`gh release create vX.Y.Z --generate-notes`).
@@ -28,6 +28,7 @@ The longer release-branch + PR workflow below is aspirational best practice for 
 ### Documentation
 
 - [ ] `README.md` is up to date with new features
+- [ ] README `## What's New in vX.Y.Z` section overwritten with the new release summary
 - [ ] `CHANGELOG.md` is updated with version and changes
 - [ ] `DEVELOPMENT.md` reflects current development practices
 - [ ] All code has JSDoc comments for public APIs
@@ -317,4 +318,4 @@ npm audit
 
 ---
 
-**For questions about the release process, consult the [DEVELOPMENT.md](DEVELOPMENT.md) or open a discussion on GitHub.**
+**For questions about the release process, consult the [DEVELOPMENT.md](../DEVELOPMENT.md) or open a discussion on GitHub.**

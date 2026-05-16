@@ -31,4 +31,4 @@ Fixes #
 
 ---
 
-For NMEA2000- or Signal K-spec-touching changes, see the compliance checklist in [DEVELOPMENT.md](../DEVELOPMENT.md#-signal-k-standards-compliance) before requesting review.
+For NMEA2000- or Signal K-spec-touching changes, see the compliance checklist in [DEVELOPMENT.md](../docs/DEVELOPMENT.md#signal-k-standards-compliance) before requesting review.

@@ -1,7 +1,7 @@
 {
   "name": "signalk-virtual-weather-sensors",
   "version": "1.5.3",
-  "description": "Signal K plugin that provides comprehensive weather data from AccuWeather API with calculated wind values and NMEA2000-compatible environmental measurements",
+  "description": "Signal K plugin: AccuWeather marine weather as 24+ environment deltas, severe-weather notifications, NMEA2000-ready",
   "keywords": [
     "signalk-node-server-plugin",
     "signalk-plugin-configurator",
@@ -21,7 +21,8 @@
     "apparent-wind",
     "true-wind",
     "maritime",
-    "iot"
+    "notifications",
+    "barometer"
   ],
   "signalk-plugin-enabled-by-default": false,
   "signalk": {
