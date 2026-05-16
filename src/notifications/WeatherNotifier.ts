@@ -24,15 +24,28 @@ import type {
   NotificationValue,
   WeatherData,
 } from '../types/index.js';
-import { kelvinToCelsius, radiansToDegrees, ratioToPercentage } from '../utils/conversions.js';
+import {
+  kelvinToCelsius,
+  radiansToDegrees,
+  ratioToPercentage,
+  truncateToCodePoints,
+} from '../utils/conversions.js';
 import { pv } from '../utils/skDelta.js';
 
 /** Default alert presentation: visual on every band; audible from `alarm` upward. */
 const VISUAL_ONLY: ReadonlyArray<NotificationMethod> = ['visual'];
 const VISUAL_AND_SOUND: ReadonlyArray<NotificationMethod> = ['visual', 'sound'];
+/** A resolved (`normal`) notification clears with no method: there is nothing to present. */
+const NO_METHODS: ReadonlyArray<NotificationMethod> = [];
 
-/** Returns the appropriate `method` list for a given state. */
+/**
+ * Returns the appropriate `method` list for a given state. A `normal` (cleared)
+ * notification carries an empty list so consumers do not keep a visual or
+ * audible cue lit for a resolved hazard; `signalk-to-nmea2000` reads `[]` as
+ * the cleared / acknowledged shape.
+ */
 function methodsFor(state: NotificationState): ReadonlyArray<NotificationMethod> {
+  if (state === 'normal') return NO_METHODS;
   return state === 'alarm' || state === 'emergency' ? VISUAL_AND_SOUND : VISUAL_ONLY;
 }
 
@@ -55,7 +68,7 @@ export const MAX_MESSAGE_LENGTH = 80;
 
 function capForChartplotter(message: string): string {
   if (message.length <= MAX_MESSAGE_LENGTH) return message;
-  return `${message.slice(0, MAX_MESSAGE_LENGTH - 1)}…`;
+  return `${truncateToCodePoints(message, MAX_MESSAGE_LENGTH - 1)}…`;
 }
 
 /**
@@ -401,7 +414,8 @@ export class WeatherNotifier {
 
   /**
    * Visibility: low (1 nm, warn) and very-low (0.5 nm, alarm) tracked
-   * independently. SOLAS uses 1 nm as the restricted-visibility threshold.
+   * independently. 1 nm is the plugin's chosen restricted-visibility
+   * threshold; neither SOLAS nor the COLREGs define a numeric value.
    */
   private evaluateVisibility(data: WeatherData, out: PathValue[]): void {
     const vis = data.visibility;

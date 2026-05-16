@@ -36,12 +36,13 @@ const COURSE_FALLBACK_PATHS = [
 interface SignalKDataValue {
   value: unknown;
   timestamp?: string;
-  source?: {
-    label?: string;
-    type?: string;
-    bus?: string;
-    src?: string;
-  };
+  /**
+   * `app.getSelfPath` returns a full-model leaf whose source identity is the
+   * string `$source` (a SourceRef such as `signalk-node-red.123`), not a
+   * nested `source` object. Matched as a lowercased substring by
+   * `isExcludedSource`.
+   */
+  $source?: string;
 }
 
 interface CachedVesselData {
@@ -120,7 +121,7 @@ export class SignalKService {
 
       if (this.isExcludedSource(positionData)) {
         this.logger('debug', 'Ignoring position data from excluded source', {
-          source: positionData.source,
+          source: positionData.$source,
         });
         return null;
       }
@@ -148,7 +149,7 @@ export class SignalKService {
       this.logger('debug', 'Retrieved vessel position', {
         latitude: position.latitude,
         longitude: position.longitude,
-        source: positionData.source?.label,
+        source: positionData.$source,
       });
 
       return position;
@@ -175,7 +176,7 @@ export class SignalKService {
 
       if (this.isExcludedSource(speedData)) {
         this.logger('debug', 'Ignoring speed data from excluded source', {
-          source: speedData.source,
+          source: speedData.$source,
         });
         return null;
       }
@@ -193,7 +194,7 @@ export class SignalKService {
       this.logger('debug', 'Retrieved vessel speed over ground', {
         speed,
         speedKnots: msToKnots(speed).toFixed(1),
-        source: speedData.source?.label,
+        source: speedData.$source,
       });
 
       return speed;
@@ -229,7 +230,7 @@ export class SignalKService {
 
         if (this.isExcludedSource(courseData)) {
           this.logger('debug', `Ignoring ${path} data from excluded source`, {
-            source: courseData.source,
+            source: courseData.$source,
           });
           continue;
         }
@@ -247,7 +248,7 @@ export class SignalKService {
         this.logger('debug', `Retrieved vessel course from ${path}`, {
           course,
           courseDegrees: radiansToDegrees(course).toFixed(1),
-          source: courseData.source?.label,
+          source: courseData.$source,
         });
 
         return course;
@@ -430,8 +431,8 @@ export class SignalKService {
    * @private
    */
   private isExcludedSource(data: SignalKDataValue): boolean {
-    if (!data.source?.label) return false;
-    const source = data.source.label.toLowerCase();
+    if (!data.$source) return false;
+    const source = data.$source.toLowerCase();
     for (const excluded of EXCLUDED_SOURCE_LABELS) {
       if (source.includes(excluded)) return true;
     }

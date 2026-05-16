@@ -128,16 +128,11 @@ describe('integration: AccuWeather to Signal K delta pipeline', () => {
       expect(paths.has(p), `missing canonical outside path ${p}`).toBe(true);
     }
 
-    // All 4 canonical environment.wind.* leaves: speedOverGround/directionTrue
-    // are emitted unconditionally; speedApparent falls back to true wind speed
-    // and angleApparent is computed from the cached headingTrue we wired into
-    // the mock app's getSelfPath, so both are present in this snapshot.
-    const canonicalWind = [
-      'environment.wind.speedOverGround',
-      'environment.wind.directionTrue',
-      'environment.wind.speedApparent',
-      'environment.wind.angleApparent',
-    ];
+    // The 2 canonical environment.wind.* leaves the plugin sources: both
+    // emitted unconditionally. Apparent wind is producer-namespaced
+    // (environment.weather.windSpeedApparent / windAngleApparent), so it is
+    // no longer on environment.wind.*.
+    const canonicalWind = ['environment.wind.speedOverGround', 'environment.wind.directionTrue'];
     for (const p of canonicalWind) {
       expect(paths.has(p), `missing canonical wind path ${p}`).toBe(true);
     }

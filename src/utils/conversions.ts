@@ -227,27 +227,32 @@ export function calculateAirDensity(
 }
 
 /**
+ * Truncate a string to at most `maxCodePoints` Unicode code points. Walks code
+ * points (via Array.from) so a surrogate pair at the boundary is never split
+ * into a lone surrogate that would break a JSON-encoded downstream consumer.
+ */
+export function truncateToCodePoints(value: string, maxCodePoints: number): string {
+  const points = Array.from(value);
+  return points.length <= maxCodePoints ? value : points.slice(0, maxCodePoints).join('');
+}
+
+/**
  * Beaufort scale ceiling speeds in m/s, indexed by Beaufort number (0..11).
- * `effectiveWindSpeed < BEAUFORT_THRESHOLDS[i]` activates scale `i`; anything
- * above the last ceiling is hurricane (12).
+ * `windSpeed < BEAUFORT_THRESHOLDS[i]` activates scale `i`; anything above the
+ * last ceiling is hurricane (12).
  */
 const BEAUFORT_THRESHOLDS: ReadonlyArray<number> = [
   0.3, 1.6, 3.4, 5.5, 8.0, 10.8, 13.9, 17.2, 20.8, 24.5, 28.5, 32.7,
 ];
 
-/**
- * Calculate Beaufort wind scale from sustained wind speed, taking the higher
- * of sustained and gust when both are provided.
- */
-export function calculateBeaufortScale(windSpeed: number, gustSpeed?: number): number {
-  const effectiveWindSpeed = gustSpeed !== undefined ? Math.max(windSpeed, gustSpeed) : windSpeed;
-
-  if (!Number.isFinite(effectiveWindSpeed) || effectiveWindSpeed < 0) {
+/** Calculate the Beaufort wind force (0..12) from sustained wind speed in m/s. */
+export function calculateBeaufortScale(windSpeed: number): number {
+  if (!Number.isFinite(windSpeed) || windSpeed < 0) {
     return 0;
   }
 
   for (let i = 0; i < BEAUFORT_THRESHOLDS.length; i++) {
-    if (effectiveWindSpeed < (BEAUFORT_THRESHOLDS[i] as number)) {
+    if (windSpeed < (BEAUFORT_THRESHOLDS[i] as number)) {
       return i;
     }
   }

@@ -15,6 +15,12 @@ import { NMEA2000Validator } from '../utils/validation.js';
  * mapper instance via {@link NMEA2000PathMapper.buildMetaDelta}.
  */
 const NON_CANONICAL_META: ReadonlyArray<Meta> = [
+  me(SIGNALK_PATHS.ENVIRONMENT.WEATHER.REAL_FEEL, {
+    units: 'K',
+    displayName: 'RealFeel',
+    description:
+      'AccuWeather RealFeel perceived temperature including solar load. Proprietary all-season index, distinct from the computed heat index on environment.outside.heatIndexTemperature.',
+  }),
   me(SIGNALK_PATHS.ENVIRONMENT.WEATHER.REAL_FEEL_SHADE, {
     units: 'K',
     displayName: 'RealFeel (shade)',
@@ -73,7 +79,8 @@ const NON_CANONICAL_META: ReadonlyArray<Meta> = [
   me(SIGNALK_PATHS.ENVIRONMENT.WEATHER.PRECIPITATION_CURRENT, {
     units: 'm/s',
     displayName: 'Precipitation rate',
-    description: 'Current liquid-equivalent precipitation rate.',
+    description:
+      'Past-hour average liquid-equivalent precipitation rate (from AccuWeather PrecipitationSummary.PastHour: a 1-hour accumulation expressed as an average rate).',
   }),
   me(SIGNALK_PATHS.ENVIRONMENT.WEATHER.TEMPERATURE_DEPARTURE_24H, {
     units: 'K',
@@ -104,7 +111,19 @@ const NON_CANONICAL_META: ReadonlyArray<Meta> = [
   me(SIGNALK_PATHS.ENVIRONMENT.WEATHER.HEAT_STRESS_INDEX, {
     displayName: 'Heat stress index',
     description:
-      'WBGT-derived heat-stress category: 0 low (<27 C), 1 moderate (27..29 C), 2 high (29..31 C), 3 very high (31..33 C), 4 extreme (>=33 C). Standard military/marine WBGT bands.',
+      'WBGT-derived heat-stress category on the US military WBGT flag cutoffs: 0 (<26.7 C), 1 (26.7..27.8 C), 2 (27.8..29.4 C), 3 (29.4..32.2 C), 4 (>=32.2 C).',
+  }),
+  me(SIGNALK_PATHS.ENVIRONMENT.WEATHER.WIND_SPEED_APPARENT, {
+    units: 'm/s',
+    displayName: 'Apparent wind speed',
+    description:
+      'Apparent wind speed calculated from AccuWeather ground-referenced wind and vessel motion. Plugin-derived; published off the canonical environment.wind leaves so it cannot displace a real anemometer feed.',
+  }),
+  me(SIGNALK_PATHS.ENVIRONMENT.WEATHER.WIND_ANGLE_APPARENT, {
+    units: 'rad',
+    displayName: 'Apparent wind angle',
+    description:
+      'Apparent wind angle relative to the bow (-pi..pi, negative to port), calculated from AccuWeather wind and vessel motion. Plugin-derived; published off the canonical environment.wind leaves.',
   }),
 ];
 
@@ -129,7 +148,7 @@ const NOTIFICATION_META: ReadonlyArray<Meta> = [
   }),
   me(NOTIFICATION_PATHS.VISIBILITY_LOW, {
     displayName: 'Visibility, reduced',
-    description: 'Visibility below 1 nautical mile (SOLAS restricted-visibility threshold).',
+    description: "Visibility below 1 nautical mile (the plugin's restricted-visibility threshold).",
   }),
   me(NOTIFICATION_PATHS.VISIBILITY_VERY_LOW, {
     displayName: 'Visibility, very low',
@@ -233,6 +252,10 @@ export class NMEA2000PathMapper {
       pv(SIGNALK_PATHS.ENVIRONMENT.OUTSIDE.HEAT_INDEX_TEMPERATURE, data.heatIndex)
     );
 
+    if (data.realFeel !== undefined) {
+      values.push(pv(SIGNALK_PATHS.ENVIRONMENT.WEATHER.REAL_FEEL, data.realFeel));
+    }
+
     if (data.realFeelShade !== undefined) {
       values.push(pv(SIGNALK_PATHS.ENVIRONMENT.WEATHER.REAL_FEEL_SHADE, data.realFeelShade));
     }
@@ -266,11 +289,14 @@ export class NMEA2000PathMapper {
   }
 
   private addWindPaths(values: PathValue[], data: WeatherData): void {
-    // AccuWeather wind is ground-referenced. We emit only to speedOverGround
-    // and directionTrue. speedTrue (water-referenced) would diverge from this
-    // value on any moving vessel and would clobber a real anemometer feed,
-    // so we deliberately do not emit it. Consumers (or this plugin's apparent
-    // wind calculator) derive water-referenced wind from speedOverGround.
+    // AccuWeather wind is ground-referenced. The plugin emits only the two
+    // canonical environment.wind leaves it can source accurately:
+    // speedOverGround and directionTrue. speedTrue (water-referenced) is
+    // deliberately not emitted: it would clobber a real anemometer feed on a
+    // moving vessel. The calculated apparent wind is doubly synthetic
+    // (regional ground wind plus vessel motion), so it is published on
+    // producer-namespaced environment.weather.* paths rather than the
+    // canonical speedApparent / angleApparent leaves a masthead instrument owns.
     values.push(
       pv(SIGNALK_PATHS.ENVIRONMENT.WIND.SPEED_OVER_GROUND, data.windSpeed),
       pv(SIGNALK_PATHS.ENVIRONMENT.WIND.DIRECTION_TRUE, data.windDirection)
@@ -289,11 +315,15 @@ export class NMEA2000PathMapper {
     }
 
     if (data.apparentWindSpeed !== undefined) {
-      values.push(pv(SIGNALK_PATHS.ENVIRONMENT.WIND.SPEED_APPARENT, data.apparentWindSpeed));
+      values.push(
+        pv(SIGNALK_PATHS.ENVIRONMENT.WEATHER.WIND_SPEED_APPARENT, data.apparentWindSpeed)
+      );
     }
 
     if (data.apparentWindAngle !== undefined) {
-      values.push(pv(SIGNALK_PATHS.ENVIRONMENT.WIND.ANGLE_APPARENT, data.apparentWindAngle));
+      values.push(
+        pv(SIGNALK_PATHS.ENVIRONMENT.WEATHER.WIND_ANGLE_APPARENT, data.apparentWindAngle)
+      );
     }
   }
 

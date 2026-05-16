@@ -346,11 +346,13 @@ export class WeatherService {
   }
 
   /**
-   * Trip threshold for the consecutive-failure escalation in
-   * `updateWeatherData`. Three consecutive failures at default cadence is ~90
-   * minutes of dead air, well before the 2x stale-data window kicks in.
+   * Trip threshold for the fetch-failure escalation in `updateWeatherData`.
+   * Set to 1 so the underlying error surfaces on the first failed fetch: at
+   * the scheduled cadence three failures take 3x updateFrequency, which is
+   * later than the 2x stale-data watchdog, so a higher threshold would never
+   * beat the generic stale banner to the operator.
    */
-  private static readonly CONSECUTIVE_FAILURE_LIMIT = 3;
+  private static readonly CONSECUTIVE_FAILURE_LIMIT = 1;
 
   /**
    * Substrings tagged onto error messages by `AccuWeatherService.handleApiError`
@@ -390,7 +392,8 @@ export class WeatherService {
 
     this.updateTimer = setInterval(() => {
       this.updateWeatherData().catch((error) => {
-        this.errorCount++;
+        // errorCount is incremented inside updateWeatherData's own catch
+        // before it rethrows; this handler only logs the rejection.
         this.logger('error', 'Scheduled weather update failed', {
           error: toErrorMessage(error),
           errorCount: this.errorCount,
@@ -521,8 +524,9 @@ export class WeatherService {
   /**
    * Translate a fetch failure into the right operator-facing banner:
    *  - 401/403: the key is dead, so stop the timer and surface "rejected".
-   *  - Three consecutive non-auth failures: surface the underlying error so
-   *    operators don't wait for the 2x stale-data watchdog to kick in.
+   *  - Any non-auth failure: surface the underlying error immediately so the
+   *    operator sees the cause rather than waiting for the 2x stale-data
+   *    watchdog. The running streak count is appended once it exceeds one.
    * @private
    */
   private escalateFetchError(error: unknown, errorMessage: string): void {
@@ -538,9 +542,9 @@ export class WeatherService {
       return;
     }
     if (this.consecutiveFailures >= WeatherService.CONSECUTIVE_FAILURE_LIMIT) {
-      this.app.setPluginError(
-        `Weather updates failing (${this.consecutiveFailures} consecutive): ${errorMessage}`
-      );
+      const streak =
+        this.consecutiveFailures > 1 ? ` (${this.consecutiveFailures} consecutive)` : '';
+      this.app.setPluginError(`Weather update failed${streak}: ${errorMessage}`);
     }
   }
 
@@ -610,7 +614,10 @@ export class WeatherService {
         weatherData.windSpeed,
         speedOverGround,
         courseOverGroundTrue,
-        weatherData.windDirection
+        weatherData.windDirection,
+        // Bow-relative angle references true heading when available; course
+        // is the fallback. The motion vector always uses course.
+        vesselData.headingTrue ?? courseOverGroundTrue
       );
 
       if (!analysis.isValid) {

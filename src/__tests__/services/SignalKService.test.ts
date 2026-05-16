@@ -114,7 +114,9 @@ describe('SignalKService', () => {
         'navigation.position': {
           value: { latitude: 37.7749, longitude: -122.4194 },
           timestamp: new Date().toISOString(),
-          source: { label: 'signalk-node-red' },
+          // app.getSelfPath returns a full-model leaf with a $source string
+          // SourceRef, not a nested source object.
+          $source: 'signalk-node-red.123',
         },
       });
 

@@ -52,10 +52,10 @@ export class WindCalculator {
   public calculateApparentWindSpeed(
     trueWindSpeed: number,
     vesselSpeed: number,
-    vesselHeading: number,
+    vesselCourse: number,
     trueWindDirection: number
   ): number {
-    return this.calculateWindAnalysis(trueWindSpeed, vesselSpeed, vesselHeading, trueWindDirection)
+    return this.calculateWindAnalysis(trueWindSpeed, vesselSpeed, vesselCourse, trueWindDirection)
       .apparentWindSpeed;
   }
 
@@ -67,10 +67,10 @@ export class WindCalculator {
   public calculateApparentWindAngle(
     trueWindSpeed: number,
     vesselSpeed: number,
-    vesselHeading: number,
+    vesselCourse: number,
     trueWindDirection: number
   ): number {
-    return this.calculateWindAnalysis(trueWindSpeed, vesselSpeed, vesselHeading, trueWindDirection)
+    return this.calculateWindAnalysis(trueWindSpeed, vesselSpeed, vesselCourse, trueWindDirection)
       .apparentWindAngle;
   }
 
@@ -82,13 +82,18 @@ export class WindCalculator {
   public calculateWindAnalysis(
     trueWindSpeed: number,
     vesselSpeed: number,
-    vesselHeading: number,
-    trueWindDirection: number
+    vesselCourse: number,
+    trueWindDirection: number,
+    vesselHeading: number = vesselCourse
   ): WindCalculationResult {
-    if (!this.validateWindInputs(trueWindSpeed, vesselSpeed, vesselHeading, trueWindDirection)) {
+    if (
+      !this.validateWindInputs(trueWindSpeed, vesselSpeed, vesselCourse, trueWindDirection) ||
+      !Number.isFinite(vesselHeading)
+    ) {
       this.logger('warn', 'Invalid wind calculation inputs', {
         trueWindSpeed,
         vesselSpeed,
+        vesselCourse,
         vesselHeading,
         trueWindDirection,
       });
@@ -102,13 +107,17 @@ export class WindCalculator {
 
     const cosWind = Math.cos(trueWindDirection);
     const sinWind = Math.sin(trueWindDirection);
-    const cosHeading = Math.cos(vesselHeading);
-    const sinHeading = Math.sin(vesselHeading);
+    // Motion-induced wind is along the vessel's course-over-ground vector.
+    const cosCourse = Math.cos(vesselCourse);
+    const sinCourse = Math.sin(vesselCourse);
 
-    const apparentWindX = trueWindSpeed * cosWind + vesselSpeed * cosHeading;
-    const apparentWindY = trueWindSpeed * sinWind + vesselSpeed * sinHeading;
+    const apparentWindX = trueWindSpeed * cosWind + vesselSpeed * cosCourse;
+    const apparentWindY = trueWindSpeed * sinWind + vesselSpeed * sinCourse;
 
     const apparentSpeed = Math.sqrt(apparentWindX * apparentWindX + apparentWindY * apparentWindY);
+    // The bow-relative apparent angle references true heading, not course:
+    // the two differ by leeway and current set. When no separate heading is
+    // supplied it defaults to course (the prior behaviour).
     const apparentAngle = this.normalizeAngle(
       Math.atan2(apparentWindY, apparentWindX) - vesselHeading
     );

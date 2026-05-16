@@ -27,10 +27,12 @@ export interface WeatherData {
   readonly dewPoint: number;
   /** Wind chill temperature in Kelvin */
   readonly windChill: number;
-  /** Heat index temperature in Kelvin */
+  /** Heat index temperature in Kelvin (computed NWS Rothfusz, not AccuWeather RealFeel) */
   readonly heatIndex: number;
 
   // Enhanced temperature readings (new from AccuWeather)
+  /** AccuWeather RealFeel apparent temperature (includes solar load) in Kelvin */
+  readonly realFeel?: number;
   /** RealFeel temperature in shade in Kelvin */
   readonly realFeelShade?: number;
   /** Wet bulb temperature in Kelvin */
@@ -83,11 +85,9 @@ export interface WeatherData {
   readonly weatherIcon?: number;
   /** ISO 8601 timestamp of measurement */
   readonly timestamp: string;
-  /** Data quality indicator (0-1, 1 = highest quality) */
-  readonly quality?: number;
 
   // Calculated synthetic values (new)
-  /** Beaufort scale (0-12) calculated from wind + gust */
+  /** Beaufort scale (0-12) derived from sustained wind speed */
   readonly beaufortScale?: number;
   /** Enhanced air density in kg/m³ (includes elevation if available) */
   readonly airDensityEnhanced?: number;

@@ -343,52 +343,6 @@ describe('AccuWeatherService', () => {
     });
   });
 
-  describe('Data Quality Assessment', () => {
-    it('should calculate data quality correctly', async () => {
-      // Setup fresh mocks
-      service.clearLocationCache();
-      vi.mocked(global.fetch).mockClear();
-
-      (global.fetch as Mock)
-        .mockResolvedValueOnce(mockResponse({ Key: '2628204', LocalizedName: 'San Francisco' }))
-        .mockResolvedValueOnce(mockResponse(createMockAccuWeatherResponse()));
-
-      const weatherData = await service.fetchCurrentWeather({
-        latitude: 37.7749,
-        longitude: -122.4194,
-      });
-
-      expect(weatherData.quality).toBeGreaterThan(0);
-      expect(weatherData.quality).toBeLessThanOrEqual(1);
-    });
-
-    it('should increase quality for rich data sets', async () => {
-      // Clear previous mocks
-      service.clearLocationCache();
-      vi.mocked(global.fetch).mockClear();
-
-      // Mock response with all enhanced fields
-      const richResponse = createMockAccuWeatherResponse({
-        WindGust: {
-          Speed: { Metric: { Value: 30, Unit: 'km/h' }, Imperial: { Value: 18.6, Unit: 'mi/h' } },
-        },
-        Visibility: { Metric: { Value: 20, Unit: 'km' }, Imperial: { Value: 12, Unit: 'mi' } },
-      });
-
-      (global.fetch as Mock)
-        .mockResolvedValueOnce(mockResponse({ Key: 'test' }))
-        .mockResolvedValueOnce(mockResponse(richResponse));
-
-      const weatherData = await service.fetchCurrentWeather({
-        latitude: 37.7749,
-        longitude: -122.4194,
-      });
-
-      // Quality should be enhanced due to rich data
-      expect(weatherData.quality).toBeGreaterThan(0.9);
-    });
-  });
-
   describe('Rolling 24h request window', () => {
     let windowService: AccuWeatherService;
     const ONE_HOUR_MS = 60 * 60 * 1000;

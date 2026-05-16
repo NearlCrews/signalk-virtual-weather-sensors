@@ -3,6 +3,7 @@
  * Modern TypeScript implementation with comprehensive error handling and enhanced field extraction
  */
 
+import { WindCalculator } from '../calculators/WindCalculator.js';
 import { ACCUWEATHER, DEFAULT_CONFIG, ERROR_CODES, PLUGIN, UNITS } from '../constants/index.js';
 import type {
   AccuWeatherConfig,
@@ -17,7 +18,6 @@ import {
   calculateAirDensity,
   calculateBeaufortScale,
   celsiusToKelvin,
-  clamp,
   degreesToRadians,
   isValidCoordinates,
   isValidHumidity,
@@ -29,14 +29,19 @@ import {
   millibarsToPA,
   percentageToRatio,
   toErrorMessage,
+  truncateToCodePoints,
 } from '../utils/conversions.js';
 import { validateAccuWeatherResponse } from '../utils/validation.js';
 
+/**
+ * Shared WindCalculator used for the computed heat index and the wind-chill
+ * fallback. Stateless apart from its logger, so one module-level instance is
+ * reused instead of constructing one per weather transform.
+ */
+const sharedWindCalculator = new WindCalculator();
+
 /** Maximum allowed response body size in bytes (1 MiB) */
 const MAX_RESPONSE_BYTES = 1_048_576;
-
-/** Threshold above which an observation is treated as low-quality in calculateDataQuality. */
-const STALE_OBSERVATION_THRESHOLD_MS = 60 * 60 * 1000;
 
 /** Validation pattern for AccuWeather location keys (URL path segment). */
 const LOCATION_KEY_PATTERN = /^[a-zA-Z0-9_-]+$/;
@@ -54,8 +59,7 @@ function capString(value: unknown, maxLength: number): string {
   if (typeof value !== 'string') return '';
   // biome-ignore lint/suspicious/noControlCharactersInRegex: deliberately stripping injection vectors
   const stripped = value.replace(/[\x00-\x1f\x7f]/g, '');
-  if (stripped.length <= maxLength) return stripped;
-  return Array.from(stripped).slice(0, maxLength).join('');
+  return truncateToCodePoints(stripped, maxLength);
 }
 
 /**
@@ -91,14 +95,78 @@ const REQUEST_WINDOW_HOURS = 24;
 /** Hour expressed in milliseconds, used by the rolling window rotation. */
 const HOUR_MS = 60 * 60 * 1000;
 
-/** Heat-stress index from wet-bulb globe temperature (military/marine WBGT bands). */
+/**
+ * Heat-stress index from wet-bulb globe temperature, banded on the US military
+ * WBGT flag cutoffs (green 26.7, yellow 27.8, red 29.4, black 32.2 C). A
+ * precautionary bias on a crew-safety index favours these standard flag
+ * values over looser bands that would activate each warning roughly 0.5 to
+ * 1.5 C late.
+ */
 function calculateHeatStressIndex(wetBulbGlobeTemperatureK: number): number {
   const wbgtC = kelvinToCelsius(wetBulbGlobeTemperatureK);
-  if (wbgtC < 27) return 0;
-  if (wbgtC < 29) return 1;
-  if (wbgtC < 31) return 2;
-  if (wbgtC < 33) return 3;
+  if (wbgtC < 26.7) return 0;
+  if (wbgtC < 27.8) return 1;
+  if (wbgtC < 29.4) return 2;
+  if (wbgtC < 32.2) return 3;
   return 4;
+}
+
+/**
+ * Decode the optional enhanced-temperature fields, all in Kelvin. Free-tier
+ * keys and partial responses omit some or all of these blocks, so each is
+ * optional-chained; the result carries only the keys that were present.
+ */
+function extractEnhancedTemperatures(
+  conditions: AccuWeatherCurrentConditions
+): Partial<WeatherData> {
+  const toKelvin = (celsius: number | undefined): number | undefined =>
+    typeof celsius === 'number' ? celsiusToKelvin(celsius) : undefined;
+  const realFeel = toKelvin(conditions.RealFeelTemperature?.Metric?.Value);
+  const realFeelShade = toKelvin(conditions.RealFeelTemperatureShade?.Metric?.Value);
+  const wetBulbTemperature = toKelvin(conditions.WetBulbTemperature?.Metric?.Value);
+  const wetBulbGlobeTemperature = toKelvin(conditions.WetBulbGlobeTemperature?.Metric?.Value);
+  const apparentTemperature = toKelvin(conditions.ApparentTemperature?.Metric?.Value);
+  return {
+    ...(realFeel !== undefined && { realFeel }),
+    ...(realFeelShade !== undefined && { realFeelShade }),
+    ...(wetBulbTemperature !== undefined && { wetBulbTemperature }),
+    ...(wetBulbGlobeTemperature !== undefined && { wetBulbGlobeTemperature }),
+    ...(apparentTemperature !== undefined && { apparentTemperature }),
+  };
+}
+
+/**
+ * Decode the optional non-temperature enhanced fields (gust, visibility,
+ * ceiling, precipitation, 24h departure, weather icon). Each block is
+ * optional-chained; the result carries only the keys that were present.
+ */
+function extractEnhancedConditions(
+  conditions: AccuWeatherCurrentConditions,
+  windSpeed: number
+): Partial<WeatherData> {
+  const rawWindGustKmh = conditions.WindGust?.Speed?.Metric?.Value;
+  const windGustSpeed = typeof rawWindGustKmh === 'number' ? kmhToMS(rawWindGustKmh) : undefined;
+  // undefined when wind is calm OR gust data is missing: a literal 1 would be
+  // indistinguishable from "no gust".
+  const windGustFactor =
+    windGustSpeed !== undefined && windSpeed > 0 ? windGustSpeed / windSpeed : undefined;
+  const rawVisibilityKm = conditions.Visibility?.Metric?.Value;
+  const visibility =
+    typeof rawVisibilityKm === 'number' ? rawVisibilityKm * UNITS.LENGTH.KM_TO_M : undefined;
+  const cloudCeiling = conditions.Ceiling?.Metric?.Value;
+  const precipitationLastHour = conditions.Precip1hr?.Metric?.Value;
+  const precipitationCurrent = conditions.PrecipitationSummary?.PastHour?.Metric?.Value;
+  const temperatureDeparture24h = conditions.Past24HourTemperatureDeparture?.Metric?.Value;
+  return {
+    ...(windGustSpeed !== undefined && { windGustSpeed }),
+    ...(windGustFactor !== undefined && { windGustFactor }),
+    ...(visibility !== undefined && { visibility }),
+    ...(cloudCeiling !== undefined && { cloudCeiling }),
+    ...(precipitationLastHour !== undefined && { precipitationLastHour }),
+    ...(precipitationCurrent !== undefined && { precipitationCurrent }),
+    ...(temperatureDeparture24h !== undefined && { temperatureDeparture24h }),
+    ...(typeof conditions.WeatherIcon === 'number' && { weatherIcon: conditions.WeatherIcon }),
+  };
 }
 
 export class AccuWeatherService {
@@ -222,52 +290,34 @@ export class AccuWeatherService {
     // environment.wind.directionTrue path is therefore correct.
     const windDirection = degreesToRadians(conditions.Wind.Direction.Degrees);
     const dewPoint = celsiusToKelvin(conditions.DewPoint.Metric.Value);
-    const windChill = celsiusToKelvin(conditions.WindChillTemperature.Metric.Value);
-    const heatIndex = celsiusToKelvin(conditions.RealFeelTemperature.Metric.Value);
+    // WindChillTemperature is optional on partial / lower-tier responses: fall
+    // back to the Environment Canada formula so a missing block degrades the
+    // value gracefully instead of throwing and aborting the whole fetch.
+    const rawWindChillC = conditions.WindChillTemperature?.Metric?.Value;
+    const windChill =
+      typeof rawWindChillC === 'number'
+        ? celsiusToKelvin(rawWindChillC)
+        : sharedWindCalculator.calculateWindChill(temperature, windSpeed);
+    // Heat index is computed (NWS Rothfusz) from air temperature and humidity.
+    // AccuWeather RealFeel is a different, proprietary all-season index that
+    // can fall below air temperature, so it must not occupy the canonical
+    // environment.outside.heatIndexTemperature leaf; RealFeel is published
+    // separately on environment.weather.realFeel.
+    const heatIndex = sharedWindCalculator.calculateHeatIndex(temperature, humidity);
 
-    const toKelvin = (celsius: number | undefined): number | undefined =>
-      typeof celsius === 'number' ? celsiusToKelvin(celsius) : undefined;
-
-    // Optional chaining: free-tier keys and partial responses may omit these
-    const realFeelShade = toKelvin(conditions.RealFeelTemperatureShade?.Metric?.Value);
-    const wetBulbTemperature = toKelvin(conditions.WetBulbTemperature?.Metric?.Value);
-    const wetBulbGlobeTemperature = toKelvin(conditions.WetBulbGlobeTemperature?.Metric?.Value);
-    const apparentTemperature = toKelvin(conditions.ApparentTemperature?.Metric?.Value);
-
-    // Free-tier and partial responses occasionally omit WindGust; match the
-    // optional-chained style of the neighbouring optional fields so a missing
-    // gust block falls through cleanly instead of throwing a TypeError that
-    // flaps the plugin banner.
-    const rawWindGustKmh = conditions.WindGust?.Speed?.Metric?.Value;
-    const windGustSpeed = typeof rawWindGustKmh === 'number' ? kmhToMS(rawWindGustKmh) : undefined;
-    // undefined when wind is calm OR gust data is missing: a literal 1 would be
-    // indistinguishable from "no gust".
-    const windGustFactor =
-      windGustSpeed !== undefined && windSpeed > 0 ? windGustSpeed / windSpeed : undefined;
-
-    const uvIndex = conditions.UVIndexFloat;
-    const visibility = conditions.Visibility.Metric.Value * UNITS.LENGTH.KM_TO_M;
-    const cloudCover = percentageToRatio(conditions.CloudCover);
-    const cloudCeiling = conditions.Ceiling.Metric.Value;
-
-    // Free-tier API responses can omit Precip1hr / PrecipitationSummary entirely;
-    // optional chaining keeps transformWeatherData from throwing on those payloads.
-    const precipitationLastHour = conditions.Precip1hr?.Metric?.Value;
-    const precipitationCurrent = conditions.PrecipitationSummary?.PastHour?.Metric?.Value;
-
-    const temperatureDeparture24h = conditions.Past24HourTemperatureDeparture?.Metric?.Value;
-
-    // Calculate synthetic values (humidity is already a ratio)
-    const beaufortScale = calculateBeaufortScale(windSpeed, windGustSpeed);
-    const absoluteHumidity = calculateAbsoluteHumidity(temperature, humidity);
-    const airDensityEnhanced = calculateAirDensity(temperature, pressure, humidity);
+    const enhancedTemps = extractEnhancedTemperatures(conditions);
+    const enhancedConditions = extractEnhancedConditions(conditions, windSpeed);
     const heatStressIndex =
-      wetBulbGlobeTemperature !== undefined
-        ? calculateHeatStressIndex(wetBulbGlobeTemperature)
+      enhancedTemps.wetBulbGlobeTemperature !== undefined
+        ? calculateHeatStressIndex(enhancedTemps.wetBulbGlobeTemperature)
         : undefined;
 
+    // Beaufort is a sustained-wind scale (WMO): a gust must not inflate it.
+    const beaufortScale = calculateBeaufortScale(windSpeed);
+    const absoluteHumidity = calculateAbsoluteHumidity(temperature, humidity);
+    const airDensityEnhanced = calculateAirDensity(temperature, pressure, humidity);
+
     const weatherData: WeatherData = {
-      // Core measurements
       temperature,
       pressure,
       humidity,
@@ -276,44 +326,20 @@ export class AccuWeatherService {
       dewPoint,
       windChill,
       heatIndex,
-
-      // Enhanced temperature readings: conditional spread so we never assign
-      // explicit `undefined` under exactOptionalPropertyTypes
-      ...(realFeelShade !== undefined && { realFeelShade }),
-      ...(wetBulbTemperature !== undefined && { wetBulbTemperature }),
-      ...(wetBulbGlobeTemperature !== undefined && { wetBulbGlobeTemperature }),
-      ...(apparentTemperature !== undefined && { apparentTemperature }),
-
-      // Enhanced wind data (gust omitted on responses that lack the WindGust block)
-      ...(windGustSpeed !== undefined && { windGustSpeed }),
-      ...(windGustFactor !== undefined && { windGustFactor }),
-
-      // Atmospheric conditions
-      uvIndex,
-      visibility,
-      cloudCover,
-      cloudCeiling,
-
-      // Precipitation (omitted on free-tier responses that lack these fields)
-      ...(precipitationLastHour !== undefined && { precipitationLastHour }),
-      ...(precipitationCurrent !== undefined && { precipitationCurrent }),
-
-      // Temperature trends
-      ...(temperatureDeparture24h !== undefined && { temperatureDeparture24h }),
-
-      // Calculated synthetic values
+      uvIndex: conditions.UVIndexFloat,
+      cloudCover: percentageToRatio(conditions.CloudCover),
       beaufortScale,
       absoluteHumidity,
       airDensityEnhanced,
-      ...(heatStressIndex !== undefined && { heatStressIndex }),
-
-      // Metadata. `weatherIcon` carries the AccuWeather code (1..44) to the
-      // notifier so it can classify severe-condition categories without
-      // re-parsing the upstream response.
+      // `description` carries the AccuWeather phrase; `weatherIcon` (decoded
+      // into enhancedConditions) carries the icon code for severe-condition
+      // classification.
       description: capString(conditions.WeatherText, ACCUWEATHER.MAX_DESCRIPTION_LENGTH),
-      ...(typeof conditions.WeatherIcon === 'number' && { weatherIcon: conditions.WeatherIcon }),
       timestamp: capString(conditions.LocalObservationDateTime, ACCUWEATHER.MAX_LABEL_LENGTH),
-      quality: this.calculateDataQuality(conditions),
+      // Optional fields decoded above: spread last so only present keys land.
+      ...enhancedTemps,
+      ...enhancedConditions,
+      ...(heatStressIndex !== undefined && { heatStressIndex }),
     };
 
     // Validate transformed data
@@ -671,33 +697,6 @@ export class AccuWeatherService {
           `${ERROR_CODES.NETWORK.NETWORK_ERROR}: API request failed (${statusCode}) - ${message}`
         );
     }
-  }
-
-  /**
-   * Calculate data quality score based on conditions
-   * @private
-   */
-  private calculateDataQuality(conditions: AccuWeatherCurrentConditions): number {
-    let quality = 1.0;
-
-    // Penalize stale or missing-timestamp observations (>1h old or non-finite EpochTime).
-    if (Number.isFinite(conditions.EpochTime)) {
-      const observationAge = Date.now() - conditions.EpochTime * 1000;
-      if (observationAge > STALE_OBSERVATION_THRESHOLD_MS) {
-        quality -= 0.2;
-      }
-    } else {
-      quality -= 0.2;
-    }
-
-    if (conditions.RelativeHumidity <= 0 || conditions.RelativeHumidity > 100) {
-      quality -= 0.1;
-    }
-
-    if ((conditions.WindGust?.Speed?.Metric?.Value ?? 0) > 0) quality += 0.05;
-    if (conditions.Visibility.Metric.Value > 0) quality += 0.05;
-
-    return clamp(quality, 0, 1);
   }
 
   /**

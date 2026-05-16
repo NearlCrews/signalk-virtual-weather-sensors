@@ -136,7 +136,7 @@ export const NOTIFICATION_PATHS = {
  * are inclusive entry points: `>= threshold` activates the band.
  *
  *   Wind:        Beaufort entry per WMO classification (8 gale, 10 storm, 12 hurricane).
- *   Visibility:  SOLAS restricted-visibility threshold (1 nm = 1852 m); very-low at 0.5 nm.
+ *   Visibility:  plugin restricted-visibility threshold (1 nm = 1852 m); very-low at 0.5 nm.
  *   Heat:        wet-bulb globe temperature heat stress index (military/marine bands).
  *   Cold:        wind chill in Kelvin (0 C caution, -20 C extreme).
  */
@@ -188,8 +188,6 @@ export const SIGNALK_PATHS = {
     WIND: {
       SPEED_OVER_GROUND: 'environment.wind.speedOverGround',
       DIRECTION_TRUE: 'environment.wind.directionTrue',
-      SPEED_APPARENT: 'environment.wind.speedApparent',
-      ANGLE_APPARENT: 'environment.wind.angleApparent',
     },
 
     /**
@@ -199,6 +197,7 @@ export const SIGNALK_PATHS = {
      */
     WEATHER: {
       APPARENT_TEMPERATURE: 'environment.weather.apparentTemperature',
+      REAL_FEEL: 'environment.weather.realFeel',
       REAL_FEEL_SHADE: 'environment.weather.realFeelShade',
       WET_BULB_TEMPERATURE: 'environment.weather.wetBulbTemperature',
       WET_BULB_GLOBE_TEMPERATURE: 'environment.weather.wetBulbGlobeTemperature',
@@ -214,6 +213,8 @@ export const SIGNALK_PATHS = {
       GUST_FACTOR: 'environment.weather.gustFactor',
       BEAUFORT_SCALE: 'environment.weather.beaufortScale',
       HEAT_STRESS_INDEX: 'environment.weather.heatStressIndex',
+      WIND_SPEED_APPARENT: 'environment.weather.windSpeedApparent',
+      WIND_ANGLE_APPARENT: 'environment.weather.windAngleApparent',
     },
   },
 

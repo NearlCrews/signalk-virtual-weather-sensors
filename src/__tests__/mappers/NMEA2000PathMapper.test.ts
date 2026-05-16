@@ -311,11 +311,15 @@ describe('NMEA2000PathMapper', () => {
       const values = getValues(delta);
       const paths = values.map((v) => v.path);
 
-      expect(paths).toContain('environment.wind.speedApparent');
-      expect(paths).toContain('environment.wind.angleApparent');
+      expect(paths).toContain('environment.weather.windSpeedApparent');
+      expect(paths).toContain('environment.weather.windAngleApparent');
 
-      const speedValue = values.find((v) => v.path === 'environment.wind.speedApparent')?.value;
-      const angleValue = values.find((v) => v.path === 'environment.wind.angleApparent')?.value;
+      const speedValue = values.find(
+        (v) => v.path === 'environment.weather.windSpeedApparent'
+      )?.value;
+      const angleValue = values.find(
+        (v) => v.path === 'environment.weather.windAngleApparent'
+      )?.value;
 
       expect(speedValue).toBe(12.5);
       expect(angleValue).toBe(-0.78);

@@ -254,9 +254,6 @@ describe('Atmospheric calculations', () => {
       expect(calculateBeaufortScale(7)).toBe(4);
       expect(calculateBeaufortScale(35)).toBe(12);
     });
-    it('uses higher of sustained or gust speed', () => {
-      expect(calculateBeaufortScale(5, 25)).toBe(calculateBeaufortScale(25));
-    });
     it('returns 0 for negative or non-finite input', () => {
       expect(calculateBeaufortScale(-1)).toBe(0);
       expect(calculateBeaufortScale(Number.NaN)).toBe(0);

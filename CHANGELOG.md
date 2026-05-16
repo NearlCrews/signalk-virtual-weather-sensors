@@ -5,6 +5,36 @@ All notable changes to the signalk-virtual-weather-sensors project will be docum
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+Documentation reorganization plus a three-expert codebase review (Signal K
+compliance, weather science, code quality) and its follow-up simplify pass.
+Several consumer-visible path and value changes are listed under Changed;
+there is no change to the delta envelope or the notification value shape.
+272 tests pass.
+
+### Changed
+
+- **Apparent wind moved off the canonical wind leaves.** The plugin's calculated apparent wind is no longer emitted on `environment.wind.speedApparent` / `angleApparent`; it now uses producer-namespaced `environment.weather.windSpeedApparent` and `environment.weather.windAngleApparent`. The value is doubly synthetic (AccuWeather regional ground wind plus vessel motion) and was squatting the canonical leaves a real masthead anemometer owns. The apparent-wind angle now references true heading rather than course over ground.
+- **`environment.outside.heatIndexTemperature` now carries a computed NWS Rothfusz heat index** from air temperature and humidity, instead of AccuWeather RealFeel. RealFeel is a proprietary all-season index that can read below air temperature, which is physically impossible for a heat index. AccuWeather RealFeel is now published on `environment.weather.realFeel`.
+- **Beaufort scale and the wind notification bands use sustained wind only**, per the WMO definition. A gust no longer inflates the reported Beaufort force or trips a gale / storm / hurricane alarm.
+- **Heat-stress index bands tightened to the US military WBGT flag cutoffs** (26.7 / 27.8 / 29.4 / 32.2 C). Each band activates slightly earlier, a precautionary bias on a crew-safety index.
+- **Resolved notifications clear with `method: []`** (was `['visual']`) so consumers drop the cue for a cleared hazard.
+- **Fetch failures surface the underlying error immediately** rather than waiting for the 2x-staleness watchdog.
+- **Documentation reorganized by audience.** Community files moved to `.github/`; reference and maintainer docs into `docs/` (`docs/decisions/`, `docs/maintainers/`). The README gained a What's New section, and the package description and keywords were tightened for the npm page.
+
+### Fixed
+
+- **The node-red source-exclusion guard now works.** It read a `source.label` object that `app.getSelfPath` never returns; it now matches the `$source` string, so the feedback-loop guard fires as intended.
+- **`WindChillTemperature`, `RealFeelTemperature`, `Visibility`, and `Ceiling` are optional-chained.** A partial or lower-tier AccuWeather response missing one of these no longer throws a TypeError that aborts the whole fetch.
+- **`errorCount` no longer double-counts** a scheduled-update failure.
+- **`/api/test-key` failure messages are length-bounded and control-stripped** on the non-500 path, matching the 500 path.
+- **Notification message truncation is code-point safe**, so a surrogate pair at the 80-character boundary is never split into a lone surrogate.
+
+### Removed
+
+- **Dead `WeatherData.quality` field** and its `calculateDataQuality` computation, which were never read by any consumer or banner.
+
 ## [1.5.3] - 2026-05-16
 
 Documentation and maintenance release. The README is restructured for a

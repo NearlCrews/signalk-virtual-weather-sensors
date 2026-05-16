@@ -14,6 +14,11 @@ producer-namespaced `environment.weather.*` branch, so the canonical containers
 stay leaf-only as the spec requires. The plugin ships a one-shot Signal K
 `meta` block describing units and labels for every non-canonical path.
 
+> Note: the plugin re-emits its cached delta on a fixed interval for NMEA2000
+> recognition. Each re-emission stamps the delta with the current emission
+> time, not the original observation time, so a value can be re-broadcast as
+> "now" for up to one `updateFrequency` window after it was fetched.
+
 ## Core environmental (canonical)
 
 | Path | Unit | Description |
@@ -23,7 +28,7 @@ stay leaf-only as the spec requires. The plugin ships a one-shot Signal K
 | `environment.outside.relativeHumidity` | ratio (0 to 1) | Relative humidity |
 | `environment.outside.dewPointTemperature` | K | Dew point |
 | `environment.outside.apparentWindChillTemperature` | K | Wind chill referenced to observed wind |
-| `environment.outside.heatIndexTemperature` | K | Heat index (RealFeel) |
+| `environment.outside.heatIndexTemperature` | K | Heat index, computed (NWS Rothfusz) from air temperature and humidity |
 | `environment.outside.airDensity` | kg/m3 | Calculated air density |
 
 ## Wind (canonical)
@@ -32,8 +37,11 @@ stay leaf-only as the spec requires. The plugin ships a one-shot Signal K
 |------|------|-------------|
 | `environment.wind.speedOverGround` | m/s | Ground-referenced wind speed (AccuWeather is ground-referenced; this plugin does not emit `speedTrue`) |
 | `environment.wind.directionTrue` | rad | True wind direction |
-| `environment.wind.speedApparent` | m/s | Apparent wind speed (calculated from vessel motion) |
-| `environment.wind.angleApparent` | rad | Apparent wind angle relative to bow (omitted when no heading is available) |
+
+Calculated apparent wind is producer-namespaced (see `windSpeedApparent` /
+`windAngleApparent` in the next section). It is synthetic, derived from
+AccuWeather's regional ground wind plus vessel motion, so it stays off the
+canonical `environment.wind` leaves that a masthead anemometer owns.
 
 ## Weather extensions (`environment.weather.*`, producer namespace)
 
@@ -42,6 +50,7 @@ meta describing units and labels.
 
 | Path | Unit | Description |
 |------|------|-------------|
+| `environment.weather.realFeel` | K | AccuWeather RealFeel (includes solar load) |
 | `environment.weather.realFeelShade` | K | RealFeel in shade |
 | `environment.weather.wetBulbTemperature` | K | Wet bulb |
 | `environment.weather.wetBulbGlobeTemperature` | K | Wet bulb globe (heat stress) |
@@ -57,7 +66,9 @@ meta describing units and labels.
 | `environment.weather.speedGust` | m/s | Wind gust speed |
 | `environment.weather.gustFactor` | ratio | Gust / sustained ratio |
 | `environment.weather.beaufortScale` | (unitless) | Beaufort scale category (0..12) |
-| `environment.weather.heatStressIndex` | (unitless) | WBGT-derived heat-stress category: 0 low (<27 C), 1 moderate (27..29 C), 2 high (29..31 C), 3 very high (31..33 C), 4 extreme (>=33 C) |
+| `environment.weather.heatStressIndex` | (unitless) | WBGT-derived heat-stress category on US military WBGT flag cutoffs: 0 (<26.7 C), 1 (26.7..27.8 C), 2 (27.8..29.4 C), 3 (29.4..32.2 C), 4 (>=32.2 C) |
+| `environment.weather.windSpeedApparent` | m/s | Apparent wind speed, calculated from AccuWeather wind and vessel motion |
+| `environment.weather.windAngleApparent` | rad | Apparent wind angle relative to bow (-pi..pi, negative to port); omitted when no heading is available |
 
 ## NMEA2000 PGN coverage
 
@@ -75,7 +86,7 @@ Wind Chill, and Heat Index. The other temperature paths this plugin emits
 
 | PGN | Description | Source paths emitted by this plugin |
 |-----|-------------|-------------------------------------|
-| 130306 | Wind Data | `environment.wind.speedOverGround`, `directionTrue`, `speedApparent`, `angleApparent` (`environment.weather.speedGust` is emitted but the current cannon release does not subscribe to it) |
+| 130306 | Wind Data | `environment.wind.speedOverGround`, `directionTrue`. The plugin's apparent wind and gust are producer-namespaced (`environment.weather.windSpeedApparent`, `windAngleApparent`, `speedGust`) and are not consumed by the current cannon release |
 | 130311 | Environmental Parameters | `environment.outside.pressure` |
 | 130312 | Temperature (enum-routed) | `environment.outside.temperature`, `dewPointTemperature`, `apparentWindChillTemperature`, `heatIndexTemperature` |
 | 130313 | Humidity | `environment.outside.relativeHumidity` |
@@ -104,8 +115,9 @@ multiple paths concurrently.
 
 Each notification value follows the SK 1.8.2 shape
 `{ state, method, message, timestamp }`. `state: 'normal'` is written on exit
-so plotter UIs clear the alert. `method` is `['visual']` for `warn` and
-`['visual', 'sound']` for `alarm` / `emergency`.
+so plotter UIs clear the alert. `method` is `['visual']` for `warn`,
+`['visual', 'sound']` for `alarm` / `emergency`, and `[]` (empty) for the
+`normal` clear so consumers drop the cue rather than keeping it lit.
 
 The `message` field packs adjacent context so a chartplotter banner is
 actionable on its own:

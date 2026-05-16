@@ -743,12 +743,12 @@ function registerPanelRoutes(router: IRouter, instance: PluginInstance): void {
     res.json(payload);
   });
 
-  // Token-bucket-style rate limiter for /api/test-key. The endpoint costs one
-  // upstream AccuWeather call per request and is unauthenticated (mounted by
-  // signalk-server under the admin auth boundary, but at the panel-router
-  // level any LAN client with admin access could drive it), so a flood would
-  // burn the operator's quota. 10 calls/minute leaves the panel UX
-  // comfortable while capping abuse at well under the 50/day free-tier limit.
+  // Token-bucket-style rate limiter for /api/test-key. signalk-server does NOT
+  // apply its security strategy to plugin routers, so this endpoint is
+  // effectively unauthenticated: any client that can reach the server can
+  // drive it, and each call costs one upstream AccuWeather request. The
+  // limiter caps a flood at 10 calls/minute, well under the free-tier daily
+  // allowance. /api/status is likewise unauthenticated but strictly read-only.
   const TEST_KEY_RATE_LIMIT = 10;
   const TEST_KEY_WINDOW_MS = 60_000;
   const testKeyHits: number[] = [];
@@ -824,6 +824,6 @@ async function testApiKey(apiKey: string): Promise<{ ok: boolean; message: strin
     await probe.verifyApiKey(TEST_KEY_LOCATION);
     return { ok: true, message: 'API key verified against AccuWeather.' };
   } catch (error) {
-    return { ok: false, message: toErrorMessage(error) };
+    return { ok: false, message: sanitizeClientErrorMessage(toErrorMessage(error)) };
   }
 }

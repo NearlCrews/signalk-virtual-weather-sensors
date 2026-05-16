@@ -58,7 +58,6 @@ export function createMockWeatherData(
     heatIndex: 293.15, // Same as temp for mild conditions
     description: 'Partly cloudy',
     timestamp: new Date().toISOString(),
-    quality: 1.0,
     ...overrides,
   };
 }

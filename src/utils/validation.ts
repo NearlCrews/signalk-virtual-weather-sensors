@@ -578,6 +578,7 @@ const NUMERIC_FIELD_RULES: ReadonlyArray<readonly [SanitizableNumericKey, number
   ['dewPoint', ...TEMP_K_BOUNDS],
   ['windChill', ...TEMP_K_BOUNDS],
   ['heatIndex', ...TEMP_K_BOUNDS],
+  ['realFeel', ...TEMP_K_BOUNDS],
   ['realFeelShade', ...TEMP_K_BOUNDS],
   ['wetBulbTemperature', ...TEMP_K_BOUNDS],
   ['wetBulbGlobeTemperature', ...TEMP_K_BOUNDS],
@@ -611,7 +612,7 @@ const NUMERIC_FIELD_RULES: ReadonlyArray<readonly [SanitizableNumericKey, number
  *
  * Angles are checked inline: `windDirection` follows the Signal K 0..2π
  * convention (half-open), `apparentWindAngle` follows the (-π, π]
- * port-negative convention for canonical `environment.wind.angleApparent`.
+ * port-negative convention for `environment.weather.windAngleApparent`.
  */
 function isWithinNMEA2000Ranges(data: WeatherData): boolean {
   for (const [key, min, max] of NUMERIC_FIELD_RULES) {
