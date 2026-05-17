@@ -15,7 +15,6 @@ import {
   sanitizeForNMEA2000,
   validateAccuWeatherResponse,
   validateConfiguration,
-  validateNMEA2000Ranges,
   validateWeatherData,
 } from '../../utils/validation.js';
 
@@ -311,26 +310,8 @@ describe('validateAccuWeatherResponse', () => {
 });
 
 describe('NMEA2000 helpers', () => {
-  describe('validateNMEA2000Ranges', () => {
-    it('warns on out-of-spec temperature', () => {
-      const r = validateNMEA2000Ranges({ temperature: 400 });
-      expect(r.warnings.length).toBeGreaterThan(0);
-    });
-    it('warns on out-of-band pressure', () => {
-      const r = validateNMEA2000Ranges({ pressure: 50000 });
-      expect(r.warnings.length).toBeGreaterThan(0);
-    });
-    it('warns on excessive wind speed', () => {
-      const r = validateNMEA2000Ranges({ windSpeed: 200, windGustSpeed: 200 });
-      expect(r.warnings.length).toBeGreaterThanOrEqual(2);
-    });
-    it('errors on humidity outside [0, 1]', () => {
-      expect(validateNMEA2000Ranges({ humidity: 1.5 }).isValid).toBe(false);
-    });
-    it('exposes the grouped validator namespace', () => {
-      expect(NMEA2000Validator.validateNMEA2000Ranges).toBe(validateNMEA2000Ranges);
-      expect(NMEA2000Validator.sanitizeForNMEA2000).toBe(sanitizeForNMEA2000);
-    });
+  it('exposes the grouped validator namespace', () => {
+    expect(NMEA2000Validator.sanitizeForNMEA2000).toBe(sanitizeForNMEA2000);
   });
 
   describe('sanitizeForNMEA2000', () => {

@@ -69,8 +69,9 @@ describe('WeatherService', () => {
 
     it('should accept custom wind calculator', () => {
       const mockWindCalculator = {
-        calculateApparentWindSpeed: vi.fn().mockReturnValue(5),
-        calculateApparentWindAngle: vi.fn().mockReturnValue(0.5),
+        calculateWindAnalysis: vi
+          .fn()
+          .mockReturnValue({ apparentWindSpeed: 5, apparentWindAngle: 0.5, isValid: true }),
         normalizeAngle: vi.fn().mockReturnValue(0),
       };
 

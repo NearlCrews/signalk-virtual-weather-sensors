@@ -129,7 +129,7 @@ npm run validate         # Run all quality checks
 
 ### Code Style
 
-- Follow the **Biome** configuration in [`biome.json`](biome.json)
+- Follow the **Biome** configuration in [`biome.json`](../biome.json)
 - Use **ES2023** features appropriately
 - Prefer `const` over `let`, avoid `var`
 - Use arrow functions for anonymous functions
@@ -319,14 +319,14 @@ ls -lh dist/
 
 ## Questions or Need Help?
 
-- 📖 Check [DEVELOPMENT.md](DEVELOPMENT.md) for detailed technical documentation
+- 📖 Check [DEVELOPMENT.md](../docs/DEVELOPMENT.md) for detailed technical documentation
 - 🐛 Search [existing issues](https://github.com/NearlCrews/signalk-virtual-weather-sensors/issues)
 - 💬 Open a [discussion](https://github.com/NearlCrews/signalk-virtual-weather-sensors/discussions)
 - 📧 Contact maintainers via GitHub
 
 ## License
 
-By contributing, you agree that your contributions will be licensed under the Apache-2.0 License. See [LICENSE](LICENSE) for details.
+By contributing, you agree that your contributions will be licensed under the Apache-2.0 License. See [LICENSE](../LICENSE) for details.
 
 ---
 

@@ -4,7 +4,7 @@ Reproducible end-to-end check of `signalk-virtual-weather-sensors` running again
 
 ## 0. Pre-flight
 
-- [ ] **Signal K server version recorded.** Run `signalk-server --version` on the host. The plugin requires `>=2.0.0` (per `package.json` `signalk.supportedVersions`).
+- [ ] **Signal K server version recorded.** Run `signalk-server --version` on the host. The plugin depends on `@signalk/server-api >=2.24.0` (per `package.json` `peerDependencies`), which the server provides at runtime.
 - [ ] **Server is running and reachable.** Default Admin UI is at `http://<host>:3000/admin/`.
 - [ ] **AccuWeather API key in hand.** Free key from <https://developer.accuweather.com/>. Free tier is sufficient: the plugin tolerates the missing `Precip1hr` / `Past24HourTemperatureDeparture` fields.
 - [ ] **Vessel `navigation.position` is being published.** The plugin needs a position to query AccuWeather. Confirm in the Admin UI **Data Browser** that `vessels.self.navigation.position` has a current value (any source: GPS, sim, or manual `PUT`).

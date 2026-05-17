@@ -216,14 +216,6 @@ export class WeatherService {
     return this.currentWeatherData;
   }
 
-  /**
-   * Cheap accessor for the emission timer's stale-data check, so it doesn't
-   * have to construct the full WeatherServiceStatus on every tick.
-   */
-  public getLastUpdate(): Date | null {
-    return this.lastUpdate;
-  }
-
   /** Milliseconds since the last successful weather fetch, or null if none yet. */
   public getDataAgeMs(): number | null {
     return this.lastUpdate ? Date.now() - this.lastUpdate.getTime() : null;
@@ -442,12 +434,7 @@ export class WeatherService {
 
       // Single navigation read also yields position: avoids fetching twice.
       const vesselData = this.signalKService.getVesselNavigationData();
-      const position = vesselData.position
-        ? {
-            latitude: vesselData.position.latitude,
-            longitude: vesselData.position.longitude,
-          }
-        : this.signalKService.getVesselPosition();
+      const position = vesselData.position;
       if (!position) {
         throw new Error('No position available for weather data');
       }

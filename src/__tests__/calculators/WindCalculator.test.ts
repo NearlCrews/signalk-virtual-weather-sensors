@@ -37,12 +37,12 @@ describe('WindCalculator', () => {
       const vesselHeading = 0; // North
       const trueWindDirection = Math.PI / 2; // East (beam wind)
 
-      const result = calculator.calculateApparentWindSpeed(
+      const result = calculator.calculateWindAnalysis(
         trueWindSpeed,
         vesselSpeed,
         vesselHeading,
         trueWindDirection
-      );
+      ).apparentWindSpeed;
 
       // Tight tolerance kills sin/cos swap mutations: sqrt(10^2 + 5^2) = 11.180339887...
       // (also subsumes the looser "apparent > true" inequality for a beam wind).
@@ -54,7 +54,7 @@ describe('WindCalculator', () => {
       // expression has multiple ArithmeticOperator survivors when only loose
       // `toBeGreaterThan(0) && toBeLessThan(π/2)` assertions are used. Pinning the
       // exact angle (and therefore the cos/sin ordering in the X/Y formulas) kills them.
-      const angle = calculator.calculateApparentWindAngle(10, 5, 0, Math.PI / 2);
+      const angle = calculator.calculateWindAnalysis(10, 5, 0, Math.PI / 2).apparentWindAngle;
       expect(angle).toBeCloseTo(1.1071487177940904, 6);
     });
 
@@ -65,12 +65,12 @@ describe('WindCalculator', () => {
       const vesselHeading = 0; // North
       const trueWindDirection = 0; // North (head wind)
 
-      const result = calculator.calculateApparentWindSpeed(
+      const result = calculator.calculateWindAnalysis(
         trueWindSpeed,
         vesselSpeed,
         vesselHeading,
         trueWindDirection
-      );
+      ).apparentWindSpeed;
 
       // For head wind, apparent wind should be sum of true wind + vessel speed
       expect(result).toBeCloseTo(15, 1);
@@ -83,24 +83,29 @@ describe('WindCalculator', () => {
       const vesselHeading = 0; // North
       const trueWindDirection = Math.PI; // South (tail wind)
 
-      const result = calculator.calculateApparentWindSpeed(
+      const result = calculator.calculateWindAnalysis(
         trueWindSpeed,
         vesselSpeed,
         vesselHeading,
         trueWindDirection
-      );
+      ).apparentWindSpeed;
 
       // For tail wind, apparent wind should be difference
       expect(result).toBeCloseTo(5, 1);
     });
 
     it('should handle stationary vessel', () => {
-      const result = calculator.calculateApparentWindSpeed(10, 0, 0, Math.PI / 2);
+      const result = calculator.calculateWindAnalysis(10, 0, 0, Math.PI / 2).apparentWindSpeed;
       expect(result).toBeCloseTo(10, 1); // Apparent wind equals true wind when stationary
     });
 
     it('should handle invalid inputs gracefully', () => {
-      const result = calculator.calculateApparentWindSpeed(Number.NaN, 5, 0, Math.PI / 2);
+      const result = calculator.calculateWindAnalysis(
+        Number.NaN,
+        5,
+        0,
+        Math.PI / 2
+      ).apparentWindSpeed;
       expect(result).toBe(0);
       expect(mockLogger).toHaveBeenCalledWith(
         'warn',
@@ -122,12 +127,12 @@ describe('WindCalculator', () => {
       const vesselHeading = 0; // North
       const trueWindDirection = Math.PI / 2; // East (90°)
 
-      const result = calculator.calculateApparentWindAngle(
+      const result = calculator.calculateWindAnalysis(
         trueWindSpeed,
         vesselSpeed,
         vesselHeading,
         trueWindDirection
-      );
+      ).apparentWindAngle;
 
       // Apparent wind angle should be forward of beam due to vessel motion
       expect(result).toBeGreaterThan(0);
@@ -135,13 +140,13 @@ describe('WindCalculator', () => {
     });
 
     it('should normalize angles to -π to π range', () => {
-      const result = calculator.calculateApparentWindAngle(10, 5, 0, Math.PI * 1.8);
+      const result = calculator.calculateWindAnalysis(10, 5, 0, Math.PI * 1.8).apparentWindAngle;
       expect(result).toBeGreaterThanOrEqual(-Math.PI);
       expect(result).toBeLessThanOrEqual(Math.PI);
     });
 
     it('should handle zero wind speed', () => {
-      const result = calculator.calculateApparentWindAngle(0, 5, 0, Math.PI / 2);
+      const result = calculator.calculateWindAnalysis(0, 5, 0, Math.PI / 2).apparentWindAngle;
       expect(result).toBeDefined();
       expect(Number.isFinite(result)).toBe(true);
     });
@@ -214,7 +219,7 @@ describe('WindCalculator', () => {
     it('should handle invalid inputs by falling back to input temperature', () => {
       const temperature = 280.15; // 7°C in Kelvin
       const result = calculator.calculateWindChill(temperature, Number.NaN);
-      // Falls back to input temperature, matching siblings (calculateHeatIndex, calculateDewPoint)
+      // Falls back to input temperature, matching calculateHeatIndex
       // rather than returning literal 0K (≈ -273°C)
       expect(result).toBe(temperature);
       expect(mockLogger).toHaveBeenCalledWith(
@@ -295,71 +300,20 @@ describe('WindCalculator', () => {
     });
   });
 
-  describe('Dew Point Calculation', () => {
-    beforeEach(() => {
-      calculator = new WindCalculator(mockLogger);
-    });
-
-    it('should calculate dew point correctly', () => {
-      const temperature = 293.15; // 20°C in Kelvin
-      const humidity = 0.6; // 60%
-
-      const result = calculator.calculateDewPoint(temperature, humidity);
-
-      // Dew point should be lower than air temperature
-      expect(result).toBeLessThan(temperature);
-      expect(result).toBeCloseTo(285.15, 1); // Expected dew point (~12°C)
-    });
-
-    it('should handle extreme humidity values', () => {
-      const temperature = 293.15; // 20°C in Kelvin
-
-      // Test very low humidity
-      const lowHumidityResult = calculator.calculateDewPoint(temperature, 0.05);
-      expect(lowHumidityResult).toBeLessThan(temperature);
-
-      // Test very high humidity
-      const highHumidityResult = calculator.calculateDewPoint(temperature, 0.95);
-      expect(highHumidityResult).toBeLessThan(temperature);
-      expect(highHumidityResult).toBeGreaterThan(lowHumidityResult);
-    });
-
-    it('should validate result against air temperature', () => {
-      const temperature = 293.15; // 20°C in Kelvin
-      const humidity = 1.2; // Invalid > 100%
-
-      const result = calculator.calculateDewPoint(temperature, humidity);
-
-      // Should return reasonable default when calculation is invalid
-      expect(result).toBeLessThan(temperature);
-    });
-
-    it('falls back to (temperature - DEW_POINT_FALLBACK_K) when an input is non-finite', () => {
-      // Coverage guard: the non-finite early return in calculateDewPoint
-      // returns `temperatureK - DEW_POINT_FALLBACK_K` (5 Kelvin offset),
-      // not the input temperature itself.
-      const tempK = 293.15;
-      const result = calculator.calculateDewPoint(tempK, Number.NaN);
-      expect(result).toBeLessThan(tempK);
-      expect(tempK - result).toBeCloseTo(5, 5);
-    });
-  });
-
   describe('Edge Cases and Error Handling', () => {
     beforeEach(() => {
       calculator = new WindCalculator(mockLogger);
     });
 
     it('should handle zero wind conditions', () => {
-      const apparentSpeed = calculator.calculateApparentWindSpeed(0, 5, 0, 0);
-      const apparentAngle = calculator.calculateApparentWindAngle(0, 5, 0, 0);
+      const analysis = calculator.calculateWindAnalysis(0, 5, 0, 0);
 
-      expect(Number.isFinite(apparentSpeed)).toBe(true);
-      expect(Number.isFinite(apparentAngle)).toBe(true);
+      expect(Number.isFinite(analysis.apparentWindSpeed)).toBe(true);
+      expect(Number.isFinite(analysis.apparentWindAngle)).toBe(true);
     });
 
     it('should handle very high vessel speeds', () => {
-      const result = calculator.calculateApparentWindSpeed(5, 50, 0, Math.PI / 2);
+      const result = calculator.calculateWindAnalysis(5, 50, 0, Math.PI / 2).apparentWindSpeed;
       expect(Number.isFinite(result)).toBe(true);
       expect(result).toBeGreaterThan(0);
     });
@@ -371,7 +325,7 @@ describe('WindCalculator', () => {
 
     it('should handle NaN results gracefully', () => {
       // If the calculation somehow produces NaN, should fallback to true wind speed
-      const result = calculator.calculateApparentWindSpeed(10, 5, 0, Math.PI / 2);
+      const result = calculator.calculateWindAnalysis(10, 5, 0, Math.PI / 2).apparentWindSpeed;
       expect(Number.isFinite(result)).toBe(true);
     });
   });
@@ -403,19 +357,6 @@ describe('WindCalculator', () => {
 
       // Should be significantly higher than air temperature
       expect(resultF).toBeGreaterThan(tempF + 10);
-    });
-
-    it('should calculate dew point using Magnus formula', () => {
-      // Test with known conditions
-      const tempC = 25; // °C
-      const rh = 0.7; // 70%
-      const tempK = tempC + 273.15;
-
-      const result = calculator.calculateDewPoint(tempK, rh);
-      const dewPointC = result - 273.15;
-
-      // Should be approximately 19.15°C for these conditions
-      expect(dewPointC).toBeCloseTo(19.15, 1);
     });
 
     it('Rothfusz heat index matches NWS reference at 95°F / 70% RH (no adjustment branch)', () => {
@@ -463,12 +404,12 @@ describe('WindCalculator', () => {
       const results = [];
       for (let i = 0; i < 100; i++) {
         results.push(
-          calculator.calculateApparentWindSpeed(
+          calculator.calculateWindAnalysis(
             trueWindSpeed,
             vesselSpeed,
             vesselHeading,
             trueWindDirection
-          )
+          ).apparentWindSpeed
         );
       }
 

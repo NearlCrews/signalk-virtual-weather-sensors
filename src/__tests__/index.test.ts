@@ -28,7 +28,6 @@ vi.mock('../services/WeatherService.js', () => {
     public formatStatusBanner = vi.fn(() => stubState.formatStatusBanner());
     public getCurrentWeatherData = vi.fn(() => stubState.getCurrentWeatherData());
     public getDataAgeMs = vi.fn(() => stubState.getDataAgeMs());
-    public getLastUpdate = vi.fn(() => new Date());
     public isQuotaExhausted = vi.fn(() => stubState.isQuotaExhausted());
     public formatQuotaExhaustedMessage = vi.fn(() => stubState.formatQuotaExhaustedMessage());
     public getRequestCountLast24h = vi.fn(() => 0);

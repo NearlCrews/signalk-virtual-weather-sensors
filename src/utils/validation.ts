@@ -21,7 +21,6 @@ import {
   isValidWindDirection,
   isValidWindSpeed,
   isWithinBounds,
-  kelvinToCelsius,
   normalizeAngle0To2Pi,
   normalizeAnglePiToPi,
   TWO_PI,
@@ -492,62 +491,6 @@ export function validateAccuWeatherResponse(response: unknown): ValidationResult
  */
 
 /**
- * Validate data ranges for NMEA2000 compatibility
- */
-export function validateNMEA2000Ranges(data: Partial<WeatherData>): ValidationResult {
-  const errors: string[] = [];
-  const warnings: string[] = [];
-
-  if (data.temperature !== undefined) {
-    const tempC = kelvinToCelsius(data.temperature);
-    if (tempC < NMEA2000_LIMITS.TEMPERATURE_C.MIN || tempC > NMEA2000_LIMITS.TEMPERATURE_C.MAX) {
-      warnings.push(
-        `Temperature ${tempC.toFixed(1)}°C is outside NMEA2000 range (${NMEA2000_LIMITS.TEMPERATURE_C.MIN}°C to +${NMEA2000_LIMITS.TEMPERATURE_C.MAX}°C)`
-      );
-    }
-  }
-
-  if (data.pressure !== undefined) {
-    if (
-      data.pressure < NMEA2000_LIMITS.PRESSURE_PA.MIN ||
-      data.pressure > NMEA2000_LIMITS.PRESSURE_PA.MAX
-    ) {
-      warnings.push(
-        `Pressure ${data.pressure}Pa is outside typical atmospheric range (${NMEA2000_LIMITS.PRESSURE_PA.MIN}-${NMEA2000_LIMITS.PRESSURE_PA.MAX}Pa)`
-      );
-    }
-  }
-
-  if (data.windSpeed !== undefined && data.windSpeed > NMEA2000_LIMITS.WIND_SPEED_MAX_MS) {
-    warnings.push(
-      `Wind speed ${data.windSpeed}m/s exceeds NMEA2000 maximum (${NMEA2000_LIMITS.WIND_SPEED_MAX_MS}m/s)`
-    );
-  }
-
-  if (data.windGustSpeed !== undefined && data.windGustSpeed > NMEA2000_LIMITS.WIND_SPEED_MAX_MS) {
-    warnings.push(
-      `Wind gust speed ${data.windGustSpeed}m/s exceeds NMEA2000 maximum (${NMEA2000_LIMITS.WIND_SPEED_MAX_MS}m/s)`
-    );
-  }
-
-  if (
-    data.humidity !== undefined &&
-    (data.humidity < VALIDATION_LIMITS.HUMIDITY.MIN ||
-      data.humidity > VALIDATION_LIMITS.HUMIDITY.MAX)
-  ) {
-    errors.push(
-      `Humidity ${data.humidity} must be between ${VALIDATION_LIMITS.HUMIDITY.MIN} and ${VALIDATION_LIMITS.HUMIDITY.MAX} (ratio)`
-    );
-  }
-
-  return {
-    isValid: errors.length === 0,
-    errors,
-    warnings,
-  };
-}
-
-/**
  * Numeric WeatherData fields that the mapper emits. Excludes any field whose
  * sanitization is non-numeric (angles handled separately).
  */
@@ -690,6 +633,5 @@ export const ConfigurationValidator = {
 } as const;
 
 export const NMEA2000Validator = {
-  validateNMEA2000Ranges,
   sanitizeForNMEA2000,
 } as const;

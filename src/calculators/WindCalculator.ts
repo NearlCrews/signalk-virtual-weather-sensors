@@ -1,26 +1,19 @@
 /**
  * Wind Calculator for Marine Applications
- * Vector calculations for apparent wind, wind chill, heat index, and dew point
+ * Vector calculations for apparent wind, wind chill, and heat index.
  */
 
-import { MAGNUS, VALIDATION_LIMITS } from '../constants/index.js';
+import { VALIDATION_LIMITS } from '../constants/index.js';
 import type { Logger, WindCalculationResult } from '../types/index.js';
 import {
   celsiusToKelvin,
-  clamp,
   fahrenheitToKelvin,
   kelvinToCelsius,
   kelvinToFahrenheit,
   msToKMH,
   normalizeAnglePiToPi,
+  ratioToPercentage,
 } from '../utils/conversions.js';
-
-/**
- * Conservative fallback offset (Kelvin) for dew point when inputs are
- * non-finite or the formula yields a non-physical result. Picked because
- * an air-dewpoint spread of ~5 K is a typical low-humidity proxy.
- */
-const DEW_POINT_FALLBACK_K = 5;
 
 /** Wind chill is only meaningful below this temperature (Environment Canada). */
 const WIND_CHILL_MAX_TEMP_C = 10;
@@ -42,36 +35,6 @@ export class WindCalculator {
   constructor(logger: Logger = () => {}) {
     this.logger = logger;
     this.logger('info', 'WindCalculator initialized');
-  }
-
-  /**
-   * Apparent wind speed via vector addition. Delegates to
-   * {@link calculateWindAnalysis} so the four shared sin/cos calls are
-   * computed exactly once per call.
-   */
-  public calculateApparentWindSpeed(
-    trueWindSpeed: number,
-    vesselSpeed: number,
-    vesselCourse: number,
-    trueWindDirection: number
-  ): number {
-    return this.calculateWindAnalysis(trueWindSpeed, vesselSpeed, vesselCourse, trueWindDirection)
-      .apparentWindSpeed;
-  }
-
-  /**
-   * Apparent wind angle relative to vessel heading, in radians (-π to π).
-   * Delegates to {@link calculateWindAnalysis} for the same reason as
-   * {@link calculateApparentWindSpeed}.
-   */
-  public calculateApparentWindAngle(
-    trueWindSpeed: number,
-    vesselSpeed: number,
-    vesselCourse: number,
-    trueWindDirection: number
-  ): number {
-    return this.calculateWindAnalysis(trueWindSpeed, vesselSpeed, vesselCourse, trueWindDirection)
-      .apparentWindAngle;
   }
 
   /**
@@ -164,7 +127,7 @@ export class WindCalculator {
     }
 
     const tempF = kelvinToFahrenheit(temperatureK);
-    const rhPercent = clamp(relativeHumidity * 100, 0, 100);
+    const rhPercent = ratioToPercentage(relativeHumidity);
 
     if (tempF < HEAT_INDEX_MIN_TEMP_F || rhPercent < HEAT_INDEX_MIN_HUMIDITY_PCT) {
       return temperatureK;
@@ -194,31 +157,6 @@ export class WindCalculator {
     const result = fahrenheitToKelvin(heatIndex);
 
     return Number.isFinite(result) ? result : temperatureK;
-  }
-
-  /**
-   * Calculate dew point using the August-Roche-Magnus formula. Coefficients
-   * `MAGNUS.A` and `MAGNUS.B` live in `constants/index.ts` so this function
-   * and `conversions.calculateSaturationVaporPressure` share one source.
-   * @param relativeHumidity Relative humidity as ratio (0-1)
-   * @returns Dew point temperature in Kelvin
-   */
-  public calculateDewPoint(temperatureK: number, relativeHumidity: number): number {
-    if (!Number.isFinite(temperatureK) || !Number.isFinite(relativeHumidity)) {
-      return temperatureK - DEW_POINT_FALLBACK_K;
-    }
-
-    const tempC = kelvinToCelsius(temperatureK);
-    const rh = clamp(relativeHumidity, 0.01, 0.99);
-    const gamma = (MAGNUS.A * tempC) / (MAGNUS.B + tempC) + Math.log(rh);
-    const dewPointC = (MAGNUS.B * gamma) / (MAGNUS.A - gamma);
-    const result = celsiusToKelvin(dewPointC);
-
-    if (!Number.isFinite(result) || result > temperatureK) {
-      return temperatureK - DEW_POINT_FALLBACK_K;
-    }
-
-    return result;
   }
 
   private validateWindInputs(

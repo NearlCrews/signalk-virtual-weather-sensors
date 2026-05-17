@@ -446,56 +446,6 @@ describe('SignalKService', () => {
     });
   });
 
-  describe('isVesselMoving', () => {
-    it('should return true when speed exceeds threshold', () => {
-      const mockApp = createMockApp({
-        'navigation.speedOverGround': {
-          value: 2.0, // > 0.5 m/s default threshold
-          timestamp: new Date().toISOString(),
-        },
-      });
-
-      const service = new SignalKService(mockApp as never, mockLogger);
-
-      expect(service.isVesselMoving()).toBe(true);
-    });
-
-    it('should return false when speed below threshold', () => {
-      const mockApp = createMockApp({
-        'navigation.speedOverGround': {
-          value: 0.2, // < 0.5 m/s default threshold
-          timestamp: new Date().toISOString(),
-        },
-      });
-
-      const service = new SignalKService(mockApp as never, mockLogger);
-
-      expect(service.isVesselMoving()).toBe(false);
-    });
-
-    it('should return false when speed not available', () => {
-      const mockApp = createMockApp();
-
-      const service = new SignalKService(mockApp as never, mockLogger);
-
-      expect(service.isVesselMoving()).toBe(false);
-    });
-
-    it('should accept custom threshold', () => {
-      const mockApp = createMockApp({
-        'navigation.speedOverGround': {
-          value: 1.0,
-          timestamp: new Date().toISOString(),
-        },
-      });
-
-      const service = new SignalKService(mockApp as never, mockLogger);
-
-      expect(service.isVesselMoving(0.5)).toBe(true);
-      expect(service.isVesselMoving(2.0)).toBe(false);
-    });
-  });
-
   describe('getDataAge', () => {
     it('should return null when no cache', () => {
       const mockApp = createMockApp();

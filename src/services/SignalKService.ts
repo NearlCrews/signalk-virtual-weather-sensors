@@ -56,20 +56,27 @@ interface CachedVesselData {
   lastUpdateMs: number | null;
 }
 
+/**
+ * All-null cache state. Shared by the field initializer and `clearCache()`:
+ * `cachedData` is only ever replaced wholesale, never mutated in place, so a
+ * single frozen instance is safe.
+ */
+const EMPTY_CACHED_VESSEL_DATA: CachedVesselData = Object.freeze({
+  position: null,
+  speedOverGround: null,
+  courseOverGroundTrue: null,
+  headingTrue: null,
+  headingMagnetic: null,
+  magneticVariation: null,
+  lastUpdateMs: null,
+});
+
 export class SignalKService {
   private readonly app: ServerAPI;
   private readonly logger: Logger;
   private readonly maxDataAge = VALIDATION_LIMITS.MAX_DATA_AGE;
 
-  private cachedData: CachedVesselData = {
-    position: null,
-    speedOverGround: null,
-    courseOverGroundTrue: null,
-    headingTrue: null,
-    headingMagnetic: null,
-    magneticVariation: null,
-    lastUpdateMs: null,
-  };
+  private cachedData: CachedVesselData = EMPTY_CACHED_VESSEL_DATA;
 
   constructor(app: ServerAPI, logger: Logger = () => {}) {
     this.app = app;
@@ -364,16 +371,6 @@ export class SignalKService {
   }
 
   /**
-   * Check if vessel is considered to be moving
-   * @param threshold Speed threshold in m/s (default from VALIDATION_LIMITS.VESSEL_MOVING_THRESHOLD)
-   * @returns True if vessel speed exceeds threshold
-   */
-  public isVesselMoving(threshold = VALIDATION_LIMITS.VESSEL_MOVING_THRESHOLD): boolean {
-    const speed = this.cachedData.speedOverGround ?? this.getVesselSpeedOverGround();
-    return speed !== null && speed > threshold;
-  }
-
-  /**
    * Get age of cached data in seconds
    * @returns Age in seconds or null if no cached data
    */
@@ -398,15 +395,7 @@ export class SignalKService {
    * Clear cached data (useful for testing or configuration changes)
    */
   public clearCache(): void {
-    this.cachedData = {
-      position: null,
-      speedOverGround: null,
-      courseOverGroundTrue: null,
-      headingTrue: null,
-      headingMagnetic: null,
-      magneticVariation: null,
-      lastUpdateMs: null,
-    };
+    this.cachedData = EMPTY_CACHED_VESSEL_DATA;
     this.logger('debug', 'SignalK data cache cleared');
   }
 

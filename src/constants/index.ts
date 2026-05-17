@@ -280,9 +280,8 @@ export const UNITS = {
 } as const;
 
 /**
- * August-Roche-Magnus formula coefficients used for saturation vapour pressure
- * and dew-point calculations. Both `WindCalculator.calculateDewPoint` and
- * `conversions.calculateSaturationVaporPressure` reference this single source.
+ * August-Roche-Magnus formula coefficients used by
+ * `conversions.calculateSaturationVaporPressure`.
  * See https://en.wikipedia.org/wiki/Arden_Buck_equation for variant context.
  */
 export const MAGNUS = {
@@ -397,9 +396,6 @@ export const VALIDATION_LIMITS = {
 
   /** Navigation data age threshold (seconds) used by SignalKService cache. */
   MAX_DATA_AGE: 30,
-
-  /** Vessel movement detection threshold (m/s): 0.5 m/s is roughly 1 knot. */
-  VESSEL_MOVING_THRESHOLD: 0.5,
 } as const;
 
 // ===============================

@@ -153,9 +153,7 @@ export function isValidCoordinates(latitude: number, longitude: number): boolean
 
 /**
  * Saturation vapour pressure via the August-Roche-Magnus formula. The Magnus
- * coefficients (`MAGNUS.A`, `MAGNUS.B`, `MAGNUS.C`) live in `constants/index.ts`
- * so `WindCalculator.calculateDewPoint` and this function share the same
- * physical constants.
+ * coefficients (`MAGNUS.A`, `MAGNUS.B`, `MAGNUS.C`) live in `constants/index.ts`.
  * @param temperatureK Temperature in Kelvin
  * @returns Saturation vapor pressure in Pascals
  */
