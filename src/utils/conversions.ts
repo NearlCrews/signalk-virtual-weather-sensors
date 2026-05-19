@@ -75,7 +75,7 @@ export function normalizeAngle0To2Pi(radians: number): number {
   return ((radians % TWO_PI) + TWO_PI) % TWO_PI;
 }
 
-/** Normalize angle to (-π, π] range. Exact 0 maps to π to match the legacy while-loop behaviour. */
+/** Normalize angle to (-π, π]. The lower bound -π is exclusive: ±π, and any odd multiple of π, map to +π. */
 export function normalizeAnglePiToPi(radians: number): number {
   if (!Number.isFinite(radians)) return 0;
   const wrapped = (((radians + Math.PI) % TWO_PI) + TWO_PI) % TWO_PI;

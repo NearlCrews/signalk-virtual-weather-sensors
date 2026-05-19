@@ -1,5 +1,5 @@
 import { resolve } from 'node:path';
-import { defineConfig } from 'vitest/config';
+import { configDefaults, defineConfig } from 'vitest/config';
 
 export default defineConfig({
   test: {
@@ -8,6 +8,9 @@ export default defineConfig({
     setupFiles: ['./src/__tests__/setup.ts'],
     passWithNoTests: false,
     silent: false,
+    // Keep test discovery inside the project's own src/: agent worktrees under
+    // .claude/ carry their own src/__tests__ copies that would otherwise run.
+    exclude: [...configDefaults.exclude, '.claude/**'],
     coverage: {
       provider: 'v8',
       reporter: ['text', 'json', 'html', 'lcov'],
