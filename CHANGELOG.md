@@ -5,6 +5,32 @@ All notable changes to the signalk-virtual-weather-sensors project will be docum
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.6.1] - 2026-05-19
+
+Bug-fix release. A 12-issue review pass corrected silent failures and
+incorrect logic across the AccuWeather client, the orchestration layer, the
+notification formatter, and the Admin UI config panel, followed by a
+three-lens simplify pass. There is no change to the delta envelope or the
+notification value shape, and all 259 tests pass.
+
+### Fixed
+
+- **Partial AccuWeather responses no longer throw an untagged `TypeError`.** `validateAccuWeatherResponse` now checks the nested `Metric.Value` of Temperature, Pressure, DewPoint, and `Wind.Speed`, plus `Wind.Direction.Degrees` and a numeric `RelativeHumidity`, so a malformed response fails validation with a tagged error instead of crashing `transformWeatherData`.
+- **Missing `CloudCover` is omitted instead of reported as 0.** A response without `CloudCover` previously coerced to a real-looking "clear sky" `environment.weather.cloudCover` of 0; the field is now absent when AccuWeather omits it.
+- **A transient 403 no longer disables the plugin permanently.** Only a 401 (invalid key) stops the update timer; a 403, which can be a temporary IP block or plan glitch, surfaces an error but keeps retrying so it recovers on its own.
+- **`calculateWindChill` propagates a non-finite input** instead of returning 0 K (absolute zero), a value that had passed downstream finite-value guards and could trip a false extreme-cold notification.
+- **Wind direction is normalized into `[0, 2π)` on ingestion**, so an exact 360-degree reading no longer lands on a boundary the NMEA2000 range check rejects.
+- **Notification message capping measures and truncates in the same unit** (Unicode code points), so a capped message can no longer exceed the 80-character ceiling.
+- **The wind notification suffix reports a gust even when sustained wind is unavailable**, rather than dropping it on a comparison against a non-finite value.
+- **The location-key cache uses one TTL** (the configured `locationCacheTimeout`) for both the read-path freshness check and the prune sweep, instead of disagreeing 1h versus 2h.
+- **Config panel: the "Saving..." indicator appears during the save**, not after it has already completed.
+- **Config panel: the form resyncs when the host supplies a new configuration object**, instead of keeping stale values after a save and restart.
+- **Config panel: a save reports honestly when the plugin restart cannot be confirmed**, polling the status endpoint a few times and flagging an error rather than claiming success.
+
+### Changed
+
+- **Vitest test discovery no longer scans `.claude/` worktrees**, so a local test run reflects only the project's own suite.
+
 ## [1.6.0] - 2026-05-16
 
 Documentation reorganization plus a three-expert codebase review (Signal K
