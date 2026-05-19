@@ -99,7 +99,9 @@ export class WindCalculator {
   public calculateWindChill(temperatureK: number, windSpeedMs: number): number {
     if (!Number.isFinite(temperatureK) || !Number.isFinite(windSpeedMs)) {
       this.logger('warn', 'Invalid wind chill inputs', { temperatureK, windSpeedMs });
-      return temperatureK || 0;
+      // Non-finite stays non-finite so downstream Number.isFinite guards skip
+      // it, instead of `NaN || 0` yielding a bogus 0 K reading.
+      return temperatureK;
     }
 
     const tempC = kelvinToCelsius(temperatureK);

@@ -229,10 +229,9 @@ describe('WindCalculator', () => {
       );
     });
 
-    it('should fall back to 0 only when input temperature itself is invalid', () => {
+    it('propagates a non-finite input temperature instead of returning 0 K', () => {
       const result = calculator.calculateWindChill(Number.NaN, 10);
-      // Number guard: Number.NaN || 0 → 0
-      expect(result).toBe(0);
+      expect(result).toBeNaN();
     });
 
     it('boundary: just-above the 4.8 km/h wind threshold computes a chill below temperature', () => {

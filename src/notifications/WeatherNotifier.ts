@@ -67,7 +67,8 @@ function methodsFor(state: NotificationState): ReadonlyArray<NotificationMethod>
 export const MAX_MESSAGE_LENGTH = 80;
 
 function capForChartplotter(message: string): string {
-  if (message.length <= MAX_MESSAGE_LENGTH) return message;
+  // Count code points, not UTF-16 units, so the cap matches truncateToCodePoints.
+  if (Array.from(message).length <= MAX_MESSAGE_LENGTH) return message;
   return `${truncateToCodePoints(message, MAX_MESSAGE_LENGTH - 1)}…`;
 }
 
@@ -142,10 +143,15 @@ function formatWindSuffix(data: WeatherData): string {
   if (Number.isFinite(data.windDirection)) {
     parts.push(`from ${radiansToCardinal(data.windDirection)}`);
   }
-  if (Number.isFinite(data.windSpeed)) {
-    parts.push(`${msRounded(data.windSpeed)} m/s`);
+  const windSpeed = Number.isFinite(data.windSpeed) ? data.windSpeed : undefined;
+  if (windSpeed !== undefined) {
+    parts.push(`${msRounded(windSpeed)} m/s`);
   }
-  if (isFiniteNumber(data.windGustSpeed) && data.windGustSpeed > data.windSpeed) {
+  // Surface the gust even when sustained wind is missing.
+  if (
+    isFiniteNumber(data.windGustSpeed) &&
+    (windSpeed === undefined || data.windGustSpeed > windSpeed)
+  ) {
     parts.push(`gusts ${msRounded(data.windGustSpeed)} m/s`);
   }
   if (Number.isFinite(data.pressure)) {

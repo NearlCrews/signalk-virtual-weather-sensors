@@ -249,6 +249,18 @@ export default function PluginConfigurationPanel({ configuration, save }) {
     /** @type {{message: string, isError: boolean}} */ ({ message: '', isError: false })
   );
 
+  // Resync form state when the host supplies a new configuration object (e.g.
+  // after a save+restart): useState initializers run only once, so without
+  // this the form would keep showing stale values on a configuration change.
+  useEffect(() => {
+    const c = configuration || {};
+    setAccuWeatherApiKey(c.accuWeatherApiKey || '');
+    setUpdateFrequency(c.updateFrequency ?? CONFIG_DEFAULTS.UPDATE_FREQUENCY);
+    setEmissionInterval(c.emissionInterval ?? CONFIG_DEFAULTS.EMISSION_INTERVAL);
+    setDailyApiQuota(c.dailyApiQuota ?? CONFIG_DEFAULTS.DAILY_API_QUOTA);
+    setNotifications({ ...DEFAULT_NOTIFICATIONS, ...(c.notifications || {}) });
+  }, [configuration]);
+
   const fetchStatus = useCallback(async () => {
     let data = null;
     try {
@@ -336,6 +348,7 @@ export default function PluginConfigurationPanel({ configuration, save }) {
     // SK admin save() typically resolves with no value regardless of
     // server-side outcome, so we confirm by polling /api/status afterwards
     // and only report success when the plugin came back running.
+    setAction({ message: 'Saving...', isError: false });
     try {
       await Promise.resolve(
         save({
@@ -346,10 +359,13 @@ export default function PluginConfigurationPanel({ configuration, save }) {
           notifications: { ...notifications },
         })
       );
-      setAction({ message: 'Saving...', isError: false });
-      // Give the server a moment to restart before re-polling.
-      await new Promise((resolve) => setTimeout(resolve, 1500));
-      const data = await fetchStatus();
+      // The plugin is restarting, so /api/status may be briefly unreachable:
+      // poll a few times before giving up rather than reporting a false success.
+      let data = null;
+      for (let attempt = 0; attempt < 4 && !data; attempt++) {
+        await new Promise((resolve) => setTimeout(resolve, 1500));
+        data = await fetchStatus();
+      }
       if (data) {
         setAction({
           message: data.running
@@ -359,10 +375,10 @@ export default function PluginConfigurationPanel({ configuration, save }) {
         });
         return;
       }
-      // Status check failed or returned non-ok: fall through to optimistic message.
+      // Never reached a readable status: report honestly rather than claiming success.
       setAction({
-        message: 'Saved. Plugin should restart with the new configuration.',
-        isError: false,
+        message: 'Saved, but could not confirm the plugin restarted. Check the plugin status.',
+        isError: true,
       });
     } catch (err) {
       setAction({
