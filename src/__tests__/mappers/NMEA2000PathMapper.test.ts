@@ -153,6 +153,55 @@ describe('NMEA2000PathMapper', () => {
     });
   });
 
+  describe('Condition Detail Mapping', () => {
+    it('maps the new condition-detail fields', () => {
+      const weatherData = createMockWeatherData({
+        pressureTendency: -1,
+        description: 'Thunderstorms',
+        precipitationType: 'Rain',
+        visibilityObstruction: 'Fog',
+      });
+
+      const delta = mapper.mapToSignalKPaths(weatherData);
+      const values = getValues(delta);
+      const valueAt = (path: string) => values.find((v) => v.path === path)?.value;
+
+      expect(valueAt('environment.weather.pressureTendency')).toBe(-1);
+      expect(valueAt('environment.weather.description')).toBe('Thunderstorms');
+      expect(valueAt('environment.weather.precipitationType')).toBe('Rain');
+      expect(valueAt('environment.weather.visibilityObstruction')).toBe('Fog');
+    });
+
+    it('excludes the new fields when they are undefined', () => {
+      // createMockWeatherData defaults description, so clear it explicitly.
+      const weatherData = createMockWeatherData({ description: undefined });
+      const delta = mapper.mapToSignalKPaths(weatherData);
+      const paths = getValues(delta).map((v) => v.path);
+
+      expect(paths).not.toContain('environment.weather.pressureTendency');
+      expect(paths).not.toContain('environment.weather.description');
+      expect(paths).not.toContain('environment.weather.precipitationType');
+      expect(paths).not.toContain('environment.weather.visibilityObstruction');
+    });
+
+    it('includes meta entries for every new path', () => {
+      const metaDelta = mapper.buildMetaDelta();
+      const update = metaDelta.updates[0];
+      const meta = update && 'meta' in update ? update.meta : [];
+      const metaPaths = meta.map((m) => m.path);
+
+      const newPaths = [
+        'environment.weather.pressureTendency',
+        'environment.weather.description',
+        'environment.weather.precipitationType',
+        'environment.weather.visibilityObstruction',
+      ];
+      for (const path of newPaths) {
+        expect(metaPaths).toContain(path);
+      }
+    });
+  });
+
   describe('NMEA2000 Compatibility', () => {
     it('should sanitize data for NMEA2000 compatibility', () => {
       const extremeWeatherData = createMockWeatherData({

@@ -125,6 +125,23 @@ const NON_CANONICAL_META: ReadonlyArray<Meta> = [
     description:
       'Apparent wind angle relative to the bow (-pi..pi, negative to port), calculated from AccuWeather wind and vessel motion. Plugin-derived; published off the canonical environment.wind leaves.',
   }),
+  me(SIGNALK_PATHS.ENVIRONMENT.WEATHER.DESCRIPTION, {
+    displayName: 'Weather description',
+    description: 'Plain-language summary of current conditions from AccuWeather (WeatherText).',
+  }),
+  me(SIGNALK_PATHS.ENVIRONMENT.WEATHER.PRESSURE_TENDENCY, {
+    displayName: 'Pressure tendency',
+    description:
+      'Barometric trend over the past 3 hours: -1 falling, 0 steady, +1 rising. A falling barometer is a classic deteriorating-weather signal.',
+  }),
+  me(SIGNALK_PATHS.ENVIRONMENT.WEATHER.PRECIPITATION_TYPE, {
+    displayName: 'Precipitation type',
+    description: 'Precipitation type reported by AccuWeather (Rain, Snow, Ice, Mixed).',
+  }),
+  me(SIGNALK_PATHS.ENVIRONMENT.WEATHER.VISIBILITY_OBSTRUCTION, {
+    displayName: 'Visibility obstruction',
+    description: 'Obstruction reducing visibility (fog, haze, smoke) reported by AccuWeather.',
+  }),
 ];
 
 /**
@@ -203,8 +220,10 @@ export class NMEA2000PathMapper {
    * Kelvin window, apparent wind angle into the canonical (-pi, pi] convention,
    * speeds/visibility/ceilings into non-negative physical bounds, and derived
    * categorical indices (Beaufort, heat stress) into their defined ranges.
-   * Adding a new emitted field here requires a matching rule in the
-   * sanitizer's NUMERIC_FIELD_RULES table.
+   * Adding a new emitted numeric field here requires a matching rule in the
+   * sanitizer's NUMERIC_FIELD_RULES table. String leaves (description,
+   * precipitationType, visibilityObstruction) carry no numeric range and pass
+   * through the sanitizer untouched.
    */
   public mapToSignalKPaths(weatherData: WeatherData): Delta {
     const sanitizedData = NMEA2000Validator.sanitizeForNMEA2000(weatherData);
@@ -218,6 +237,7 @@ export class NMEA2000PathMapper {
     this.addCalculatedPaths(values, sanitizedData);
     this.addPrecipitationPaths(values, sanitizedData);
     this.addSafetyPaths(values, sanitizedData);
+    this.addConditionDetailPaths(values, sanitizedData);
 
     this.logger('debug', 'Enhanced NMEA2000 path mapping completed', {
       totalPaths: values.length,
@@ -243,6 +263,33 @@ export class NMEA2000PathMapper {
       pv(SIGNALK_PATHS.ENVIRONMENT.OUTSIDE.PRESSURE, data.pressure),
       pv(SIGNALK_PATHS.ENVIRONMENT.OUTSIDE.RELATIVE_HUMIDITY, data.humidity)
     );
+  }
+
+  /**
+   * Condition-detail leaves decoded from AccuWeather: barometric tendency, the
+   * plain-language description, precipitation type, and any visibility
+   * obstruction. All producer-namespaced under environment.weather.*. Mirrors
+   * `AccuWeatherService.extractConditionDetails` so the decode and emit sides
+   * group the same fields.
+   */
+  private addConditionDetailPaths(values: PathValue[], data: WeatherData): void {
+    if (data.pressureTendency !== undefined) {
+      values.push(pv(SIGNALK_PATHS.ENVIRONMENT.WEATHER.PRESSURE_TENDENCY, data.pressureTendency));
+    }
+
+    if (data.description !== undefined) {
+      values.push(pv(SIGNALK_PATHS.ENVIRONMENT.WEATHER.DESCRIPTION, data.description));
+    }
+
+    if (data.precipitationType !== undefined) {
+      values.push(pv(SIGNALK_PATHS.ENVIRONMENT.WEATHER.PRECIPITATION_TYPE, data.precipitationType));
+    }
+
+    if (data.visibilityObstruction !== undefined) {
+      values.push(
+        pv(SIGNALK_PATHS.ENVIRONMENT.WEATHER.VISIBILITY_OBSTRUCTION, data.visibilityObstruction)
+      );
+    }
   }
 
   private addEnhancedTemperaturePaths(values: PathValue[], data: WeatherData): void {

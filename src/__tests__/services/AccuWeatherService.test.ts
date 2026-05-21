@@ -343,6 +343,67 @@ describe('AccuWeatherService', () => {
     });
   });
 
+  describe('Condition Detail Extraction', () => {
+    const testLocation: GeoLocation = {
+      latitude: 37.7749,
+      longitude: -122.4194,
+    };
+
+    const fetchWith = async (
+      overrides: Partial<import('../../types/index.js').AccuWeatherCurrentConditions>
+    ) => {
+      service.clearLocationCache();
+      vi.mocked(global.fetch).mockClear();
+      (global.fetch as Mock)
+        .mockResolvedValueOnce(mockResponse({ Key: '2628204', LocalizedName: 'San Francisco' }))
+        .mockResolvedValueOnce(mockResponse(createMockAccuWeatherResponse(overrides)));
+      return service.fetchCurrentWeather(testLocation);
+    };
+
+    it('populates pressure tendency, precipitation type, and visibility obstruction', async () => {
+      const weatherData = await fetchWith({
+        PressureTendency: { Code: 'F' },
+        PrecipitationType: 'Rain',
+        ObstructionsToVisibility: 'Fog',
+      });
+
+      // Code F maps to the falling trend.
+      expect(weatherData.pressureTendency).toBe(-1);
+      expect(weatherData.precipitationType).toBe('Rain');
+      expect(weatherData.visibilityObstruction).toBe('Fog');
+      // WeatherText is now emitted as the description.
+      expect(weatherData.description).toBe('Partly cloudy');
+    });
+
+    it('maps each pressure tendency code to its numeric trend', async () => {
+      const steady = await fetchWith({ PressureTendency: { Code: 'S' } });
+      expect(steady.pressureTendency).toBe(0);
+
+      const rising = await fetchWith({ PressureTendency: { Code: 'R' } });
+      expect(rising.pressureTendency).toBe(1);
+    });
+
+    it('omits the new fields when the response carries no detail blocks', async () => {
+      const weatherData = await fetchWith({});
+
+      expect(weatherData.pressureTendency).toBeUndefined();
+      expect(weatherData.precipitationType).toBeUndefined();
+      expect(weatherData.visibilityObstruction).toBeUndefined();
+      // The keys must be absent, not present-and-undefined.
+      expect('pressureTendency' in weatherData).toBe(false);
+      expect('precipitationType' in weatherData).toBe(false);
+      expect('visibilityObstruction' in weatherData).toBe(false);
+    });
+
+    it('does not emit an empty ObstructionsToVisibility string', async () => {
+      // AccuWeather sends "" (not absent) when there is no obstruction.
+      const weatherData = await fetchWith({ ObstructionsToVisibility: '' });
+
+      expect(weatherData.visibilityObstruction).toBeUndefined();
+      expect('visibilityObstruction' in weatherData).toBe(false);
+    });
+  });
+
   describe('Rolling 24h request window', () => {
     let windowService: AccuWeatherService;
     const ONE_HOUR_MS = 60 * 60 * 1000;

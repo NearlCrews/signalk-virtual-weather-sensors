@@ -6,7 +6,7 @@
 [![CI](https://github.com/NearlCrews/signalk-virtual-weather-sensors/actions/workflows/ci.yml/badge.svg)](https://github.com/NearlCrews/signalk-virtual-weather-sensors/actions/workflows/ci.yml)
 
 Fetches weather data for your vessel's current position from the AccuWeather
-API and emits it as Signal K deltas: 24+ environmental data points including
+API and emits it as Signal K deltas: 30+ environmental data points including
 temperatures, wind, atmospheric conditions, and marine safety indices. Paths
 follow the [Signal K 1.8.2 specification](https://signalk.org/specification/1.8.2/doc/)
 and align with NMEA2000 emission via a companion plugin. A free AccuWeather API
@@ -32,8 +32,9 @@ Changed / Removed detail, or the
 
 ## Features
 
-- 24+ weather data points: temperatures, wind, pressure, humidity, UV,
-  visibility, cloud cover, and precipitation
+- 30+ weather data points: temperatures, wind, pressure, humidity, UV,
+  visibility, cloud cover, pressure tendency, precipitation type, visibility
+  obstruction, and a plain-language condition summary
 - Spec-compliant Signal K paths, with AccuWeather extensions and derived values
   on a producer-namespaced `environment.weather.*` branch
 - Apparent wind calculated from true wind and vessel motion
@@ -84,12 +85,13 @@ Configure in the Signal K Admin UI under **Server -> Plugin Config**.
 
 ## What it emits
 
-The plugin emits 24+ data points under three namespaces: canonical
+The plugin emits 30+ data points under three namespaces: canonical
 `environment.outside.*` and `environment.wind.*` paths from the Signal K 1.8.2
 vocabulary, plus a producer-namespaced `environment.weather.*` branch for
 AccuWeather extensions and plugin-derived values (Beaufort scale, heat stress,
-and more). A one-shot meta delta on start describes units and labels for the
-non-canonical paths.
+pressure tendency, precipitation type, visibility obstruction, a plain-language
+condition summary, and more). A one-shot meta delta on start describes units
+and labels for the non-canonical paths.
 
 See [docs/signal-k-paths.md](docs/signal-k-paths.md) for the full path, PGN,
 and notification reference.

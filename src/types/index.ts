@@ -95,6 +95,14 @@ export interface WeatherData {
   readonly absoluteHumidity?: number;
   /** Heat stress index from wet bulb globe temperature */
   readonly heatStressIndex?: number;
+
+  // Condition detail (new from AccuWeather)
+  /** Barometric tendency: -1 falling, 0 steady, +1 rising. */
+  readonly pressureTendency?: number;
+  /** Precipitation type (e.g. "Rain", "Snow", "Ice", "Mixed"). */
+  readonly precipitationType?: string;
+  /** Obstruction reducing visibility (e.g. "Fog", "Haze", "Smoke"). */
+  readonly visibilityObstruction?: string;
 }
 
 /**
@@ -284,11 +292,10 @@ type AcwMetricPair = { readonly Metric: AcwMeasurement; readonly Imperial: AcwMe
 /**
  * AccuWeather API current conditions response.
  *
- * Only fields actually consumed by the plugin are typed: purely cosmetic
- * fields from the upstream response (PrecipitationType, IsDayTime, UVIndexText,
- * ObstructionsToVisibility, TemperatureSummary, MobileLink, Link, etc.) are
- * intentionally omitted so the type stays a contract for what the plugin
- * uses, not a mirror of the AccuWeather schema.
+ * Only fields actually consumed by the plugin are typed: the type is a
+ * contract for what the plugin uses, not a full mirror of the AccuWeather
+ * schema. MobileLink and Link (web URLs) and IndoorRelativeHumidity (irrelevant
+ * to a vessel) stay omitted on purpose.
  */
 export interface AccuWeatherCurrentConditions {
   readonly LocalObservationDateTime: string;
@@ -359,6 +366,16 @@ export interface AccuWeatherCurrentConditions {
     readonly Past12Hours: AcwMetricPair;
     readonly Past24Hours: AcwMetricPair;
   };
+
+  // Optional condition detail: free-tier and partial responses may omit these.
+  /** Barometric tendency. `Code` is "F" falling, "S" steady, "R" rising. */
+  readonly PressureTendency?: {
+    readonly Code: string;
+  };
+  /** Precipitation type ("Rain", "Snow", "Ice", "Mixed"); null when none. */
+  readonly PrecipitationType?: string | null;
+  /** Obstruction reducing visibility (e.g. "Fog"); empty string when none. */
+  readonly ObstructionsToVisibility?: string;
 }
 
 /**

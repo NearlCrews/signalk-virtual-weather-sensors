@@ -69,6 +69,10 @@ meta describing units and labels.
 | `environment.weather.heatStressIndex` | (unitless) | WBGT-derived heat-stress category on US military WBGT flag cutoffs: 0 (<26.7 C), 1 (26.7..27.8 C), 2 (27.8..29.4 C), 3 (29.4..32.2 C), 4 (>=32.2 C) |
 | `environment.weather.windSpeedApparent` | m/s | Apparent wind speed, calculated from AccuWeather wind and vessel motion |
 | `environment.weather.windAngleApparent` | rad | Apparent wind angle relative to bow (-pi..pi, negative to port); omitted when no heading is available |
+| `environment.weather.description` | (string) | Plain-language summary of the current condition |
+| `environment.weather.pressureTendency` | (unitless) | Pressure trend: -1 falling, 0 steady, +1 rising |
+| `environment.weather.precipitationType` | (string) | Precipitation type: Rain, Snow, Ice, or Mixed |
+| `environment.weather.visibilityObstruction` | (string) | Visibility obstruction: fog, haze, or smoke |
 
 ## NMEA2000 PGN coverage
 
@@ -80,16 +84,36 @@ not embed them in the deltas it produces.
 
 PGN 130312 has fixed enum slots for Outside Temperature, Dew Point, Apparent
 Wind Chill, and Heat Index. The other temperature paths this plugin emits
-(RealFeel shade, wet bulb, wet bulb globe, AccuWeather apparent) have no PGN
-130312 enum slot, so they reach Signal K consumers but do not bridge to PGN
-130312 on the bus.
+(RealFeel, RealFeel shade, wet bulb, wet bulb globe, AccuWeather apparent) have
+no PGN 130312 enum slot, so they reach Signal K consumers but do not bridge to
+PGN 130312 on the bus.
 
 | PGN | Description | Source paths emitted by this plugin |
 |-----|-------------|-------------------------------------|
 | 130306 | Wind Data | `environment.wind.speedOverGround`, `directionTrue` only. Apparent wind and gust are producer-namespaced (`environment.weather.windSpeedApparent` / `windAngleApparent` / `speedGust`) and do NOT bridge to NMEA2000: the cannon's 130306 wind conversion reads the canonical `environment.wind.speedApparent` / `angleApparent` leaves, which this plugin no longer emits. A real anemometer should feed 130306 apparent wind |
-| 130311 | Environmental Parameters | `environment.outside.pressure` |
+| 130314 | Actual Pressure | `environment.outside.pressure` (Source 0 = Atmospheric). This is the modern carrier for atmospheric pressure; the older PGN 130311 (Environmental Parameters) and PGN 130310 are marked OBSOLETE in the NMEA2000 / canboat PGN database |
+| 130316 | Temperature Extended Range | Modern successor to PGN 130312, carrying the same temperature data with wider range and finer resolution. An emitter may route the four enum-routed temperature paths through 130316 instead of 130312 |
 | 130312 | Temperature (enum-routed) | `environment.outside.temperature`, `dewPointTemperature`, `apparentWindChillTemperature`, `heatIndexTemperature` |
 | 130313 | Humidity | `environment.outside.relativeHumidity` |
+| 130323 | Meteorological Station Data | Carries wind speed, wind direction, wind gust, atmospheric pressure, and ambient temperature in one PGN. It is the natural structural fit for a virtual weather-station feed and an emitter may map this plugin's wind, pressure, and temperature paths onto it |
+
+Notes:
+
+- Wind gust (`environment.weather.speedGust`) has a dedicated slot in PGN
+  130323, but this plugin emits Signal K deltas only and does not bridge it.
+  Reaching any PGN is the job of a companion converter.
+- `environment.outside.airDensity` sits on a canonical Signal K path, but no
+  NMEA2000 PGN carries air density, so it stays Signal K only.
+
+### Bridging producer-namespaced paths to NMEA2000
+
+The canonical `environment.outside.*` and `environment.wind.*` leaves map onto
+PGNs automatically when paired with an emitter. The producer-namespaced
+`environment.weather.*` paths do not bridge by default. To carry them onto the
+bus, configure the companion
+[`signalk-nmea2000-emitter-cannon`](https://github.com/NearlCrews/signalk-nmea2000-emitter-cannon)
+plugin's path-bridge option to include the specific `environment.weather.*`
+paths you want emitted.
 
 ## Notifications
 

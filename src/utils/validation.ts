@@ -7,6 +7,7 @@ import {
   HEAT_STRESS_INDEX_LIMITS,
   NMEA2000_LIMITS,
   PRECIPITATION_LIMITS,
+  PRESSURE_TENDENCY_LIMITS,
   UV_INDEX_LIMITS,
   VALIDATION_LIMITS,
   VISIBILITY_LIMITS_M,
@@ -543,6 +544,7 @@ const NUMERIC_FIELD_RULES: ReadonlyArray<readonly [SanitizableNumericKey, number
   ['airDensityEnhanced', 0.5, 2.0], // kg/m³; standard sea-level 1.225
   ['windGustFactor', 0, 10], // dimensionless; typical 1.0..2.0, hurricane spikes can reach 3..4
   ['temperatureDeparture24h', -50, 50], // K (as delta); ±50 covers any Earth-realistic 24h change
+  ['pressureTendency', PRESSURE_TENDENCY_LIMITS.MIN, PRESSURE_TENDENCY_LIMITS.MAX],
 ];
 
 /**

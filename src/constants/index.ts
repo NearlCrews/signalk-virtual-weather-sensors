@@ -215,6 +215,10 @@ export const SIGNALK_PATHS = {
       HEAT_STRESS_INDEX: 'environment.weather.heatStressIndex',
       WIND_SPEED_APPARENT: 'environment.weather.windSpeedApparent',
       WIND_ANGLE_APPARENT: 'environment.weather.windAngleApparent',
+      DESCRIPTION: 'environment.weather.description',
+      PRESSURE_TENDENCY: 'environment.weather.pressureTendency',
+      PRECIPITATION_TYPE: 'environment.weather.precipitationType',
+      VISIBILITY_OBSTRUCTION: 'environment.weather.visibilityObstruction',
     },
   },
 
@@ -349,6 +353,9 @@ export const PRECIPITATION_LIMITS = {
 
 /** Heat-stress index: 0 low to 4 extreme. */
 export const HEAT_STRESS_INDEX_LIMITS = { MIN: 0, MAX: 4 } as const;
+
+/** Pressure tendency: -1 falling, 0 steady, +1 rising. */
+export const PRESSURE_TENDENCY_LIMITS = { MIN: -1, MAX: 1 } as const;
 
 /** Data validation ranges and limits */
 export const VALIDATION_LIMITS = {

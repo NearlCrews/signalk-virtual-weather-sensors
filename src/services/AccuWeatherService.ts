@@ -169,6 +169,39 @@ function extractEnhancedConditions(
   };
 }
 
+/** AccuWeather PressureTendency.Code to a numeric trend: falling/steady/rising. */
+const PRESSURE_TENDENCY_CODES: ReadonlyMap<string, number> = new Map([
+  ['F', -1],
+  ['S', 0],
+  ['R', 1],
+]);
+
+/** Strip control characters and bound an optional API label; undefined when absent or empty. */
+function optionalLabel(value: unknown): string | undefined {
+  const capped = capString(value, ACCUWEATHER.MAX_LABEL_LENGTH);
+  return capped.length > 0 ? capped : undefined;
+}
+
+/**
+ * Decode optional condition-detail fields: barometric tendency (numeric
+ * trend), precipitation type, and visibility obstruction. Each field is
+ * omitted from the result when the API response does not carry it.
+ */
+function extractConditionDetails(conditions: AccuWeatherCurrentConditions): Partial<WeatherData> {
+  const tendencyCode = conditions.PressureTendency?.Code;
+  const pressureTendency =
+    typeof tendencyCode === 'string'
+      ? PRESSURE_TENDENCY_CODES.get(tendencyCode.trim().toUpperCase())
+      : undefined;
+  const precipitationType = optionalLabel(conditions.PrecipitationType);
+  const visibilityObstruction = optionalLabel(conditions.ObstructionsToVisibility);
+  return {
+    ...(pressureTendency !== undefined && { pressureTendency }),
+    ...(precipitationType !== undefined && { precipitationType }),
+    ...(visibilityObstruction !== undefined && { visibilityObstruction }),
+  };
+}
+
 export class AccuWeatherService {
   private readonly config: AccuWeatherConfig;
   private readonly logger: Logger;
@@ -305,6 +338,7 @@ export class AccuWeatherService {
 
     const enhancedTemps = extractEnhancedTemperatures(conditions);
     const enhancedConditions = extractEnhancedConditions(conditions, windSpeed);
+    const conditionDetails = extractConditionDetails(conditions);
     const heatStressIndex =
       enhancedTemps.wetBulbGlobeTemperature !== undefined
         ? calculateHeatStressIndex(enhancedTemps.wetBulbGlobeTemperature)
@@ -337,6 +371,7 @@ export class AccuWeatherService {
       // Optional fields decoded above: spread last so only present keys land.
       ...enhancedTemps,
       ...enhancedConditions,
+      ...conditionDetails,
       ...(heatStressIndex !== undefined && { heatStressIndex }),
     };
 
