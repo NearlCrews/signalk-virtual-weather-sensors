@@ -546,12 +546,12 @@ export class WeatherService {
     weatherData: WeatherData,
     vesselData: VesselNavigationData
   ): WeatherData {
-    const apparentWind = this.calculateApparentWindData(weatherData, vesselData);
+    const { apparentWindSpeed, apparentWindAngle } = this.calculateApparentWindData(
+      weatherData,
+      vesselData
+    );
 
-    if (
-      apparentWind.apparentWindSpeed === undefined &&
-      apparentWind.apparentWindAngle === undefined
-    ) {
+    if (apparentWindSpeed === undefined && apparentWindAngle === undefined) {
       return weatherData;
     }
 
@@ -559,21 +559,14 @@ export class WeatherService {
     // moving vessel makes. Omitted when no apparent wind speed was derived; the
     // mapper then falls back to the theoretical wind chill.
     const apparentWindChill =
-      apparentWind.apparentWindSpeed !== undefined
-        ? this.windCalculator.calculateWindChill(
-            weatherData.temperature,
-            apparentWind.apparentWindSpeed
-          )
+      apparentWindSpeed !== undefined
+        ? this.windCalculator.calculateWindChill(weatherData.temperature, apparentWindSpeed)
         : undefined;
 
     return {
       ...weatherData,
-      ...(apparentWind.apparentWindSpeed !== undefined && {
-        apparentWindSpeed: apparentWind.apparentWindSpeed,
-      }),
-      ...(apparentWind.apparentWindAngle !== undefined && {
-        apparentWindAngle: apparentWind.apparentWindAngle,
-      }),
+      ...(apparentWindSpeed !== undefined && { apparentWindSpeed }),
+      ...(apparentWindAngle !== undefined && { apparentWindAngle }),
       ...(apparentWindChill !== undefined && { apparentWindChill }),
     };
   }

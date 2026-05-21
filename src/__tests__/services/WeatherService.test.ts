@@ -4,6 +4,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { WindCalculator } from '../../calculators/WindCalculator.js';
 import { WeatherService } from '../../services/WeatherService.js';
 import type { PluginConfiguration } from '../../types/index.js';
 
@@ -293,6 +294,60 @@ describe('WeatherService - Data Emission', () => {
     // handleMessage should not be called since there's no weather data
     // Data won't be valid without weather data
     expect(service.getCurrentWeatherData()).toBeNull();
+  });
+
+  it('derives apparent wind chill from the apparent wind speed', async () => {
+    const weatherData = {
+      temperature: 268.15, // -5 C, cold enough for a meaningful wind chill
+      pressure: 101325,
+      humidity: 0.7,
+      windSpeed: 12,
+      windDirection: Math.PI / 2,
+      dewPoint: 264.15,
+      windChill: 262.15,
+      heatIndex: 268.15,
+      timestamp: new Date().toISOString(),
+    };
+    const vesselData = {
+      position: { latitude: 60, longitude: 5 },
+      speedOverGround: 5,
+      courseOverGroundTrue: 0,
+      isComplete: true,
+    };
+    const mockAccu = {
+      fetchCurrentWeather: vi.fn().mockResolvedValue(weatherData),
+      getRequestCount: vi.fn(() => 1),
+      getRequestCountLast24h: vi.fn(() => 1),
+    };
+    const mockSignalK = {
+      getVesselNavigationData: vi.fn(() => vesselData),
+      clearCache: vi.fn(),
+    };
+
+    const service = new WeatherService(
+      mockApp as never,
+      config,
+      mockLogger,
+      undefined,
+      mockAccu as never,
+      mockSignalK as never
+    );
+
+    // The service must be running for updateWeatherData to keep its result.
+    await service.start();
+    await service.forceUpdate();
+
+    const data = service.getCurrentWeatherData();
+    expect(data?.apparentWindSpeed).toBeDefined();
+    // apparentWindChill is wind chill recomputed against the apparent wind the
+    // moving vessel experiences, distinct from the theoretical windChill.
+    const expected = new WindCalculator().calculateWindChill(
+      weatherData.temperature,
+      data?.apparentWindSpeed as number
+    );
+    expect(data?.apparentWindChill).toBeCloseTo(expected, 5);
+
+    await service.stop();
   });
 });
 

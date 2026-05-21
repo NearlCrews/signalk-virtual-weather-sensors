@@ -20,7 +20,7 @@ condition summary, precipitation type, and any visibility obstruction. Wind
 chill is split across both canonical leaves: `theoreticalWindChillTemperature`
 from the true wind and `apparentWindChillTemperature` recomputed against the
 apparent wind a moving vessel experiences. The delta envelope and notification
-value shape are unchanged, and all 258 tests pass.
+value shape are unchanged, and all 259 tests pass.
 
 See the [Changelog](CHANGELOG.md#162---2026-05-21) for the full Added /
 Changed / Removed detail, or the

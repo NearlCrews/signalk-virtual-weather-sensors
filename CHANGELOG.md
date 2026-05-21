@@ -12,7 +12,7 @@ plugin had not been publishing now reach Signal K on the producer-namespaced
 `environment.weather.*` branch, and wind chill is split across both canonical
 leaves: theoretical (computed from the true wind) and apparent (recomputed
 against the apparent wind a moving vessel experiences). There is no change to
-the delta envelope or the notification value shape, and all 258 tests pass.
+the delta envelope or the notification value shape, and all 259 tests pass.
 
 ### Added
 
