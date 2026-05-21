@@ -12,23 +12,20 @@ follow the [Signal K 1.8.2 specification](https://signalk.org/specification/1.8.
 and align with NMEA2000 emission via a companion plugin. A free AccuWeather API
 key is required.
 
-## What's New in v1.6.0
+## What's New in v1.6.1
 
-A correctness and review release. Calculated apparent wind moves off the
-canonical `environment.wind.speedApparent` / `angleApparent` leaves to
-producer-namespaced `environment.weather.windSpeedApparent` /
-`windAngleApparent`, and `environment.outside.heatIndexTemperature` now
-carries a computed NWS heat index instead of AccuWeather RealFeel (RealFeel
-ships on the new `environment.weather.realFeel` path). Beaufort scale and the
-wind notification bands use sustained wind only, the heat-stress bands tighten
-to the US military WBGT cutoffs, and the Admin UI config panel gains
-collapsible sections. Consumers subscribed to the old apparent-wind leaves
-should re-point at the new paths; the delta envelope and notification value
-shape are unchanged, and 272 tests pass.
+A bug-fix release. A 12-issue review pass corrected silent failures and
+incorrect logic across the AccuWeather client, the orchestration layer, the
+notification formatter, and the Admin UI config panel: partial API responses
+now fail validation with a tagged error instead of crashing, a missing cloud
+cover reading is omitted rather than reported as a real "clear sky" 0, and a
+transient 403 no longer disables the plugin permanently. The config panel save
+flow reports honestly when a restart cannot be confirmed. There is no change
+to the delta envelope or the notification value shape, and all 259 tests pass.
 
-See the [Changelog](CHANGELOG.md#160---2026-05-16) for the full Added /
-Changed / Removed detail, or the
-[GitHub release](https://github.com/NearlCrews/signalk-virtual-weather-sensors/releases/tag/v1.6.0).
+See the [Changelog](CHANGELOG.md#161---2026-05-19) for the full Fixed /
+Changed detail, or the
+[GitHub release](https://github.com/NearlCrews/signalk-virtual-weather-sensors/releases/tag/v1.6.1).
 
 ## Features
 

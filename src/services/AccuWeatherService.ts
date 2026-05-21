@@ -27,6 +27,7 @@ import {
   kelvinToCelsius,
   kmhToMS,
   millibarsToPA,
+  normalizeAngle0To2Pi,
   percentageToRatio,
   toErrorMessage,
   truncateToCodePoints,
@@ -80,9 +81,6 @@ const RETRYABLE_ERROR_SUBSTRINGS: ReadonlySet<string> = new Set([
  */
 /** Maximum number of entries in location cache before pruning */
 const MAX_CACHE_SIZE = 100;
-
-/** Maximum age in milliseconds for cache entries (2 hours) */
-const CACHE_MAX_AGE_MS = 2 * 60 * 60 * 1000;
 
 /** How often the location cache prune sweep runs (5 minutes). */
 const CACHE_PRUNE_INTERVAL_MS = 5 * 60 * 1000;
@@ -159,9 +157,16 @@ function extractEnhancedConditions(
   const precipitationLastHour = conditions.Precip1hr?.Metric?.Value;
   const precipitationCurrent = conditions.PrecipitationSummary?.PastHour?.Metric?.Value;
   const temperatureDeparture24h = conditions.Past24HourTemperatureDeparture?.Metric?.Value;
+  // Missing CloudCover must stay absent: percentageToRatio(undefined) would
+  // read as a real "clear sky" 0.
+  const cloudCover =
+    typeof conditions.CloudCover === 'number'
+      ? percentageToRatio(conditions.CloudCover)
+      : undefined;
   return {
     ...(windGustSpeed !== undefined && { windGustSpeed }),
     ...(windGustFactor !== undefined && { windGustFactor }),
+    ...(cloudCover !== undefined && { cloudCover }),
     ...(visibility !== undefined && { visibility }),
     ...(cloudCeiling !== undefined && { cloudCeiling }),
     ...(precipitationLastHour !== undefined && { precipitationLastHour }),
@@ -323,7 +328,9 @@ export class AccuWeatherService {
     // the universal meteorological default; using magnetic would require every
     // consumer to know the local magnetic declination. Mapping to the canonical
     // environment.wind.directionTrue path is therefore correct.
-    const windDirection = degreesToRadians(conditions.Wind.Direction.Degrees);
+    // Normalize into [0, 2π): an exact 360° reading would otherwise land on 2π,
+    // which the NMEA2000 half-open range check rejects.
+    const windDirection = normalizeAngle0To2Pi(degreesToRadians(conditions.Wind.Direction.Degrees));
     const dewPoint = celsiusToKelvin(conditions.DewPoint.Metric.Value);
     // WindChillTemperature is optional on partial / lower-tier responses: fall
     // back to the Environment Canada formula so a missing block degrades the
@@ -361,7 +368,6 @@ export class AccuWeatherService {
       windChill,
       heatIndex,
       uvIndex: conditions.UVIndexFloat,
-      cloudCover: percentageToRatio(conditions.CloudCover),
       beaufortScale,
       absoluteHumidity,
       airDensityEnhanced,
@@ -397,9 +403,12 @@ export class AccuWeatherService {
     this.lastCachePrune = now;
     let pruned = 0;
 
-    // Remove expired entries
+    // Remove expired entries. Same TTL as the read-path freshness check in
+    // getLocationKey so an entry is never pruned while still served as fresh,
+    // nor served stale while still in the map.
+    const maxAgeMs = this.config.locationCacheTimeout * 1000;
     for (const [key, entry] of this.locationCache.entries()) {
-      if (now - entry.timestamp > CACHE_MAX_AGE_MS) {
+      if (now - entry.timestamp > maxAgeMs) {
         this.locationCache.delete(key);
         pruned++;
       }

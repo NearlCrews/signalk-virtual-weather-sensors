@@ -75,7 +75,7 @@ export function normalizeAngle0To2Pi(radians: number): number {
   return ((radians % TWO_PI) + TWO_PI) % TWO_PI;
 }
 
-/** Normalize angle to the half-open (-π, π] range: an input of +π or -π returns π. */
+/** Normalize angle to (-π, π]. The lower bound -π is exclusive: ±π, and any odd multiple of π, map to +π. */
 export function normalizeAnglePiToPi(radians: number): number {
   if (!Number.isFinite(radians)) return 0;
   const wrapped = (((radians + Math.PI) % TWO_PI) + TWO_PI) % TWO_PI;

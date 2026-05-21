@@ -72,9 +72,10 @@ export class WeatherService {
    */
   private consecutiveFailures = 0;
   /**
-   * True once an AccuWeather 401/403 has been seen: the key is wrong or the
-   * plan is revoked, so retrying burns quota with no chance of success. The
-   * update timer is cleared and subsequent forceUpdate calls return early.
+   * True once an AccuWeather 401 has been seen: the configured key is invalid,
+   * so retrying burns quota with no chance of success. The update timer is
+   * cleared and subsequent forceUpdate calls return early. Cleared only by a
+   * config change, which constructs a fresh service instance.
    */
   private apiKeyRejected = false;
 
@@ -181,9 +182,9 @@ export class WeatherService {
       }
 
       // Clear cached weather payload but preserve the AccuWeather location-key
-      // cache: it has a 2-hour TTL by design and refetching on every restart
-      // burns paid LOCATION_SEARCH API calls. Per-instance memory gets GC'd
-      // when the service is dropped anyway.
+      // cache: its entries stay valid for the configured locationCacheTimeout,
+      // and refetching on every restart burns paid LOCATION_SEARCH API calls.
+      // Per-instance memory gets GC'd when the service is dropped anyway.
       this.currentWeatherData = null;
       this.lastUpdate = null;
       this.signalKService.clearCache();
@@ -347,19 +348,15 @@ export class WeatherService {
   private static readonly CONSECUTIVE_FAILURE_LIMIT = 1;
 
   /**
-   * Substrings tagged onto error messages by `AccuWeatherService.handleApiError`
-   * that indicate the configured API key is wrong, revoked, or out of plan.
-   * These errors are not retryable: any subsequent fetch would also fail and
-   * burn quota.
+   * True for a 401 (invalid API key) error tagged by
+   * `AccuWeatherService.handleApiError`. A 401 cannot be retried, so the update
+   * timer is cleared until the operator changes the key. A 403 (forbidden) is
+   * deliberately NOT treated as fatal: it can be transient (an IP block or a
+   * brief plan glitch), so it surfaces an error but leaves the retry timer
+   * running to recover on its own.
    */
-  private static readonly AUTH_ERROR_CODES: ReadonlyArray<string> = [
-    ERROR_CODES.NETWORK.API_UNAUTHORIZED,
-    ERROR_CODES.NETWORK.API_FORBIDDEN,
-  ];
-
   private isAuthError(error: unknown): boolean {
-    if (!(error instanceof Error)) return false;
-    return WeatherService.AUTH_ERROR_CODES.some((code) => error.message.includes(code));
+    return error instanceof Error && error.message.includes(ERROR_CODES.NETWORK.API_UNAUTHORIZED);
   }
 
   /**
@@ -510,10 +507,11 @@ export class WeatherService {
 
   /**
    * Translate a fetch failure into the right operator-facing banner:
-   *  - 401/403: the key is dead, so stop the timer and surface "rejected".
-   *  - Any non-auth failure: surface the underlying error immediately so the
-   *    operator sees the cause rather than waiting for the 2x stale-data
-   *    watchdog. The running streak count is appended once it exceeds one.
+   *  - 401: the API key is invalid, so stop the timer and surface "rejected".
+   *  - Any other failure (including a 403): surface the underlying error
+   *    immediately so the operator sees the cause rather than waiting for the
+   *    2x stale-data watchdog. The retry timer keeps running so a transient
+   *    fault recovers on its own. The streak count is appended once above one.
    * @private
    */
   private escalateFetchError(error: unknown, errorMessage: string): void {

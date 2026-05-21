@@ -28,14 +28,16 @@ export { API_KEY_MIN_LENGTH };
 const NMEA2000_TEMP_K_MIN = celsiusToKelvin(NMEA2000_LIMITS.TEMPERATURE_C.MIN);
 const NMEA2000_TEMP_K_MAX = celsiusToKelvin(NMEA2000_LIMITS.TEMPERATURE_C.MAX);
 
-/** Field names required on every AccuWeather current-conditions response. */
+/**
+ * Top-level fields checked for presence on an AccuWeather current-conditions
+ * response. Temperature, Pressure, and DewPoint are validated more deeply by
+ * `validateMetricNumber` (presence plus a numeric `Metric.Value`), so they are
+ * not duplicated here.
+ */
 const REQUIRED_ACCUWEATHER_FIELDS: ReadonlyArray<string> = [
   'LocalObservationDateTime',
-  'Temperature',
   'RelativeHumidity',
   'Wind',
-  'Pressure',
-  'DewPoint',
 ];
 
 /**
@@ -264,32 +266,50 @@ function validateRequiredFields(data: Record<string, unknown>, errors: string[])
 }
 
 /**
- * Validate temperature structure in response
+ * Validate that `container[key]` exists with a numeric `Metric.Value`.
+ * `transformWeatherData` dereferences these without guarding, so a missing or
+ * malformed block must fail validation here rather than throw downstream.
+ * `label` prefixes the error message (e.g. `Wind.Speed`).
  */
-function validateTemperatureStructure(data: Record<string, unknown>, errors: string[]): void {
-  if (!data.Temperature || typeof data.Temperature !== 'object') return;
-
-  const temp = data.Temperature as Record<string, unknown>;
-  if (!temp.Metric || typeof temp.Metric !== 'object') {
-    errors.push('Temperature.Metric is required');
+function validateMetricNumber(
+  container: Record<string, unknown>,
+  key: string,
+  label: string,
+  errors: string[]
+): void {
+  const block = container[key];
+  if (!block || typeof block !== 'object') {
+    errors.push(`${label} is required`);
     return;
   }
 
-  const metric = temp.Metric as Record<string, unknown>;
-  if (typeof metric.Value !== 'number') {
-    errors.push('Temperature.Metric.Value must be a number');
+  const metric = (block as Record<string, unknown>).Metric;
+  if (!metric || typeof metric !== 'object') {
+    errors.push(`${label}.Metric is required`);
+    return;
+  }
+
+  if (typeof (metric as Record<string, unknown>).Value !== 'number') {
+    errors.push(`${label}.Metric.Value must be a number`);
   }
 }
 
 /**
- * Validate wind structure in response
+ * Validate the Wind block: speed needs a numeric `Metric.Value`, direction
+ * needs numeric `Degrees`. `transformWeatherData` dereferences both without
+ * guarding, so a malformed block must fail validation rather than throw.
  */
 function validateWindStructure(data: Record<string, unknown>, errors: string[]): void {
   if (!data.Wind || typeof data.Wind !== 'object') return;
 
   const wind = data.Wind as Record<string, unknown>;
-  if (!wind.Speed || !wind.Direction) {
-    errors.push('Wind.Speed and Wind.Direction are required');
+  validateMetricNumber(wind, 'Speed', 'Wind.Speed', errors);
+
+  const direction = wind.Direction;
+  if (!direction || typeof direction !== 'object') {
+    errors.push('Wind.Direction is required');
+  } else if (typeof (direction as Record<string, unknown>).Degrees !== 'number') {
+    errors.push('Wind.Direction.Degrees must be a number');
   }
 }
 
@@ -307,8 +327,13 @@ export function validateAccuWeatherResponse(response: unknown): ValidationResult
   const data = response[0] as Record<string, unknown>;
 
   validateRequiredFields(data, errors);
-  validateTemperatureStructure(data, errors);
+  validateMetricNumber(data, 'Temperature', 'Temperature', errors);
+  validateMetricNumber(data, 'Pressure', 'Pressure', errors);
+  validateMetricNumber(data, 'DewPoint', 'DewPoint', errors);
   validateWindStructure(data, errors);
+  if ('RelativeHumidity' in data && typeof data.RelativeHumidity !== 'number') {
+    errors.push('RelativeHumidity must be a number');
+  }
 
   return {
     isValid: errors.length === 0,
