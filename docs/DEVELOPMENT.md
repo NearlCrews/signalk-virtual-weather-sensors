@@ -311,20 +311,20 @@ process, coding standards, and commit conventions.
 ## Testing Strategy
 
 The suite covers unit behavior, service integration, calculation accuracy,
-edge and boundary conditions, and error handling. **Total: 259 tests** across
+edge and boundary conditions, and error handling. **Total: 257 tests** across
 11 test files.
 
 - [`index.test.ts`](../src/__tests__/index.test.ts): plugin entry point, meta-delta one-shot invariant, banner dedupe regression, stale-data and quota-exhausted emission-tick branches, panel REST endpoint registration + status + test-key (short-key + long-key-rejected paths) (11 tests)
 - [`WeatherService.test.ts`](../src/__tests__/services/WeatherService.test.ts): core orchestration plus quota-aware status banner format and pluralization (28 tests)
 - [`SignalKService.test.ts`](../src/__tests__/services/SignalKService.test.ts): navigation data (36 tests)
-- [`AccuWeatherService.test.ts`](../src/__tests__/services/AccuWeatherService.test.ts): API integration, retry/error paths, rolling 24h request window (25 tests)
+- [`AccuWeatherService.test.ts`](../src/__tests__/services/AccuWeatherService.test.ts): API integration, retry/error paths, rolling 24h request window (30 tests)
 - [`WindCalculator.test.ts`](../src/__tests__/calculators/WindCalculator.test.ts): vector mathematics plus mutation-test-driven boundary cases for wind chill, heat index, beam-wind apparent angle (34 tests)
-- [`NMEA2000PathMapper.test.ts`](../src/__tests__/mappers/NMEA2000PathMapper.test.ts): path mapping plus one-shot meta delta (15 tests)
+- [`NMEA2000PathMapper.test.ts`](../src/__tests__/mappers/NMEA2000PathMapper.test.ts): path mapping plus one-shot meta delta (18 tests)
 - [`mappers/delta-schema.test.ts`](../src/__tests__/mappers/delta-schema.test.ts): Ajv conformance against the `@signalk/signalk-schema@1.8.2` JSON Schema for both values and meta deltas, plus a vocabulary assertion that loads canonical leaves from the live `groups/environment.json` (8 tests)
 - [`notifications/WeatherNotifier.test.ts`](../src/__tests__/notifications/WeatherNotifier.test.ts): notification state machine, entry/exit edges across wind/visibility/heat/cold/severe-condition bands, master + per-category toggles, WeatherIcon severity mapping, SK 1.8.2 value-shape conformance, reset() semantics, enriched-message format per band, 16-point cardinal mapping, and the `MAX_MESSAGE_LENGTH` ceiling (27 tests)
 - [`integration/weather-flow.integration.test.ts`](../src/__tests__/integration/weather-flow.integration.test.ts): end-to-end smoke against a stubbed `global.fetch`: happy-path delta shape, 429 retry, 401 unauthorized (3 tests)
-- [`utils/conversions.test.ts`](../src/__tests__/utils/conversions.test.ts): unit conversions plus mutation-test-driven boundary cases for `normalizeAnglePiToPi`, air density, and Beaufort scale (34 tests)
-- [`utils/validation.test.ts`](../src/__tests__/utils/validation.test.ts): sanitize, validators, schema, plus a NaN-vs-undefined guard test (38 tests)
+- [`utils/conversions.test.ts`](../src/__tests__/utils/conversions.test.ts): unit conversions plus mutation-test-driven boundary cases for `normalizeAnglePiToPi`, air density, and Beaufort scale (33 tests)
+- [`utils/validation.test.ts`](../src/__tests__/utils/validation.test.ts): config validation, AccuWeather-response schema checks, and NMEA2000 sanitization (29 tests)
 
 ### Running Specific Tests
 

@@ -117,7 +117,7 @@ Test configuration in `vitest.config.ts` includes path aliases (`@/`, `@/service
 - `@signalk/server-api` 2.24+ as a `peerDependency` (the Signal K server provides it at runtime; not bundled). Used for `Plugin`, `ServerAPI`, `Delta`, `PathValue`, `Meta`, `MetaValue`, `SourceRef`, and `SKVersion` types.
 - esbuild 0.28+ for bundling (current bundle ~87 KB)
 - Biome 2.4+ for linting/formatting (with `noFloatingPromises` / `noMisusedPromises` enabled)
-- Vitest 4.1+ for testing (259 tests across 11 files; mutation score 67% via Stryker.js, opt-in via `npm run mutation-test`)
+- Vitest 4.1+ for testing (257 tests across 11 files; mutation score 67% via Stryker.js, opt-in via `npm run mutation-test`)
 - React 19, webpack 5, @babel/preset-react, babel-loader, @types/express for the federated config panel (panel-only deps, runtime is unaffected)
 - Husky + lint-staged for pre-commit hooks
 

@@ -75,7 +75,7 @@ export function normalizeAngle0To2Pi(radians: number): number {
   return ((radians % TWO_PI) + TWO_PI) % TWO_PI;
 }
 
-/** Normalize angle to (-π, π] range. Exact 0 maps to π to match the legacy while-loop behaviour. */
+/** Normalize angle to the half-open (-π, π] range: an input of +π or -π returns π. */
 export function normalizeAnglePiToPi(radians: number): number {
   if (!Number.isFinite(radians)) return 0;
   const wrapped = (((radians + Math.PI) % TWO_PI) + TWO_PI) % TWO_PI;
@@ -121,14 +121,6 @@ export function isValidWindSpeed(windSpeed: number): boolean {
     windSpeed,
     VALIDATION_LIMITS.WIND_SPEED.MIN,
     VALIDATION_LIMITS.WIND_SPEED.MAX
-  );
-}
-
-export function isValidWindDirection(windDirection: number): boolean {
-  return isWithinBounds(
-    windDirection,
-    VALIDATION_LIMITS.WIND_DIRECTION.MIN,
-    VALIDATION_LIMITS.WIND_DIRECTION.MAX
   );
 }
 

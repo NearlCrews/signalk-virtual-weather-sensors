@@ -146,10 +146,12 @@ function extractEnhancedConditions(
 ): Partial<WeatherData> {
   const rawWindGustKmh = conditions.WindGust?.Speed?.Metric?.Value;
   const windGustSpeed = typeof rawWindGustKmh === 'number' ? kmhToMS(rawWindGustKmh) : undefined;
-  // undefined when wind is calm OR gust data is missing: a literal 1 would be
-  // indistinguishable from "no gust".
+  // Omitted unless the gust reading is at least the sustained speed: a factor
+  // below 1 is not a gust factor, it is stale or inconsistent upstream data.
   const windGustFactor =
-    windGustSpeed !== undefined && windSpeed > 0 ? windGustSpeed / windSpeed : undefined;
+    windGustSpeed !== undefined && windSpeed > 0 && windGustSpeed >= windSpeed
+      ? windGustSpeed / windSpeed
+      : undefined;
   const rawVisibilityKm = conditions.Visibility?.Metric?.Value;
   const visibility =
     typeof rawVisibilityKm === 'number' ? rawVisibilityKm * UNITS.LENGTH.KM_TO_M : undefined;

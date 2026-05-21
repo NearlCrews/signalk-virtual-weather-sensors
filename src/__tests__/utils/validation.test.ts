@@ -8,14 +8,11 @@ import { describe, expect, it } from 'vitest';
 import type { WeatherData } from '../../types/index.js';
 import {
   ConfigurationValidator,
-  isValidLatitude,
-  isValidLongitude,
   NMEA2000Validator,
   sanitizeConfiguration,
   sanitizeForNMEA2000,
   validateAccuWeatherResponse,
   validateConfiguration,
-  validateWeatherData,
 } from '../../utils/validation.js';
 
 const baseValidWeather = (): Partial<WeatherData> => ({
@@ -25,93 +22,6 @@ const baseValidWeather = (): Partial<WeatherData> => ({
   windSpeed: 5,
   windDirection: Math.PI / 2,
   timestamp: new Date().toISOString(),
-});
-
-describe('validateWeatherData', () => {
-  it('reports valid for a well-formed payload', () => {
-    const result = validateWeatherData(baseValidWeather());
-    expect(result.isValid).toBe(true);
-    expect(result.errors).toHaveLength(0);
-  });
-
-  it('errors when required fields are missing', () => {
-    const result = validateWeatherData({});
-    expect(result.isValid).toBe(false);
-    expect(result.errors.some((e) => e.includes('Temperature'))).toBe(true);
-    expect(result.errors.some((e) => e.includes('Pressure'))).toBe(true);
-    expect(result.errors.some((e) => e.includes('Humidity'))).toBe(true);
-    expect(result.errors.some((e) => e.includes('Wind speed'))).toBe(true);
-    expect(result.errors.some((e) => e.includes('Wind direction'))).toBe(true);
-    expect(result.errors.some((e) => e.includes('Timestamp'))).toBe(true);
-  });
-
-  it('warns on out-of-range temperature/pressure/wind speed', () => {
-    const result = validateWeatherData({
-      ...baseValidWeather(),
-      temperature: 400,
-      pressure: 200000,
-      windSpeed: 200,
-    });
-    expect(result.isValid).toBe(true);
-    expect(result.warnings.length).toBeGreaterThanOrEqual(3);
-  });
-
-  it('errors on humidity outside [0, 1]', () => {
-    const result = validateWeatherData({
-      ...baseValidWeather(),
-      humidity: 1.5,
-    });
-    expect(result.isValid).toBe(false);
-    expect(result.errors.some((e) => e.includes('Humidity'))).toBe(true);
-  });
-
-  it('errors on out-of-range wind direction', () => {
-    const result = validateWeatherData({
-      ...baseValidWeather(),
-      windDirection: 10,
-    });
-    expect(result.isValid).toBe(false);
-  });
-
-  it('rejects malformed timestamp', () => {
-    const result = validateWeatherData({
-      ...baseValidWeather(),
-      timestamp: 'not-a-date',
-    });
-    expect(result.isValid).toBe(false);
-  });
-
-  it('rejects defined-but-non-finite numeric fields (NaN, not undefined)', () => {
-    // Mutation guard: each numeric guard is `value === undefined || !Number.isFinite(value)`.
-    // Mutating `||` to `&&` would still pass when the value is undefined (because both
-    // branches are true). This case (defined but NaN) only fails when the `||` is intact.
-    const result = validateWeatherData({
-      ...baseValidWeather(),
-      temperature: Number.NaN,
-      pressure: Number.NaN,
-      humidity: Number.NaN,
-      windSpeed: Number.NaN,
-      windDirection: Number.NaN,
-    });
-    expect(result.isValid).toBe(false);
-    expect(result.errors.some((e) => e.includes('Temperature'))).toBe(true);
-    expect(result.errors.some((e) => e.includes('Pressure'))).toBe(true);
-    expect(result.errors.some((e) => e.includes('Humidity'))).toBe(true);
-    expect(result.errors.some((e) => e.includes('Wind speed'))).toBe(true);
-    expect(result.errors.some((e) => e.includes('Wind direction'))).toBe(true);
-  });
-
-  it('flags enhanced-field violations', () => {
-    const result = validateWeatherData({
-      ...baseValidWeather(),
-      uvIndex: 30,
-      visibility: 100000,
-      cloudCover: 1.5,
-      beaufortScale: 13,
-    });
-    expect(result.isValid).toBe(false); // cloudCover errors
-    expect(result.warnings.length).toBeGreaterThan(0);
-  });
 });
 
 describe('validateConfiguration / sanitizeConfiguration', () => {
@@ -355,21 +265,5 @@ describe('NMEA2000 helpers', () => {
       expect(out.windSpeed).toBe(102.3);
       expect(out.windGustSpeed).toBe(102.3);
     });
-  });
-});
-
-describe('isValidLatitude / isValidLongitude', () => {
-  it('boundary values', () => {
-    expect(isValidLatitude(90)).toBe(true);
-    expect(isValidLatitude(-90)).toBe(true);
-    expect(isValidLatitude(90.0001)).toBe(false);
-    expect(isValidLatitude(-90.0001)).toBe(false);
-    expect(isValidLatitude(Number.NaN)).toBe(false);
-
-    expect(isValidLongitude(180)).toBe(true);
-    expect(isValidLongitude(-180)).toBe(true);
-    expect(isValidLongitude(180.0001)).toBe(false);
-    expect(isValidLongitude(-180.0001)).toBe(false);
-    expect(isValidLongitude(Number.NaN)).toBe(false);
   });
 });

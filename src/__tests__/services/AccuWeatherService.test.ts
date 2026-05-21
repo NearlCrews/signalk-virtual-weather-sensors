@@ -238,6 +238,39 @@ describe('AccuWeatherService', () => {
       expect(weatherData.heatStressIndex).toBeGreaterThanOrEqual(0);
       expect(weatherData.heatStressIndex).toBeLessThanOrEqual(4);
     });
+
+    it('omits windGustFactor when the gust does not exceed sustained wind', async () => {
+      service.clearLocationCache();
+      vi.mocked(global.fetch).mockClear();
+      (global.fetch as Mock)
+        .mockResolvedValueOnce(mockResponse({ Key: '2628204', LocalizedName: 'San Francisco' }))
+        .mockResolvedValueOnce(
+          mockResponse(
+            createMockAccuWeatherResponse({
+              Wind: {
+                Speed: {
+                  Metric: { Value: 20, Unit: 'km/h' },
+                  Imperial: { Value: 12, Unit: 'mi/h' },
+                },
+                Direction: { Degrees: 180, Localized: 'S', English: 'S' },
+              },
+              WindGust: {
+                Speed: {
+                  Metric: { Value: 15, Unit: 'km/h' },
+                  Imperial: { Value: 9, Unit: 'mi/h' },
+                },
+              },
+            })
+          )
+        );
+
+      const weatherData = await service.fetchCurrentWeather(testLocation);
+
+      // Gust (15 km/h) below sustained (20 km/h): a factor below 1 is not a
+      // gust factor, so the field is omitted entirely.
+      expect(weatherData.windGustFactor).toBeUndefined();
+      expect('windGustFactor' in weatherData).toBe(false);
+    });
   });
 
   describe('Cache Management', () => {

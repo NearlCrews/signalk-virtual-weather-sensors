@@ -16,12 +16,6 @@ import type { NotificationsConfig, PluginConfiguration, WeatherData } from '../t
 import {
   celsiusToKelvin,
   clamp,
-  isValidHumidity,
-  isValidPressure,
-  isValidTemperature,
-  isValidWindDirection,
-  isValidWindSpeed,
-  isWithinBounds,
   normalizeAngle0To2Pi,
   normalizeAnglePiToPi,
   TWO_PI,
@@ -51,170 +45,6 @@ export interface ValidationResult {
   readonly isValid: boolean;
   readonly errors: ReadonlyArray<string>;
   readonly warnings: ReadonlyArray<string>;
-}
-
-/**
- * Push a "required and must be a finite number" error for a missing or
- * non-finite numeric field, and narrow the value to `number` when present.
- */
-function requireFiniteField(
-  value: number | undefined,
-  name: string,
-  errors: string[]
-): value is number {
-  if (value === undefined || !Number.isFinite(value)) {
-    errors.push(`${name} is required and must be a finite number`);
-    return false;
-  }
-  return true;
-}
-
-function validateTemperatureField(
-  data: Partial<WeatherData>,
-  errors: string[],
-  warnings: string[]
-): void {
-  if (!requireFiniteField(data.temperature, 'Temperature', errors)) return;
-
-  if (!isValidTemperature(data.temperature)) {
-    warnings.push(
-      `Temperature ${data.temperature}K is outside expected range (${VALIDATION_LIMITS.TEMPERATURE.MIN}-${VALIDATION_LIMITS.TEMPERATURE.MAX}K)`
-    );
-  }
-}
-
-function validatePressureField(
-  data: Partial<WeatherData>,
-  errors: string[],
-  warnings: string[]
-): void {
-  if (!requireFiniteField(data.pressure, 'Pressure', errors)) return;
-
-  if (!isValidPressure(data.pressure)) {
-    warnings.push(
-      `Pressure ${data.pressure}Pa is outside expected range (${VALIDATION_LIMITS.PRESSURE.MIN}-${VALIDATION_LIMITS.PRESSURE.MAX}Pa)`
-    );
-  }
-}
-
-function validateHumidityField(data: Partial<WeatherData>, errors: string[]): void {
-  if (!requireFiniteField(data.humidity, 'Humidity', errors)) return;
-
-  if (!isValidHumidity(data.humidity)) {
-    errors.push(
-      `Humidity ${data.humidity} must be between ${VALIDATION_LIMITS.HUMIDITY.MIN} and ${VALIDATION_LIMITS.HUMIDITY.MAX}`
-    );
-  }
-}
-
-function validateWindFields(
-  data: Partial<WeatherData>,
-  errors: string[],
-  warnings: string[]
-): void {
-  if (
-    requireFiniteField(data.windSpeed, 'Wind speed', errors) &&
-    !isValidWindSpeed(data.windSpeed)
-  ) {
-    warnings.push(
-      `Wind speed ${data.windSpeed}m/s is outside expected range (${VALIDATION_LIMITS.WIND_SPEED.MIN}-${VALIDATION_LIMITS.WIND_SPEED.MAX}m/s)`
-    );
-  }
-
-  if (
-    requireFiniteField(data.windDirection, 'Wind direction', errors) &&
-    !isValidWindDirection(data.windDirection)
-  ) {
-    errors.push(
-      `Wind direction ${data.windDirection} must be between ${VALIDATION_LIMITS.WIND_DIRECTION.MIN} and ${VALIDATION_LIMITS.WIND_DIRECTION.MAX} radians`
-    );
-  }
-}
-
-/**
- * Validate timestamp field
- */
-function validateTimestampField(data: Partial<WeatherData>, errors: string[]): void {
-  if (!data.timestamp || typeof data.timestamp !== 'string') {
-    errors.push('Timestamp is required and must be a valid ISO string');
-    return;
-  }
-
-  try {
-    const date = new Date(data.timestamp);
-    if (!Number.isFinite(date.getTime())) {
-      errors.push('Timestamp must be a valid ISO date string');
-    }
-  } catch {
-    errors.push('Timestamp must be a valid ISO date string');
-  }
-}
-
-/**
- * Validate optional enhanced fields
- */
-function validateEnhancedFields(
-  data: Partial<WeatherData>,
-  errors: string[],
-  warnings: string[]
-): void {
-  if (
-    data.uvIndex !== undefined &&
-    (data.uvIndex < UV_INDEX_LIMITS.MIN || data.uvIndex > UV_INDEX_LIMITS.MAX)
-  ) {
-    warnings.push(
-      `UV Index ${data.uvIndex} is outside typical range (${UV_INDEX_LIMITS.MIN}-${UV_INDEX_LIMITS.MAX})`
-    );
-  }
-
-  if (
-    data.visibility !== undefined &&
-    (data.visibility < VISIBILITY_LIMITS_M.MIN || data.visibility > VISIBILITY_LIMITS_M.MAX)
-  ) {
-    warnings.push(
-      `Visibility ${data.visibility}m is outside typical range (${VISIBILITY_LIMITS_M.MIN}-${VISIBILITY_LIMITS_M.MAX}m)`
-    );
-  }
-
-  if (
-    data.cloudCover !== undefined &&
-    (data.cloudCover < VALIDATION_LIMITS.HUMIDITY.MIN ||
-      data.cloudCover > VALIDATION_LIMITS.HUMIDITY.MAX)
-  ) {
-    errors.push(
-      `Cloud cover ${data.cloudCover} must be between ${VALIDATION_LIMITS.HUMIDITY.MIN} and ${VALIDATION_LIMITS.HUMIDITY.MAX}`
-    );
-  }
-
-  if (
-    data.beaufortScale !== undefined &&
-    (data.beaufortScale < BEAUFORT_LIMITS.MIN || data.beaufortScale > BEAUFORT_LIMITS.MAX)
-  ) {
-    warnings.push(
-      `Beaufort scale ${data.beaufortScale} is outside valid range (${BEAUFORT_LIMITS.MIN}-${BEAUFORT_LIMITS.MAX})`
-    );
-  }
-}
-
-/**
- * Validate complete weather data structure
- */
-export function validateWeatherData(data: Partial<WeatherData>): ValidationResult {
-  const errors: string[] = [];
-  const warnings: string[] = [];
-
-  validateTemperatureField(data, errors, warnings);
-  validatePressureField(data, errors, warnings);
-  validateHumidityField(data, errors);
-  validateWindFields(data, errors, warnings);
-  validateTimestampField(data, errors);
-  validateEnhancedFields(data, errors, warnings);
-
-  return {
-    isValid: errors.length === 0,
-    errors,
-    warnings,
-  };
 }
 
 /** Disallowed control/whitespace characters in API keys (catches paste mistakes). */
@@ -606,24 +436,6 @@ export function sanitizeForNMEA2000(data: WeatherData): WeatherData {
     sanitized.apparentWindAngle = normalizeAnglePiToPi(data.apparentWindAngle);
   }
   return sanitized as unknown as WeatherData;
-}
-
-/** Validate latitude value. */
-export function isValidLatitude(latitude: number): boolean {
-  return isWithinBounds(
-    latitude,
-    VALIDATION_LIMITS.COORDINATES.LATITUDE.MIN,
-    VALIDATION_LIMITS.COORDINATES.LATITUDE.MAX
-  );
-}
-
-/** Validate longitude value. */
-export function isValidLongitude(longitude: number): boolean {
-  return isWithinBounds(
-    longitude,
-    VALIDATION_LIMITS.COORDINATES.LONGITUDE.MIN,
-    VALIDATION_LIMITS.COORDINATES.LONGITUDE.MAX
-  );
 }
 
 /**

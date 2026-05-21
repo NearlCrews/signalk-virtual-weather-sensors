@@ -18,7 +18,6 @@ import {
   isValidHumidity,
   isValidPressure,
   isValidTemperature,
-  isValidWindDirection,
   isValidWindSpeed,
   isWithinBounds,
   kelvinToCelsius,
@@ -191,13 +190,6 @@ describe('Validation helpers', () => {
   it('isValidWindSpeed', () => {
     expect(isValidWindSpeed(10)).toBe(true);
     expect(isValidWindSpeed(-1)).toBe(false);
-  });
-
-  it('isValidWindDirection', () => {
-    expect(isValidWindDirection(0)).toBe(true);
-    expect(isValidWindDirection(2 * Math.PI)).toBe(true);
-    expect(isValidWindDirection(-0.1)).toBe(false);
-    expect(isValidWindDirection(7)).toBe(false);
   });
 
   it('isValidCoordinates', () => {

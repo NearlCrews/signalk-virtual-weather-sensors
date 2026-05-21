@@ -101,7 +101,7 @@ const NON_CANONICAL_META: ReadonlyArray<Meta> = [
     // convention as `uvIndex`, `beaufortScale`, `heatStressIndex`.
     displayName: 'Wind gust factor',
     description:
-      'Multiplier of peak gust over sustained wind speed (gust/sustained). Values are >= 1 when gusts are present; below 1 only when the upstream feed has stale or inconsistent samples. Plugin-derived; not in the 1.8.2 vocabulary.',
+      'Multiplier of peak gust over sustained wind speed (gust/sustained), always >= 1. Omitted when the upstream gust reading is not above the sustained wind speed. Plugin-derived; not in the 1.8.2 vocabulary.',
   }),
   me(SIGNALK_PATHS.ENVIRONMENT.WEATHER.BEAUFORT_SCALE, {
     displayName: 'Beaufort scale',
