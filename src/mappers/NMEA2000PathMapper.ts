@@ -293,9 +293,17 @@ export class NMEA2000PathMapper {
   }
 
   private addEnhancedTemperaturePaths(values: PathValue[], data: WeatherData): void {
+    // windChill is the theoretical (true-wind) wind chill. The apparent-wind
+    // chill leaf gets the vessel-motion-corrected value when nav data allowed
+    // it to be derived, falling back to the theoretical value otherwise (when
+    // the vessel is not moving, apparent wind equals true wind).
     values.push(
       pv(SIGNALK_PATHS.ENVIRONMENT.OUTSIDE.DEW_POINT_TEMPERATURE, data.dewPoint),
-      pv(SIGNALK_PATHS.ENVIRONMENT.OUTSIDE.APPARENT_WIND_CHILL_TEMPERATURE, data.windChill),
+      pv(SIGNALK_PATHS.ENVIRONMENT.OUTSIDE.THEORETICAL_WIND_CHILL_TEMPERATURE, data.windChill),
+      pv(
+        SIGNALK_PATHS.ENVIRONMENT.OUTSIDE.APPARENT_WIND_CHILL_TEMPERATURE,
+        data.apparentWindChill ?? data.windChill
+      ),
       pv(SIGNALK_PATHS.ENVIRONMENT.OUTSIDE.HEAT_INDEX_TEMPERATURE, data.heatIndex)
     );
 

@@ -73,12 +73,34 @@ describe('NMEA2000PathMapper', () => {
       expect(paths).toContain('environment.outside.relativeHumidity');
       expect(paths).toContain('environment.outside.dewPointTemperature');
       expect(paths).toContain('environment.outside.apparentWindChillTemperature');
+      expect(paths).toContain('environment.outside.theoreticalWindChillTemperature');
       expect(paths).toContain('environment.outside.heatIndexTemperature');
 
       // Wind: ground-referenced only (AccuWeather is not water-referenced)
       expect(paths).toContain('environment.wind.speedOverGround');
       expect(paths).toContain('environment.wind.directionTrue');
       expect(paths).not.toContain('environment.wind.speedTrue');
+    });
+
+    it('splits theoretical and apparent wind chill', () => {
+      const valueAt = (delta: ReturnType<typeof mapper.mapToSignalKPaths>, path: string) =>
+        getValues(delta).find((v) => v.path === path)?.value;
+
+      // Vessel underway: apparent wind chill (vessel-motion-corrected) differs
+      // from the theoretical (true-wind) value.
+      const moving = mapper.mapToSignalKPaths(
+        createMockWeatherData({ windChill: 270.15, apparentWindChill: 266.15 })
+      );
+      expect(valueAt(moving, 'environment.outside.theoreticalWindChillTemperature')).toBe(270.15);
+      expect(valueAt(moving, 'environment.outside.apparentWindChillTemperature')).toBe(266.15);
+
+      // No apparent wind chill derived: the apparent leaf falls back to the
+      // theoretical value (apparent wind equals true wind when not moving).
+      const still = mapper.mapToSignalKPaths(
+        createMockWeatherData({ windChill: 270.15, apparentWindChill: undefined })
+      );
+      expect(valueAt(still, 'environment.outside.theoreticalWindChillTemperature')).toBe(270.15);
+      expect(valueAt(still, 'environment.outside.apparentWindChillTemperature')).toBe(270.15);
     });
   });
 

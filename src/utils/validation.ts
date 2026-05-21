@@ -376,6 +376,7 @@ const NUMERIC_FIELD_RULES: ReadonlyArray<readonly [SanitizableNumericKey, number
   ['windGustSpeed', ...WIND_SPEED_BOUNDS],
   ['dewPoint', ...TEMP_K_BOUNDS],
   ['windChill', ...TEMP_K_BOUNDS],
+  ['apparentWindChill', ...TEMP_K_BOUNDS],
   ['heatIndex', ...TEMP_K_BOUNDS],
   ['realFeel', ...TEMP_K_BOUNDS],
   ['realFeelShade', ...TEMP_K_BOUNDS],

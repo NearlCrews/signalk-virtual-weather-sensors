@@ -179,6 +179,7 @@ export const SIGNALK_PATHS = {
       RELATIVE_HUMIDITY: 'environment.outside.relativeHumidity',
       DEW_POINT_TEMPERATURE: 'environment.outside.dewPointTemperature',
       APPARENT_WIND_CHILL_TEMPERATURE: 'environment.outside.apparentWindChillTemperature',
+      THEORETICAL_WIND_CHILL_TEMPERATURE: 'environment.outside.theoreticalWindChillTemperature',
       HEAT_INDEX_TEMPERATURE: 'environment.outside.heatIndexTemperature',
       AIR_DENSITY: 'environment.outside.airDensity',
     },

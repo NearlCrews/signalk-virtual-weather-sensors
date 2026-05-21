@@ -25,7 +25,11 @@ export interface WeatherData {
   readonly windDirection: number;
   /** Dew point temperature in Kelvin */
   readonly dewPoint: number;
-  /** Wind chill temperature in Kelvin */
+  /**
+   * Theoretical wind chill temperature in Kelvin: computed from air temperature
+   * and the true (ground-referenced) wind. Emitted on the canonical
+   * `environment.outside.theoreticalWindChillTemperature` leaf.
+   */
   readonly windChill: number;
   /** Heat index temperature in Kelvin (computed NWS Rothfusz, not AccuWeather RealFeel) */
   readonly heatIndex: number;
@@ -73,6 +77,13 @@ export interface WeatherData {
   readonly apparentWindSpeed?: number;
   /** Calculated apparent wind angle in radians (relative to vessel heading) */
   readonly apparentWindAngle?: number;
+  /**
+   * Apparent wind chill temperature in Kelvin: wind chill computed from the
+   * apparent wind (true wind plus vessel motion). Present only when vessel
+   * navigation data allows the apparent wind to be derived; the mapper falls
+   * back to `windChill` for the apparent-wind-chill leaf when it is absent.
+   */
+  readonly apparentWindChill?: number;
 
   // Metadata
   /** Human-readable weather description (e.g. "Partly cloudy"). */

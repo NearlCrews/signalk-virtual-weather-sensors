@@ -534,9 +534,12 @@ export class WeatherService {
   }
 
   /**
-   * Enhance weather data with calculated values. windChill/heatIndex/dewPoint are
-   * already populated by AccuWeatherService.transformWeatherData, so we only add
-   * apparent-wind here.
+   * Enhance weather data with calculated values. windChill (theoretical, from
+   * true wind), heatIndex, and dewPoint are already populated by
+   * AccuWeatherService.transformWeatherData. Here we add apparent wind, and
+   * the apparent wind chill derived from it: wind chill recomputed against the
+   * apparent wind speed the vessel actually experiences once its own motion is
+   * folded in.
    * @private
    */
   private enhanceWeatherData(
@@ -552,6 +555,17 @@ export class WeatherService {
       return weatherData;
     }
 
+    // Apparent wind chill: the cold a person on deck feels, using the wind the
+    // moving vessel makes. Omitted when no apparent wind speed was derived; the
+    // mapper then falls back to the theoretical wind chill.
+    const apparentWindChill =
+      apparentWind.apparentWindSpeed !== undefined
+        ? this.windCalculator.calculateWindChill(
+            weatherData.temperature,
+            apparentWind.apparentWindSpeed
+          )
+        : undefined;
+
     return {
       ...weatherData,
       ...(apparentWind.apparentWindSpeed !== undefined && {
@@ -560,6 +574,7 @@ export class WeatherService {
       ...(apparentWind.apparentWindAngle !== undefined && {
         apparentWindAngle: apparentWind.apparentWindAngle,
       }),
+      ...(apparentWindChill !== undefined && { apparentWindChill }),
     };
   }
 
