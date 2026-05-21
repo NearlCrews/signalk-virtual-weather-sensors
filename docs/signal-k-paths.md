@@ -27,7 +27,8 @@ stay leaf-only as the spec requires. The plugin ships a one-shot Signal K
 | `environment.outside.pressure` | Pa | Atmospheric pressure |
 | `environment.outside.relativeHumidity` | ratio (0 to 1) | Relative humidity |
 | `environment.outside.dewPointTemperature` | K | Dew point |
-| `environment.outside.apparentWindChillTemperature` | K | Wind chill referenced to observed wind |
+| `environment.outside.theoreticalWindChillTemperature` | K | Wind chill from the true (ground-referenced) wind |
+| `environment.outside.apparentWindChillTemperature` | K | Wind chill from the apparent wind (true wind plus vessel motion); falls back to the theoretical value when no vessel motion data is available |
 | `environment.outside.heatIndexTemperature` | K | Heat index, computed (NWS Rothfusz) from air temperature and humidity |
 | `environment.outside.airDensity` | kg/m3 | Calculated air density |
 
@@ -90,10 +91,10 @@ PGN 130312 on the bus.
 
 | PGN | Description | Source paths emitted by this plugin |
 |-----|-------------|-------------------------------------|
-| 130306 | Wind Data | `environment.wind.speedOverGround`, `directionTrue` only. Apparent wind and gust are producer-namespaced (`environment.weather.windSpeedApparent` / `windAngleApparent` / `speedGust`) and do NOT bridge to NMEA2000: the cannon's 130306 wind conversion reads the canonical `environment.wind.speedApparent` / `angleApparent` leaves, which this plugin no longer emits. A real anemometer should feed 130306 apparent wind |
+| 130306 | Wind Data | `environment.wind.speedOverGround`, `directionTrue`. Synthetic apparent wind is producer-namespaced (`environment.weather.windSpeedApparent` / `windAngleApparent`); it bridges to 130306 only through the cannon's opt-in `WIND_WEATHER_APPARENT` conversion (off by default, so a real masthead anemometer is not displaced). Gust (`environment.weather.speedGust`) does not bridge: the cannon ships no conversion for it |
 | 130314 | Actual Pressure | `environment.outside.pressure` (Source 0 = Atmospheric). This is the modern carrier for atmospheric pressure; the older PGN 130311 (Environmental Parameters) and PGN 130310 are marked OBSOLETE in the NMEA2000 / canboat PGN database |
 | 130316 | Temperature Extended Range | Modern successor to PGN 130312, carrying the same temperature data with wider range and finer resolution. An emitter may route the four enum-routed temperature paths through 130316 instead of 130312 |
-| 130312 | Temperature (enum-routed) | `environment.outside.temperature`, `dewPointTemperature`, `apparentWindChillTemperature`, `heatIndexTemperature` |
+| 130312 | Temperature (enum-routed) | `environment.outside.temperature`, `dewPointTemperature`, `apparentWindChillTemperature`, `theoreticalWindChillTemperature`, `heatIndexTemperature` |
 | 130313 | Humidity | `environment.outside.relativeHumidity` |
 | 130323 | Meteorological Station Data | Carries wind speed, wind direction, wind gust, atmospheric pressure, and ambient temperature in one PGN. It is the natural structural fit for a virtual weather-station feed and an emitter may map this plugin's wind, pressure, and temperature paths onto it |
 
@@ -107,13 +108,21 @@ Notes:
 
 ### Bridging producer-namespaced paths to NMEA2000
 
-The canonical `environment.outside.*` and `environment.wind.*` leaves map onto
-PGNs automatically when paired with an emitter. The producer-namespaced
-`environment.weather.*` paths do not bridge by default. To carry them onto the
-bus, configure the companion
+The canonical `environment.outside.*` leaves bridge to PGNs when the companion
 [`signalk-nmea2000-emitter-cannon`](https://github.com/NearlCrews/signalk-nmea2000-emitter-cannon)
-plugin's path-bridge option to include the specific `environment.weather.*`
-paths you want emitted.
+plugin's "environmental" preset is enabled. Ground wind
+(`environment.wind.speedOverGround` / `directionTrue`) bridges through the
+cannon's `WIND_TRUE_GROUND` conversion, which is not in that preset and must be
+enabled separately.
+
+The producer-namespaced `environment.weather.*` paths mostly do not bridge to
+NMEA2000. The cannon has no generic path-to-PGN setting: each conversion is a
+fixed, named module. The one exception is this plugin's synthetic apparent wind
+(`environment.weather.windSpeedApparent` / `windAngleApparent`), which the
+cannon's opt-in `WIND_WEATHER_APPARENT` conversion bridges to PGN 130306; that
+conversion is off by default so it cannot compete with a real masthead
+anemometer. Every other `environment.weather.*` value reaches Signal K
+consumers only, because the NMEA2000 standard defines no PGN field for it.
 
 ## Notifications
 

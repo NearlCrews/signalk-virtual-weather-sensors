@@ -5,6 +5,29 @@ All notable changes to the signalk-virtual-weather-sensors project will be docum
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.6.2] - 2026-05-21
+
+Widens the emitted data set. Four AccuWeather condition-detail values the
+plugin had not been publishing now reach Signal K on the producer-namespaced
+`environment.weather.*` branch, and wind chill is split across both canonical
+leaves: theoretical (computed from the true wind) and apparent (recomputed
+against the apparent wind a moving vessel experiences). There is no change to
+the delta envelope or the notification value shape, and all 258 tests pass.
+
+### Added
+
+- **Four condition-detail paths.** `environment.weather.pressureTendency` (barometric trend: -1 falling, 0 steady, +1 rising), `environment.weather.description` (plain-language condition summary), `environment.weather.precipitationType` (Rain / Snow / Ice / Mixed), and `environment.weather.visibilityObstruction` (fog, haze, smoke). Each carries information not already emitted and is omitted when AccuWeather does not supply it.
+- **Theoretical wind chill.** `environment.outside.theoreticalWindChillTemperature` carries wind chill computed from the true, ground-referenced wind. `environment.outside.apparentWindChillTemperature` now carries a genuine apparent wind chill, recomputed against the apparent wind once the vessel's own motion is folded in; it falls back to the theoretical value when no vessel-motion data is available.
+
+### Changed
+
+- **`environment.weather.gustFactor` is omitted when the gust reading does not exceed the sustained wind speed.** A gust factor below 1 is not a gust factor; it reflects stale or inconsistent upstream samples rather than real gustiness.
+- **Development dependencies updated to their latest releases** (Vitest 4.1.7, webpack 5.107.0, tsx 4.22.3, `@types/node` 25.9.1, lint-staged 17.0.5) and the `codecov/codecov-action` CI step bumped to v6.0.1. No runtime dependency changed.
+
+### Removed
+
+- **Unused validation code.** The exported `validateWeatherData` family, `isValidLatitude` / `isValidLongitude`, the internal `isValidWindDirection` helper, and the unreferenced `ERROR_CODES.SYSTEM.MEMORY_LIMIT` constant had no production caller and were removed.
+
 ## [1.6.1] - 2026-05-19
 
 Bug-fix release. A 12-issue review pass corrected silent failures and

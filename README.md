@@ -12,20 +12,19 @@ follow the [Signal K 1.8.2 specification](https://signalk.org/specification/1.8.
 and align with NMEA2000 emission via a companion plugin. A free AccuWeather API
 key is required.
 
-## What's New in v1.6.1
+## What's New in v1.6.2
 
-A bug-fix release. A 12-issue review pass corrected silent failures and
-incorrect logic across the AccuWeather client, the orchestration layer, the
-notification formatter, and the Admin UI config panel: partial API responses
-now fail validation with a tagged error instead of crashing, a missing cloud
-cover reading is omitted rather than reported as a real "clear sky" 0, and a
-transient 403 no longer disables the plugin permanently. The config panel save
-flow reports honestly when a restart cannot be confirmed. There is no change
-to the delta envelope or the notification value shape, and all 259 tests pass.
+This release widens the emitted data set. Four AccuWeather condition-detail
+values now reach Signal K: barometric pressure tendency, a plain-language
+condition summary, precipitation type, and any visibility obstruction. Wind
+chill is split across both canonical leaves: `theoreticalWindChillTemperature`
+from the true wind and `apparentWindChillTemperature` recomputed against the
+apparent wind a moving vessel experiences. The delta envelope and notification
+value shape are unchanged, and all 258 tests pass.
 
-See the [Changelog](CHANGELOG.md#161---2026-05-19) for the full Fixed /
-Changed detail, or the
-[GitHub release](https://github.com/NearlCrews/signalk-virtual-weather-sensors/releases/tag/v1.6.1).
+See the [Changelog](CHANGELOG.md#162---2026-05-21) for the full Added /
+Changed / Removed detail, or the
+[GitHub release](https://github.com/NearlCrews/signalk-virtual-weather-sensors/releases/tag/v1.6.2).
 
 ## Features
 

@@ -311,7 +311,7 @@ process, coding standards, and commit conventions.
 ## Testing Strategy
 
 The suite covers unit behavior, service integration, calculation accuracy,
-edge and boundary conditions, and error handling. **Total: 257 tests** across
+edge and boundary conditions, and error handling. **Total: 258 tests** across
 11 test files.
 
 - [`index.test.ts`](../src/__tests__/index.test.ts): plugin entry point, meta-delta one-shot invariant, banner dedupe regression, stale-data and quota-exhausted emission-tick branches, panel REST endpoint registration + status + test-key (short-key + long-key-rejected paths) (11 tests)
@@ -319,7 +319,7 @@ edge and boundary conditions, and error handling. **Total: 257 tests** across
 - [`SignalKService.test.ts`](../src/__tests__/services/SignalKService.test.ts): navigation data (36 tests)
 - [`AccuWeatherService.test.ts`](../src/__tests__/services/AccuWeatherService.test.ts): API integration, retry/error paths, rolling 24h request window (30 tests)
 - [`WindCalculator.test.ts`](../src/__tests__/calculators/WindCalculator.test.ts): vector mathematics plus mutation-test-driven boundary cases for wind chill, heat index, beam-wind apparent angle (34 tests)
-- [`NMEA2000PathMapper.test.ts`](../src/__tests__/mappers/NMEA2000PathMapper.test.ts): path mapping plus one-shot meta delta (18 tests)
+- [`NMEA2000PathMapper.test.ts`](../src/__tests__/mappers/NMEA2000PathMapper.test.ts): path mapping plus one-shot meta delta (19 tests)
 - [`mappers/delta-schema.test.ts`](../src/__tests__/mappers/delta-schema.test.ts): Ajv conformance against the `@signalk/signalk-schema@1.8.2` JSON Schema for both values and meta deltas, plus a vocabulary assertion that loads canonical leaves from the live `groups/environment.json` (8 tests)
 - [`notifications/WeatherNotifier.test.ts`](../src/__tests__/notifications/WeatherNotifier.test.ts): notification state machine, entry/exit edges across wind/visibility/heat/cold/severe-condition bands, master + per-category toggles, WeatherIcon severity mapping, SK 1.8.2 value-shape conformance, reset() semantics, enriched-message format per band, 16-point cardinal mapping, and the `MAX_MESSAGE_LENGTH` ceiling (27 tests)
 - [`integration/weather-flow.integration.test.ts`](../src/__tests__/integration/weather-flow.integration.test.ts): end-to-end smoke against a stubbed `global.fetch`: happy-path delta shape, 429 retry, 401 unauthorized (3 tests)
@@ -370,7 +370,7 @@ This plugin adheres to the [Signal K 1.8.2 specification](https://signalk.org/sp
 | Plugin Structure | Yes | Default export, async `start`/`stop` methods, schema/uiSchema |
 | Configuration Schema | Yes | JSON Schema with validation in `index.ts` `schema()`. Fields: `accuWeatherApiKey` (required, minLength 20), `updateFrequency` (1..60 min), `emissionInterval` (1..60 s), `dailyApiQuota` (0..1000 calls per rolling 24h, 0 disables), `notifications` (object: master `enabled` plus per-category `wind`/`visibility`/`heat`/`cold`/`weather` booleans, all opt-in, master off by default) |
 | Delta Message Format | Yes | `Delta` type from `@signalk/server-api`; `Update` is XOR `values \| meta`, so meta rides in a separate update entry |
-| Signal K Paths (canonical) | Yes | 1.8.2 vocabulary under `environment.outside.*` (`temperature`, `pressure`, `relativeHumidity`, `dewPointTemperature`, `apparentWindChillTemperature`, `heatIndexTemperature`, `airDensity`) and `environment.wind.*` (`speedOverGround`, `directionTrue`) |
+| Signal K Paths (canonical) | Yes | 1.8.2 vocabulary under `environment.outside.*` (`temperature`, `pressure`, `relativeHumidity`, `dewPointTemperature`, `apparentWindChillTemperature`, `theoreticalWindChillTemperature`, `heatIndexTemperature`, `airDensity`) and `environment.wind.*` (`speedOverGround`, `directionTrue`) |
 | Signal K Paths (non-canonical) | Yes | Producer-namespaced under `environment.weather.*` (23 leaves: AccuWeather extensions like UV, visibility, cloud cover, pressure tendency, precipitation type, visibility obstruction, plus plugin-derived Beaufort scale, gust factor, heat stress index). Keeps canonical containers leaf-only as the spec requires. |
 | Source Metadata | Yes | Explicit `$source: 'accuweather'` (`SourceRef` brand) on every update; configurable via `PLUGIN.SOURCE_REF` |
 | Meta | Yes | One-shot meta delta on plugin start (`NMEA2000PathMapper.buildMetaDelta()`) describing units and labels for non-canonical paths |
