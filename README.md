@@ -12,7 +12,7 @@ follow the [Signal K 1.8.2 specification](https://signalk.org/specification/1.8.
 and align with NMEA2000 emission via a companion plugin. A free AccuWeather API
 key is required.
 
-## What's New in v1.7.0
+## What's New in v1.6.3
 
 This release corrects how precipitation and the 24-hour temperature departure
 are presented. `environment.weather.precipitationCurrent` is removed: it
@@ -24,9 +24,9 @@ browser shows millimetres and a Kelvin delta instead of miles and an absolute
 Fahrenheit temperature. The delta envelope and notification value shape are
 unchanged, and all 259 tests pass.
 
-See the [Changelog](CHANGELOG.md#170---2026-05-22) for the full Changed /
+See the [Changelog](CHANGELOG.md#163---2026-05-22) for the full Changed /
 Removed detail, or the
-[GitHub release](https://github.com/NearlCrews/signalk-virtual-weather-sensors/releases/tag/v1.7.0).
+[GitHub release](https://github.com/NearlCrews/signalk-virtual-weather-sensors/releases/tag/v1.6.3).
 
 ## Features
 

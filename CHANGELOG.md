@@ -5,7 +5,7 @@ All notable changes to the signalk-virtual-weather-sensors project will be docum
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [1.7.0] - 2026-05-22
+## [1.6.3] - 2026-05-22
 
 Corrects how precipitation and the 24-hour temperature departure are presented
 to Signal K consumers. `environment.weather.precipitationCurrent` is removed: it
