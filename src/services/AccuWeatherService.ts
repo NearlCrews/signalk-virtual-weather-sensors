@@ -162,9 +162,14 @@ function extractEnhancedConditions(
     typeof conditions.CloudCover === 'number'
       ? percentageToRatio(conditions.CloudCover)
       : undefined;
+  // UVIndexFloat is typed `number` but the wire can omit it or send null on a
+  // partial response; the response validator does not check it. Guard so a
+  // non-number cannot land on environment.weather.uvIndex.
+  const uvIndex = typeof conditions.UVIndexFloat === 'number' ? conditions.UVIndexFloat : undefined;
   return {
     ...(windGustSpeed !== undefined && { windGustSpeed }),
     ...(windGustFactor !== undefined && { windGustFactor }),
+    ...(uvIndex !== undefined && { uvIndex }),
     ...(cloudCover !== undefined && { cloudCover }),
     ...(visibility !== undefined && { visibility }),
     ...(cloudCeiling !== undefined && { cloudCeiling }),
@@ -365,7 +370,6 @@ export class AccuWeatherService {
       dewPoint,
       windChill,
       heatIndex,
-      uvIndex: conditions.UVIndexFloat,
       beaufortScale,
       absoluteHumidity,
       airDensityEnhanced,
@@ -857,6 +861,12 @@ export class AccuWeatherService {
     const currentHour = Math.floor(Date.now() / HOUR_MS);
     const elapsed = currentHour - this.requestWindowCurrentHour;
     if (elapsed <= 0) {
+      // elapsed === 0 is the normal same-hour case (the assignment is a no-op).
+      // elapsed < 0 means the wall clock jumped backward (an NTP correction):
+      // snap the window's hour index to the new time so later forward rotation
+      // stays aligned and the current-hour bucket is not left absorbing
+      // requests under a stale, future-dated label.
+      this.requestWindowCurrentHour = currentHour;
       return;
     }
     if (elapsed >= REQUEST_WINDOW_HOURS) {

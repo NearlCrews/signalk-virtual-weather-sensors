@@ -408,6 +408,18 @@ describe('AccuWeatherService', () => {
       expect(weatherData.description).toBe('Partly cloudy');
     });
 
+    it('omits uvIndex when UVIndexFloat is not a number', async () => {
+      // The response type declares UVIndexFloat as number, but the wire can
+      // send null on a partial response and the validator does not check it.
+      // A non-number must not land on environment.weather.uvIndex.
+      const nulled = await fetchWith({ UVIndexFloat: null as unknown as number });
+      expect(nulled.uvIndex).toBeUndefined();
+      expect('uvIndex' in nulled).toBe(false);
+
+      const missing = await fetchWith({ UVIndexFloat: undefined as unknown as number });
+      expect('uvIndex' in missing).toBe(false);
+    });
+
     it('maps each pressure tendency code to its numeric trend', async () => {
       const steady = await fetchWith({ PressureTendency: { Code: 'S' } });
       expect(steady.pressureTendency).toBe(0);
@@ -485,6 +497,25 @@ describe('AccuWeatherService', () => {
       successPair();
       await windowService.fetchCurrentWeather({ latitude: 37.7749, longitude: -122.4194 });
       // Advance just past the window: the original bucket has rotated out.
+      vi.setSystemTime(new Date(Date.now() + 24 * ONE_HOUR_MS));
+      expect(windowService.getRequestCountLast24h()).toBe(0);
+    });
+
+    it('handles a backward clock jump without leaving counts stuck past 24h', async () => {
+      successPair();
+      await windowService.fetchCurrentWeather({ latitude: 37.7749, longitude: -122.4194 });
+      expect(windowService.getRequestCountLast24h()).toBe(2);
+
+      // Wall clock jumps backward 6 hours (an NTP correction). A different
+      // location forces a fresh lookup so this is a clean two-call fetch.
+      vi.setSystemTime(new Date(Date.now() - 6 * ONE_HOUR_MS));
+      successPair();
+      await windowService.fetchCurrentWeather({ latitude: 40.7128, longitude: -74.006 });
+      expect(windowService.getRequestCountLast24h()).toBe(4);
+
+      // 24 hours past the corrected time, every bucket has aged out. If the
+      // window's hour index were left stale in the future after the backward
+      // jump, these counts would rotate out late and linger inside the window.
       vi.setSystemTime(new Date(Date.now() + 24 * ONE_HOUR_MS));
       expect(windowService.getRequestCountLast24h()).toBe(0);
     });

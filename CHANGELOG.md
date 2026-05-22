@@ -16,8 +16,12 @@ speed in mph. The two surviving non-canonical paths most prone to
 mis-categorisation now ship a `displayUnits` hint so the data browser stops
 converting them: precipitation depth renders in millimetres instead of miles,
 and the 24-hour temperature departure renders as a Kelvin delta instead of an
-absolute Fahrenheit temperature. There is no change to the delta envelope or
-the notification value shape, and all 259 tests pass.
+absolute Fahrenheit temperature. A full-codebase review pass also fixed three
+latent bugs: severe-weather notification bands that could latch in an active
+state when their driver reading was missing from a partial response, an
+unguarded UV-index assignment, and a rolling-quota-window miscount after a
+backward clock jump. There is no change to the delta envelope or the
+notification value shape, and all 265 tests pass.
 
 ### Changed
 
@@ -27,6 +31,12 @@ the notification value shape, and all 259 tests pass.
 ### Removed
 
 - **`environment.weather.precipitationCurrent`.** AccuWeather's current-conditions response carries no instantaneous precipitation rate; this path was derived from the same past-hour accumulation as `precipitationLastHour` and converted to `m/s`, which both duplicated that path and collided with the speed category in the Signal K data browser. Consumers needing precipitation should read `environment.weather.precipitationLastHour` (liquid-equivalent depth over the past hour, in metres).
+
+### Fixed
+
+- **Severe-weather notification bands no longer latch when their driver reading is absent.** When a partial AccuWeather response omitted the wet-bulb-globe block (so `heatStressIndex` was undefined) or the visibility block, the heat and visibility evaluators returned early without driving their bands, leaving a previously active `warn`, `alarm`, or `emergency` notification stuck on the bus with no exit edge. All four scalar evaluators (wind, visibility, heat, cold) now clear their bands to `normal` when the driver reading is missing, matching the existing behaviour of the severe-condition path.
+- **UV index is guarded against a non-numeric API value.** `transformWeatherData` assigned `uvIndex` directly from `UVIndexFloat` with no type check, and the response validator never probed that field, so a `null` from a partial response could reach `environment.weather.uvIndex`. The field is now decoded with the same `typeof` guard used for the other optional conditions, and is omitted when not a number.
+- **The rolling 24h API-quota window survives a backward clock jump.** An NTP correction that moved the wall clock backward left the window's hour index stranded in the future, so subsequent requests landed in a stale bucket and aged out at the wrong time, which could falsely trip or falsely clear the quota-exhausted state. A backward jump now re-anchors the window's hour index to the corrected time.
 
 ## [1.6.2] - 2026-05-21
 

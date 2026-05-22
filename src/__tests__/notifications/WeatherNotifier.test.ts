@@ -387,3 +387,44 @@ describe('WeatherNotifier: enriched messages', () => {
     }
   });
 });
+
+describe('WeatherNotifier: driver field disappears', () => {
+  it('heat: clears active bands to normal when heatStressIndex is absent from a later snapshot', () => {
+    const notifier = makeNotifier();
+    // Step 1: extreme heat stress fires all three heat bands.
+    notifier.evaluate(snapshot({ heatStressIndex: 4 }));
+    // Step 2: a partial AccuWeather response drops the wet-bulb-globe block,
+    // so heatStressIndex is undefined. The bands must clear, not latch.
+    const out = notifier.evaluate(snapshot({}));
+    const paths = new Map(out.map((pv) => [pv.path, readValue(pv)]));
+    expect(paths.get(NOTIFICATION_PATHS.HEAT_CAUTION)?.state).toBe('normal');
+    expect(paths.get(NOTIFICATION_PATHS.HEAT_HIGH)?.state).toBe('normal');
+    expect(paths.get(NOTIFICATION_PATHS.HEAT_EXTREME)?.state).toBe('normal');
+  });
+
+  it('visibility: clears active bands to normal when visibility is absent from a later snapshot', () => {
+    const notifier = makeNotifier();
+    notifier.evaluate(snapshot({ visibility: 400 }));
+    const out = notifier.evaluate(snapshot({}));
+    const paths = new Map(out.map((pv) => [pv.path, readValue(pv)]));
+    expect(paths.get(NOTIFICATION_PATHS.VISIBILITY_LOW)?.state).toBe('normal');
+    expect(paths.get(NOTIFICATION_PATHS.VISIBILITY_VERY_LOW)?.state).toBe('normal');
+  });
+
+  it('wind: clears active bands to normal when beaufortScale is absent from a later snapshot', () => {
+    const notifier = makeNotifier();
+    notifier.evaluate(snapshot({ beaufortScale: 12 }));
+    const out = notifier.evaluate(snapshot({}));
+    const paths = new Map(out.map((pv) => [pv.path, readValue(pv)]));
+    expect(paths.get(NOTIFICATION_PATHS.WIND_GALE)?.state).toBe('normal');
+    expect(paths.get(NOTIFICATION_PATHS.WIND_STORM)?.state).toBe('normal');
+    expect(paths.get(NOTIFICATION_PATHS.WIND_HURRICANE)?.state).toBe('normal');
+  });
+
+  it('does not emit a leading normal when a driver field is absent from the first snapshot', () => {
+    // No band has ever been active, so a missing driver must clear nothing.
+    const notifier = makeNotifier();
+    const out = notifier.evaluate(snapshot({}));
+    expect(out).toEqual([]);
+  });
+});

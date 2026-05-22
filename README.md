@@ -21,8 +21,11 @@ AccuWeather past-hour accumulation) and its `m/s` unit made the Signal K data
 browser render precipitation as a vessel speed in mph. Precipitation depth and
 the 24-hour temperature departure now carry a `displayUnits` hint so the data
 browser shows millimetres and a Kelvin delta instead of miles and an absolute
-Fahrenheit temperature. The delta envelope and notification value shape are
-unchanged, and all 259 tests pass.
+Fahrenheit temperature. A full-codebase review pass also fixed three latent
+bugs: notification bands that could latch when a driver reading was missing, an
+unguarded UV-index assignment, and a rolling-quota-window miscount after a
+backward clock jump. The delta envelope and notification value shape are
+unchanged, and all 265 tests pass.
 
 See the [Changelog](CHANGELOG.md#163---2026-05-22) for the full Changed /
 Removed detail, or the

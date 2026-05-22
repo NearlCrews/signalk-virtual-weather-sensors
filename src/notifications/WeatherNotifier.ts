@@ -416,7 +416,10 @@ export class WeatherNotifier {
    */
   private evaluateWind(data: WeatherData, out: PathValue[]): void {
     const bft = data.beaufortScale;
-    if (bft === undefined) return;
+    if (bft === undefined) {
+      this.clearBands(WIND_BANDS, out);
+      return;
+    }
     this.evaluateAscendingBands(WIND_BANDS, bft, () => formatWindSuffix(data), out);
   }
 
@@ -427,7 +430,10 @@ export class WeatherNotifier {
    */
   private evaluateVisibility(data: WeatherData, out: PathValue[]): void {
     const vis = data.visibility;
-    if (vis === undefined) return;
+    if (vis === undefined) {
+      this.clearBands(VISIBILITY_BANDS, out);
+      return;
+    }
     this.evaluateDescendingBands(VISIBILITY_BANDS, vis, () => formatVisibilitySuffix(data), out);
   }
 
@@ -439,7 +445,10 @@ export class WeatherNotifier {
    */
   private evaluateHeat(data: WeatherData, out: PathValue[]): void {
     const hsi = data.heatStressIndex;
-    if (hsi === undefined) return;
+    if (hsi === undefined) {
+      this.clearBands(HEAT_BANDS, out);
+      return;
+    }
     this.evaluateAscendingBands(HEAT_BANDS, hsi, () => formatHeatSuffix(data), out);
   }
 
@@ -488,6 +497,19 @@ export class WeatherNotifier {
   }
 
   /**
+   * Drive every band in a set to `normal`. Used when the band's numeric driver
+   * is missing from a partial AccuWeather response: without this the bands
+   * would latch in their last active state with no exit edge, leaving a stale
+   * alarm on the bus until a later response happens to carry the driver again.
+   * Mirrors the clear-to-normal path in {@link evaluateSevereCondition}.
+   */
+  private clearBands(bands: ReadonlyArray<Band>, out: PathValue[]): void {
+    for (const band of bands) {
+      this.maybeTransition(band.path, 'normal', () => '', out);
+    }
+  }
+
+  /**
    * Cold: caution (wind chill < 0 C, warn) and extreme (< -20 C, alarm).
    * Wind chill stored in Kelvin; thresholds compare directly. The suffix
    * adds air temp and wind speed because wind chill alone undersells the
@@ -495,7 +517,10 @@ export class WeatherNotifier {
    */
   private evaluateCold(data: WeatherData, out: PathValue[]): void {
     const windChillK = data.windChill;
-    if (!Number.isFinite(windChillK)) return;
+    if (!Number.isFinite(windChillK)) {
+      this.clearBands(COLD_BANDS, out);
+      return;
+    }
     this.evaluateDescendingBands(COLD_BANDS, windChillK, () => formatColdSuffix(data), out);
   }
 
