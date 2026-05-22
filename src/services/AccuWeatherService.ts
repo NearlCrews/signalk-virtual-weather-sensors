@@ -155,7 +155,6 @@ function extractEnhancedConditions(
     typeof rawVisibilityKm === 'number' ? rawVisibilityKm * UNITS.LENGTH.KM_TO_M : undefined;
   const cloudCeiling = conditions.Ceiling?.Metric?.Value;
   const precipitationLastHour = conditions.Precip1hr?.Metric?.Value;
-  const precipitationCurrent = conditions.PrecipitationSummary?.PastHour?.Metric?.Value;
   const temperatureDeparture24h = conditions.Past24HourTemperatureDeparture?.Metric?.Value;
   // Missing CloudCover must stay absent: percentageToRatio(undefined) would
   // read as a real "clear sky" 0.
@@ -170,7 +169,6 @@ function extractEnhancedConditions(
     ...(visibility !== undefined && { visibility }),
     ...(cloudCeiling !== undefined && { cloudCeiling }),
     ...(precipitationLastHour !== undefined && { precipitationLastHour }),
-    ...(precipitationCurrent !== undefined && { precipitationCurrent }),
     ...(temperatureDeparture24h !== undefined && { temperatureDeparture24h }),
     ...(typeof conditions.WeatherIcon === 'number' && { weatherIcon: conditions.WeatherIcon }),
   };

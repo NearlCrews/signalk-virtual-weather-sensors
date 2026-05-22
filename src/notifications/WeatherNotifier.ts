@@ -76,7 +76,7 @@ function capForChartplotter(message: string): string {
  * Narrow `number | undefined` to `number` for optional WeatherData fields.
  * Required fields (`temperature`, `windSpeed`, etc.) are already `number` per
  * the type; this guard is only for the spread fields like `windGustSpeed`,
- * `cloudCeiling`, `precipitationCurrent` that AccuWeather may omit.
+ * `cloudCeiling`, `precipitationLastHour` that AccuWeather may omit.
  */
 function isFiniteNumber(value: number | undefined): value is number {
   return value !== undefined && Number.isFinite(value);
@@ -167,8 +167,10 @@ function formatVisibilitySuffix(data: WeatherData): string {
   if (isFiniteNumber(data.cloudCeiling)) {
     parts.push(`ceiling ${Math.round(data.cloudCeiling)} m`);
   }
-  if (isFiniteNumber(data.precipitationCurrent) && data.precipitationCurrent > 0) {
-    parts.push(`rain ${data.precipitationCurrent.toFixed(1)} mm/h`);
+  // precipitationLastHour is a past-hour accumulation in mm; over a 1-hour
+  // window that equals an average rate in mm/h.
+  if (isFiniteNumber(data.precipitationLastHour) && data.precipitationLastHour > 0) {
+    parts.push(`rain ${data.precipitationLastHour.toFixed(1)} mm/h`);
   }
   return parts.join(', ');
 }

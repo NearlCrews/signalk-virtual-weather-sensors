@@ -29,7 +29,6 @@ Mapped against `WeatherDataModelSchema` (`packages/server-api/src/typebox/weathe
 | `environment.weather.cloudCover` | `outside.cloudCover` | direct |
 | `environment.weather.absoluteHumidity` | `outside.absoluteHumidity` | direct |
 | `environment.weather.precipitationLastHour` | `outside.precipitationVolume` | direct |
-| `environment.weather.precipitationCurrent` | (no slot) | none |
 | `environment.weather.cloudCeiling` | (no slot) | none |
 | `environment.weather.temperatureDeparture24h` | (no slot) | none |
 | `environment.weather.realFeelShade` | (no slot) | none |

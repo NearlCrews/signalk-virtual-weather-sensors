@@ -75,18 +75,34 @@ const NON_CANONICAL_META: ReadonlyArray<Meta> = [
     units: 'm',
     displayName: 'Precipitation, last hour',
     description: 'Liquid-equivalent precipitation depth accumulated over the past hour.',
-  }),
-  me(SIGNALK_PATHS.ENVIRONMENT.WEATHER.PRECIPITATION_CURRENT, {
-    units: 'm/s',
-    displayName: 'Precipitation rate',
-    description:
-      'Past-hour average liquid-equivalent precipitation rate (from AccuWeather PrecipitationSummary.PastHour: a 1-hour accumulation expressed as an average rate).',
+    // The SI unit is metres, but a marine consumer wants millimetres: a depth
+    // in metres would otherwise be categorised as a distance by the Signal K
+    // unit-preferences system and rendered in miles/feet. Pinning a custom
+    // display conversion keeps the data browser on mm regardless of preset.
+    displayUnits: {
+      category: 'custom',
+      targetUnit: 'mm',
+      formula: 'value * 1000',
+      inverseFormula: 'value / 1000',
+      symbol: 'mm',
+    },
   }),
   me(SIGNALK_PATHS.ENVIRONMENT.WEATHER.TEMPERATURE_DEPARTURE_24H, {
     units: 'K',
     displayName: '24h temp departure',
     description:
       'Temperature DELTA (not absolute): current air temperature minus the temperature at the same hour 24 hours ago. Positive means warmer than yesterday. Reported in Kelvin because a 1 K delta equals a 1 C delta numerically; consumers must NOT apply a K-to-C subtraction.',
+    // This is a temperature DELTA. The Signal K unit-preferences system would
+    // otherwise categorise a `K` path as an absolute temperature and apply the
+    // K-to-C/F offset formula, turning a +3.8 K departure into roughly -453 F.
+    // Pin the base (identity) conversion so the delta renders as-is.
+    displayUnits: {
+      category: 'base',
+      targetUnit: 'K',
+      formula: 'value',
+      inverseFormula: 'value',
+      symbol: 'K',
+    },
   }),
   me(SIGNALK_PATHS.ENVIRONMENT.WEATHER.SPEED_GUST, {
     units: 'm/s',
@@ -408,15 +424,6 @@ export class NMEA2000PathMapper {
         pv(
           SIGNALK_PATHS.ENVIRONMENT.WEATHER.PRECIPITATION_LAST_HOUR,
           data.precipitationLastHour * UNITS.PRECIPITATION.MM_TO_M
-        )
-      );
-    }
-
-    if (data.precipitationCurrent !== undefined) {
-      values.push(
-        pv(
-          SIGNALK_PATHS.ENVIRONMENT.WEATHER.PRECIPITATION_CURRENT,
-          data.precipitationCurrent * UNITS.PRECIPITATION.MMH_TO_MS
         )
       );
     }

@@ -208,7 +208,6 @@ export const SIGNALK_PATHS = {
       CLOUD_COVER: 'environment.weather.cloudCover',
       CLOUD_CEILING: 'environment.weather.cloudCeiling',
       PRECIPITATION_LAST_HOUR: 'environment.weather.precipitationLastHour',
-      PRECIPITATION_CURRENT: 'environment.weather.precipitationCurrent',
       TEMPERATURE_DEPARTURE_24H: 'environment.weather.temperatureDeparture24h',
       SPEED_GUST: 'environment.weather.speedGust',
       GUST_FACTOR: 'environment.weather.gustFactor',
@@ -269,12 +268,10 @@ export const UNITS = {
     RADIANS_TO_DEGREES: 180 / Math.PI,
   },
 
-  /** Precipitation conversions: Signal K uses meters for depth and m/s for rate. */
+  /** Precipitation conversions: Signal K uses meters for depth. */
   PRECIPITATION: {
     /** Millimeters to meters (depth). */
     MM_TO_M: 1 / 1000,
-    /** Millimeters per hour to meters per second (rate). */
-    MMH_TO_MS: 1 / (1000 * 3600),
   },
 
   /** Length conversions. */
@@ -343,13 +340,12 @@ export const BEAUFORT_LIMITS = { MIN: 0, MAX: 12 } as const;
 export const CLOUD_CEILING_LIMITS_M = { MIN: 0, MAX: 20000 } as const;
 
 /**
- * Precipitation caps in raw AccuWeather units (mm hourly, mm/h rate). The
- * mapper converts to Signal K SI (m, m/s) downstream. 1000 caps a poisoned
+ * Precipitation cap in raw AccuWeather units (mm of past-hour accumulation).
+ * The mapper converts to Signal K SI (m) downstream. 1000 caps a poisoned
  * API response without rejecting any plausible meteorological event.
  */
 export const PRECIPITATION_LIMITS = {
   HOURLY_MM_MAX: 1000,
-  RATE_MMH_MAX: 1000,
 } as const;
 
 /** Heat-stress index: 0 low to 4 extreme. */

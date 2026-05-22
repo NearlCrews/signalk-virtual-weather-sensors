@@ -275,7 +275,7 @@ describe('WeatherNotifier: enriched messages', () => {
       snapshot({
         visibility: 800,
         cloudCeiling: 90,
-        precipitationCurrent: 2.5, // mm/h
+        precipitationLastHour: 2.5, // mm in the past hour ≈ mm/h
       })
     );
     const low = out.find((pv) => pv.path === NOTIFICATION_PATHS.VISIBILITY_LOW);
@@ -352,7 +352,7 @@ describe('WeatherNotifier: enriched messages', () => {
         pressure: 92000,
         visibility: 400,
         cloudCeiling: 75,
-        precipitationCurrent: 25,
+        precipitationLastHour: 25,
         heatStressIndex: 4,
         wetBulbGlobeTemperature: 308.15,
         humidity: 0.95,

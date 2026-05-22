@@ -307,7 +307,6 @@ describe('NMEA2000PathMapper', () => {
 
         // Precipitation
         precipitationLastHour: 2.5,
-        precipitationCurrent: 0.8,
 
         // Calculated properties
         airDensityEnhanced: 1.205,

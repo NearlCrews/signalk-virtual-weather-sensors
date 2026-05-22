@@ -12,19 +12,21 @@ follow the [Signal K 1.8.2 specification](https://signalk.org/specification/1.8.
 and align with NMEA2000 emission via a companion plugin. A free AccuWeather API
 key is required.
 
-## What's New in v1.6.2
+## What's New in v1.7.0
 
-This release widens the emitted data set. Four AccuWeather condition-detail
-values now reach Signal K: barometric pressure tendency, a plain-language
-condition summary, precipitation type, and any visibility obstruction. Wind
-chill is split across both canonical leaves: `theoreticalWindChillTemperature`
-from the true wind and `apparentWindChillTemperature` recomputed against the
-apparent wind a moving vessel experiences. The delta envelope and notification
-value shape are unchanged, and all 259 tests pass.
+This release corrects how precipitation and the 24-hour temperature departure
+are presented. `environment.weather.precipitationCurrent` is removed: it
+duplicated `environment.weather.precipitationLastHour` (both came from the same
+AccuWeather past-hour accumulation) and its `m/s` unit made the Signal K data
+browser render precipitation as a vessel speed in mph. Precipitation depth and
+the 24-hour temperature departure now carry a `displayUnits` hint so the data
+browser shows millimetres and a Kelvin delta instead of miles and an absolute
+Fahrenheit temperature. The delta envelope and notification value shape are
+unchanged, and all 259 tests pass.
 
-See the [Changelog](CHANGELOG.md#162---2026-05-21) for the full Added /
-Changed / Removed detail, or the
-[GitHub release](https://github.com/NearlCrews/signalk-virtual-weather-sensors/releases/tag/v1.6.2).
+See the [Changelog](CHANGELOG.md#170---2026-05-22) for the full Changed /
+Removed detail, or the
+[GitHub release](https://github.com/NearlCrews/signalk-virtual-weather-sensors/releases/tag/v1.7.0).
 
 ## Features
 

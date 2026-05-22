@@ -5,6 +5,29 @@ All notable changes to the signalk-virtual-weather-sensors project will be docum
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.7.0] - 2026-05-22
+
+Corrects how precipitation and the 24-hour temperature departure are presented
+to Signal K consumers. `environment.weather.precipitationCurrent` is removed: it
+re-expressed AccuWeather's past-hour precipitation accumulation as an `m/s`
+rate, which duplicated `environment.weather.precipitationLastHour` (the same
+underlying quantity) and made the Signal K data browser render it as a vessel
+speed in mph. The two surviving non-canonical paths most prone to
+mis-categorisation now ship a `displayUnits` hint so the data browser stops
+converting them: precipitation depth renders in millimetres instead of miles,
+and the 24-hour temperature departure renders as a Kelvin delta instead of an
+absolute Fahrenheit temperature. There is no change to the delta envelope or
+the notification value shape, and all 259 tests pass.
+
+### Changed
+
+- **Precipitation depth and 24h temperature departure carry a `displayUnits` meta hint.** The Signal K unit-preferences system categorises non-canonical paths by their SI base unit, so `environment.weather.precipitationLastHour` (`m`) was bucketed with distances and shown in miles, and `environment.weather.temperatureDeparture24h` (`K`) was treated as an absolute temperature and shown with the Kelvin-to-Fahrenheit offset applied. Both paths now pin a `displayUnits` conversion (millimetres and an identity Kelvin delta, respectively) so the data browser renders them correctly. The emitted values and `units` are unchanged.
+- **The severe-weather notification rain suffix is sourced from `precipitationLastHour`.** A past-hour accumulation in millimetres equals an average rate in mm/h over that window, so the `"rain X mm/h"` message text is unchanged.
+
+### Removed
+
+- **`environment.weather.precipitationCurrent`.** AccuWeather's current-conditions response carries no instantaneous precipitation rate; this path was derived from the same past-hour accumulation as `precipitationLastHour` and converted to `m/s`, which both duplicated that path and collided with the speed category in the Signal K data browser. Consumers needing precipitation should read `environment.weather.precipitationLastHour` (liquid-equivalent depth over the past hour, in metres).
+
 ## [1.6.2] - 2026-05-21
 
 Widens the emitted data set. Four AccuWeather condition-detail values the

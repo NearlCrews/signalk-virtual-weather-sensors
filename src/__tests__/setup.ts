@@ -193,32 +193,6 @@ export function createMockAccuWeatherResponse(
         Metric: { Value: 0, Unit: 'mm' },
         Imperial: { Value: 0, Unit: 'in' },
       },
-      PrecipitationSummary: {
-        Precipitation: {
-          Metric: { Value: 0, Unit: 'mm' },
-          Imperial: { Value: 0, Unit: 'in' },
-        },
-        PastHour: {
-          Metric: { Value: 0, Unit: 'mm' },
-          Imperial: { Value: 0, Unit: 'in' },
-        },
-        Past3Hours: {
-          Metric: { Value: 0, Unit: 'mm' },
-          Imperial: { Value: 0, Unit: 'in' },
-        },
-        Past6Hours: {
-          Metric: { Value: 0, Unit: 'mm' },
-          Imperial: { Value: 0, Unit: 'in' },
-        },
-        Past12Hours: {
-          Metric: { Value: 0, Unit: 'mm' },
-          Imperial: { Value: 0, Unit: 'in' },
-        },
-        Past24Hours: {
-          Metric: { Value: 0, Unit: 'mm' },
-          Imperial: { Value: 0, Unit: 'in' },
-        },
-      },
       ...overrides,
     },
   ];

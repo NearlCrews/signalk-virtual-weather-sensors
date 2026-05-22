@@ -63,10 +63,8 @@ export interface WeatherData {
   readonly cloudCeiling?: number;
 
   // Precipitation data (new from AccuWeather)
-  /** Precipitation in last hour in mm */
+  /** Liquid-equivalent precipitation accumulated over the past hour, in mm */
   readonly precipitationLastHour?: number;
-  /** Current precipitation rate in mm/h */
-  readonly precipitationCurrent?: number;
 
   // Temperature trends (new from AccuWeather)
   /** 24-hour temperature departure in Kelvin */
@@ -367,16 +365,8 @@ export interface AccuWeatherCurrentConditions {
   // Temperature trends
   readonly Past24HourTemperatureDeparture: AcwMetricPair;
 
-  // Precipitation
+  // Precipitation: liquid-equivalent accumulation over the past hour.
   readonly Precip1hr: AcwMetricPair;
-  readonly PrecipitationSummary: {
-    readonly Precipitation: AcwMetricPair;
-    readonly PastHour: AcwMetricPair;
-    readonly Past3Hours: AcwMetricPair;
-    readonly Past6Hours: AcwMetricPair;
-    readonly Past12Hours: AcwMetricPair;
-    readonly Past24Hours: AcwMetricPair;
-  };
 
   // Optional condition detail: free-tier and partial responses may omit these.
   /** Barometric tendency. `Code` is "F" falling, "S" steady, "R" rising. */

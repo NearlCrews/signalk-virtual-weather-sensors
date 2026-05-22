@@ -389,7 +389,6 @@ const NUMERIC_FIELD_RULES: ReadonlyArray<readonly [SanitizableNumericKey, number
   ['cloudCover', ...HUMIDITY_BOUNDS],
   ['cloudCeiling', CLOUD_CEILING_LIMITS_M.MIN, CLOUD_CEILING_LIMITS_M.MAX],
   ['precipitationLastHour', 0, PRECIPITATION_LIMITS.HOURLY_MM_MAX],
-  ['precipitationCurrent', 0, PRECIPITATION_LIMITS.RATE_MMH_MAX],
   ['beaufortScale', BEAUFORT_LIMITS.MIN, BEAUFORT_LIMITS.MAX],
   ['heatStressIndex', HEAT_STRESS_INDEX_LIMITS.MIN, HEAT_STRESS_INDEX_LIMITS.MAX],
   // Derived values computed by this plugin from already-validated inputs.
@@ -407,9 +406,9 @@ const NUMERIC_FIELD_RULES: ReadonlyArray<readonly [SanitizableNumericKey, number
  * Returns true when no field of `data` would be modified by NMEA2000 clamping.
  *
  * Every leaf emitted by `NMEA2000PathMapper.mapToSignalKPaths` is covered here
- * so the mapper's "every path is sanitized" claim holds. Precipitation fields
- * are checked in their raw AccuWeather units (mm / mm-h); the mapper does the
- * mm-to-m conversion at emission time.
+ * so the mapper's "every path is sanitized" claim holds. `precipitationLastHour`
+ * is checked in its raw AccuWeather unit (mm); the mapper does the mm-to-m
+ * conversion at emission time.
  *
  * Angles are checked inline: `windDirection` follows the Signal K 0..2π
  * convention (half-open), `apparentWindAngle` follows the (-π, π]
@@ -438,7 +437,7 @@ function isWithinNMEA2000Ranges(data: WeatherData): boolean {
  * wind speeds use NMEA2000 hardware bounds; ratios (humidity, cloudCover) are
  * spec 0..1; angles use the Signal K canonical convention (windDirection
  * 0..2π, apparentWindAngle port-negative -π..π); precipitation is capped in
- * raw mm units before the mapper converts to m and m/s.
+ * raw mm units before the mapper converts to m.
  */
 export function sanitizeForNMEA2000(data: WeatherData): WeatherData {
   if (isWithinNMEA2000Ranges(data)) {

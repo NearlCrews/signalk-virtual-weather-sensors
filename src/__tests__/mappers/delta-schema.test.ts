@@ -154,7 +154,6 @@ describe('Signal K Delta Schema Conformance (1.8.2)', () => {
 
           // Precipitation
           precipitationLastHour: 0.5,
-          precipitationCurrent: 0.2,
 
           // Condition detail
           pressureTendency: 1,
