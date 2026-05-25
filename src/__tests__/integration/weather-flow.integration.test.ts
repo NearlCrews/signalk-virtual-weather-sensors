@@ -155,6 +155,15 @@ describe('integration: AccuWeather to Signal K delta pipeline', () => {
       expect(paths.has(p), `missing weather extension path ${p}`).toBe(true);
     }
 
+    // Apparent wind is producer-namespaced: present on environment.weather.*
+    // and absent from the canonical environment.wind.* leaves. The buildAppWithVessel
+    // stub supplies complete navigation data (SOG = 2.57, COG = 0), so the
+    // synthetic apparent wind is calculated and emitted by the pipeline.
+    expect(paths.has('environment.weather.windSpeedApparent')).toBe(true);
+    expect(paths.has('environment.weather.windAngleApparent')).toBe(true);
+    expect(paths.has('environment.wind.speedApparent')).toBe(false);
+    expect(paths.has('environment.wind.angleApparent')).toBe(false);
+
     // Source ref is set so consumers can prefer real sensors over this feed.
     expect((delta.updates[0] as { $source?: string }).$source).toBe('accuweather');
 

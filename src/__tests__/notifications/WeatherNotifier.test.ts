@@ -428,3 +428,222 @@ describe('WeatherNotifier: driver field disappears', () => {
     expect(out).toEqual([]);
   });
 });
+
+const degToRad = (degrees: number): number => (degrees * Math.PI) / 180;
+
+describe('WeatherNotifier: exact-threshold mutation guards', () => {
+  it('wind: fires only the matching ascending band at exact thresholds', () => {
+    // Bft 8: gale fires, storm and hurricane do not.
+    const notifier = makeNotifier();
+    const out = notifier.evaluate(snapshot({ beaufortScale: 8 }));
+    const paths = new Map(out.map((pv) => [pv.path, readValue(pv)]));
+    expect(paths.get(NOTIFICATION_PATHS.WIND_GALE)?.state).toBe('warn');
+    expect(paths.has(NOTIFICATION_PATHS.WIND_STORM)).toBe(false);
+    expect(paths.has(NOTIFICATION_PATHS.WIND_HURRICANE)).toBe(false);
+
+    // One step below the threshold leaves the band silent.
+    notifier.reset();
+    const justBelow = notifier.evaluate(snapshot({ beaufortScale: 7 }));
+    expect(justBelow.some((pv) => pv.path === NOTIFICATION_PATHS.WIND_GALE)).toBe(false);
+  });
+
+  it('heat: fires only the matching ascending band at exact thresholds', () => {
+    const notifier = makeNotifier();
+    const out = notifier.evaluate(snapshot({ heatStressIndex: 2 }));
+    const paths = new Map(out.map((pv) => [pv.path, readValue(pv)]));
+    expect(paths.get(NOTIFICATION_PATHS.HEAT_CAUTION)?.state).toBe('warn');
+    expect(paths.has(NOTIFICATION_PATHS.HEAT_HIGH)).toBe(false);
+    expect(paths.has(NOTIFICATION_PATHS.HEAT_EXTREME)).toBe(false);
+  });
+
+  it('visibility: stays normal at exactly 1852 m (the LOW_M threshold)', () => {
+    // Descending bands compare `<` not `<=`, so the threshold value itself is
+    // outside the band.
+    const notifier = makeNotifier();
+    const out = notifier.evaluate(snapshot({ visibility: 1852 }));
+    expect(out.find((pv) => pv.path === NOTIFICATION_PATHS.VISIBILITY_LOW)).toBeUndefined();
+
+    notifier.reset();
+    const below = notifier.evaluate(snapshot({ visibility: 1851 }));
+    expect(below.find((pv) => pv.path === NOTIFICATION_PATHS.VISIBILITY_LOW)).toBeDefined();
+  });
+
+  it('cold: stays normal at exactly 273.15 K (the CAUTION_K threshold)', () => {
+    const notifier = makeNotifier();
+    const out = notifier.evaluate(snapshot({ windChill: 273.15 }));
+    expect(out.find((pv) => pv.path === NOTIFICATION_PATHS.COLD_CAUTION)).toBeUndefined();
+
+    notifier.reset();
+    const below = notifier.evaluate(snapshot({ windChill: 273.14 }));
+    expect(below.find((pv) => pv.path === NOTIFICATION_PATHS.COLD_CAUTION)).toBeDefined();
+  });
+});
+
+describe('WeatherNotifier: suffix coverage gaps', () => {
+  it('wind: omits gust segment when gust equals sustained (gust factor 1.0)', () => {
+    const notifier = makeNotifier();
+    const out = notifier.evaluate(
+      snapshot({
+        beaufortScale: 9,
+        windSpeed: 22,
+        windGustSpeed: 22,
+        pressure: 101325,
+      })
+    );
+    const gale = out.find((pv) => pv.path === NOTIFICATION_PATHS.WIND_GALE);
+    if (!gale) throw new Error('expected gale to fire');
+    expect(readValue(gale).message).not.toContain('gusts');
+  });
+
+  it('wind: surfaces the gust even when sustained speed is missing', () => {
+    const notifier = makeNotifier();
+    const out = notifier.evaluate(
+      snapshot({
+        beaufortScale: 9,
+        windSpeed: Number.NaN,
+        windGustSpeed: 30,
+        pressure: 101325,
+      })
+    );
+    const gale = out.find((pv) => pv.path === NOTIFICATION_PATHS.WIND_GALE);
+    if (!gale) throw new Error('expected gale to fire');
+    expect(readValue(gale).message).toContain('gusts 30 m/s');
+  });
+
+  it('visibility: omits the rain segment when precipitation is zero', () => {
+    const notifier = makeNotifier();
+    const out = notifier.evaluate(
+      snapshot({ visibility: 800, cloudCeiling: 90, precipitationLastHour: 0 })
+    );
+    const low = out.find((pv) => pv.path === NOTIFICATION_PATHS.VISIBILITY_LOW);
+    if (!low) throw new Error('expected visibility.low to fire');
+    expect(readValue(low).message).not.toContain('rain');
+  });
+
+  it('visibility: omits the rain segment when precipitation is undefined', () => {
+    const notifier = makeNotifier();
+    const out = notifier.evaluate(snapshot({ visibility: 800, cloudCeiling: 90 }));
+    const low = out.find((pv) => pv.path === NOTIFICATION_PATHS.VISIBILITY_LOW);
+    if (!low) throw new Error('expected visibility.low to fire');
+    expect(readValue(low).message).not.toContain('rain');
+  });
+
+  it('severe: emits just the label when description is missing', () => {
+    const notifier = makeNotifier();
+    const out = notifier.evaluate(
+      snapshot({ weatherIcon: 15, description: undefined, pressure: Number.NaN })
+    );
+    const severe = out.find((pv) => pv.path === NOTIFICATION_PATHS.WEATHER_SEVERE);
+    if (!severe) throw new Error('expected severe to fire');
+    expect(readValue(severe).message).toBe('Thunderstorms');
+  });
+
+  it('severe: emits just the label when description is whitespace-only', () => {
+    const notifier = makeNotifier();
+    const out = notifier.evaluate(
+      snapshot({ weatherIcon: 15, description: '   ', pressure: Number.NaN })
+    );
+    const severe = out.find((pv) => pv.path === NOTIFICATION_PATHS.WEATHER_SEVERE);
+    if (!severe) throw new Error('expected severe to fire');
+    expect(readValue(severe).message).toBe('Thunderstorms');
+  });
+
+  it('severe: omits pressure when not finite', () => {
+    const notifier = makeNotifier();
+    const out = notifier.evaluate(
+      snapshot({ weatherIcon: 15, description: 'Thunder', pressure: Number.NaN })
+    );
+    const severe = out.find((pv) => pv.path === NOTIFICATION_PATHS.WEATHER_SEVERE);
+    if (!severe) throw new Error('expected severe to fire');
+    expect(readValue(severe).message).not.toContain('hPa');
+  });
+
+  it('cardinal: lands the right rose at exact 22.5 deg arc boundaries', () => {
+    const notifier = makeNotifier();
+    const cases: ReadonlyArray<readonly [number, string]> = [
+      [degToRad(11.24), 'from N'],
+      [degToRad(11.25), 'from NNE'],
+      [degToRad(348.74), 'from NNW'],
+      [degToRad(348.75), 'from N'],
+      [degToRad(360), 'from N'],
+    ];
+    for (const [radians, expected] of cases) {
+      notifier.reset();
+      const out = notifier.evaluate(snapshot({ beaufortScale: 9, windDirection: radians }));
+      const gale = out.find((pv) => pv.path === NOTIFICATION_PATHS.WIND_GALE);
+      if (!gale) throw new Error(`expected gale to fire for ${radians}`);
+      expect(readValue(gale).message).toContain(expected);
+    }
+  });
+});
+
+describe('WeatherNotifier: getActiveCount', () => {
+  it('returns 0 before any evaluate call', () => {
+    const notifier = makeNotifier();
+    expect(notifier.getActiveCount()).toBe(0);
+  });
+
+  it('returns 3 after entering all wind bands at hurricane', () => {
+    const notifier = makeNotifier();
+    notifier.evaluate(snapshot({ beaufortScale: 12 }));
+    expect(notifier.getActiveCount()).toBe(3);
+  });
+
+  it('returns 0 after every band has cleared back to normal', () => {
+    const notifier = makeNotifier();
+    notifier.evaluate(snapshot({ beaufortScale: 12 }));
+    notifier.evaluate(snapshot({ beaufortScale: 5 }));
+    expect(notifier.getActiveCount()).toBe(0);
+  });
+
+  it('aggregates active counts across categories', () => {
+    const notifier = makeNotifier();
+    notifier.evaluate(snapshot({ beaufortScale: 12, visibility: 400, heatStressIndex: 4 }));
+    // 3 wind + 2 visibility + 3 heat.
+    expect(notifier.getActiveCount()).toBe(8);
+  });
+
+  it('reset() zeroes the active count', () => {
+    const notifier = makeNotifier();
+    notifier.evaluate(snapshot({ beaufortScale: 12 }));
+    notifier.reset();
+    expect(notifier.getActiveCount()).toBe(0);
+  });
+});
+
+describe('WeatherNotifier: severe-condition defensive cases', () => {
+  it('stays normal across the lifetime when icon is undefined', () => {
+    const notifier = makeNotifier();
+    const out = notifier.evaluate(snapshot({ weatherIcon: undefined }));
+    expect(out.find((pv) => pv.path === NOTIFICATION_PATHS.WEATHER_SEVERE)).toBeUndefined();
+  });
+
+  it('clears to normal when icon is NaN after a prior severe state', () => {
+    const notifier = makeNotifier();
+    notifier.evaluate(snapshot({ weatherIcon: 15, description: 'Thunder' }));
+    const out = notifier.evaluate(snapshot({ weatherIcon: Number.NaN }));
+    const pv = out.find((p) => p.path === NOTIFICATION_PATHS.WEATHER_SEVERE);
+    expect(pv && readValue(pv).state).toBe('normal');
+  });
+
+  it('stays normal for out-of-range icon codes (0, 100, -1)', () => {
+    const notifier = makeNotifier();
+    for (const icon of [0, 100, -1]) {
+      notifier.reset();
+      const out = notifier.evaluate(snapshot({ weatherIcon: icon }));
+      expect(out.find((pv) => pv.path === NOTIFICATION_PATHS.WEATHER_SEVERE)).toBeUndefined();
+    }
+  });
+});
+
+describe('WeatherNotifier: purity', () => {
+  it('does not mutate the input WeatherData object across evaluate calls', () => {
+    const notifier = makeNotifier();
+    const data = snapshot({ beaufortScale: 12, windSpeed: 35, pressure: 99800 });
+    const before = JSON.parse(JSON.stringify(data));
+    notifier.evaluate(data);
+    expect(data).toEqual(before);
+    notifier.evaluate(data);
+    expect(data).toEqual(before);
+  });
+});

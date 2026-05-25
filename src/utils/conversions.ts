@@ -96,6 +96,14 @@ export function ratioToPercentage(ratio: number): number {
   return clamp(ratio * 100, 0, 100);
 }
 
+/**
+ * Inclusive numeric range check that also rejects non-finite inputs. Building
+ * block for the `isValid*` wrappers below.
+ *
+ * @internal Exported only so the conversions test suite can exercise the
+ *           primitive directly. External callers should use the domain-specific
+ *           `isValid*` wrappers.
+ */
 export function isWithinBounds(value: number, min: number, max: number): boolean {
   return Number.isFinite(value) && value >= min && value <= max;
 }
@@ -148,6 +156,10 @@ export function isValidCoordinates(latitude: number, longitude: number): boolean
  * coefficients (`MAGNUS.A`, `MAGNUS.B`, `MAGNUS.C`) live in `constants/index.ts`.
  * @param temperatureK Temperature in Kelvin
  * @returns Saturation vapor pressure in Pascals
+ *
+ * @internal Exported only so the conversions test suite can exercise the
+ *           helper directly. External callers reach this through the
+ *           `calculateAbsoluteHumidity` and `calculateAirDensity` wrappers.
  */
 export function calculateSaturationVaporPressure(temperatureK: number): number {
   if (!Number.isFinite(temperatureK)) return 0;

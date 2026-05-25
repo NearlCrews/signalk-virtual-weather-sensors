@@ -335,7 +335,24 @@ async function startServices(
   config: PluginConfiguration,
   app: ServerAPI
 ): Promise<void> {
-  instance.weatherService = new WeatherService(app, config, instance.logger);
+  // Route every WeatherService banner write through the entry-point dedupe so
+  // a repeated quota or auth message lands one banner per unique string, not
+  // one per fetch attempt. The sink updates `instance.lastBanner` so the next
+  // emission tick also dedupes correctly against the WeatherService-pushed
+  // state, closing the one-tick boundary glitch that bare app.setPlugin*
+  // writes would create.
+  const bannerSink = (kind: 'status' | 'error', message: string): void => {
+    setBanner(instance, app, kind, message);
+  };
+  instance.weatherService = new WeatherService(
+    app,
+    config,
+    instance.logger,
+    undefined,
+    undefined,
+    undefined,
+    bannerSink
+  );
   instance.pathMapper = new NMEA2000PathMapper(instance.logger);
   // Construct the notifier even when notifications are disabled at the master
   // level so a hot-reload from disabled -> enabled does not need a restart.
@@ -555,9 +572,15 @@ function refreshCachedDelta(
  */
 function withEmissionTimestamp(cached: Delta): Delta {
   const now = asTimestamp(new Date().toISOString());
+  // `buildValuesDelta` always emits a single-update delta, so the .map() form
+  // here was over-general. Inlining the lone update keeps the intent obvious
+  // and a future multi-update shape would fail the type-check rather than
+  // silently re-stamp every entry.
+  const update = cached.updates[0];
+  if (update === undefined) return cached;
   return {
     ...cached,
-    updates: cached.updates.map((update) => ({ ...update, timestamp: now })),
+    updates: [{ ...update, timestamp: now }],
   };
 }
 
@@ -622,8 +645,9 @@ function validateAndNormalizeSettings(settings: unknown, logger: Logger): Plugin
     // `sanitizeConfiguration` coerces a missing or partial notifications
     // subobject into the canonical NotificationsConfig with documented defaults,
     // so we forward whatever the operator submitted and let the sanitizer fill
-    // in the rest.
-    notifications: rawSettings.notifications as PluginConfiguration['notifications'],
+    // in the rest. Routed through `unknown` so the cast cannot pretend the
+    // raw value is already a validated NotificationsConfig.
+    notifications: rawSettings.notifications as unknown as PluginConfiguration['notifications'],
   };
 
   const validation = ConfigurationValidator.validateConfiguration(partialConfig);
@@ -685,20 +709,47 @@ function createLogger(app: ServerAPI): Logger {
   };
 }
 
-/** Single regex that matches any sensitive key substring (faster than 6× String.includes). */
-const SENSITIVE_LOG_KEY_PATTERN = /apikey|api_key|accuweatherapikey|password|secret|token/;
+/**
+ * Single regex matching any sensitive key substring. `accuweatherapikey` is
+ * covered by the `apikey` alternation (substring match) so it does not need its
+ * own branch.
+ */
+const SENSITIVE_LOG_KEY_PATTERN = /apikey|api_key|password|secret|token/;
 
 /**
- * Sanitize log metadata to remove sensitive information
+ * Cap on metadata-object nesting before recursion is truncated. The
+ * comparison `depth >= SANITIZE_MAX_DEPTH` truncates AT the cap rather than
+ * one level past it, so the cap name matches the deepest level the function
+ * actually processes.
+ */
+const SANITIZE_MAX_DEPTH = 5;
+
+/**
+ * Sanitize log metadata to remove sensitive information. Walks nested plain
+ * objects with a depth cap and a `WeakSet` of seen references so a cyclic or
+ * pathologically deep metadata bag cannot stack-overflow the Node process when
+ * a warn / error is logged.
  * @private
  */
-function sanitizeLogMetadata(metadata: Record<string, unknown>): Record<string, unknown> {
+function sanitizeLogMetadata(
+  metadata: Record<string, unknown>,
+  depth = 0,
+  seen: WeakSet<object> = new WeakSet()
+): Record<string, unknown> {
+  if (depth >= SANITIZE_MAX_DEPTH) {
+    return { _sanitizerNote: 'depth-truncated' };
+  }
   const sanitized: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(metadata)) {
     if (SENSITIVE_LOG_KEY_PATTERN.test(key.toLowerCase())) {
       sanitized[key] = '[REDACTED]';
     } else if (typeof value === 'object' && value !== null && !Array.isArray(value)) {
-      sanitized[key] = sanitizeLogMetadata(value as Record<string, unknown>);
+      if (seen.has(value)) {
+        sanitized[key] = '[CIRCULAR]';
+      } else {
+        seen.add(value);
+        sanitized[key] = sanitizeLogMetadata(value as Record<string, unknown>, depth + 1, seen);
+      }
     } else {
       sanitized[key] = value;
     }
@@ -732,8 +783,13 @@ function registerPanelRoutes(router: IRouter, instance: PluginInstance): void {
     }
     const snapshot = ws.getServiceStatus();
     const ageMs = ws.getDataAgeMs();
+    // A rejected API key is a terminal state: the update timer is cleared
+    // and no further fetches will fire until config changes. Reflect that on
+    // the `running` flag so the panel does not show a green indicator on a
+    // plugin that has effectively stopped.
+    const running = instance.state === 'running' && !ws.isApiKeyRejected();
     const payload: PanelStatusResponse = {
-      running: instance.state === 'running',
+      running,
       banner: ws.formatStatusBanner(),
       updates: snapshot.updateCount,
       quotaUsedLast24h: ws.getRequestCountLast24h(),

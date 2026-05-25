@@ -417,4 +417,64 @@ describe('WindCalculator', () => {
       expect(results.every((r) => Math.abs(r - firstResult) < 0.0001)).toBe(true);
     });
   });
+
+  describe('Invalid-input fallback shape', () => {
+    beforeEach(() => {
+      calculator = new WindCalculator(mockLogger);
+    });
+
+    it('invalid input never yields a negative apparentWindSpeed (negative truthy guard)', () => {
+      // Mutation guard: `trueWindSpeed || 0` would surface -5 as the fallback
+      // because negatives are truthy. The fallback must clamp to a non-negative
+      // value so the failure contract cannot leak a meaningless negative speed.
+      const result = calculator.calculateWindAnalysis(-5, 2, 0, Math.PI / 2);
+      expect(result.isValid).toBe(false);
+      expect(result.apparentWindSpeed).toBeGreaterThanOrEqual(0);
+    });
+  });
+
+  describe('Apparent wind angle: full-frame coverage', () => {
+    beforeEach(() => {
+      calculator = new WindCalculator(mockLogger);
+    });
+
+    it('rotates correctly under a 90 deg eastward vessel heading', () => {
+      // Vessel pointing east (heading π/2), motion east at 5 m/s. True wind
+      // from north (direction 0) at 10 m/s. Convention: each direction is a
+      // FROM-bearing; the vector formula sums them in their FROM-frame.
+      //  apparentX = 10*cos(0) + 5*cos(π/2) = 10
+      //  apparentY = 10*sin(0) + 5*sin(π/2) = 5
+      //  world FROM = atan2(5, 10) = 0.4636 rad (NNE)
+      //  bow-relative = 0.4636 - π/2 = -1.1071 rad (port side, forward of beam)
+      const angle = calculator.calculateWindAnalysis(10, 5, Math.PI / 2, 0).apparentWindAngle;
+      expect(angle).toBeCloseTo(-1.1071487177940904, 6);
+    });
+
+    it('separate vesselCourse and vesselHeading produce different bow-relative angles', () => {
+      // The 5th argument (vesselHeading) defaults to course but can differ
+      // due to leeway / set. Test that the rotation actually depends on it.
+      const aligned = calculator.calculateWindAnalysis(10, 5, 0, Math.PI / 2);
+      const skewed = calculator.calculateWindAnalysis(10, 5, 0, Math.PI / 2, 0.5);
+      expect(aligned.apparentWindAngle).not.toBeCloseTo(skewed.apparentWindAngle, 3);
+    });
+
+    it('tail wind apparent angle lands on +π (still from astern after vector subtraction)', () => {
+      const angle = calculator.calculateWindAnalysis(10, 5, 0, Math.PI).apparentWindAngle;
+      expect(Math.abs(angle)).toBeCloseTo(Math.PI, 6);
+    });
+
+    it('head wind apparent angle lands on 0 (dead-ahead)', () => {
+      const angle = calculator.calculateWindAnalysis(10, 5, 0, 0).apparentWindAngle;
+      expect(angle).toBeCloseTo(0, 6);
+    });
+
+    it('zero true wind: apparent wind angle is dead-ahead (matches vessel motion direction)', () => {
+      // True wind = 0, vessel motion = 5 m/s along heading 0 (north). The
+      // apparent wind is then exactly the negated motion: comes from the
+      // direction the vessel is moving toward, i.e. dead-ahead.
+      const result = calculator.calculateWindAnalysis(0, 5, 0, Math.PI / 2);
+      expect(result.apparentWindAngle).toBeCloseTo(0, 6);
+      expect(result.apparentWindSpeed).toBeCloseTo(5, 6);
+    });
+  });
 });

@@ -32,11 +32,16 @@ import {
 } from '../utils/conversions.js';
 import { pv } from '../utils/skDelta.js';
 
-/** Default alert presentation: visual on every band; audible from `alarm` upward. */
-const VISUAL_ONLY: ReadonlyArray<NotificationMethod> = ['visual'];
-const VISUAL_AND_SOUND: ReadonlyArray<NotificationMethod> = ['visual', 'sound'];
+/**
+ * Default alert presentation: visual on every band; audible from `alarm`
+ * upward. The arrays are `Object.freeze`d so a downstream consumer that casts
+ * away the readonly contract cannot mutate the shared instance and corrupt
+ * every subsequent notification using the same `methodsFor` branch.
+ */
+const VISUAL_ONLY: ReadonlyArray<NotificationMethod> = Object.freeze(['visual']);
+const VISUAL_AND_SOUND: ReadonlyArray<NotificationMethod> = Object.freeze(['visual', 'sound']);
 /** A resolved (`normal`) notification clears with no method: there is nothing to present. */
-const NO_METHODS: ReadonlyArray<NotificationMethod> = [];
+const NO_METHODS: ReadonlyArray<NotificationMethod> = Object.freeze([]);
 
 /**
  * Returns the appropriate `method` list for a given state. A `normal` (cleared)
@@ -117,6 +122,14 @@ function kToCRounded(kelvin: number): number {
 }
 
 function msRounded(ms: number): number {
+  // `Math.round(ms * 10) / 10` carries an IEEE-754 wart at exact midpoints
+  // (19.05 * 10 reaches 190.49999... due to the FP representation), but in
+  // V8 / Node 20 the formatted-string path through `toFixed(1)` rounds the
+  // SAME midpoints in the opposite direction (12.95 -> '12.9', 20.45 -> '20.4'),
+  // which is also wrong by the user's expectation. Math.round is the lesser
+  // surprise across the input distribution we actually emit: integer-rounded
+  // upstream wind speeds round trivially, and the few midpoints that diverge
+  // skew toward the user's expected "round half up" behaviour.
   return Math.round(ms * 10) / 10;
 }
 
@@ -240,6 +253,14 @@ const WEATHER_ICON_SEVERITY: ReadonlyMap<number, IconSeverity> = new Map([
   [15, { state: 'warn', label: 'Thunderstorms' }],
   [16, { state: 'warn', label: 'Thunderstorms' }],
   [17, { state: 'warn', label: 'Thunderstorms' }],
+  // Flurries (mild snow showers). Same operator action as full Snow at code
+  // 22, so the same `warn` severity applies. The deliberately-absent codes
+  // 12..14 (rain showers) and 18 (Rain) are excluded because liquid
+  // precipitation without thunder is surfaced through the visibility-low
+  // band's rain-rate suffix, not as a standalone severe-weather alert.
+  [19, { state: 'warn', label: 'Flurries' }],
+  [20, { state: 'warn', label: 'Flurries' }],
+  [21, { state: 'warn', label: 'Flurries' }],
   [22, { state: 'warn', label: 'Snow' }],
   [23, { state: 'warn', label: 'Snow' }],
   [24, { state: 'alarm', label: 'Ice' }],
@@ -554,10 +575,14 @@ export class WeatherNotifier {
   /**
    * Push a notification PathValue onto `out` if and only if the desired state
    * differs from the last state emitted for this path. The very first
-   * evaluation against `normal` is a no-op (we have not emitted anything yet,
-   * so there is nothing to clear): only true entries / exits surface. The
-   * message producer and the transition timestamp are computed lazily so the
-   * steady-state case allocates no strings.
+   * evaluation against `normal` records `normal` in lastState (so a later
+   * transition to an active band correctly emits the entry delta) but does
+   * NOT emit a delta: the bus has nothing to clear. Result: `lastState` may
+   * contain many paths in `normal` state, but `getActiveCount` still returns
+   * 0 because it counts only non-normal entries.
+   *
+   * The message producer and the transition timestamp are computed lazily so
+   * the steady-state case allocates no strings.
    */
   private maybeTransition(
     path: string,

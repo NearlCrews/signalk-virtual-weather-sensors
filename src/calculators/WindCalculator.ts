@@ -15,9 +15,16 @@ import {
   ratioToPercentage,
 } from '../utils/conversions.js';
 
-/** Wind chill is only meaningful below this temperature (Environment Canada). */
+/**
+ * Activation gates for the JAG/TI 2001 wind-chill formula (jointly adopted by
+ * the US NWS and Environment Canada). The published formula is identical
+ * between the two agencies; the gates below follow the NWS regime
+ * (T <= 50 F ~= 10 C, wind >= 3 mph ~= 4.83 km/h). Environment Canada's
+ * operational gates are slightly stricter (T <= 0 C, wind >= 5 km/h) and would
+ * leave a margin of borderline-cold light-breeze conditions reporting raw
+ * temperature instead of the more conservative wind-chill value.
+ */
 const WIND_CHILL_MAX_TEMP_C = 10;
-/** Wind chill is only meaningful above this wind speed (Environment Canada). */
 const WIND_CHILL_MIN_SPEED_KMH = 4.8;
 /** Heat index requires the temperature to be above this value (Rothfusz regression). */
 const HEAT_INDEX_MIN_TEMP_F = 80;
@@ -60,8 +67,14 @@ export class WindCalculator {
         vesselHeading,
         trueWindDirection,
       });
+      // `trueWindSpeed || 0` would surface a negative truthy value (e.g. -5)
+      // as the fallback. Speeds are non-negative by definition; reject any
+      // non-finite or negative value here so the failure contract cannot leak
+      // a meaningless negative speed downstream.
+      const fallbackSpeed =
+        Number.isFinite(trueWindSpeed) && trueWindSpeed >= 0 ? trueWindSpeed : 0;
       return {
-        apparentWindSpeed: trueWindSpeed || 0,
+        apparentWindSpeed: fallbackSpeed,
         apparentWindAngle: 0,
         isValid: false,
         validationErrors: ['Invalid input parameters'],
@@ -86,6 +99,9 @@ export class WindCalculator {
     );
 
     return {
+      // Defensive: with the validator's finite-input gate above, sqrt of two
+      // finite squared values is always finite. The fallback can never fire
+      // at runtime, but it documents intent for an isolated reader.
       apparentWindSpeed: Number.isFinite(apparentSpeed) ? apparentSpeed : trueWindSpeed,
       apparentWindAngle: apparentAngle,
       isValid: true,
@@ -93,7 +109,9 @@ export class WindCalculator {
   }
 
   /**
-   * Calculate wind chill using the Environment Canada formula
+   * Calculate wind chill using the JAG/TI 2001 formula (jointly adopted by the
+   * US NWS and Environment Canada). Activation gates follow the NWS regime:
+   * T <= 10 C, wind >= 4.8 km/h.
    * @returns Wind chill temperature in Kelvin
    */
   public calculateWindChill(temperatureK: number, windSpeedMs: number): number {
@@ -161,10 +179,17 @@ export class WindCalculator {
     return Number.isFinite(result) ? result : temperatureK;
   }
 
+  /**
+   * Caller passes the COURSE-over-ground here (the motion vector), not the
+   * vessel heading. The user-supplied heading is finite-checked in the outer
+   * `calculateWindAnalysis` via a separate `Number.isFinite` guard; this
+   * validator just confirms the course value is a usable number along with
+   * the rest of the inputs.
+   */
   private validateWindInputs(
     trueWindSpeed: number,
     vesselSpeed: number,
-    vesselHeading: number,
+    vesselCourse: number,
     trueWindDirection: number
   ): boolean {
     return (
@@ -176,8 +201,8 @@ export class WindCalculator {
       Number.isFinite(vesselSpeed) &&
       vesselSpeed >= VALIDATION_LIMITS.VESSEL_SPEED.MIN &&
       vesselSpeed <= VALIDATION_LIMITS.VESSEL_SPEED.MAX &&
-      typeof vesselHeading === 'number' &&
-      Number.isFinite(vesselHeading) &&
+      typeof vesselCourse === 'number' &&
+      Number.isFinite(vesselCourse) &&
       typeof trueWindDirection === 'number' &&
       Number.isFinite(trueWindDirection)
     );

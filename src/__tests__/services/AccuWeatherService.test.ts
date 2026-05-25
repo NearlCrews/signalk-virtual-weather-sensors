@@ -501,21 +501,22 @@ describe('AccuWeatherService', () => {
       expect(windowService.getRequestCountLast24h()).toBe(0);
     });
 
-    it('handles a backward clock jump without leaving counts stuck past 24h', async () => {
+    it('zeroes the window on a backward clock jump and counts only fresh requests', async () => {
       successPair();
       await windowService.fetchCurrentWeather({ latitude: 37.7749, longitude: -122.4194 });
       expect(windowService.getRequestCountLast24h()).toBe(2);
 
-      // Wall clock jumps backward 6 hours (an NTP correction). A different
-      // location forces a fresh lookup so this is a clean two-call fetch.
+      // Wall clock jumps backward 6 hours (an NTP correction). The prior
+      // buckets are labelled against the now-future hour index, so their
+      // counts no longer correspond to the previous 24 hours of real time.
+      // We zero the window: undercounting briefly is far safer than capping
+      // fetches against ghost requests for up to a full day.
       vi.setSystemTime(new Date(Date.now() - 6 * ONE_HOUR_MS));
       successPair();
       await windowService.fetchCurrentWeather({ latitude: 40.7128, longitude: -74.006 });
-      expect(windowService.getRequestCountLast24h()).toBe(4);
+      expect(windowService.getRequestCountLast24h()).toBe(2);
 
-      // 24 hours past the corrected time, every bucket has aged out. If the
-      // window's hour index were left stale in the future after the backward
-      // jump, these counts would rotate out late and linger inside the window.
+      // 24 hours past the corrected time, every bucket has aged out.
       vi.setSystemTime(new Date(Date.now() + 24 * ONE_HOUR_MS));
       expect(windowService.getRequestCountLast24h()).toBe(0);
     });

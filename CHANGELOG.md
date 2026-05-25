@@ -5,6 +5,55 @@ All notable changes to the signalk-virtual-weather-sensors project will be docum
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.6.4] - 2026-05-25
+
+A correctness and spec-polish release. A three-agent Signal K expert review of
+the whole plugin surfaced 47 findings across spec compliance, TypeScript
+lifecycle, and calculator / mapper / notifier math; 44 were fixed and three
+refuted with rationale. Highlights: every banner write now routes through the
+plugin entry's dedupe so a flapping API or steady-state quota pause produces
+one banner per unique message rather than one per emission tick; a rejected
+API key now surfaces on the status banner and on the admin panel's `running`
+flag instead of leaving the panel showing a green indicator on a plugin that
+has stopped fetching; three more AccuWeather decode sites (`Ceiling`,
+`Precip1hr`, `Past24HourTemperatureDeparture`) carry the same `typeof` guard
+already used for `uvIndex`; the rolling 24h quota window zeroes on a backward
+clock jump instead of leaving stale-labelled buckets that could overcount; and
+visibility plus cloud ceiling pin marine-convention `displayUnits`
+(nautical miles and feet) so the data browser stops rendering them in statute
+miles. Internal: 38 new tests pin exact-threshold mutation guards, suffix
+coverage gaps, sanitizer NaN handling, and `apparentWindAngle` boundary
+folding. The delta envelope and the notification value shape are unchanged,
+and all 303 tests pass.
+
+### Changed
+
+- **Every status / error banner write routes through the entry-point dedupe.** `WeatherService` previously called `app.setPluginStatus` and `app.setPluginError` directly on the quota-exhausted path, the first-update path, and both branches of the fetch-failure path, bypassing the `setBanner()` wrapper in `index.ts` that owns the `(kind, message)` dedupe. A `BannerSink` callback supplied by the plugin entry now sinks every banner write through `setBanner` so identical consecutive messages land one banner per unique string.
+- **`WeatherService.formatStatusBanner()` surfaces the API-key-rejected state.** When a 401 has tripped `apiKeyRejected`, the banner returns `"API key rejected: update key in plugin settings"` instead of the running banner. The admin panel's `/api/status` `running` flag is also `false` in that state so the panel does not show a green indicator on a plugin that will never recover until the operator updates the key.
+- **Visibility and cloud ceiling carry `displayUnits` for nautical miles and feet.** Both paths previously rendered in statute miles via the Signal K distance category default. The `environment.weather.visibility` path now pins a custom conversion to nautical miles, and `environment.weather.cloudCeiling` pins a custom conversion to feet, matching marine and aviation convention regardless of the operator's distance-preference setting. The emitted values and `units` are unchanged.
+- **`environment.outside.apparentWindChillTemperature` carries a meta override.** The canonical leaf now ships an operator-visible description that documents the silent fallback to the theoretical wind chill when no vessel-motion data is available. The fallback behaviour and emission contract are unchanged.
+- **Wind-chill formula attribution corrected.** The activation gates (`T <= 10 C`, wind >= 4.8 km/h) follow the NWS regime of the JAG/TI 2001 formula, not the stricter Environment Canada operational gates. The formula itself is identical between the two agencies; only the in-code comment moved.
+- **Threshold-direction documentation clarified for descending bands.** The `NOTIFICATION_THRESHOLDS` comment now distinguishes the ascending semantics (`>= threshold` activates) for wind and heat from the descending semantics (`< threshold` activates) for visibility and cold, so an operator reading the doc does not believe visibility of exactly 1 nm trips the band.
+
+### Fixed
+
+- **Three AccuWeather decode sites now reject non-numeric values.** `Ceiling.Metric.Value`, `Precip1hr.Metric.Value`, and `Past24HourTemperatureDeparture.Metric.Value` were assigned directly from the response with no `typeof` check, so a `null` from a partial response could slip through the optional-spread guard and land on `environment.weather.*` paths typed as numeric. Each is now decoded through the same defensive helper used for `uvIndex` and is omitted when not a number.
+- **The rolling 24h API-quota window zeroes on a backward clock jump.** The previous fix re-anchored the hour index but left the 24 hourly buckets carrying counts under their now-future labels, so up to 24 hours of subsequent reads could overcount and falsely trip the quota-exhausted state. A backward jump now clears every bucket: undercounting briefly is far safer than capping fetches against ghost requests.
+- **`AccuWeatherService` API-key validation runs before any field assignment.** A throw from the constructor previously left `this.config` already assigned with the bad key. Validation now happens first, so an instance that throws cannot leak a partially-initialised state.
+- **`WeatherService.getDataAgeMs()` and `SignalKService.getDataAge()` clamp at zero.** A backward wall-clock jump produced a negative age that rendered as `"last update -3m ago"` on the banner and slipped past staleness comparisons. Both accessors now floor at zero.
+- **`isWithinNMEA2000Ranges` no longer lets `NaN` slip the fast path.** `NaN < min` and `NaN > max` are both false per IEEE-754, so a `NaN` numeric field with every other field in range would short-circuit the sanitizer and land on the bus. Non-finite values now force the slow clamping path, which floors them to the configured minimum.
+- **`sanitizeLogMetadata` guards depth and cycles.** A cyclic metadata reference could stack-overflow the Node process when a `warn` or `error` was logged. The function now carries a depth cap and a `WeakSet` of seen objects, returning `[CIRCULAR]` for cycles and a sentinel for over-depth.
+- **Notifier method arrays are frozen.** `VISUAL_ONLY`, `VISUAL_AND_SOUND`, and `NO_METHODS` were shared module-scope references attached to every notification by `methodsFor`. They are now `Object.freeze`d so a downstream consumer that casts away the readonly contract cannot mutate the shared instance.
+- **Invalid-input wind-analysis fallback never surfaces a negative speed.** `trueWindSpeed || 0` would let `-5` through as the fallback because negative numbers are truthy. The fallback now clamps any non-finite or negative input to zero.
+- **WeatherIcon severity table covers flurry variants 19, 20, and 21.** Codes 19 (Flurries), 20 (Mostly cloudy with flurries), and 21 (Partly sunny with flurries) now warrant the same `warn` severity as code 22 (Snow). Codes 12 to 14 (rain showers) and 18 (Rain) remain absent: liquid precipitation without thunder is surfaced through the visibility band's rain-rate suffix, not as a standalone severe-weather alert.
+- **The dead `CONSECUTIVE_FAILURE_LIMIT` indirection is gone.** The static was set to 1, so the gate `consecutiveFailures >= 1` was true on every failure. The control flow is now unconditional with the same observable behaviour: dedupe in the new banner sink keeps repeated identical messages from flooding the admin UI.
+- **Two dead exports in `src/utils/conversions.ts` are documented `@internal`.** `isWithinBounds` and `calculateSaturationVaporPressure` are still exported because the conversions test suite exercises them directly, but external callers should reach them through the domain-specific wrappers.
+
+### Internal
+
+- 38 new tests pin previously-uncovered cases: exact-threshold mutation guards on all four band axes (Beaufort 8 for gale-only, visibility 1852 m for `<` strictness, wind chill 273.15 K, HSI 2 for caution-only), wind-suffix gust equals sustained, visibility-suffix rain segment omitted at zero or non-finite precipitation, severe suffix missing description and missing pressure, cardinal-rose 22.5-degree boundary handling, `getActiveCount` across categories, `WindCalculator` invalid-input fallback shape, full-frame apparent-wind angle coverage including tail wind (`+pi`) and head wind (`0`), sanitizer NaN clamping on numeric fields and angles, and `apparentWindAngle` plus `windDirection` boundary folding at `+/- pi` and `2 pi`.
+- The `BannerSink` plumbing keeps `WeatherService` constructable without a sink (tests fall back to direct `app.setPlugin*` writes) so the change does not require touching every existing test fixture.
+
 ## [1.6.3] - 2026-05-22
 
 Corrects how precipitation and the 24-hour temperature departure are presented

@@ -379,7 +379,9 @@ export class SignalKService {
     if (lastUpdateMs === null) {
       return null;
     }
-    return Math.floor((Date.now() - lastUpdateMs) / 1000);
+    // Clamp at zero so a backward NTP jump cannot surface a negative age that
+    // would slip past staleness comparisons and confuse downstream callers.
+    return Math.max(0, Math.floor((Date.now() - lastUpdateMs) / 1000));
   }
 
   /**

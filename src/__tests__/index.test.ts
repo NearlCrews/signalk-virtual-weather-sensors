@@ -20,6 +20,7 @@ const { stubState } = vi.hoisted(() => ({
     getDataAgeMs: (() => 1000) as () => number | null,
     isQuotaExhausted: (() => false) as () => boolean,
     formatQuotaExhaustedMessage: (() => 'AccuWeather daily quota reached') as () => string,
+    isApiKeyRejected: (() => false) as () => boolean,
   },
 }));
 
@@ -31,6 +32,7 @@ vi.mock('../services/WeatherService.js', () => {
     public isQuotaExhausted = vi.fn(() => stubState.isQuotaExhausted());
     public formatQuotaExhaustedMessage = vi.fn(() => stubState.formatQuotaExhaustedMessage());
     public getRequestCountLast24h = vi.fn(() => 0);
+    public isApiKeyRejected = vi.fn(() => stubState.isApiKeyRejected());
     // Typed against the real WeatherServiceStatus so an interface change
     // (new required field, renamed key) breaks the stub at compile time.
     public getServiceStatus = vi.fn(
@@ -380,6 +382,34 @@ describe('plugin entry: registerWithRouter exposes panel REST endpoints', () => 
     expect(payload.lastUpdateMinutesAgo).toBe(0);
     expect(typeof payload.activeNotifications).toBe('number');
 
+    await plugin.stop();
+  });
+
+  it('GET /api/status reports running: false when the API key has been rejected', async () => {
+    // Even though the lifecycle state is still `running`, a 401 response has
+    // tripped apiKeyRejected and the update timer is cleared. The panel must
+    // reflect that as not-running so the green indicator does not lie.
+    stubState.getCurrentWeatherData = () => ({ temperature: 283.15 });
+    stubState.formatStatusBanner = () => 'API key rejected: update key in plugin settings';
+    stubState.isApiKeyRejected = () => true;
+
+    const app = buildMockApp();
+    const plugin = createPlugin(app as never);
+    await plugin.start(baseSettings, () => {});
+    const { router, routes } = captureRoutes();
+    plugin.registerWithRouter?.(router as never);
+
+    const { res, body } = makeRes();
+    const handler = routes.get('GET /api/status');
+    if (!handler) throw new Error('status route not registered');
+    handler({}, res);
+
+    const payload = body.json as Record<string, unknown>;
+    expect(payload.running).toBe(false);
+    expect(payload.banner).toBe('API key rejected: update key in plugin settings');
+
+    // Restore the stub for following tests.
+    stubState.isApiKeyRejected = () => false;
     await plugin.stop();
   });
 

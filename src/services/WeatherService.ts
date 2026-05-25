@@ -42,6 +42,14 @@ interface ApparentWind {
 }
 
 /**
+ * Single sink for every status / error banner write. Routed through the
+ * plugin-entry-level `setBanner` so identical consecutive `(kind, message)`
+ * pairs dedupe. Optional: tests construct WeatherService without a sink and
+ * fall back to direct `app.setPlugin*` writes.
+ */
+export type BannerSink = (kind: 'status' | 'error', message: string) => void;
+
+/**
  * Main Weather Service orchestrating all weather data operations
  * Coordinates AccuWeather API, vessel navigation, and wind calculations
  */
@@ -79,17 +87,32 @@ export class WeatherService {
    */
   private apiKeyRejected = false;
 
+  /**
+   * Banner sink wired by the plugin entry point. When supplied, every status
+   * and error banner write routes through it so the entry-point dedupe catches
+   * repeated identical messages. When `undefined` (tests, direct construction)
+   * the service falls back to the bare `app.setPlugin*` API.
+   */
+  private readonly setBanner: BannerSink;
+
   constructor(
     app: ServerAPI,
     config: PluginConfiguration,
     logger: Logger = () => {},
     windCalculator?: WindCalculator,
     accuWeatherService?: AccuWeatherService,
-    signalKService?: SignalKService
+    signalKService?: SignalKService,
+    setBanner?: BannerSink
   ) {
     this.app = app;
     this.config = config;
     this.logger = logger;
+    this.setBanner =
+      setBanner ??
+      ((kind, message) => {
+        if (kind === 'status') app.setPluginStatus(message);
+        else app.setPluginError(message);
+      });
 
     this.logger('info', 'WeatherService initializing', {
       pluginName: PLUGIN.NAME,
@@ -219,7 +242,10 @@ export class WeatherService {
 
   /** Milliseconds since the last successful weather fetch, or null if none yet. */
   public getDataAgeMs(): number | null {
-    return this.lastUpdate ? Date.now() - this.lastUpdate.getTime() : null;
+    // Clamp at zero so a backward wall-clock jump cannot surface a negative
+    // age that would render as "last update -3m ago" on the banner or slip
+    // past the staleness watchdog in `emitWeatherTick`.
+    return this.lastUpdate ? Math.max(0, Date.now() - this.lastUpdate.getTime()) : null;
   }
 
   /**
@@ -244,6 +270,14 @@ export class WeatherService {
    * no setPluginError is active yet.
    */
   public formatStatusBanner(): string {
+    // A rejected API key is a terminal state until the operator updates config:
+    // surface it on the status banner so the admin UI does not show an
+    // inconsistent "Running, awaiting first update" alongside the auth-error
+    // banner published from `escalateFetchError`.
+    if (this.apiKeyRejected) {
+      return 'API key rejected: update key in plugin settings';
+    }
+
     const used = this.accuWeatherService.getRequestCountLast24h();
     const prefix = this.shouldShowQuotaWarning(used)
       ? PLUGIN.STATUS.RUNNING_QUOTA_WARN
@@ -293,6 +327,15 @@ export class WeatherService {
   }
 
   /**
+   * True once an AccuWeather 401 has set `apiKeyRejected`. Exposed so the
+   * admin-UI panel's `/api/status` payload can render the rejected state in
+   * its `running` flag without subscribing to banner events.
+   */
+  public isApiKeyRejected(): boolean {
+    return this.apiKeyRejected;
+  }
+
+  /**
    * True when the rolling 24h request count has reached the configured cap.
    * Used by `updateWeatherData` to short-circuit fetches; the existing
    * stale-data error path then surfaces the pause to operators.
@@ -337,15 +380,6 @@ export class WeatherService {
     this.logger('info', 'Forcing immediate weather update');
     await this.updateWeatherData();
   }
-
-  /**
-   * Trip threshold for the fetch-failure escalation in `updateWeatherData`.
-   * Set to 1 so the underlying error surfaces on the first failed fetch: at
-   * the scheduled cadence three failures take 3x updateFrequency, which is
-   * later than the 2x stale-data watchdog, so a higher threshold would never
-   * beat the generic stale banner to the operator.
-   */
-  private static readonly CONSECUTIVE_FAILURE_LIMIT = 1;
 
   /**
    * True for a 401 (invalid API key) error tagged by
@@ -422,7 +456,7 @@ export class WeatherService {
     if (this.isQuotaExhausted()) {
       const message = this.formatQuotaExhaustedMessage();
       this.logger('warn', 'Skipping weather update: daily API quota reached', { message });
-      this.app.setPluginError(message);
+      this.setBanner('error', message);
       return;
     }
 
@@ -464,7 +498,7 @@ export class WeatherService {
       // fetch lands. Subsequent updates rely on the emission tick's dedupe to
       // avoid double-pushes within the same minute.
       if (isFirstSuccessfulUpdate) {
-        this.app.setPluginStatus(this.formatStatusBanner());
+        this.setBanner('status', this.formatStatusBanner());
       }
 
       const processingTime = Date.now() - startTime;
@@ -521,16 +555,20 @@ export class WeatherService {
         clearInterval(this.updateTimer);
         this.updateTimer = null;
       }
-      this.app.setPluginError(
+      this.setBanner(
+        'error',
         `AccuWeather rejected the configured API key. Update the key in plugin settings: ${errorMessage}`
       );
       return;
     }
-    if (this.consecutiveFailures >= WeatherService.CONSECUTIVE_FAILURE_LIMIT) {
-      const streak =
-        this.consecutiveFailures > 1 ? ` (${this.consecutiveFailures} consecutive)` : '';
-      this.app.setPluginError(`Weather update failed${streak}: ${errorMessage}`);
-    }
+    // Every failure escalates: the underlying error surfaces on the first
+    // failed fetch (scheduled-cadence streaks of N would take N x
+    // updateFrequency to trip, later than the 2x stale-data watchdog). The
+    // `(N consecutive)` suffix gives the cosmetic distinction between the
+    // first and subsequent failures; dedupe in the banner sink keeps repeat
+    // identical messages from flooding the admin UI.
+    const streak = this.consecutiveFailures > 1 ? ` (${this.consecutiveFailures} consecutive)` : '';
+    this.setBanner('error', `Weather update failed${streak}: ${errorMessage}`);
   }
 
   /**

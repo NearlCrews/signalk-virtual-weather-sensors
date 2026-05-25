@@ -134,6 +134,17 @@ function extractEnhancedTemperatures(
 }
 
 /**
+ * Narrow an optional API field to `number`, returning `undefined` for any
+ * non-numeric (missing, null, string) value. The response schema declares
+ * these fields `number`, but the free tier and partial responses are known
+ * to deliver null. Without this guard a null would slip through the
+ * optional-spread builder below and onto the bus.
+ */
+function asOptionalNumber(value: unknown): number | undefined {
+  return typeof value === 'number' ? value : undefined;
+}
+
+/**
  * Decode the optional non-temperature enhanced fields (gust, visibility,
  * ceiling, precipitation, 24h departure, weather icon). Each block is
  * optional-chained; the result carries only the keys that were present.
@@ -142,30 +153,28 @@ function extractEnhancedConditions(
   conditions: AccuWeatherCurrentConditions,
   windSpeed: number
 ): Partial<WeatherData> {
-  const rawWindGustKmh = conditions.WindGust?.Speed?.Metric?.Value;
-  const windGustSpeed = typeof rawWindGustKmh === 'number' ? kmhToMS(rawWindGustKmh) : undefined;
+  const rawWindGustKmh = asOptionalNumber(conditions.WindGust?.Speed?.Metric?.Value);
+  const windGustSpeed = rawWindGustKmh !== undefined ? kmhToMS(rawWindGustKmh) : undefined;
   // Omitted unless the gust reading is at least the sustained speed: a factor
   // below 1 is not a gust factor, it is stale or inconsistent upstream data.
   const windGustFactor =
     windGustSpeed !== undefined && windSpeed > 0 && windGustSpeed >= windSpeed
       ? windGustSpeed / windSpeed
       : undefined;
-  const rawVisibilityKm = conditions.Visibility?.Metric?.Value;
+  const rawVisibilityKm = asOptionalNumber(conditions.Visibility?.Metric?.Value);
   const visibility =
-    typeof rawVisibilityKm === 'number' ? rawVisibilityKm * UNITS.LENGTH.KM_TO_M : undefined;
-  const cloudCeiling = conditions.Ceiling?.Metric?.Value;
-  const precipitationLastHour = conditions.Precip1hr?.Metric?.Value;
-  const temperatureDeparture24h = conditions.Past24HourTemperatureDeparture?.Metric?.Value;
+    rawVisibilityKm !== undefined ? rawVisibilityKm * UNITS.LENGTH.KM_TO_M : undefined;
+  const cloudCeiling = asOptionalNumber(conditions.Ceiling?.Metric?.Value);
+  const precipitationLastHour = asOptionalNumber(conditions.Precip1hr?.Metric?.Value);
+  const temperatureDeparture24h = asOptionalNumber(
+    conditions.Past24HourTemperatureDeparture?.Metric?.Value
+  );
   // Missing CloudCover must stay absent: percentageToRatio(undefined) would
   // read as a real "clear sky" 0.
-  const cloudCover =
-    typeof conditions.CloudCover === 'number'
-      ? percentageToRatio(conditions.CloudCover)
-      : undefined;
-  // UVIndexFloat is typed `number` but the wire can omit it or send null on a
-  // partial response; the response validator does not check it. Guard so a
-  // non-number cannot land on environment.weather.uvIndex.
-  const uvIndex = typeof conditions.UVIndexFloat === 'number' ? conditions.UVIndexFloat : undefined;
+  const rawCloudCover = asOptionalNumber(conditions.CloudCover);
+  const cloudCover = rawCloudCover !== undefined ? percentageToRatio(rawCloudCover) : undefined;
+  const uvIndex = asOptionalNumber(conditions.UVIndexFloat);
+  const weatherIcon = asOptionalNumber(conditions.WeatherIcon);
   return {
     ...(windGustSpeed !== undefined && { windGustSpeed }),
     ...(windGustFactor !== undefined && { windGustFactor }),
@@ -175,7 +184,7 @@ function extractEnhancedConditions(
     ...(cloudCeiling !== undefined && { cloudCeiling }),
     ...(precipitationLastHour !== undefined && { precipitationLastHour }),
     ...(temperatureDeparture24h !== undefined && { temperatureDeparture24h }),
-    ...(typeof conditions.WeatherIcon === 'number' && { weatherIcon: conditions.WeatherIcon }),
+    ...(weatherIcon !== undefined && { weatherIcon }),
   };
 }
 
@@ -241,6 +250,15 @@ export class AccuWeatherService {
   private requestWindowCurrentHour = Math.floor(Date.now() / HOUR_MS);
 
   constructor(apiKey: string, logger: Logger = () => {}, config?: Partial<AccuWeatherConfig>) {
+    // Validate before any field assignment so a throw cannot leave the instance
+    // in a partially-constructed state. Callers always discard the reference on
+    // throw today, but the invariant is cheaper to keep than to defend.
+    if (!apiKey || typeof apiKey !== 'string' || apiKey.trim().length === 0) {
+      throw new Error(
+        `${ERROR_CODES.CONFIGURATION.INVALID_API_KEY}: AccuWeather API key is required`
+      );
+    }
+
     this.config = {
       apiKey,
       locationCacheTimeout: DEFAULT_CONFIG.LOCATION_CACHE_TIMEOUT,
@@ -251,12 +269,6 @@ export class AccuWeatherService {
     };
 
     this.logger = logger;
-
-    if (!apiKey || typeof apiKey !== 'string' || apiKey.trim().length === 0) {
-      throw new Error(
-        `${ERROR_CODES.CONFIGURATION.INVALID_API_KEY}: AccuWeather API key is required`
-      );
-    }
 
     this.logger('info', 'AccuWeatherService initialized', {
       hasApiKey: !!apiKey,
@@ -860,12 +872,14 @@ export class AccuWeatherService {
   private rotateRequestWindow(): void {
     const currentHour = Math.floor(Date.now() / HOUR_MS);
     const elapsed = currentHour - this.requestWindowCurrentHour;
-    if (elapsed <= 0) {
-      // elapsed === 0 is the normal same-hour case (the assignment is a no-op).
-      // elapsed < 0 means the wall clock jumped backward (an NTP correction):
-      // snap the window's hour index to the new time so later forward rotation
-      // stays aligned and the current-hour bucket is not left absorbing
-      // requests under a stale, future-dated label.
+    if (elapsed === 0) return;
+    if (elapsed < 0) {
+      // Backward wall-clock jump (NTP correction, manual clock change). The
+      // existing buckets are labelled against the old, now-future hour index
+      // so their counts no longer correspond to the previous 24 hours of
+      // real time. Zero the window: undercounting briefly is far safer than
+      // capping fetches against ghost requests for up to 24 hours.
+      this.requestWindow.fill(0);
       this.requestWindowCurrentHour = currentHour;
       return;
     }

@@ -265,5 +265,54 @@ describe('NMEA2000 helpers', () => {
       expect(out.windSpeed).toBe(102.3);
       expect(out.windGustSpeed).toBe(102.3);
     });
+
+    it('clamps a NaN numeric field to the min instead of emitting NaN', () => {
+      // Mutation guard: `NaN < min` and `NaN > max` are both false in
+      // IEEE-754, so the fast-path range check must explicitly fail on a
+      // non-finite value or the NaN would slip through onto the bus.
+      const sanitized = sanitizeForNMEA2000(fullData({ uvIndex: Number.NaN }));
+      expect(Number.isFinite(sanitized.uvIndex)).toBe(true);
+      expect(sanitized.uvIndex).toBe(0);
+    });
+
+    it('treats a NaN windDirection as out-of-range and folds it to 0', () => {
+      const sanitized = sanitizeForNMEA2000(fullData({ windDirection: Number.NaN }));
+      expect(sanitized.windDirection).toBe(0);
+    });
+
+    it('treats a NaN apparentWindAngle as out-of-range and folds it to 0', () => {
+      const sanitized = sanitizeForNMEA2000(fullData({ apparentWindAngle: Number.NaN }));
+      expect(sanitized.apparentWindAngle).toBe(0);
+    });
+
+    it('rewrites apparentWindAngle of exactly -π to +π (canonical convention is left-exclusive)', () => {
+      const sanitized = sanitizeForNMEA2000(fullData({ apparentWindAngle: -Math.PI }));
+      expect(sanitized.apparentWindAngle).toBeCloseTo(Math.PI, 6);
+    });
+
+    it('keeps apparentWindAngle of exactly +π unchanged', () => {
+      const sanitized = sanitizeForNMEA2000(fullData({ apparentWindAngle: Math.PI }));
+      expect(sanitized.apparentWindAngle).toBeCloseTo(Math.PI, 6);
+    });
+
+    it('passes apparentWindAngle of 0 through unchanged', () => {
+      const sanitized = sanitizeForNMEA2000(fullData({ apparentWindAngle: 0 }));
+      expect(sanitized.apparentWindAngle).toBe(0);
+    });
+
+    it('wraps an apparentWindAngle past 2π back into the canonical range', () => {
+      const sanitized = sanitizeForNMEA2000(fullData({ apparentWindAngle: 3 * Math.PI }));
+      expect(sanitized.apparentWindAngle).toBeCloseTo(Math.PI, 6);
+    });
+
+    it('folds windDirection at exactly 2π back to 0 (half-open canonical range)', () => {
+      const sanitized = sanitizeForNMEA2000(fullData({ windDirection: 2 * Math.PI }));
+      expect(sanitized.windDirection).toBeCloseTo(0, 6);
+    });
+
+    it('keeps windDirection of exactly 0 unchanged', () => {
+      const sanitized = sanitizeForNMEA2000(fullData({ windDirection: 0 }));
+      expect(sanitized.windDirection).toBe(0);
+    });
   });
 });

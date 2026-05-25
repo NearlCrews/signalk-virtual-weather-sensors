@@ -60,6 +60,16 @@ const NON_CANONICAL_META: ReadonlyArray<Meta> = [
     units: 'm',
     displayName: 'Visibility',
     description: 'Horizontal visibility distance reported by AccuWeather.',
+    // Marine operators expect nautical miles for visibility, not the SK unit
+    // category default of statute miles. Pin a custom conversion so the data
+    // browser renders nm regardless of the `distance` preference setting.
+    displayUnits: {
+      category: 'custom',
+      targetUnit: 'nm',
+      formula: 'value / 1852',
+      inverseFormula: 'value * 1852',
+      symbol: 'nm',
+    },
   }),
   me(SIGNALK_PATHS.ENVIRONMENT.WEATHER.CLOUD_COVER, {
     units: 'ratio',
@@ -70,6 +80,16 @@ const NON_CANONICAL_META: ReadonlyArray<Meta> = [
     units: 'm',
     displayName: 'Cloud ceiling',
     description: 'Altitude of the lowest cloud layer covering more than half the sky.',
+    // Aviation and marine convention reports cloud ceilings in feet, not in
+    // the SK distance category default of statute miles. Pin a custom
+    // conversion so the data browser shows feet.
+    displayUnits: {
+      category: 'custom',
+      targetUnit: 'ft',
+      formula: 'value / 0.3048',
+      inverseFormula: 'value * 0.3048',
+      symbol: 'ft',
+    },
   }),
   me(SIGNALK_PATHS.ENVIRONMENT.WEATHER.PRECIPITATION_LAST_HOUR, {
     units: 'm',
@@ -146,6 +166,9 @@ const NON_CANONICAL_META: ReadonlyArray<Meta> = [
     description: 'Plain-language summary of current conditions from AccuWeather (WeatherText).',
   }),
   me(SIGNALK_PATHS.ENVIRONMENT.WEATHER.PRESSURE_TENDENCY, {
+    // No `units`: the value is a discrete signum (-1, 0, +1), not a measurement.
+    // Same convention as `uvIndex`, `beaufortScale`, `heatStressIndex`,
+    // `gustFactor`.
     displayName: 'Pressure tendency',
     description:
       'Barometric trend over the past 3 hours: -1 falling, 0 steady, +1 rising. A falling barometer is a classic deteriorating-weather signal.',
@@ -157,6 +180,22 @@ const NON_CANONICAL_META: ReadonlyArray<Meta> = [
   me(SIGNALK_PATHS.ENVIRONMENT.WEATHER.VISIBILITY_OBSTRUCTION, {
     displayName: 'Visibility obstruction',
     description: 'Obstruction reducing visibility (fog, haze, smoke) reported by AccuWeather.',
+  }),
+];
+
+/**
+ * Description overrides for canonical (spec-vocabulary) leaves whose default
+ * meta does not convey plugin-specific semantics. Kept separate from
+ * `NON_CANONICAL_META` so a reader can see which leaves are spec paths the
+ * plugin only annotates, vs producer-namespaced paths the plugin owns
+ * outright.
+ */
+const CANONICAL_LEAF_META: ReadonlyArray<Meta> = [
+  me(SIGNALK_PATHS.ENVIRONMENT.OUTSIDE.APPARENT_WIND_CHILL_TEMPERATURE, {
+    units: 'K',
+    displayName: 'Apparent wind chill',
+    description:
+      'Wind chill computed against the apparent wind the moving vessel experiences. Falls back to the theoretical (true-wind) value when vessel-motion data is unavailable; in that case this leaf equals environment.outside.theoreticalWindChillTemperature.',
   }),
 ];
 
@@ -181,7 +220,8 @@ const NOTIFICATION_META: ReadonlyArray<Meta> = [
   }),
   me(NOTIFICATION_PATHS.VISIBILITY_LOW, {
     displayName: 'Visibility, reduced',
-    description: "Visibility below 1 nautical mile (the plugin's restricted-visibility threshold).",
+    description:
+      "Visibility below 1 nautical mile (the plugin's restricted-visibility threshold): warn state.",
   }),
   me(NOTIFICATION_PATHS.VISIBILITY_VERY_LOW, {
     displayName: 'Visibility, very low',
@@ -189,7 +229,7 @@ const NOTIFICATION_META: ReadonlyArray<Meta> = [
   }),
   me(NOTIFICATION_PATHS.HEAT_CAUTION, {
     displayName: 'Heat stress, caution',
-    description: 'WBGT-derived heat-stress index reaches caution band (HSI 2).',
+    description: 'WBGT-derived heat-stress index reaches caution band (HSI 2): warn state.',
   }),
   me(NOTIFICATION_PATHS.HEAT_HIGH, {
     displayName: 'Heat stress, high',
@@ -270,7 +310,7 @@ export class NMEA2000PathMapper {
    * responsible for sending it exactly once per mapper instance.
    */
   public buildMetaDelta(): Delta {
-    return buildSkMetaDelta([...NON_CANONICAL_META, ...NOTIFICATION_META]);
+    return buildSkMetaDelta([...NON_CANONICAL_META, ...CANONICAL_LEAF_META, ...NOTIFICATION_META]);
   }
 
   private addCoreEnvironmentalPaths(values: PathValue[], data: WeatherData): void {

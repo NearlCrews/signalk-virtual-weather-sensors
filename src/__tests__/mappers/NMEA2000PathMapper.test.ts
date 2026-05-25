@@ -393,6 +393,11 @@ describe('NMEA2000PathMapper', () => {
 
       expect(speedValue).toBe(12.5);
       expect(angleValue).toBe(-0.78);
+      // Synthetic apparent wind must never squat the canonical environment.wind.*
+      // anemometer leaves: the cannon NMEA2000 bridge subscribes there for the
+      // real anemometer feed.
+      expect(paths).not.toContain('environment.wind.speedApparent');
+      expect(paths).not.toContain('environment.wind.angleApparent');
     });
 
     it('should exclude apparent wind when not calculated', () => {
@@ -407,6 +412,25 @@ describe('NMEA2000PathMapper', () => {
 
       expect(paths).not.toContain('environment.wind.speedApparent');
       expect(paths).not.toContain('environment.wind.angleApparent');
+    });
+
+    it('emits both wind-chill leaves even when their values are numerically equal', () => {
+      const valueAt = (delta: ReturnType<typeof mapper.mapToSignalKPaths>, path: string) =>
+        getValues(delta).find((v) => v.path === path)?.value;
+
+      // Apparent and theoretical produce the same chill: stationary vessel.
+      const stationary = mapper.mapToSignalKPaths(
+        createMockWeatherData({ windChill: 270.15, apparentWindChill: 270.15 })
+      );
+      expect(valueAt(stationary, 'environment.outside.theoreticalWindChillTemperature')).toBe(
+        270.15
+      );
+      expect(valueAt(stationary, 'environment.outside.apparentWindChillTemperature')).toBe(270.15);
+      // Both leaves are emitted as independent paths (no dedupe).
+      const paths = getValues(stationary).map((v) => v.path);
+      const count = (p: string) => paths.filter((x) => x === p).length;
+      expect(count('environment.outside.theoreticalWindChillTemperature')).toBe(1);
+      expect(count('environment.outside.apparentWindChillTemperature')).toBe(1);
     });
   });
 

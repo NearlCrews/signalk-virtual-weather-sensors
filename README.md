@@ -12,24 +12,24 @@ follow the [Signal K 1.8.2 specification](https://signalk.org/specification/1.8.
 and align with NMEA2000 emission via a companion plugin. A free AccuWeather API
 key is required.
 
-## What's New in v1.6.3
+## What's New in v1.6.4
 
-This release corrects how precipitation and the 24-hour temperature departure
-are presented. `environment.weather.precipitationCurrent` is removed: it
-duplicated `environment.weather.precipitationLastHour` (both came from the same
-AccuWeather past-hour accumulation) and its `m/s` unit made the Signal K data
-browser render precipitation as a vessel speed in mph. Precipitation depth and
-the 24-hour temperature departure now carry a `displayUnits` hint so the data
-browser shows millimetres and a Kelvin delta instead of miles and an absolute
-Fahrenheit temperature. A full-codebase review pass also fixed three latent
-bugs: notification bands that could latch when a driver reading was missing, an
-unguarded UV-index assignment, and a rolling-quota-window miscount after a
-backward clock jump. The delta envelope and notification value shape are
-unchanged, and all 265 tests pass.
+A correctness and spec-polish release driven by a three-agent Signal K expert
+review of the whole plugin. Every status and error banner write now routes
+through one dedupe so a flapping API or steady-state quota pause produces one
+banner per unique message instead of one per emission tick; a rejected API key
+surfaces both on the banner and on the admin panel's `running` flag instead of
+leaving a green indicator on a plugin that has stopped fetching; three more
+AccuWeather decode sites (`Ceiling`, `Precip1hr`,
+`Past24HourTemperatureDeparture`) carry the same `typeof` guard already used
+for `uvIndex`; and visibility plus cloud ceiling pin marine-convention
+`displayUnits` (nautical miles and feet) so the data browser stops rendering
+them in statute miles. The delta envelope and the notification value shape are
+unchanged, and all 303 tests pass.
 
-See the [Changelog](CHANGELOG.md#163---2026-05-22) for the full Changed /
-Removed detail, or the
-[GitHub release](https://github.com/NearlCrews/signalk-virtual-weather-sensors/releases/tag/v1.6.3).
+See the [Changelog](CHANGELOG.md#164---2026-05-25) for the full Changed /
+Fixed / Internal detail, or the
+[GitHub release](https://github.com/NearlCrews/signalk-virtual-weather-sensors/releases/tag/v1.6.4).
 
 ## Features
 

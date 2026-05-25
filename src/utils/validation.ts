@@ -417,14 +417,23 @@ const NUMERIC_FIELD_RULES: ReadonlyArray<readonly [SanitizableNumericKey, number
 function isWithinNMEA2000Ranges(data: WeatherData): boolean {
   for (const [key, min, max] of NUMERIC_FIELD_RULES) {
     const value = data[key];
-    if (value !== undefined && (value < min || value > max)) {
+    // `NaN < min` and `NaN > max` are both false per IEEE-754, so a NaN field
+    // would slip through this fast-path and leave NaN on the bus. Treat any
+    // non-finite present value as out-of-range so the slow path's `clamp`
+    // (which floors non-finite to `min`) runs.
+    if (value !== undefined && (!Number.isFinite(value) || value < min || value > max)) {
       return false;
     }
   }
   const dir = data.windDirection;
-  if (dir !== undefined && (dir < 0 || dir >= TWO_PI)) return false;
+  if (dir !== undefined && (!Number.isFinite(dir) || dir < 0 || dir >= TWO_PI)) return false;
   const aAngle = data.apparentWindAngle;
-  if (aAngle !== undefined && (aAngle <= -Math.PI || aAngle > Math.PI)) return false;
+  if (
+    aAngle !== undefined &&
+    (!Number.isFinite(aAngle) || aAngle <= -Math.PI || aAngle > Math.PI)
+  ) {
+    return false;
+  }
   return true;
 }
 

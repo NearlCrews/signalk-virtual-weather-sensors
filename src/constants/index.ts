@@ -132,8 +132,17 @@ export const NOTIFICATION_PATHS = {
 } as const;
 
 /**
- * Hazard thresholds used by the notification state machine. All thresholds
- * are inclusive entry points: `>= threshold` activates the band.
+ * Hazard thresholds used by the notification state machine. Comparison
+ * direction differs by category:
+ *   Wind / heat:        `>= threshold` activates (ascending bands enter as
+ *                       the reading rises). The threshold value itself is
+ *                       inside the band.
+ *   Visibility / cold:  `< threshold` activates (descending bands enter as
+ *                       the reading falls). The threshold value itself is
+ *                       just outside the band (the first safe value), not
+ *                       inside it: visibility of exactly 1852 m does NOT
+ *                       trip VISIBILITY_LOW; wind chill of exactly 273.15 K
+ *                       does NOT trip COLD_CAUTION.
  *
  *   Wind:        Beaufort entry per WMO classification (8 gale, 10 storm, 12 hurricane).
  *   Visibility:  plugin restricted-visibility threshold (1 nm = 1852 m); very-low at 0.5 nm.
