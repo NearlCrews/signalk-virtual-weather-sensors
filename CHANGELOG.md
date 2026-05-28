@@ -5,6 +5,12 @@ All notable changes to the signalk-virtual-weather-sensors project will be docum
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- Signal K v2 Weather API provider: the plugin now registers as a weather provider, so consumers that query `/signalk/v2/api/weather/forecasts/point` or `/signalk/v2/api/weather/forecasts/daily` (for example signalk-open-binnacle) receive AccuWeather forecasts mapped to SI units. Forecasts are cached and share the daily API quota so a polling client cannot exhaust a free key. Observations and warnings are not served yet.
+
 ## [1.6.4] - 2026-05-25
 
 A correctness and spec-polish release. A three-agent Signal K expert review of

@@ -175,3 +175,70 @@ Signal K notifications round-trip to N2K Alert PGNs 126983 (Alert) and 126985
 on the server. This plugin produces SK-native deltas only: it does not bridge
 to N2K itself. Notifications still render in the Signal K Data Browser and any
 SK webapp regardless.
+
+## Weather API provider
+
+The plugin also registers as a Signal K v2 Weather API provider, so consumers
+can query forecasts directly through the server's REST API instead of
+subscribing to the delta stream. Two forecast endpoints are served:
+
+- `GET /signalk/v2/api/weather/forecasts/point` returns hourly point forecasts
+  from the AccuWeather 12-hour hourly source.
+- `GET /signalk/v2/api/weather/forecasts/daily` returns daily forecasts from
+  the AccuWeather 5-day source.
+
+Forecasts are mapped to the same SI units used everywhere else in this plugin
+(Kelvin for temperatures, m/s for wind speed, radians for wind direction,
+ratio 0 to 1 for humidity and cloud cover, and metres for distance and
+precipitation depth). Registering the provider is also what makes the server
+list `weather` under `GET /signalk/v2/features`, which is how dashboards such as
+signalk-open-binnacle detect that forecast support is available.
+
+### Point forecast fields
+
+Each point forecast entry populates these fields when AccuWeather provides
+them. Absent upstream values are omitted rather than emitted as zero.
+
+| Field | Unit | Description |
+|-------|------|-------------|
+| `outside.temperature` | K | Air temperature |
+| `outside.dewPointTemperature` | K | Dew point |
+| `outside.feelsLikeTemperature` | K | AccuWeather RealFeel |
+| `outside.relativeHumidity` | ratio (0 to 1) | Relative humidity |
+| `outside.absoluteHumidity` | kg/m3 | Calculated absolute humidity |
+| `outside.horizontalVisibility` | m | Visibility distance |
+| `outside.uvIndex` | (unitless) | WHO solar UV scale |
+| `outside.cloudCover` | ratio (0 to 1) | Cloud coverage |
+| `outside.precipitationVolume` | m | Liquid-equivalent precipitation depth |
+| `outside.precipitationType` | (string) | Precipitation kind (rain, snow, freezing rain, or mixed/ice) |
+| `wind.speedTrue` | m/s | Forecast wind speed (ground-referenced) |
+| `wind.directionTrue` | rad | Forecast wind direction (true north) |
+| `wind.gust` | m/s | Forecast wind gust speed |
+
+### Daily forecast fields
+
+Each daily forecast entry summarizes the daytime half of the AccuWeather day
+and populates these fields when present.
+
+| Field | Unit | Description |
+|-------|------|-------------|
+| `outside.minTemperature` | K | Daily minimum air temperature |
+| `outside.maxTemperature` | K | Daily maximum air temperature |
+| `outside.uvIndex` | (unitless) | WHO solar UV scale |
+| `outside.cloudCover` | ratio (0 to 1) | Cloud coverage |
+| `outside.precipitationVolume` | m | Liquid-equivalent precipitation depth |
+| `outside.precipitationType` | (string) | Precipitation kind (rain, snow, freezing rain, or mixed/ice) |
+| `wind.speedTrue` | m/s | Forecast wind speed (ground-referenced) |
+| `wind.directionTrue` | rad | Forecast wind direction (true north) |
+| `wind.gust` | m/s | Forecast wind gust speed |
+| `sun.sunrise` | (timestamp) | Sunrise time |
+| `sun.sunset` | (timestamp) | Sunset time |
+
+### Gaps
+
+- Forecasts carry no `outside.pressure`: the AccuWeather forecast endpoints do
+  not return atmospheric pressure, so the field is omitted on both point and
+  daily forecasts.
+- Observations (`GET /signalk/v2/api/weather/observations`) and warnings
+  (`GET /signalk/v2/api/weather/warnings`) are not served yet. Both return
+  `Not supported` for now.
