@@ -15,7 +15,7 @@ import {
   type VesselNavigationData,
   type WeatherData,
 } from '../types/index.js';
-import { msToWholeMinutes, toErrorMessage } from '../utils/conversions.js';
+import { isApiQuotaReached, msToWholeMinutes, toErrorMessage } from '../utils/conversions.js';
 import { AccuWeatherService } from './AccuWeatherService.js';
 import { SignalKService } from './SignalKService.js';
 
@@ -341,9 +341,10 @@ export class WeatherService {
    * stale-data error path then surfaces the pause to operators.
    */
   public isQuotaExhausted(): boolean {
-    if (this.config.dailyApiQuota <= 0) return false;
-    const used = this.accuWeatherService.getRequestCountLast24h();
-    return used / this.config.dailyApiQuota >= API_QUOTA.EXHAUST_RATIO;
+    return isApiQuotaReached(
+      this.accuWeatherService.getRequestCountLast24h(),
+      this.config.dailyApiQuota
+    );
   }
 
   /**
