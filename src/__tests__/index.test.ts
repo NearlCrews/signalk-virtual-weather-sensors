@@ -84,7 +84,7 @@ const baseSettings = {
   emissionInterval: 1,
 };
 
-function buildMockApp() {
+function buildMockApp(overrides: Record<string, unknown> = {}) {
   return {
     debug: vi.fn(),
     error: vi.fn(),
@@ -93,6 +93,7 @@ function buildMockApp() {
     setPluginError: vi.fn(),
     getSelfPath: vi.fn().mockReturnValue(undefined),
     streambundle: { getSelfStream: vi.fn() },
+    ...overrides,
   };
 }
 
@@ -474,5 +475,40 @@ describe('plugin entry: registerWithRouter exposes panel REST endpoints', () => 
     } finally {
       vi.unstubAllGlobals();
     }
+  });
+});
+
+describe('Weather provider registration', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    resetStubState();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('registers a weather provider on start and unregisters on stop', async () => {
+    const registerWeatherProvider = vi.fn();
+    const unRegister = vi.fn();
+    const app = buildMockApp({ registerWeatherProvider, weatherApi: { unRegister } });
+
+    const plugin = createPlugin(app as never);
+    await plugin.start({ accuWeatherApiKey: validKey }, () => {});
+
+    expect(registerWeatherProvider).toHaveBeenCalledTimes(1);
+    const provider = registerWeatherProvider.mock.calls[0]?.[0];
+    expect(provider.name).toBe('AccuWeather');
+    expect(provider.methods.pluginId).toBe('signalk-virtual-weather-sensors');
+
+    await plugin.stop();
+    expect(unRegister).toHaveBeenCalledWith('signalk-virtual-weather-sensors');
+  });
+
+  it('starts without throwing when registerWeatherProvider is absent (old server)', async () => {
+    const app = buildMockApp({ registerWeatherProvider: undefined, weatherApi: undefined });
+    const plugin = createPlugin(app as never);
+    await expect(plugin.start({ accuWeatherApiKey: validKey }, () => {})).resolves.not.toThrow();
+    await plugin.stop();
   });
 });

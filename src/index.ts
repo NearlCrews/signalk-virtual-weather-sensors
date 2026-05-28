@@ -24,6 +24,7 @@ import {
 import { NMEA2000PathMapper } from './mappers/NMEA2000PathMapper.js';
 import { WeatherNotifier } from './notifications/WeatherNotifier.js';
 import { AccuWeatherService } from './services/AccuWeatherService.js';
+import { WeatherProviderAdapter } from './services/WeatherProviderAdapter.js';
 import { WeatherService } from './services/WeatherService.js';
 import type {
   Logger,
@@ -57,6 +58,8 @@ interface PluginInstance {
   cachedWeatherDataRef: WeatherData | null;
   /** True once the one-shot meta delta has been shipped to the server. */
   metaEmitted: boolean;
+  /** True once app.registerWeatherProvider has been called this start cycle. */
+  weatherProviderRegistered: boolean;
   /**
    * Last (kind, message) pushed to the admin UI. Used to dedupe identical
    * setPluginStatus / setPluginError calls so a flapping API doesn't oscillate
@@ -83,6 +86,7 @@ export default function createPlugin(app: ServerAPI): Plugin {
     cachedDelta: null,
     cachedWeatherDataRef: null,
     metaEmitted: false,
+    weatherProviderRegistered: false,
     lastBanner: null,
   };
 
@@ -118,6 +122,20 @@ export default function createPlugin(app: ServerAPI): Plugin {
         instance.logger('info', 'Stopping signalk-virtual-weather-sensors plugin');
 
         instance.state = 'stopping';
+
+        // Unregister the weather provider here, where `app` is in scope (cleanup
+        // takes only the instance). unRegister lives on app.weatherApi with a
+        // capital R; the optional chain tolerates an older server.
+        if (instance.weatherProviderRegistered) {
+          try {
+            app.weatherApi?.unRegister(PLUGIN.NAME);
+          } catch (error) {
+            instance.logger('error', 'Error unregistering weather provider', {
+              error: toErrorMessage(error),
+            });
+          }
+          instance.weatherProviderRegistered = false;
+        }
 
         await cleanup(instance);
 
@@ -344,12 +362,17 @@ async function startServices(
   const bannerSink = (kind: 'status' | 'error', message: string): void => {
     setBanner(instance, app, kind, message);
   };
+  // One shared AccuWeatherService so the provider's on-demand forecast fetches
+  // and the current-conditions loop draw from a single rolling-24h quota window.
+  const accuWeatherService = new AccuWeatherService(config.accuWeatherApiKey, instance.logger, {
+    dailyApiQuota: config.dailyApiQuota,
+  });
   instance.weatherService = new WeatherService(
     app,
     config,
     instance.logger,
     undefined,
-    undefined,
+    accuWeatherService,
     undefined,
     bannerSink
   );
@@ -359,6 +382,18 @@ async function startServices(
   // `evaluate()` short-circuits when `config.notifications.enabled` is false.
   instance.notifier = new WeatherNotifier(config.notifications, instance.logger);
   await instance.weatherService.start();
+
+  // Register the Signal K Weather API provider. The typeof guard tolerates a
+  // server older than the 2.24 peer floor that lacks the registry method.
+  if (typeof app.registerWeatherProvider === 'function') {
+    const adapter = new WeatherProviderAdapter(accuWeatherService, instance.logger);
+    app.registerWeatherProvider(adapter.toProvider());
+    instance.weatherProviderRegistered = true;
+    instance.logger('info', 'Registered Signal K weather provider', { provider: 'AccuWeather' });
+  } else {
+    instance.logger('warn', 'Server lacks registerWeatherProvider; weather API not exposed');
+  }
+
   setupEnhancedEmissionSystem(instance, config, app);
 }
 
@@ -613,6 +648,7 @@ async function cleanup(instance: PluginInstance): Promise<void> {
   instance.cachedDelta = null;
   instance.cachedWeatherDataRef = null;
   instance.metaEmitted = false;
+  instance.weatherProviderRegistered = false;
   instance.lastBanner = null;
 }
 
