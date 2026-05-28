@@ -250,6 +250,13 @@ export interface AccuWeatherConfig {
   readonly requestTimeout: number;
   readonly retryAttempts: number;
   readonly retryDelay: number;
+  /**
+   * Rolling-24h API call cap used to self-gate forecast fetches. 0 (or omitted)
+   * disables the cap. Mirrors PluginConfiguration.dailyApiQuota; index.ts passes
+   * the configured value so the provider and the current-conditions loop share
+   * one quota budget.
+   */
+  readonly dailyApiQuota?: number;
 }
 
 // ===============================
@@ -397,6 +404,69 @@ export interface AccuWeatherLocation {
     readonly Latitude: number;
     readonly Longitude: number;
   };
+}
+
+/**
+ * AccuWeather 12-hour hourly forecast element (one per hour). Fetched with
+ * `metric=true`, so each measurement is a flat `{ Value, Unit }` in metric units
+ * (Celsius, km/h, km, mm); there is no Metric/Imperial pair as in current
+ * conditions. Only fields the plugin maps are typed: this is a contract for what
+ * we use, not a full mirror of the AccuWeather schema. Every field except
+ * `DateTime` and `Temperature` is optional because the free tier and partial
+ * responses omit blocks.
+ */
+export interface AccuWeatherHourlyForecast {
+  readonly DateTime: string;
+  readonly IconPhrase?: string;
+  readonly HasPrecipitation?: boolean;
+  readonly PrecipitationType?: string | null;
+  readonly Temperature: AcwMeasurement;
+  readonly RealFeelTemperature?: AcwMeasurement;
+  readonly DewPoint?: AcwMeasurement;
+  readonly Wind?: {
+    readonly Speed: AcwMeasurement;
+    readonly Direction: { readonly Degrees: number };
+  };
+  readonly WindGust?: { readonly Speed: AcwMeasurement };
+  readonly RelativeHumidity?: number;
+  readonly Visibility?: AcwMeasurement;
+  readonly UVIndex?: number;
+  readonly CloudCover?: number;
+  readonly TotalLiquid?: AcwMeasurement;
+}
+
+/** Day or Night half of an AccuWeather daily forecast entry. */
+export interface AccuWeatherDailyHalf {
+  readonly IconPhrase?: string;
+  readonly HasPrecipitation?: boolean;
+  readonly PrecipitationType?: string | null;
+  readonly Wind?: {
+    readonly Speed: AcwMeasurement;
+    readonly Direction: { readonly Degrees: number };
+  };
+  readonly WindGust?: { readonly Speed: AcwMeasurement };
+  readonly TotalLiquid?: AcwMeasurement;
+  readonly CloudCover?: number;
+}
+
+/** One day in an AccuWeather 5-day daily forecast. */
+export interface AccuWeatherDailyForecast {
+  readonly Date: string;
+  readonly Temperature: { readonly Minimum: AcwMeasurement; readonly Maximum: AcwMeasurement };
+  readonly Day?: AccuWeatherDailyHalf;
+  readonly Night?: AccuWeatherDailyHalf;
+  readonly Sun?: { readonly Rise?: string; readonly Set?: string };
+  readonly AirAndPollen?: ReadonlyArray<{
+    readonly Name: string;
+    readonly Value: number;
+    readonly Category: string;
+  }>;
+}
+
+/** AccuWeather 5-day daily forecast response envelope. */
+export interface AccuWeatherDailyForecastResponse {
+  readonly Headline?: { readonly Text?: string };
+  readonly DailyForecasts: ReadonlyArray<AccuWeatherDailyForecast>;
 }
 
 // ===============================
