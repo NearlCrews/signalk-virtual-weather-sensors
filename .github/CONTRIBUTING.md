@@ -58,8 +58,9 @@ npm run build
 ```bash
 npm run dev              # Development mode with hot reload
 npm run build            # Production build
-npm run test             # Run tests in watch mode
-npm run test:run         # Run all tests once
+npm run test             # Run all tests once (registry/CI safe)
+npm run test:watch       # Run tests in watch mode
+npm run test:run         # Run all tests once (alias of test)
 npm run test:coverage    # Generate coverage report
 npm run lint             # Check code quality
 npm run lint:fix         # Fix auto-fixable issues
@@ -203,8 +204,9 @@ describe('Component/Feature', () => {
 ### Running Tests
 
 ```bash
-npm run test           # Watch mode for development
-npm run test:run       # Run once (used in CI)
+npm run test           # Run all tests once (registry/CI safe)
+npm run test:watch     # Watch mode for development
+npm run test:run       # Run once (alias of test, used by validate)
 npm run test:coverage  # Generate coverage report
 npm run test:ui        # Interactive test UI
 ```

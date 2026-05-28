@@ -5,11 +5,30 @@ All notable changes to the signalk-virtual-weather-sensors project will be docum
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.7.0] - 2026-05-28
+
+A feature release that turns the plugin into a Signal K v2 Weather API
+provider, so dashboards and apps can pull AccuWeather forecasts directly over
+REST instead of subscribing to the delta stream. Registering the provider is
+also what makes the server advertise `weather` under `/signalk/v2/features`,
+the flag dashboards like signalk-open-binnacle gate their weather UI on.
+Forecasts are mapped to SI units, cached on demand, and share the plugin's
+rolling-24h API quota so a polling client cannot exhaust a free key. The
+release also adds config panel screenshots and registry metadata, and all 326
+tests pass.
 
 ### Added
 
-- Signal K v2 Weather API provider: the plugin now registers as a weather provider, so consumers that query `/signalk/v2/api/weather/forecasts/point` or `/signalk/v2/api/weather/forecasts/daily` (for example signalk-open-binnacle) receive AccuWeather forecasts mapped to SI units. Forecasts are cached and share the daily API quota so a polling client cannot exhaust a free key. Observations and warnings are not served yet.
+- Signal K v2 Weather API provider: the plugin now registers a `WeatherProvider` via `app.registerWeatherProvider(...)` and unregisters it on stop. `getForecasts('point')` is backed by the AccuWeather 12-hour hourly endpoint and `getForecasts('daily')` by the 5-day daily endpoint, both mapped to the SI `WeatherData` envelope. Consumers query `/signalk/v2/api/weather/forecasts/point` or `/signalk/v2/api/weather/forecasts/daily`. Forecasts are cached (30 min hourly, 3 h daily) and share the daily API quota so a polling client cannot exhaust a free key. `getObservations` and `getWarnings` are not served yet (Phases 2 and 3).
+- Config panel screenshots shipped in the package and declared via `signalk.screenshots` in `package.json`, so the Signal K Appstore and the plugin registry render them.
+
+### Changed
+
+- `npm test` now runs the suite once and exits (previously Vitest watch mode). Use `npm run test:watch` for the interactive watch runner. This keeps CI and the Signal K plugin registry from hanging on the test step.
+
+### Internal
+
+- Promoted `asOptionalNumber` to `conversions.ts` and reused it in the forecast mapper, extracted a shared `locationCacheKey` helper and a `quotaReachedError` helper in `AccuWeatherService`, and widened `isApiQuotaReached` to treat an undefined quota as disabled.
 
 ## [1.6.4] - 2026-05-25
 

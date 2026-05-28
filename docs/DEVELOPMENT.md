@@ -272,8 +272,9 @@ npm run clean              # Remove build artifacts
 
 #### Testing
 ```bash
-npm run test               # Run tests in watch mode
-npm run test:run           # Run all tests once
+npm run test               # Run all tests once (registry/CI safe)
+npm run test:watch         # Run tests in watch mode
+npm run test:run           # Run all tests once (alias of test, used by validate)
 npm run test:coverage      # Generate coverage report
 npm run test:ui            # Interactive test UI
 npm run mutation-test      # Stryker.js mutation-test pass (slow, opt-in; not in CI)
@@ -311,8 +312,8 @@ process, coding standards, and commit conventions.
 ## Testing Strategy
 
 The suite covers unit behavior, service integration, calculation accuracy,
-edge and boundary conditions, and error handling. **Total: 265 tests** across
-11 test files.
+edge and boundary conditions, and error handling. **Total: 326 tests** across
+13 test files.
 
 - [`index.test.ts`](../src/__tests__/index.test.ts): plugin entry point, meta-delta one-shot invariant, banner dedupe regression, stale-data and quota-exhausted emission-tick branches, panel REST endpoint registration + status + test-key (short-key + long-key-rejected paths) (11 tests)
 - [`WeatherService.test.ts`](../src/__tests__/services/WeatherService.test.ts): core orchestration plus quota-aware status banner format and pluralization (29 tests)

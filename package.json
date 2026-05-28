@@ -1,6 +1,6 @@
 {
   "name": "signalk-virtual-weather-sensors",
-  "version": "1.6.4",
+  "version": "1.7.0",
   "description": "Signal K plugin: AccuWeather marine weather as 30+ environment deltas, severe-weather notifications, NMEA2000-ready",
   "keywords": [
     "signalk-node-server-plugin",
@@ -27,7 +27,11 @@
   "signalk-plugin-enabled-by-default": false,
   "signalk": {
     "displayName": "Virtual Weather Sensors",
-    "appIcon": "./assets/icons/icon-192.png"
+    "appIcon": "./assets/icons/icon-192.png",
+    "screenshots": [
+      "assets/screenshots/config-panel-status.png",
+      "assets/screenshots/config-panel-notifications.png"
+    ]
   },
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -41,7 +45,7 @@
   "files": [
     "dist/",
     "public/",
-    "assets/icons/",
+    "assets/",
     "README.md",
     "LICENSE",
     "CHANGELOG.md"
@@ -96,7 +100,8 @@
     "build:bundle": "node esbuild.config.js",
     "build:panel": "webpack",
     "dev": "tsx watch src/index.ts",
-    "test": "vitest",
+    "test": "vitest run",
+    "test:watch": "vitest",
     "test:ui": "vitest --ui",
     "test:coverage": "vitest run --coverage",
     "test:run": "vitest run",

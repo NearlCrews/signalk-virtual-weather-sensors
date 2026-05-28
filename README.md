@@ -12,24 +12,23 @@ follow the [Signal K 1.8.2 specification](https://signalk.org/specification/1.8.
 and align with NMEA2000 emission via a companion plugin. A free AccuWeather API
 key is required.
 
-## What's New in v1.6.4
+## What's New in v1.7.0
 
-A correctness and spec-polish release driven by a three-agent Signal K expert
-review of the whole plugin. Every status and error banner write now routes
-through one dedupe so a flapping API or steady-state quota pause produces one
-banner per unique message instead of one per emission tick; a rejected API key
-surfaces both on the banner and on the admin panel's `running` flag instead of
-leaving a green indicator on a plugin that has stopped fetching; three more
-AccuWeather decode sites (`Ceiling`, `Precip1hr`,
-`Past24HourTemperatureDeparture`) carry the same `typeof` guard already used
-for `uvIndex`; and visibility plus cloud ceiling pin marine-convention
-`displayUnits` (nautical miles and feet) so the data browser stops rendering
-them in statute miles. The delta envelope and the notification value shape are
-unchanged, and all 303 tests pass.
+The plugin now registers as a Signal K v2 Weather API provider, so dashboards
+and apps can pull AccuWeather forecasts directly from
+`/signalk/v2/api/weather/forecasts/point` and `.../forecasts/daily` instead of
+subscribing to the delta stream. Registering the provider is also what makes
+the server advertise `weather` under `/signalk/v2/features`, which is how
+dashboards such as signalk-open-binnacle detect that forecast support is
+available. Forecasts are mapped to SI units, cached on demand, and share the
+plugin's rolling-24h API quota so a polling client cannot exhaust a free key.
+Observations and warnings are not served yet. This release also ships config
+panel screenshots and ensures `npm test` runs once for clean CI, and all 326
+tests pass.
 
-See the [Changelog](CHANGELOG.md#164---2026-05-25) for the full Changed /
-Fixed / Internal detail, or the
-[GitHub release](https://github.com/NearlCrews/signalk-virtual-weather-sensors/releases/tag/v1.6.4).
+See the [Changelog](CHANGELOG.md#170---2026-05-28) for the full Added /
+Changed / Internal detail, or the
+[GitHub release](https://github.com/NearlCrews/signalk-virtual-weather-sensors/releases/tag/v1.7.0).
 
 ## Features
 
@@ -38,6 +37,9 @@ Fixed / Internal detail, or the
   obstruction, and a plain-language condition summary
 - Spec-compliant Signal K paths, with AccuWeather extensions and derived values
   on a producer-namespaced `environment.weather.*` branch
+- Signal K v2 Weather API provider: serves AccuWeather forecasts at
+  `/signalk/v2/api/weather/forecasts/point` and `.../forecasts/daily`, so
+  dashboards like signalk-open-binnacle can show forecast data
 - Apparent wind calculated from true wind and vessel motion
 - Severe-weather notifications (opt-in, off by default) for wind, visibility,
   heat, cold, and severe conditions
@@ -84,6 +86,18 @@ Configure in the Signal K Admin UI under **Server -> Plugin Config**.
 | Daily API Call Quota | Cap on AccuWeather calls per rolling 24h window. 0 disables the cap. | 50 | 0 to 1000 |
 | Severe-weather notifications | Master toggle plus per-category sub-toggles (wind, visibility, heat, cold, severe). | master off, sub-toggles on | boolean |
 
+## Screenshots
+
+The React config panel in the Signal K Admin UI, with a live status card
+showing update count, rolling 24h API usage, active alerts, and minutes since
+the last fetch:
+
+![Config panel: status card and fetch cadence settings](assets/screenshots/config-panel-status.png)
+
+The severe-weather notification toggles (opt-in, off by default):
+
+![Config panel: severe-weather notification toggles](assets/screenshots/config-panel-notifications.png)
+
 ## What it emits
 
 The plugin emits 30+ data points under three namespaces: canonical
@@ -105,6 +119,25 @@ NMEA2000 bus, pair it with an emitter plugin such as
 which covers PGNs 130306, 130311, 130312, and 130313. See
 [docs/signal-k-paths.md](docs/signal-k-paths.md#nmea2000-pgn-coverage) for
 per-PGN path mapping.
+
+## Weather API provider
+
+The plugin registers as a Signal K v2 Weather API provider, so consumers can
+pull forecasts over REST instead of subscribing to the delta stream:
+
+- `GET /signalk/v2/api/weather/forecasts/point` returns hourly point forecasts
+  (from the AccuWeather 12-hour hourly source).
+- `GET /signalk/v2/api/weather/forecasts/daily` returns daily forecasts (from
+  the AccuWeather 5-day source).
+
+Registering the provider is what makes the server list `weather` under
+`/signalk/v2/features`, which is how dashboards such as
+[signalk-open-binnacle](https://github.com/SignalK/signalk-open-binnacle)
+detect that forecast support is available. Forecasts are mapped to SI units,
+cached on demand, and share the plugin's rolling-24h API quota so a polling
+client cannot exhaust a free key. Observations and warnings are not served yet.
+See [docs/signal-k-paths.md](docs/signal-k-paths.md#weather-api-provider) for
+the populated field reference.
 
 ## Notifications
 
