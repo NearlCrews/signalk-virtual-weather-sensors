@@ -1,5 +1,5 @@
 import type { Timestamp } from '@signalk/server-api';
-import { MAGNUS, UNITS, VALIDATION_LIMITS } from '../constants/index.js';
+import { API_QUOTA, MAGNUS, UNITS, VALIDATION_LIMITS } from '../constants/index.js';
 
 /** Extract a string message from any thrown value: `Error.message` or `String(value)`. */
 export function toErrorMessage(error: unknown): string {
@@ -15,6 +15,17 @@ export const TWO_PI = 2 * Math.PI;
 /** Floor-divide a millisecond duration to whole minutes. */
 export function msToWholeMinutes(ms: number): number {
   return Math.floor(ms / 60_000);
+}
+
+/**
+ * True when rolling-window API usage has reached the daily quota cap. A quota of
+ * 0 (or any non-positive or non-finite value) disables the cap and always
+ * returns false. Shared by WeatherService (status banner and fetch pause) and
+ * AccuWeatherService (forecast self-gating) so the cap logic cannot drift.
+ */
+export function isApiQuotaReached(used: number, quota: number): boolean {
+  if (!Number.isFinite(quota) || quota <= 0) return false;
+  return used / quota >= API_QUOTA.EXHAUST_RATIO;
 }
 
 export function celsiusToKelvin(celsius: number): number {

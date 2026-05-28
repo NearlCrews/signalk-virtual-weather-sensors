@@ -14,6 +14,7 @@ import {
   clamp,
   degreesToRadians,
   fahrenheitToKelvin,
+  isApiQuotaReached,
   isValidCoordinates,
   isValidHumidity,
   isValidPressure,
@@ -257,5 +258,27 @@ describe('Atmospheric calculations', () => {
       expect(calculateBeaufortScale(0.299)).toBe(0);
       expect(calculateBeaufortScale(0.3)).toBe(1);
     });
+  });
+});
+
+describe('isApiQuotaReached', () => {
+  it('returns false when quota is 0 (disabled)', () => {
+    expect(isApiQuotaReached(100, 0)).toBe(false);
+  });
+
+  it('returns false when usage is below the quota', () => {
+    expect(isApiQuotaReached(49, 50)).toBe(false);
+  });
+
+  it('returns true when usage equals the quota', () => {
+    expect(isApiQuotaReached(50, 50)).toBe(true);
+  });
+
+  it('returns true when usage exceeds the quota', () => {
+    expect(isApiQuotaReached(51, 50)).toBe(true);
+  });
+
+  it('returns false for a non-finite quota', () => {
+    expect(isApiQuotaReached(50, Number.NaN)).toBe(false);
   });
 });
