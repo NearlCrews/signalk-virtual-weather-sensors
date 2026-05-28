@@ -4,10 +4,19 @@
  */
 
 import { WindCalculator } from '../calculators/WindCalculator.js';
-import { ACCUWEATHER, DEFAULT_CONFIG, ERROR_CODES, PLUGIN, UNITS } from '../constants/index.js';
+import {
+  ACCUWEATHER,
+  DEFAULT_CONFIG,
+  ERROR_CODES,
+  FORECAST_CACHE,
+  PLUGIN,
+  UNITS,
+} from '../constants/index.js';
 import type {
   AccuWeatherConfig,
   AccuWeatherCurrentConditions,
+  AccuWeatherDailyForecastResponse,
+  AccuWeatherHourlyForecast,
   AccuWeatherLocation,
   GeoLocation,
   Logger,
@@ -19,6 +28,7 @@ import {
   calculateBeaufortScale,
   celsiusToKelvin,
   degreesToRadians,
+  isApiQuotaReached,
   isValidCoordinates,
   isValidHumidity,
   isValidPressure,
@@ -248,6 +258,13 @@ export class AccuWeatherService {
    * number of elapsed hours and update this index.
    */
   private requestWindowCurrentHour = Math.floor(Date.now() / HOUR_MS);
+  /**
+   * On-demand forecast cache, keyed by `${kind}:${locationKey}`. Holds the raw
+   * forecast response and an absolute expiry. Separate from locationCache
+   * because forecasts have their own per-kind TTLs and are pulled by external
+   * Weather API consumers rather than the plugin's own fetch timer.
+   */
+  private forecastCache = new Map<string, { data: unknown; expiresAt: number }>();
 
   constructor(apiKey: string, logger: Logger = () => {}, config?: Partial<AccuWeatherConfig>) {
     // Validate before any field assignment so a throw cannot leave the instance
@@ -326,6 +343,192 @@ export class AccuWeatherService {
       });
       throw error;
     }
+  }
+
+  /**
+   * Fetch the 12-hour hourly forecast for a position. Reuses the cached
+   * location key, the rolling request window, and the on-demand forecast cache.
+   * On a warm forecast cache this costs zero upstream calls.
+   */
+  public async getHourlyForecast(location: GeoLocation): Promise<AccuWeatherHourlyForecast[]> {
+    this.validateLocation(location);
+    // Snapshot the quota verdict once, before this call's own location lookup
+    // spends a request. A cold call below the cap is then not gated by the
+    // request it is about to make, and a call already over the cap is gated
+    // before it can trigger a fresh (request-spending) location search.
+    const quotaExhausted = this.isQuotaExhausted();
+    const locationKey = await this.resolveLocationKeyForForecast(location, quotaExhausted);
+    return this.cachedForecastFetch(
+      `hourly:${locationKey}`,
+      FORECAST_CACHE.HOURLY_TTL_MS,
+      quotaExhausted,
+      () => this.fetchHourlyForecast(locationKey)
+    );
+  }
+
+  /**
+   * Fetch the 5-day daily forecast for a position. Same caching and quota
+   * behaviour as getHourlyForecast.
+   */
+  public async getDailyForecast(location: GeoLocation): Promise<AccuWeatherDailyForecastResponse> {
+    this.validateLocation(location);
+    const quotaExhausted = this.isQuotaExhausted();
+    const locationKey = await this.resolveLocationKeyForForecast(location, quotaExhausted);
+    return this.cachedForecastFetch(
+      `daily:${locationKey}`,
+      FORECAST_CACHE.DAILY_TTL_MS,
+      quotaExhausted,
+      () => this.fetchDailyForecast(locationKey)
+    );
+  }
+
+  /**
+   * Resolve the location key for a forecast call, respecting the daily quota.
+   * Below the cap it does the normal cached-or-fetched lookup. At the cap it
+   * refuses to spend a request on a fresh location search: it falls back to a
+   * cache-only lookup so a previously seen location can still serve a stale
+   * forecast, and throws a tagged rate-limit error when no cached key exists
+   * (a fresh location cannot have a cached forecast either).
+   * @private
+   */
+  private async resolveLocationKeyForForecast(
+    location: GeoLocation,
+    quotaExhausted: boolean
+  ): Promise<string> {
+    if (!quotaExhausted) {
+      return this.getLocationKey(location);
+    }
+    const cachedKey = this.getCachedLocationKey(location);
+    if (cachedKey === undefined) {
+      throw new Error(
+        `${ERROR_CODES.NETWORK.API_RATE_LIMIT}: AccuWeather daily quota reached, no cached forecast available`
+      );
+    }
+    this.logger('debug', 'Quota reached, resolving forecast from cached location only');
+    return cachedKey;
+  }
+
+  /**
+   * Read a location key from the location cache without issuing a network
+   * lookup. Returns undefined when no entry exists for the coordinates;
+   * expiry is ignored because a stale key is still the right key for the same
+   * coordinates and the quota path only needs it to find a cached forecast.
+   * @private
+   */
+  private getCachedLocationKey(location: GeoLocation): string | undefined {
+    const cacheKey = `${location.latitude.toFixed(4)},${location.longitude.toFixed(4)}`;
+    return this.locationCache.get(cacheKey)?.location.Key;
+  }
+
+  /**
+   * Cache wrapper for forecast fetches. Returns a fresh cache hit with zero
+   * upstream calls. On a miss it gates on the daily quota: if the quota was
+   * reached at call entry and a stale entry exists it serves the stale entry
+   * (so a dashboard still shows data), otherwise it throws a tagged rate-limit
+   * error. Below the quota it fetches, stores with an absolute expiry, and
+   * prunes. The quota verdict is the one snapshotted at method entry so a cold
+   * call below the cap is not gated by its own location-lookup request.
+   * @private
+   */
+  private async cachedForecastFetch<T>(
+    cacheKey: string,
+    ttlMs: number,
+    quotaExhausted: boolean,
+    fetcher: () => Promise<T>
+  ): Promise<T> {
+    const now = Date.now();
+    const cached = this.forecastCache.get(cacheKey);
+    if (cached && now < cached.expiresAt) {
+      this.logger('debug', 'Using cached forecast', { cacheKey });
+      return cached.data as T;
+    }
+
+    if (quotaExhausted) {
+      if (cached) {
+        this.logger('warn', 'Quota reached, serving stale forecast', { cacheKey });
+        return cached.data as T;
+      }
+      throw new Error(
+        `${ERROR_CODES.NETWORK.API_RATE_LIMIT}: AccuWeather daily quota reached, no cached forecast available`
+      );
+    }
+
+    const data = await fetcher();
+    this.forecastCache.set(cacheKey, { data, expiresAt: now + ttlMs });
+    this.pruneForecastCache(now);
+    return data;
+  }
+
+  /** True when the configured rolling-24h quota has been reached. @private */
+  private isQuotaExhausted(): boolean {
+    return isApiQuotaReached(this.getRequestCountLast24h(), this.config.dailyApiQuota ?? 0);
+  }
+
+  /**
+   * Drop expired forecast entries, and if still over MAX_CACHE_SIZE drop the
+   * soonest-to-expire ones. Forecast entries number at most a few per location,
+   * so this is cheap and runs on the fetch path, not the emission tick.
+   * @private
+   */
+  private pruneForecastCache(now: number): void {
+    for (const [key, entry] of this.forecastCache.entries()) {
+      if (now >= entry.expiresAt) {
+        this.forecastCache.delete(key);
+      }
+    }
+    if (this.forecastCache.size > MAX_CACHE_SIZE) {
+      const entries = Array.from(this.forecastCache.entries()).sort(
+        (a, b) => a[1].expiresAt - b[1].expiresAt
+      );
+      const toRemove = entries.slice(0, entries.length - MAX_CACHE_SIZE);
+      for (const [key] of toRemove) {
+        this.forecastCache.delete(key);
+      }
+    }
+  }
+
+  /**
+   * Build a metric forecast URL for a location key. Guards the key against the
+   * URL-path pattern (defense-in-depth, the cache could theoretically drift)
+   * and pins the four query params every forecast endpoint shares. `metric` is
+   * forecast-specific, so this builder is scoped to the forecast endpoints
+   * rather than reused for the current-conditions hops.
+   * @private
+   */
+  private buildForecastUrl(endpoint: string, locationKey: string): URL {
+    if (!LOCATION_KEY_PATTERN.test(locationKey)) {
+      throw new Error(
+        `${ERROR_CODES.NETWORK.API_INVALID_RESPONSE}: refusing to use malformed location key in URL path`
+      );
+    }
+    const url = new URL(`${ACCUWEATHER.BASE_URL}${endpoint}/${locationKey}`);
+    url.searchParams.set('apikey', this.config.apiKey);
+    url.searchParams.set('language', ACCUWEATHER.DEFAULT_LANGUAGE);
+    url.searchParams.set('details', 'true');
+    url.searchParams.set('metric', 'true');
+    return url;
+  }
+
+  /** Fetch and shape the raw 12-hour hourly forecast array. @private */
+  private async fetchHourlyForecast(locationKey: string): Promise<AccuWeatherHourlyForecast[]> {
+    const url = this.buildForecastUrl(ACCUWEATHER.ENDPOINTS.FORECAST_HOURLY_12HOUR, locationKey);
+    const data = await this.makeApiRequest<AccuWeatherHourlyForecast[]>(url);
+    if (!Array.isArray(data)) {
+      throw new Error(
+        `${ERROR_CODES.DATA.INVALID_WEATHER_DATA}: No hourly forecast data available`
+      );
+    }
+    return data;
+  }
+
+  /** Fetch and shape the raw 5-day daily forecast response. @private */
+  private async fetchDailyForecast(locationKey: string): Promise<AccuWeatherDailyForecastResponse> {
+    const url = this.buildForecastUrl(ACCUWEATHER.ENDPOINTS.FORECAST_DAILY_5DAY, locationKey);
+    const data = await this.makeApiRequest<AccuWeatherDailyForecastResponse>(url);
+    if (!data || typeof data !== 'object' || !Array.isArray(data.DailyForecasts)) {
+      throw new Error(`${ERROR_CODES.DATA.INVALID_WEATHER_DATA}: No daily forecast data available`);
+    }
+    return data;
   }
 
   /**
@@ -834,7 +1037,8 @@ export class AccuWeatherService {
    */
   public clearLocationCache(): void {
     this.locationCache.clear();
-    this.logger('debug', 'Location cache cleared');
+    this.forecastCache.clear();
+    this.logger('debug', 'Location and forecast caches cleared');
   }
 
   /** Location-cache size, for monitoring. */

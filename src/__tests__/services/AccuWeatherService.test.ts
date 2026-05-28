@@ -634,4 +634,82 @@ describe('AccuWeatherService', () => {
       ).rejects.toThrow(/RESPONSE_TOO_LARGE/);
     });
   });
+
+  describe('Forecasts', () => {
+    const location: GeoLocation = { latitude: 51.5, longitude: -0.12 };
+    const locationPayload = {
+      Key: '328328',
+      LocalizedName: 'London',
+      Country: { ID: 'GB', LocalizedName: 'United Kingdom' },
+      AdministrativeArea: { ID: 'LND', LocalizedName: 'London' },
+      GeoPosition: { Latitude: 51.5, Longitude: -0.12 },
+    };
+    const hourlyPayload = [
+      { DateTime: '2026-05-28T12:00:00+00:00', Temperature: { Value: 18, Unit: 'C' } },
+      { DateTime: '2026-05-28T13:00:00+00:00', Temperature: { Value: 19, Unit: 'C' } },
+    ];
+
+    it('fetches the 12-hour hourly forecast with metric=true', async () => {
+      const fetchMock = fetch as unknown as Mock;
+      fetchMock
+        .mockResolvedValueOnce(mockResponse(locationPayload))
+        .mockResolvedValueOnce(mockResponse(hourlyPayload));
+
+      const result = await service.getHourlyForecast(location);
+
+      expect(result).toHaveLength(2);
+      const forecastUrl = fetchMock.mock.calls[1]?.[0] as string;
+      expect(forecastUrl).toContain('/forecasts/v1/hourly/12hour/328328');
+      expect(forecastUrl).toContain('metric=true');
+      expect(forecastUrl).toContain('details=true');
+    });
+
+    it('serves the second hourly call from cache without a new fetch', async () => {
+      const fetchMock = fetch as unknown as Mock;
+      fetchMock
+        .mockResolvedValueOnce(mockResponse(locationPayload))
+        .mockResolvedValueOnce(mockResponse(hourlyPayload));
+
+      await service.getHourlyForecast(location);
+      const callsAfterFirst = fetchMock.mock.calls.length;
+      await service.getHourlyForecast(location);
+
+      expect(fetchMock.mock.calls.length).toBe(callsAfterFirst);
+    });
+
+    it('throws a rate-limit error when quota is exhausted and nothing is cached', async () => {
+      const gated = new AccuWeatherService('test-api-key', mockLogger, { dailyApiQuota: 1 });
+      const fetchMock = fetch as unknown as Mock;
+      fetchMock
+        .mockResolvedValueOnce(mockResponse(locationPayload))
+        .mockResolvedValueOnce(mockResponse(hourlyPayload));
+      await gated.getHourlyForecast(location);
+
+      await expect(gated.getHourlyForecast({ latitude: 40, longitude: -70 })).rejects.toThrow(
+        'API_RATE_LIMIT'
+      );
+    });
+
+    it('fetches the 5-day daily forecast with metric=true', async () => {
+      const fetchMock = fetch as unknown as Mock;
+      const dailyPayload = {
+        DailyForecasts: [
+          {
+            Date: '2026-05-28T07:00:00+00:00',
+            Temperature: { Minimum: { Value: 10, Unit: 'C' }, Maximum: { Value: 20, Unit: 'C' } },
+          },
+        ],
+      };
+      fetchMock
+        .mockResolvedValueOnce(mockResponse(locationPayload))
+        .mockResolvedValueOnce(mockResponse(dailyPayload));
+
+      const result = await service.getDailyForecast(location);
+
+      expect(result.DailyForecasts).toHaveLength(1);
+      const forecastUrl = fetchMock.mock.calls[1]?.[0] as string;
+      expect(forecastUrl).toContain('/forecasts/v1/daily/5day/328328');
+      expect(forecastUrl).toContain('metric=true');
+    });
+  });
 });
