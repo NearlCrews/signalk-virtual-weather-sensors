@@ -314,12 +314,27 @@ export const ACCUWEATHER = {
   ENDPOINTS: {
     LOCATION_SEARCH: '/locations/v1/cities/geoposition/search',
     CURRENT_CONDITIONS: '/currentconditions/v1',
+    FORECAST_HOURLY_12HOUR: '/forecasts/v1/hourly/12hour',
+    FORECAST_DAILY_5DAY: '/forecasts/v1/daily/5day',
   },
   DEFAULT_LANGUAGE: 'en-us',
   /** Maximum length for descriptive strings copied verbatim from API responses into Signal K deltas */
   MAX_DESCRIPTION_LENGTH: 128,
   /** Maximum length for short labels copied verbatim from API responses (e.g. observation timestamps). */
   MAX_LABEL_LENGTH: 64,
+} as const;
+
+/**
+ * On-demand forecast cache lifetimes. The Weather API is pull-based: a consumer
+ * (a dashboard) hits the provider whenever it wants, independent of the plugin's
+ * own fetch timer, so forecast responses are cached by location and type to keep
+ * a polling client from exhausting the free 50/day key. Hourly data refreshes
+ * about hourly upstream and daily data a few times per day, so a 30-minute and a
+ * 3-hour floor stay fresh enough for a glance while spending almost no calls.
+ */
+export const FORECAST_CACHE = {
+  HOURLY_TTL_MS: 30 * 60 * 1000,
+  DAILY_TTL_MS: 3 * 60 * 60 * 1000,
 } as const;
 
 // ===============================
