@@ -18,13 +18,24 @@ export function msToWholeMinutes(ms: number): number {
 }
 
 /**
- * True when rolling-window API usage has reached the daily quota cap. A quota of
- * 0 (or any non-positive or non-finite value) disables the cap and always
- * returns false. Shared by WeatherService (status banner and fetch pause) and
- * AccuWeatherService (forecast self-gating) so the cap logic cannot drift.
+ * Narrow an arbitrary value to `number`, returning `undefined` for anything
+ * non-numeric (missing, null, string). API response fields typed `number` are
+ * known to arrive null on the free tier and partial responses, so callers use
+ * this before spreading an optional field onto an output object.
  */
-export function isApiQuotaReached(used: number, quota: number): boolean {
-  if (!Number.isFinite(quota) || quota <= 0) return false;
+export function asOptionalNumber(value: unknown): number | undefined {
+  return typeof value === 'number' ? value : undefined;
+}
+
+/**
+ * True when rolling-window API usage has reached the daily quota cap. A quota of
+ * 0, undefined, or any non-positive or non-finite value disables the cap and
+ * always returns false. Shared by WeatherService (status banner and fetch
+ * pause) and AccuWeatherService (forecast self-gating) so the cap logic cannot
+ * drift.
+ */
+export function isApiQuotaReached(used: number, quota: number | undefined): boolean {
+  if (quota == null || !Number.isFinite(quota) || quota <= 0) return false;
   return used / quota >= API_QUOTA.EXHAUST_RATIO;
 }
 

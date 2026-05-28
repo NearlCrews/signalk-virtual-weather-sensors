@@ -23,6 +23,7 @@ import type {
   WeatherData,
 } from '../types/index.js';
 import {
+  asOptionalNumber,
   calculateAbsoluteHumidity,
   calculateAirDensity,
   calculateBeaufortScale,
@@ -141,17 +142,6 @@ function extractEnhancedTemperatures(
     ...(wetBulbGlobeTemperature !== undefined && { wetBulbGlobeTemperature }),
     ...(apparentTemperature !== undefined && { apparentTemperature }),
   };
-}
-
-/**
- * Narrow an optional API field to `number`, returning `undefined` for any
- * non-numeric (missing, null, string) value. The response schema declares
- * these fields `number`, but the free tier and partial responses are known
- * to deliver null. Without this guard a null would slip through the
- * optional-spread builder below and onto the bus.
- */
-function asOptionalNumber(value: unknown): number | undefined {
-  return typeof value === 'number' ? value : undefined;
 }
 
 /**
@@ -400,12 +390,27 @@ export class AccuWeatherService {
     }
     const cachedKey = this.getCachedLocationKey(location);
     if (cachedKey === undefined) {
-      throw new Error(
-        `${ERROR_CODES.NETWORK.API_RATE_LIMIT}: AccuWeather daily quota reached, no cached forecast available`
-      );
+      throw this.quotaReachedError();
     }
     this.logger('debug', 'Quota reached, resolving forecast from cached location only');
     return cachedKey;
+  }
+
+  /**
+   * The tagged rate-limit error thrown when the daily quota is reached and no
+   * cached forecast can serve the request. Shared by the location-key resolver
+   * and the cache wrapper so the message stays identical.
+   * @private
+   */
+  private quotaReachedError(): Error {
+    return new Error(
+      `${ERROR_CODES.NETWORK.API_RATE_LIMIT}: AccuWeather daily quota reached, no cached forecast available`
+    );
+  }
+
+  /** Stable location-cache key for a coordinate, rounded to 4 decimal places. @private */
+  private locationCacheKey(location: GeoLocation): string {
+    return `${location.latitude.toFixed(4)},${location.longitude.toFixed(4)}`;
   }
 
   /**
@@ -416,8 +421,7 @@ export class AccuWeatherService {
    * @private
    */
   private getCachedLocationKey(location: GeoLocation): string | undefined {
-    const cacheKey = `${location.latitude.toFixed(4)},${location.longitude.toFixed(4)}`;
-    return this.locationCache.get(cacheKey)?.location.Key;
+    return this.locationCache.get(this.locationCacheKey(location))?.location.Key;
   }
 
   /**
@@ -448,9 +452,7 @@ export class AccuWeatherService {
         this.logger('warn', 'Quota reached, serving stale forecast', { cacheKey });
         return cached.data as T;
       }
-      throw new Error(
-        `${ERROR_CODES.NETWORK.API_RATE_LIMIT}: AccuWeather daily quota reached, no cached forecast available`
-      );
+      throw this.quotaReachedError();
     }
 
     const data = await fetcher();
@@ -461,7 +463,7 @@ export class AccuWeatherService {
 
   /** True when the configured rolling-24h quota has been reached. @private */
   private isQuotaExhausted(): boolean {
-    return isApiQuotaReached(this.getRequestCountLast24h(), this.config.dailyApiQuota ?? 0);
+    return isApiQuotaReached(this.getRequestCountLast24h(), this.config.dailyApiQuota);
   }
 
   /**
@@ -660,7 +662,7 @@ export class AccuWeatherService {
     // Prune cache periodically to prevent memory leak
     this.pruneLocationCache();
 
-    const cacheKey = `${location.latitude.toFixed(4)},${location.longitude.toFixed(4)}`;
+    const cacheKey = this.locationCacheKey(location);
     const now = Date.now();
 
     const cached = this.locationCache.get(cacheKey);

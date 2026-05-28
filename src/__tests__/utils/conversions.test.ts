@@ -281,4 +281,8 @@ describe('isApiQuotaReached', () => {
   it('returns false for a non-finite quota', () => {
     expect(isApiQuotaReached(50, Number.NaN)).toBe(false);
   });
+
+  it('returns false for an undefined quota (cap disabled)', () => {
+    expect(isApiQuotaReached(50, undefined)).toBe(false);
+  });
 });

@@ -13,6 +13,7 @@ import type {
   AccuWeatherHourlyForecast,
 } from '../types/index.js';
 import {
+  asOptionalNumber,
   calculateAbsoluteHumidity,
   celsiusToKelvin,
   degreesToRadians,
@@ -59,35 +60,33 @@ export function mapHourlyToForecasts(
 ): SKWeatherData[] {
   return hours.map((hour) => {
     const temperature = celsiusToKelvin(hour.Temperature.Value);
-    const rhRatio =
-      typeof hour.RelativeHumidity === 'number'
-        ? percentageToRatio(hour.RelativeHumidity)
-        : undefined;
+    const dewPointC = asOptionalNumber(hour.DewPoint?.Value);
+    const realFeelC = asOptionalNumber(hour.RealFeelTemperature?.Value);
+    const humidityPct = asOptionalNumber(hour.RelativeHumidity);
+    const rhRatio = humidityPct !== undefined ? percentageToRatio(humidityPct) : undefined;
+    const visibilityKm = asOptionalNumber(hour.Visibility?.Value);
+    const uvIndex = asOptionalNumber(hour.UVIndex);
+    const cloudCoverPct = asOptionalNumber(hour.CloudCover);
+    const precipitationMm = asOptionalNumber(hour.TotalLiquid?.Value);
     const precipitationType = hour.HasPrecipitation
       ? mapPrecipitationKind(hour.PrecipitationType)
       : undefined;
 
     const outside: SKOutside = {
       temperature,
-      ...(typeof hour.DewPoint?.Value === 'number' && {
-        dewPointTemperature: celsiusToKelvin(hour.DewPoint.Value),
-      }),
-      ...(typeof hour.RealFeelTemperature?.Value === 'number' && {
-        feelsLikeTemperature: celsiusToKelvin(hour.RealFeelTemperature.Value),
-      }),
+      ...(dewPointC !== undefined && { dewPointTemperature: celsiusToKelvin(dewPointC) }),
+      ...(realFeelC !== undefined && { feelsLikeTemperature: celsiusToKelvin(realFeelC) }),
       ...(rhRatio !== undefined && {
         relativeHumidity: rhRatio,
         absoluteHumidity: calculateAbsoluteHumidity(temperature, rhRatio),
       }),
-      ...(typeof hour.Visibility?.Value === 'number' && {
-        horizontalVisibility: hour.Visibility.Value * UNITS.LENGTH.KM_TO_M,
+      ...(visibilityKm !== undefined && {
+        horizontalVisibility: visibilityKm * UNITS.LENGTH.KM_TO_M,
       }),
-      ...(typeof hour.UVIndex === 'number' && { uvIndex: hour.UVIndex }),
-      ...(typeof hour.CloudCover === 'number' && {
-        cloudCover: percentageToRatio(hour.CloudCover),
-      }),
-      ...(typeof hour.TotalLiquid?.Value === 'number' && {
-        precipitationVolume: hour.TotalLiquid.Value * UNITS.PRECIPITATION.MM_TO_M,
+      ...(uvIndex !== undefined && { uvIndex }),
+      ...(cloudCoverPct !== undefined && { cloudCover: percentageToRatio(cloudCoverPct) }),
+      ...(precipitationMm !== undefined && {
+        precipitationVolume: precipitationMm * UNITS.PRECIPITATION.MM_TO_M,
       }),
       ...(precipitationType !== undefined && { precipitationType }),
     };
@@ -115,7 +114,7 @@ function dailyUvIndex(
   airAndPollen: AccuWeatherDailyForecastResponse['DailyForecasts'][number]['AirAndPollen']
 ): number | undefined {
   const entry = airAndPollen?.find((item) => item.Name === 'UVIndex');
-  return typeof entry?.Value === 'number' ? entry.Value : undefined;
+  return asOptionalNumber(entry?.Value);
 }
 
 /** Map the AccuWeather 5-day daily forecast to ascending-order daily WeatherData. */
@@ -125,6 +124,8 @@ export function mapDailyToForecasts(response: AccuWeatherDailyForecastResponse):
     // the Night half is intentionally not folded into the same daily record.
     const half = day.Day;
     const uvIndex = dailyUvIndex(day.AirAndPollen);
+    const cloudCoverPct = asOptionalNumber(half?.CloudCover);
+    const precipitationMm = asOptionalNumber(half?.TotalLiquid?.Value);
     const precipitationType = half?.HasPrecipitation
       ? mapPrecipitationKind(half.PrecipitationType)
       : undefined;
@@ -133,11 +134,9 @@ export function mapDailyToForecasts(response: AccuWeatherDailyForecastResponse):
       minTemperature: celsiusToKelvin(day.Temperature.Minimum.Value),
       maxTemperature: celsiusToKelvin(day.Temperature.Maximum.Value),
       ...(uvIndex !== undefined && { uvIndex }),
-      ...(typeof half?.CloudCover === 'number' && {
-        cloudCover: percentageToRatio(half.CloudCover),
-      }),
-      ...(typeof half?.TotalLiquid?.Value === 'number' && {
-        precipitationVolume: half.TotalLiquid.Value * UNITS.PRECIPITATION.MM_TO_M,
+      ...(cloudCoverPct !== undefined && { cloudCover: percentageToRatio(cloudCoverPct) }),
+      ...(precipitationMm !== undefined && {
+        precipitationVolume: precipitationMm * UNITS.PRECIPITATION.MM_TO_M,
       }),
       ...(precipitationType !== undefined && { precipitationType }),
     };
