@@ -8,7 +8,10 @@
  */
 import type { PrecipitationKind, WeatherData as SKWeatherData } from '@signalk/server-api';
 import { UNITS } from '../constants/index.js';
-import type { AccuWeatherHourlyForecast } from '../types/index.js';
+import type {
+  AccuWeatherDailyForecastResponse,
+  AccuWeatherHourlyForecast,
+} from '../types/index.js';
 import {
   calculateAbsoluteHumidity,
   celsiusToKelvin,
@@ -101,6 +104,60 @@ export function mapHourlyToForecasts(
       ...(typeof hour.IconPhrase === 'string' && { description: hour.IconPhrase }),
       outside,
       ...(wind !== undefined && { wind }),
+    };
+  });
+}
+
+type SKSun = NonNullable<SKWeatherData['sun']>;
+
+/** Find the UV index value in a daily entry's AirAndPollen array, if present. */
+function dailyUvIndex(
+  airAndPollen: AccuWeatherDailyForecastResponse['DailyForecasts'][number]['AirAndPollen']
+): number | undefined {
+  const entry = airAndPollen?.find((item) => item.Name === 'UVIndex');
+  return typeof entry?.Value === 'number' ? entry.Value : undefined;
+}
+
+/** Map the AccuWeather 5-day daily forecast to ascending-order daily WeatherData. */
+export function mapDailyToForecasts(response: AccuWeatherDailyForecastResponse): SKWeatherData[] {
+  return response.DailyForecasts.map((day) => {
+    const half = day.Day;
+    const uvIndex = dailyUvIndex(day.AirAndPollen);
+    const precipitationType = half?.HasPrecipitation
+      ? mapPrecipitationKind(half.PrecipitationType)
+      : undefined;
+
+    const outside: SKOutside = {
+      minTemperature: celsiusToKelvin(day.Temperature.Minimum.Value),
+      maxTemperature: celsiusToKelvin(day.Temperature.Maximum.Value),
+      ...(uvIndex !== undefined && { uvIndex }),
+      ...(typeof half?.CloudCover === 'number' && {
+        cloudCover: percentageToRatio(half.CloudCover),
+      }),
+      ...(typeof half?.TotalLiquid?.Value === 'number' && {
+        precipitationVolume: half.TotalLiquid.Value * UNITS.PRECIPITATION.MM_TO_M,
+      }),
+      ...(precipitationType !== undefined && { precipitationType }),
+    };
+
+    const wind = buildWind(
+      half?.Wind?.Speed?.Value,
+      half?.Wind?.Direction?.Degrees,
+      half?.WindGust?.Speed?.Value
+    );
+
+    const sun: SKSun = {
+      ...(typeof day.Sun?.Rise === 'string' && { sunrise: day.Sun.Rise }),
+      ...(typeof day.Sun?.Set === 'string' && { sunset: day.Sun.Set }),
+    };
+
+    return {
+      date: day.Date,
+      type: 'daily',
+      ...(typeof half?.IconPhrase === 'string' && { description: half.IconPhrase }),
+      outside,
+      ...(wind !== undefined && { wind }),
+      ...(Object.keys(sun).length > 0 && { sun }),
     };
   });
 }
