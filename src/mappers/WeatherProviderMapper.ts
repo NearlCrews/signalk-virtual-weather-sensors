@@ -121,6 +121,8 @@ function dailyUvIndex(
 /** Map the AccuWeather 5-day daily forecast to ascending-order daily WeatherData. */
 export function mapDailyToForecasts(response: AccuWeatherDailyForecastResponse): SKWeatherData[] {
   return response.DailyForecasts.map((day) => {
+    // One WeatherData entry per calendar date, summarized by the daytime half;
+    // the Night half is intentionally not folded into the same daily record.
     const half = day.Day;
     const uvIndex = dailyUvIndex(day.AirAndPollen);
     const precipitationType = half?.HasPrecipitation
