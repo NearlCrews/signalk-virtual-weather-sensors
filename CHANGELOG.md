@@ -5,6 +5,29 @@ All notable changes to the signalk-virtual-weather-sensors project will be docum
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.7.1] - 2026-05-28
+
+A small observability and cleanup release. The config panel now shows whether
+the Signal K v2 Weather API provider is registered this start cycle, via a new
+"Weather API" status card backed by a `weatherProviderRegistered` flag on the
+`/api/status` payload. The rest of the release is internal de-duplication from
+a four-agent `/simplify` pass: a shared `elapsedSinceMs` time helper, a
+`ratio`-parameterized `isApiQuotaReached`, a single-sourced AccuWeather
+provider name, and consolidated AccuWeather URL building. No emitted paths,
+delta shape, or notification behavior changed, and all 326 tests pass.
+
+### Added
+
+- **Config panel "Weather API" status card.** The panel now surfaces whether the Signal K v2 Weather API provider is registered, so an operator can see at a glance that `/signalk/v2/features` advertises `weather` and the forecast endpoints are live. It is backed by a new `weatherProviderRegistered` boolean on the `/api/status` payload and on the `PanelStatusResponse` type, which is `false` on servers older than the 2.24 peer floor that lack `registerWeatherProvider`, and on a stopped plugin.
+
+### Internal
+
+- **Shared `elapsedSinceMs` time helper.** Extracted to `conversions.ts` and used by both `WeatherService.getDataAgeMs` and `SignalKService.getDataAge`, so the "clamp at zero against a backward NTP or wall-clock jump" rationale lives in one place instead of being duplicated across the two accessors.
+- **`isApiQuotaReached` takes a `ratio` parameter.** The hand-rolled `used / quota >= WARN_RATIO` guard in `WeatherService.shouldShowQuotaWarning` now delegates to the shared helper, so the disable-cap semantics (quota 0, non-finite, or negative) back both the warn and exhaust thresholds from one place.
+- **AccuWeather provider name single-sourced as `PLUGIN.PROVIDER_NAME`.** The `'AccuWeather'` literal was repeated in `WeatherProviderAdapter` and the registration log; both now reference the constant so the provider identity cannot drift.
+- **Consolidated AccuWeather URL building.** New `buildApiUrl` and `buildLocationKeyUrl` helpers remove the `apikey` / `language` / `details` query-param triplet that was hand-built in three places, and the location-key path guard that was duplicated in two. The current-conditions, location-search, and forecast hops now route through them.
+- **`getHealthStatus` reads the data age once.** It derived `dataAge` and `isStale` from separate `getDataAge()` calls; both now come from a single read via a private `isAgeStale` helper, so the reported age and staleness cannot disagree across a clock tick.
+
 ## [1.7.0] - 2026-05-28
 
 A feature release that turns the plugin into a Signal K v2 Weather API

@@ -12,23 +12,21 @@ follow the [Signal K 1.8.2 specification](https://signalk.org/specification/1.8.
 and align with NMEA2000 emission via a companion plugin. A free AccuWeather API
 key is required.
 
-## What's New in v1.7.0
+## What's New in v1.7.1
 
-The plugin now registers as a Signal K v2 Weather API provider, so dashboards
-and apps can pull AccuWeather forecasts directly from
-`/signalk/v2/api/weather/forecasts/point` and `.../forecasts/daily` instead of
-subscribing to the delta stream. Registering the provider is also what makes
-the server advertise `weather` under `/signalk/v2/features`, which is how
-dashboards such as signalk-open-binnacle detect that forecast support is
-available. Forecasts are mapped to SI units, cached on demand, and share the
-plugin's rolling-24h API quota so a polling client cannot exhaust a free key.
-Observations and warnings are not served yet. This release also ships config
-panel screenshots and ensures `npm test` runs once for clean CI, and all 326
-tests pass.
+A small observability and cleanup release. The config panel now shows whether
+the Signal K v2 Weather API provider is registered this start cycle, via a new
+"Weather API" status card backed by a `weatherProviderRegistered` flag on the
+`/api/status` payload, so an operator can confirm at a glance that the forecast
+endpoints are live. The rest of the release is internal de-duplication from a
+four-agent `/simplify` pass: a shared `elapsedSinceMs` time helper, a
+`ratio`-parameterized `isApiQuotaReached`, a single-sourced AccuWeather provider
+name, and consolidated AccuWeather URL building. No emitted paths, delta shape,
+or notification behavior changed, and all 326 tests pass.
 
-See the [Changelog](CHANGELOG.md#170---2026-05-28) for the full Added /
-Changed / Internal detail, or the
-[GitHub release](https://github.com/NearlCrews/signalk-virtual-weather-sensors/releases/tag/v1.7.0).
+See the [Changelog](CHANGELOG.md#171---2026-05-28) for the full Added /
+Internal detail, or the
+[GitHub release](https://github.com/NearlCrews/signalk-virtual-weather-sensors/releases/tag/v1.7.1).
 
 ## Features
 
