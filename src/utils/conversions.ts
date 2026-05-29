@@ -18,6 +18,16 @@ export function msToWholeMinutes(ms: number): number {
 }
 
 /**
+ * Milliseconds elapsed from a stored epoch timestamp to now, clamped at zero so
+ * a backward wall-clock or NTP jump cannot surface a negative age. Returns null
+ * when `sinceMs` is null (nothing recorded yet). Shared by the service-level
+ * data-age accessors so the clamp rationale lives in one place.
+ */
+export function elapsedSinceMs(sinceMs: number | null): number | null {
+  return sinceMs === null ? null : Math.max(0, Date.now() - sinceMs);
+}
+
+/**
  * Narrow an arbitrary value to `number`, returning `undefined` for anything
  * non-numeric (missing, null, string). API response fields typed `number` are
  * known to arrive null on the free tier and partial responses, so callers use
@@ -28,15 +38,20 @@ export function asOptionalNumber(value: unknown): number | undefined {
 }
 
 /**
- * True when rolling-window API usage has reached the daily quota cap. A quota of
- * 0, undefined, or any non-positive or non-finite value disables the cap and
- * always returns false. Shared by WeatherService (status banner and fetch
- * pause) and AccuWeatherService (forecast self-gating) so the cap logic cannot
- * drift.
+ * True when rolling-window API usage has reached `ratio` of the daily quota cap.
+ * A quota of 0, undefined, or any non-positive or non-finite value disables the
+ * cap and always returns false. `ratio` defaults to the exhaustion threshold;
+ * pass `API_QUOTA.WARN_RATIO` for the banner warning gate. Shared by
+ * WeatherService (status banner and fetch pause) and AccuWeatherService
+ * (forecast self-gating) so the cap logic cannot drift.
  */
-export function isApiQuotaReached(used: number, quota: number | undefined): boolean {
+export function isApiQuotaReached(
+  used: number,
+  quota: number | undefined,
+  ratio: number = API_QUOTA.EXHAUST_RATIO
+): boolean {
   if (quota == null || !Number.isFinite(quota) || quota <= 0) return false;
-  return used / quota >= API_QUOTA.EXHAUST_RATIO;
+  return used / quota >= ratio;
 }
 
 export function celsiusToKelvin(celsius: number): number {

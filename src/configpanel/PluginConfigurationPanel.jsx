@@ -11,7 +11,8 @@
  *   - `save(newConfig)`: persists the config and restarts the plugin
  *
  * Polls `/plugins/signalk-virtual-weather-sensors/api/status` every 10 s for
- * live banner / quota / last-fetch / active-notifications data and `/api/test-key`
+ * live banner / quota / last-fetch / active-notifications / weather-provider
+ * state and `/api/test-key`
  * is called on-demand from the API key field.
  */
 
@@ -429,6 +430,10 @@ export default function PluginConfigurationPanel({ configuration, save }) {
               <div style={S.statCard}>
                 <div style={S.statValue}>{status.lastUpdateMinutesAgo ?? '-'}</div>
                 <div style={S.statLabel}>Min since fetch</div>
+              </div>
+              <div style={S.statCard}>
+                <div style={S.statValue}>{status.weatherProviderRegistered ? 'On' : 'Off'}</div>
+                <div style={S.statLabel}>Weather API</div>
               </div>
             </div>
           )}

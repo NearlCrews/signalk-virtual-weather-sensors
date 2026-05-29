@@ -15,7 +15,12 @@ import {
   type VesselNavigationData,
   type WeatherData,
 } from '../types/index.js';
-import { isApiQuotaReached, msToWholeMinutes, toErrorMessage } from '../utils/conversions.js';
+import {
+  elapsedSinceMs,
+  isApiQuotaReached,
+  msToWholeMinutes,
+  toErrorMessage,
+} from '../utils/conversions.js';
 import { AccuWeatherService } from './AccuWeatherService.js';
 import { SignalKService } from './SignalKService.js';
 
@@ -242,10 +247,7 @@ export class WeatherService {
 
   /** Milliseconds since the last successful weather fetch, or null if none yet. */
   public getDataAgeMs(): number | null {
-    // Clamp at zero so a backward wall-clock jump cannot surface a negative
-    // age that would render as "last update -3m ago" on the banner or slip
-    // past the staleness watchdog in `emitWeatherTick`.
-    return this.lastUpdate ? Math.max(0, Date.now() - this.lastUpdate.getTime()) : null;
+    return elapsedSinceMs(this.lastUpdate ? this.lastUpdate.getTime() : null);
   }
 
   /**
@@ -322,8 +324,7 @@ export class WeatherService {
    * @private
    */
   private shouldShowQuotaWarning(used: number): boolean {
-    if (this.config.dailyApiQuota <= 0) return false;
-    return used / this.config.dailyApiQuota >= API_QUOTA.WARN_RATIO;
+    return isApiQuotaReached(used, this.config.dailyApiQuota, API_QUOTA.WARN_RATIO);
   }
 
   /**

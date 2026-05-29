@@ -7,6 +7,7 @@ import type { ServerAPI } from '@signalk/server-api';
 import { SIGNALK_PATHS, VALIDATION_LIMITS } from '../constants/index.js';
 import type { GeoLocation, Logger, PluginState, VesselNavigationData } from '../types/index.js';
 import {
+  elapsedSinceMs,
   isValidCoordinates,
   msToKnots,
   radiansToDegrees,
@@ -375,13 +376,8 @@ export class SignalKService {
    * @returns Age in seconds or null if no cached data
    */
   public getDataAge(): number | null {
-    const lastUpdateMs = this.cachedData.lastUpdateMs;
-    if (lastUpdateMs === null) {
-      return null;
-    }
-    // Clamp at zero so a backward NTP jump cannot surface a negative age that
-    // would slip past staleness comparisons and confuse downstream callers.
-    return Math.max(0, Math.floor((Date.now() - lastUpdateMs) / 1000));
+    const elapsedMs = elapsedSinceMs(this.cachedData.lastUpdateMs);
+    return elapsedMs === null ? null : Math.floor(elapsedMs / 1000);
   }
 
   /**
@@ -389,7 +385,15 @@ export class SignalKService {
    * @returns True if data is older than maxDataAge
    */
   public isDataStale(): boolean {
-    const age = this.getDataAge();
+    return this.isAgeStale(this.getDataAge());
+  }
+
+  /**
+   * Staleness test against an already-read age, so a caller holding one age
+   * snapshot can derive staleness without a second `Date.now()` read.
+   * @private
+   */
+  private isAgeStale(age: number | null): boolean {
     return age !== null && age > this.maxDataAge;
   }
 
@@ -448,7 +452,7 @@ export class SignalKService {
     hasComplete: boolean;
   } {
     const dataAge = this.getDataAge();
-    const isStale = this.isDataStale();
+    const isStale = this.isAgeStale(dataAge);
     const cachedData = this.getCachedNavigationData();
 
     return {

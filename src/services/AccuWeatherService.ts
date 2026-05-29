@@ -490,23 +490,42 @@ export class AccuWeatherService {
   }
 
   /**
-   * Build a metric forecast URL for a location key. Guards the key against the
-   * URL-path pattern (defense-in-depth, the cache could theoretically drift)
-   * and pins the four query params every forecast endpoint shares. `metric` is
-   * forecast-specific, so this builder is scoped to the forecast endpoints
-   * rather than reused for the current-conditions hops.
+   * Build an endpoint URL with the `apikey`, `language`, and `details` query
+   * params every AccuWeather endpoint this plugin calls shares. Callers append
+   * endpoint-specific params (`metric` on forecasts, `q` on location search).
    * @private
    */
-  private buildForecastUrl(endpoint: string, locationKey: string): URL {
+  private buildApiUrl(path: string): URL {
+    const url = new URL(`${ACCUWEATHER.BASE_URL}${path}`);
+    url.searchParams.set('apikey', this.config.apiKey);
+    url.searchParams.set('language', ACCUWEATHER.DEFAULT_LANGUAGE);
+    url.searchParams.set('details', 'true');
+    return url;
+  }
+
+  /**
+   * Build an endpoint URL keyed by a location key, guarding the key against the
+   * URL-path pattern (defense-in-depth, the cache could theoretically drift).
+   * Shared by the current-conditions and forecast hops.
+   * @private
+   */
+  private buildLocationKeyUrl(endpoint: string, locationKey: string): URL {
     if (!LOCATION_KEY_PATTERN.test(locationKey)) {
       throw new Error(
         `${ERROR_CODES.NETWORK.API_INVALID_RESPONSE}: refusing to use malformed location key in URL path`
       );
     }
-    const url = new URL(`${ACCUWEATHER.BASE_URL}${endpoint}/${locationKey}`);
-    url.searchParams.set('apikey', this.config.apiKey);
-    url.searchParams.set('language', ACCUWEATHER.DEFAULT_LANGUAGE);
-    url.searchParams.set('details', 'true');
+    return this.buildApiUrl(`${endpoint}/${locationKey}`);
+  }
+
+  /**
+   * Build a metric forecast URL for a location key. `metric` is forecast-
+   * specific, so it is added on top of the shared location-key builder rather
+   * than baked into it.
+   * @private
+   */
+  private buildForecastUrl(endpoint: string, locationKey: string): URL {
+    const url = this.buildLocationKeyUrl(endpoint, locationKey);
     url.searchParams.set('metric', 'true');
     return url;
   }
@@ -693,11 +712,8 @@ export class AccuWeatherService {
    * @private
    */
   private async searchLocation(location: GeoLocation): Promise<AccuWeatherLocation> {
-    const url = new URL(`${ACCUWEATHER.BASE_URL}${ACCUWEATHER.ENDPOINTS.LOCATION_SEARCH}`);
-    url.searchParams.set('apikey', this.config.apiKey);
+    const url = this.buildApiUrl(ACCUWEATHER.ENDPOINTS.LOCATION_SEARCH);
     url.searchParams.set('q', `${location.latitude},${location.longitude}`);
-    url.searchParams.set('language', ACCUWEATHER.DEFAULT_LANGUAGE);
-    url.searchParams.set('details', 'true');
 
     const data = await this.makeApiRequest<AccuWeatherLocation>(url);
 
@@ -722,20 +738,10 @@ export class AccuWeatherService {
    * @private
    */
   private async getCurrentConditions(locationKey: string): Promise<AccuWeatherCurrentConditions[]> {
-    if (!LOCATION_KEY_PATTERN.test(locationKey)) {
-      // Defense-in-depth: searchLocation already validates, but the cache could
-      // theoretically be poisoned if its invariants ever drift.
-      throw new Error(
-        `${ERROR_CODES.NETWORK.API_INVALID_RESPONSE}: refusing to use malformed location key in URL path`
-      );
-    }
-
-    const url = new URL(
-      `${ACCUWEATHER.BASE_URL}${ACCUWEATHER.ENDPOINTS.CURRENT_CONDITIONS}/${locationKey}`
-    );
-    url.searchParams.set('apikey', this.config.apiKey);
-    url.searchParams.set('language', ACCUWEATHER.DEFAULT_LANGUAGE);
-    url.searchParams.set('details', 'true');
+    // buildLocationKeyUrl guards the key against the URL-path pattern (defense-
+    // in-depth: searchLocation already validates, but the cache could
+    // theoretically be poisoned if its invariants ever drift).
+    const url = this.buildLocationKeyUrl(ACCUWEATHER.ENDPOINTS.CURRENT_CONDITIONS, locationKey);
 
     const data = await this.makeApiRequest<AccuWeatherCurrentConditions[]>(url);
 

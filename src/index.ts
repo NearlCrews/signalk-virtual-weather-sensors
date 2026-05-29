@@ -389,7 +389,9 @@ async function startServices(
     const adapter = new WeatherProviderAdapter(accuWeatherService, instance.logger);
     app.registerWeatherProvider(adapter.toProvider());
     instance.weatherProviderRegistered = true;
-    instance.logger('info', 'Registered Signal K weather provider', { provider: 'AccuWeather' });
+    instance.logger('info', 'Registered Signal K weather provider', {
+      provider: PLUGIN.PROVIDER_NAME,
+    });
   } else {
     instance.logger('warn', 'Server lacks registerWeatherProvider; weather API not exposed');
   }
@@ -813,6 +815,7 @@ function registerPanelRoutes(router: IRouter, instance: PluginInstance): void {
         quotaUsedLast24h: 0,
         lastUpdateMinutesAgo: null,
         activeNotifications: 0,
+        weatherProviderRegistered: false,
       };
       res.json(payload);
       return;
@@ -831,6 +834,7 @@ function registerPanelRoutes(router: IRouter, instance: PluginInstance): void {
       quotaUsedLast24h: ws.getRequestCountLast24h(),
       lastUpdateMinutesAgo: ageMs === null ? null : msToWholeMinutes(ageMs),
       activeNotifications: instance.notifier?.getActiveCount() ?? 0,
+      weatherProviderRegistered: instance.weatherProviderRegistered,
     };
     res.json(payload);
   });

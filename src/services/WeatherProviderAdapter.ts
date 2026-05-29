@@ -27,7 +27,7 @@ export class WeatherProviderAdapter {
   /** Build the WeatherProvider object passed to app.registerWeatherProvider. */
   public toProvider(): WeatherProvider {
     return {
-      name: 'AccuWeather',
+      name: PLUGIN.PROVIDER_NAME,
       methods: {
         pluginId: PLUGIN.NAME,
         getObservations: this.getObservations.bind(this),

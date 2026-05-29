@@ -239,6 +239,13 @@ export interface PanelStatusResponse {
   /** Whole-minute integer; null until the first successful fetch. */
   readonly lastUpdateMinutesAgo: number | null;
   readonly activeNotifications: number;
+  /**
+   * True once the Signal K v2 Weather API provider has been registered this
+   * start cycle (so the server advertises `weather` in /signalk/v2/features and
+   * forecast endpoints are live). False on older servers that lack
+   * `registerWeatherProvider`, or when the plugin is stopped.
+   */
+  readonly weatherProviderRegistered: boolean;
 }
 
 /**

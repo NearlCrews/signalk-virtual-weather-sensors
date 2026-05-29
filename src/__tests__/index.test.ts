@@ -366,7 +366,10 @@ describe('plugin entry: registerWithRouter exposes panel REST endpoints', () => 
     stubState.formatStatusBanner = () => 'Running, last update 0m ago (1 update)';
     stubState.getDataAgeMs = () => 30_000;
 
-    const app = buildMockApp();
+    const app = buildMockApp({
+      registerWeatherProvider: vi.fn(),
+      weatherApi: { unRegister: vi.fn() },
+    });
     const plugin = createPlugin(app as never);
     await plugin.start(baseSettings, () => {});
     const { router, routes } = captureRoutes();
@@ -382,6 +385,7 @@ describe('plugin entry: registerWithRouter exposes panel REST endpoints', () => 
     expect(payload.banner).toBe('Running, last update 0m ago (1 update)');
     expect(payload.lastUpdateMinutesAgo).toBe(0);
     expect(typeof payload.activeNotifications).toBe('number');
+    expect(payload.weatherProviderRegistered).toBe(true);
 
     await plugin.stop();
   });
