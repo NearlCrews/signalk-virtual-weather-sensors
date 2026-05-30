@@ -4,6 +4,7 @@
 [![npm downloads](https://img.shields.io/npm/dm/signalk-virtual-weather-sensors.svg)](https://www.npmjs.com/package/signalk-virtual-weather-sensors)
 [![License](https://img.shields.io/github/license/NearlCrews/signalk-virtual-weather-sensors.svg)](https://github.com/NearlCrews/signalk-virtual-weather-sensors/blob/main/LICENSE)
 [![CI](https://github.com/NearlCrews/signalk-virtual-weather-sensors/actions/workflows/ci.yml/badge.svg)](https://github.com/NearlCrews/signalk-virtual-weather-sensors/actions/workflows/ci.yml)
+[![Buy Me a Coffee](https://img.shields.io/badge/Buy%20Me%20a%20Coffee-FFDD00?logo=buymeacoffee&logoColor=black)](https://www.buymeacoffee.com/nearlcrews)
 
 Fetches weather data for your vessel's current position from the AccuWeather
 API and emits it as Signal K deltas: 30+ environmental data points including
@@ -179,6 +180,9 @@ part you agree to the [Code of Conduct](.github/CODE_OF_CONDUCT.md).
 Apache-2.0: see [LICENSE](LICENSE).
 
 ## Support
+
+Find this plugin useful? You can support its continued development by
+[buying me a coffee](https://www.buymeacoffee.com/nearlcrews).
 
 - [Report a bug](https://github.com/NearlCrews/signalk-virtual-weather-sensors/issues/new?template=bug_report.yml)
 - [Request a feature](https://github.com/NearlCrews/signalk-virtual-weather-sensors/issues/new?template=feature_request.yml)

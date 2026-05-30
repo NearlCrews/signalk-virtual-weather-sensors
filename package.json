@@ -60,6 +60,10 @@
     "url": "https://github.com/NearlCrews/signalk-virtual-weather-sensors/issues"
   },
   "homepage": "https://github.com/NearlCrews/signalk-virtual-weather-sensors#readme",
+  "funding": {
+    "type": "buymeacoffee",
+    "url": "https://www.buymeacoffee.com/nearlcrews"
+  },
   "engines": {
     "node": ">=20.18"
   },
