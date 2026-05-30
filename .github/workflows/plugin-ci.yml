@@ -1,0 +1,28 @@
+name: SignalK Plugin CI
+
+# Calls the official SignalK reusable plugin-ci workflow. The community plugin
+# registry (dirkwa.github.io/signalk-plugin-registry) credits a plugin only
+# when a workflow run referencing
+# SignalK/signalk-server/.github/workflows/plugin-ci.yml exists on the
+# published version's commit; without one it applies a scoring penalty. The
+# tag trigger guarantees a run exists on the exact commit each release is
+# published from. The reusable workflow runs npm ci, the build, and npm pack
+# across Linux, macOS, and Windows on Node 20, 22, and 24, plus the armv7
+# Cerbo GX lane on Node 20 (supported here: engines.node is >=20.18).
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  plugin-ci:
+    uses: SignalK/signalk-server/.github/workflows/plugin-ci.yml@master
+    with:
+      build-command: npm run build
