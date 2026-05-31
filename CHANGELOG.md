@@ -5,6 +5,35 @@ All notable changes to the signalk-virtual-weather-sensors project will be docum
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+Whole-codebase cleanup pass driven by a five-agent audit (`/cleanup`):
+correctness fixes to the forecast mapper and notification clears, broad
+de-duplication, and doc-accuracy corrections. No emitted measurement path,
+delta shape, public config, or notification band changed.
+
+### Fixed
+
+- **Forecast mapper no longer emits 0 K for a missing temperature.** `mapHourlyToForecasts` and `mapDailyToForecasts` route `Temperature.Value` (and the daily min/max) through a finite guard, omitting the leaf when the value is absent rather than letting `celsiusToKelvin` floor non-finite input to absolute zero. `absoluteHumidity`, which needs temperature, is omitted with it.
+- **Cleared severe-weather notifications carry an empty message.** The ascending and descending band evaluators now emit `''` on the `state: 'normal'` exit transition, matching `clearBands` and the severe-condition path, so a consumer no longer renders stale hazard text (e.g. "Gale-force wind: Bf6…") on a cleared alert.
+- **Speed-over-ground rejects a NaN value.** `getVesselSpeedOverGround` validates through the new `isValidVesselSpeed`, so a NaN (which slipped past the bare `typeof === 'number'` check) is treated as missing rather than reported as a valid speed.
+- **Non-retryable HTTP statuses are no longer retried.** In `handleApiError`, a 4xx other than 429 is tagged `API_INVALID_RESPONSE` (non-retryable) instead of `NETWORK_ERROR`, so the client stops burning retry attempts and quota on client errors that cannot succeed on retry; 5xx stays retryable.
+- **Consistent non-finite temperature fallback.** `celsiusToKelvin` returns the 0°C-equivalent for non-finite input, matching its sibling converters instead of flooring garbage to absolute zero.
+
+### Internal
+
+- **De-duplication and helper extraction.** Shared cache eviction (`evictOldestOverCap`), a shared retryable-status thrower, a `readNumericSelfPath` accessor behind the navigation getters, a `buildCloudAndPrecip` mapper helper, `formStateFromConfig` in the config panel, and `isValidVesselSpeed` / `isValidBearing` domain validators. The Fahrenheit conversion functions moved out of the `UNITS` data table into `conversions.ts`, leaving `UNITS` pure data.
+- **Validator bounds reference `CONFIG_DEFAULTS`.** `NUMERIC_CONFIG_RULES` reads its min/max from `CONFIG_DEFAULTS`, the same source the sanitizer clamps to, so the validator warning threshold and the runtime clamp cannot drift.
+- **In-flight location-search coalescing.** Concurrent cold forecast lookups for the same coordinates share one upstream location search, so a dashboard polling both forecast endpoints no longer spends two requests for one lookup.
+- **Provider unregistration is leak-safe.** A throw after `registerWeatherProvider` now unregisters the provider during startup-error cleanup, so a half-started plugin cannot leave the provider registered in the server.
+- **Mapper failures stop re-logging every tick.** A persistent mapping failure pins the failing snapshot so the emission tick skips re-mapping (and re-logging) it until new data arrives.
+- **Dead code and doc rot removed.** Three unused `ERROR_CODES`, a dead apparent-wind guard, an unreachable mapper guard, a dead heat-index term, a reimplemented angle wrap, a double code-point allocation, and several stale or self-restating comments (including a rotted rolling-window doc and a `consecutiveFailures` comment referencing a nonexistent constant). The mapper and wind-calculator constructor "initialized" info logs were demoted to debug.
+- **SignalK plugin-ci now passes (App Store Indicators).** Removed the `prepare: husky` script: on Node 22 (npm 10) its lifecycle banner leaked into the App Store install simulation's `npm pack` stdout capture, corrupting the tarball path and failing the Linux and Windows plugin-ci jobs. The pre-commit hook is now opt-in via `npm run hooks`. Corrected the `plugin-ci.yml` comment to match the reusable workflow's current default matrix (Node 22 and 24, plus the armv7 Cerbo GX lane on Node 20 and an es-check es2023 gate).
+
+### Documentation
+
+- Corrected the esbuild bundle size (~98 KB) and the test count (327 across 13 files) in `docs/DEVELOPMENT.md` and `CLAUDE.md`, and the husky hook setup (now manual via `npm run hooks`) in `docs/DEVELOPMENT.md` and `.github/CONTRIBUTING.md`.
+
 ## [1.7.1] - 2026-05-28
 
 A small observability and cleanup release. The config panel now shows whether

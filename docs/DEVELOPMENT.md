@@ -73,7 +73,7 @@ export default function createPlugin(app: ServerAPI): Plugin {
 #### esbuild 0.28+
 - **Purpose**: Fast, modern JavaScript bundler for the plugin runtime
 - **Configuration**: [`esbuild.config.js`](../esbuild.config.js)
-- **Performance**: ~87 KB bundle in tens of milliseconds (the build script logs the live size after every run)
+- **Performance**: ~98 KB bundle in tens of milliseconds (the build script logs the live size after every run)
 - **Features**:
   - ES2023 target compilation
   - Source map generation
@@ -82,7 +82,7 @@ export default function createPlugin(app: ServerAPI): Plugin {
   - Banner injection for plugin metadata
 
 **Build Outputs:**
-- `dist/index.js`: main plugin bundle (~87 KB)
+- `dist/index.js`: main plugin bundle (~98 KB)
 - `dist/index.js.map`: source map
 - `dist/index.d.ts` and per-source `*.d.ts`: TypeScript declarations
 - `public/remoteEntry.js` plus federated chunks (.mjs): the React config panel, bundled by webpack via `ModuleFederationPlugin` (see [`webpack.config.cjs`](../webpack.config.cjs)). Independent of the esbuild bundle above; both are produced by `npm run build`.
@@ -157,6 +157,10 @@ src/__tests__/
 - **Purpose**: Git hooks for code quality enforcement
 - **Configuration**: [`.husky/pre-commit`](../.husky/pre-commit)
 - **Pre-commit Hook**: Runs `npm run validate` (type check, Biome lint, Biome format check, test suite)
+- **Opt-in**: enable the hook once with `npm run hooks`. There is intentionally
+  no `prepare` script: a `prepare` lifecycle banner leaks into the SignalK App
+  Store install simulation's `npm pack` stdout capture on Node 22's npm 10 and
+  fails plugin-ci, so hook setup is manual rather than automatic on `npm install`.
 
 #### Lint-staged
 - **Purpose**: Run linters only on staged files
@@ -254,7 +258,8 @@ arrives. The Signal K delta is rebuilt only when weather data actually changes.
 ```bash
 git clone https://github.com/NearlCrews/signalk-virtual-weather-sensors.git
 cd signalk-virtual-weather-sensors
-npm install          # also installs husky hooks
+npm install          # install dependencies
+npm run hooks        # optional: enable the Biome pre-commit hook
 node --version       # verify Node.js 20.18+
 ```
 
@@ -303,7 +308,7 @@ npm run release            # Tag, push, and create the GitHub release (auto-trig
 2. Develop with hot reload: `npm run dev`
 3. Write tests alongside the change: `npm run test`
 4. Verify code quality: `npm run validate`
-5. Commit (pre-commit hooks run automatically)
+5. Commit (the pre-commit hook runs `npm run validate` if you enabled it with `npm run hooks`)
 6. Push and open a PR against `main`
 
 See [CONTRIBUTING.md](../.github/CONTRIBUTING.md) for the full pull request
@@ -312,7 +317,7 @@ process, coding standards, and commit conventions.
 ## Testing Strategy
 
 The suite covers unit behavior, service integration, calculation accuracy,
-edge and boundary conditions, and error handling. **Total: 326 tests** across
+edge and boundary conditions, and error handling. **Total: 327 tests** across
 13 test files.
 
 - [`index.test.ts`](../src/__tests__/index.test.ts): plugin entry point, meta-delta one-shot invariant, banner dedupe regression, stale-data and quota-exhausted emission-tick branches, panel REST endpoint registration + status + test-key (short-key + long-key-rejected paths) (11 tests)
