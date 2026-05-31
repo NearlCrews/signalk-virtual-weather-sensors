@@ -56,6 +56,19 @@ describe('mapHourlyToForecasts', () => {
     expect(f?.description).toBeUndefined();
   });
 
+  it('omits temperature when the value is missing rather than emitting 0 K', () => {
+    const noTemp = {
+      DateTime: '2026-05-28T14:00:00+00:00',
+      Temperature: { Value: null, Unit: 'C' },
+      RelativeHumidity: 50,
+    } as unknown as AccuWeatherHourlyForecast;
+    const [f] = mapHourlyToForecasts([noTemp]);
+    expect(f?.outside?.temperature).toBeUndefined();
+    // absoluteHumidity needs temperature, so it drops too; relativeHumidity stays.
+    expect(f?.outside?.relativeHumidity).toBeCloseTo(0.5, 5);
+    expect(f?.outside?.absoluteHumidity).toBeUndefined();
+  });
+
   it('does not set precipitationType when HasPrecipitation is false', () => {
     const [f] = mapHourlyToForecasts([
       { ...fullHour, HasPrecipitation: false, PrecipitationType: 'Rain' },

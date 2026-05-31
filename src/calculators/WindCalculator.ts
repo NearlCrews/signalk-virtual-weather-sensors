@@ -41,7 +41,7 @@ export class WindCalculator {
 
   constructor(logger: Logger = () => {}) {
     this.logger = logger;
-    this.logger('info', 'WindCalculator initialized');
+    this.logger('debug', 'WindCalculator initialized');
   }
 
   /**
@@ -169,8 +169,9 @@ export class WindCalculator {
 
     // High-humidity adjustment only: the HEAT_INDEX_MIN_HUMIDITY_PCT=40 gate
     // above rules out the companion low-humidity (r<13) Rothfusz correction
-    // the NWS publishes, so we omit that branch.
-    if (r > 85 && t >= HEAT_INDEX_MIN_TEMP_F && t <= 87) {
+    // the NWS publishes, so we omit that branch. `t >= HEAT_INDEX_MIN_TEMP_F` is
+    // already guaranteed by the early return above, so only `t <= 87` is checked.
+    if (r > 85 && t <= 87) {
       heatIndex += ((r - 85) / 10) * ((87 - t) / 5);
     }
 

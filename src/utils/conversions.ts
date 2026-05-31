@@ -54,8 +54,18 @@ export function isApiQuotaReached(
   return used / quota >= ratio;
 }
 
+/** Fahrenheit to Celsius. Behaviour, not data, so it lives here, not in `UNITS`. */
+const fahrenheitToCelsius = (fahrenheit: number): number => ((fahrenheit - 32) * 5) / 9;
+/** Celsius to Fahrenheit. */
+const celsiusToFahrenheit = (celsius: number): number => (celsius * 9) / 5 + 32;
+
+/**
+ * Celsius to Kelvin. Non-finite input returns the 0°C-equivalent
+ * (`CELSIUS_TO_KELVIN`), matching the 0°C-equivalent fallback the sibling
+ * temperature converters use rather than flooring garbage to absolute zero.
+ */
 export function celsiusToKelvin(celsius: number): number {
-  if (!Number.isFinite(celsius)) return 0;
+  if (!Number.isFinite(celsius)) return UNITS.TEMPERATURE.CELSIUS_TO_KELVIN;
   return celsius + UNITS.TEMPERATURE.CELSIUS_TO_KELVIN;
 }
 
@@ -65,14 +75,14 @@ export function kelvinToCelsius(kelvin: number): number {
 }
 
 export function kelvinToFahrenheit(kelvin: number): number {
-  if (!Number.isFinite(kelvin)) return UNITS.TEMPERATURE.CELSIUS_TO_FAHRENHEIT(0);
+  if (!Number.isFinite(kelvin)) return celsiusToFahrenheit(0);
   const celsius = kelvin - UNITS.TEMPERATURE.CELSIUS_TO_KELVIN;
-  return UNITS.TEMPERATURE.CELSIUS_TO_FAHRENHEIT(celsius);
+  return celsiusToFahrenheit(celsius);
 }
 
 export function fahrenheitToKelvin(fahrenheit: number): number {
   if (!Number.isFinite(fahrenheit)) return UNITS.TEMPERATURE.CELSIUS_TO_KELVIN;
-  const celsius = UNITS.TEMPERATURE.FAHRENHEIT_TO_CELSIUS(fahrenheit);
+  const celsius = fahrenheitToCelsius(fahrenheit);
   return celsius + UNITS.TEMPERATURE.CELSIUS_TO_KELVIN;
 }
 
@@ -169,6 +179,23 @@ export function isValidWindSpeed(windSpeed: number): boolean {
   );
 }
 
+export function isValidVesselSpeed(speed: number): boolean {
+  return isWithinBounds(
+    speed,
+    VALIDATION_LIMITS.VESSEL_SPEED.MIN,
+    VALIDATION_LIMITS.VESSEL_SPEED.MAX
+  );
+}
+
+/** Valid compass angle in radians [0, 2π]. Covers course, heading, and wind direction. */
+export function isValidBearing(radians: number): boolean {
+  return isWithinBounds(
+    radians,
+    VALIDATION_LIMITS.WIND_DIRECTION.MIN,
+    VALIDATION_LIMITS.WIND_DIRECTION.MAX
+  );
+}
+
 export function isValidCoordinates(latitude: number, longitude: number): boolean {
   return (
     isWithinBounds(
@@ -200,10 +227,13 @@ export function isValidCoordinates(latitude: number, longitude: number): boolean
  */
 export function calculateSaturationVaporPressure(temperatureK: number): number {
   if (!Number.isFinite(temperatureK)) return 0;
-  const tempC = temperatureK - UNITS.TEMPERATURE.CELSIUS_TO_KELVIN;
+  const tempC = kelvinToCelsius(temperatureK);
   const saturationPressureHPa = MAGNUS.C * Math.exp((MAGNUS.A * tempC) / (MAGNUS.B + tempC));
-  return saturationPressureHPa * 100;
+  return saturationPressureHPa * UNITS.PRESSURE.MILLIBAR_TO_PASCAL;
 }
+
+/** Molar mass of water vapour divided by the universal gas constant (kg·K/J). */
+const WATER_VAPOR_DENSITY_CONSTANT = 0.002166;
 
 /**
  * Calculate absolute humidity from temperature and relative humidity
@@ -217,8 +247,7 @@ export function calculateAbsoluteHumidity(temperatureK: number, relativeHumidity
   const saturationPressure = calculateSaturationVaporPressure(temperatureK);
   const vaporPressure = relativeHumidity * saturationPressure;
 
-  // 0.002166 kg·K/J is the molar mass of water vapour divided by the universal gas constant.
-  const absoluteHumidity = (0.002166 * vaporPressure) / temperatureK;
+  const absoluteHumidity = (WATER_VAPOR_DENSITY_CONSTANT * vaporPressure) / temperatureK;
 
   return Math.max(0, absoluteHumidity);
 }

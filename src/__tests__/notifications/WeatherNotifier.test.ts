@@ -78,6 +78,10 @@ describe('WeatherNotifier: wind bands', () => {
     expect(paths.get(NOTIFICATION_PATHS.WIND_GALE)?.state).toBe('normal');
     expect(paths.get(NOTIFICATION_PATHS.WIND_STORM)?.state).toBe('normal');
     expect(paths.get(NOTIFICATION_PATHS.WIND_HURRICANE)?.state).toBe('normal');
+    // A cleared band carries an empty message, not stale "Gale-force wind: ..." text.
+    expect(paths.get(NOTIFICATION_PATHS.WIND_GALE)?.message).toBe('');
+    expect(paths.get(NOTIFICATION_PATHS.WIND_STORM)?.message).toBe('');
+    expect(paths.get(NOTIFICATION_PATHS.WIND_HURRICANE)?.message).toBe('');
   });
 
   it('is idempotent: a repeated active snapshot emits no further transitions', () => {

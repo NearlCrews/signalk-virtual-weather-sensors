@@ -22,7 +22,7 @@ describe('NMEA2000PathMapper', () => {
     it('should initialize with logger', () => {
       // Create new mapper to trigger logger call
       new NMEA2000PathMapper(mockLogger);
-      expect(mockLogger).toHaveBeenCalledWith('info', expect.stringContaining('initialized'));
+      expect(mockLogger).toHaveBeenCalledWith('debug', expect.stringContaining('initialized'));
     });
 
     it('should work with default logger', () => {

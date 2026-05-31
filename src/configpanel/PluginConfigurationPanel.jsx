@@ -2,7 +2,7 @@
  * React config panel for signalk-virtual-weather-sensors.
  *
  * Loaded by the Signal K Admin UI v2.13+ via Module Federation (see
- * webpack.config.js). The `signalk-plugin-configurator` keyword in
+ * webpack.config.cjs). The `signalk-plugin-configurator` keyword in
  * package.json is what triggers the host to load this panel in place of the
  * default rjsf-rendered form.
  *
@@ -29,6 +29,8 @@ import {
 
 const COLOR_OK = '#10b981';
 const COLOR_ERR = '#ef4444';
+// Neutral gray for the unknown / not-yet-loaded status indicator.
+const COLOR_NEUTRAL = '#9ca3af';
 
 // Typography shared by the plain and collapsible section headers.
 const SECTION_TITLE_TYPE = {
@@ -183,6 +185,21 @@ const NOTIFICATION_TOGGLES = Object.entries(NOTIFICATION_LABELS).map(([key, labe
 }));
 
 /**
+ * Derive form field values from a (possibly partial) saved config, filling
+ * defaults from the shared module. Single source for the useState initializers
+ * and the resync effect so a new field is added in one place, not two.
+ */
+function formStateFromConfig(c) {
+  return {
+    accuWeatherApiKey: c.accuWeatherApiKey || '',
+    updateFrequency: c.updateFrequency ?? CONFIG_DEFAULTS.UPDATE_FREQUENCY,
+    emissionInterval: c.emissionInterval ?? CONFIG_DEFAULTS.EMISSION_INTERVAL,
+    dailyApiQuota: c.dailyApiQuota ?? CONFIG_DEFAULTS.DAILY_API_QUOTA,
+    notifications: { ...DEFAULT_NOTIFICATIONS, ...(c.notifications || {}) },
+  };
+}
+
+/**
  * Collapsible config section. Sections start collapsed so the panel opens as a
  * compact summary under the Status block; the operator expands only what they
  * intend to change.
@@ -200,26 +217,16 @@ function Section({ title, open, onToggle, children }) {
 }
 
 export default function PluginConfigurationPanel({ configuration, save }) {
-  const cfg = configuration || {};
-
   // Form state: one useState per editable field, mirroring the QuestDB
   // convention. Sub-objects (notifications) get their own state and are
-  // re-assembled in doSave. Defaults flow from the shared module so the panel
-  // and the rjsf schema can't drift on what "default" means.
-  const [accuWeatherApiKey, setAccuWeatherApiKey] = useState(cfg.accuWeatherApiKey || '');
-  const [updateFrequency, setUpdateFrequency] = useState(
-    cfg.updateFrequency ?? CONFIG_DEFAULTS.UPDATE_FREQUENCY
-  );
-  const [emissionInterval, setEmissionInterval] = useState(
-    cfg.emissionInterval ?? CONFIG_DEFAULTS.EMISSION_INTERVAL
-  );
-  const [dailyApiQuota, setDailyApiQuota] = useState(
-    cfg.dailyApiQuota ?? CONFIG_DEFAULTS.DAILY_API_QUOTA
-  );
-  const [notifications, setNotifications] = useState({
-    ...DEFAULT_NOTIFICATIONS,
-    ...(cfg.notifications || {}),
-  });
+  // re-assembled in doSave. Defaults flow through formStateFromConfig so the
+  // panel and the rjsf schema can't drift on what "default" means.
+  const initial = formStateFromConfig(configuration || {});
+  const [accuWeatherApiKey, setAccuWeatherApiKey] = useState(initial.accuWeatherApiKey);
+  const [updateFrequency, setUpdateFrequency] = useState(initial.updateFrequency);
+  const [emissionInterval, setEmissionInterval] = useState(initial.emissionInterval);
+  const [dailyApiQuota, setDailyApiQuota] = useState(initial.dailyApiQuota);
+  const [notifications, setNotifications] = useState(initial.notifications);
 
   // Live data polled from the plugin's REST surface.
   const [status, setStatus] = useState(null);
@@ -254,12 +261,12 @@ export default function PluginConfigurationPanel({ configuration, save }) {
   // after a save+restart): useState initializers run only once, so without
   // this the form would keep showing stale values on a configuration change.
   useEffect(() => {
-    const c = configuration || {};
-    setAccuWeatherApiKey(c.accuWeatherApiKey || '');
-    setUpdateFrequency(c.updateFrequency ?? CONFIG_DEFAULTS.UPDATE_FREQUENCY);
-    setEmissionInterval(c.emissionInterval ?? CONFIG_DEFAULTS.EMISSION_INTERVAL);
-    setDailyApiQuota(c.dailyApiQuota ?? CONFIG_DEFAULTS.DAILY_API_QUOTA);
-    setNotifications({ ...DEFAULT_NOTIFICATIONS, ...(c.notifications || {}) });
+    const next = formStateFromConfig(configuration || {});
+    setAccuWeatherApiKey(next.accuWeatherApiKey);
+    setUpdateFrequency(next.updateFrequency);
+    setEmissionInterval(next.emissionInterval);
+    setDailyApiQuota(next.dailyApiQuota);
+    setNotifications(next.notifications);
   }, [configuration]);
 
   const fetchStatus = useCallback(async () => {
@@ -389,8 +396,8 @@ export default function PluginConfigurationPanel({ configuration, save }) {
     }
   };
 
-  const isRunning = status && status.running;
-  const indicatorColor = !status ? '#9ca3af' : isRunning ? COLOR_OK : COLOR_ERR;
+  const isRunning = status?.running;
+  const indicatorColor = !status ? COLOR_NEUTRAL : isRunning ? COLOR_OK : COLOR_ERR;
   const stateLabel = !status ? 'Unknown' : isRunning ? 'Running' : 'Not running';
 
   return (

@@ -26,9 +26,9 @@ import type {
 } from '../types/index.js';
 import {
   kelvinToCelsius,
+  normalizeAngle0To2Pi,
   radiansToDegrees,
   ratioToPercentage,
-  truncateToCodePoints,
 } from '../utils/conversions.js';
 import { pv } from '../utils/skDelta.js';
 
@@ -72,9 +72,14 @@ function methodsFor(state: NotificationState): ReadonlyArray<NotificationMethod>
 export const MAX_MESSAGE_LENGTH = 80;
 
 function capForChartplotter(message: string): string {
-  // Count code points, not UTF-16 units, so the cap matches truncateToCodePoints.
-  if (Array.from(message).length <= MAX_MESSAGE_LENGTH) return message;
-  return `${truncateToCodePoints(message, MAX_MESSAGE_LENGTH - 1)}…`;
+  // UTF-16 length is an upper bound on code-point count, so a string within the
+  // cap by UTF-16 units is within it by code points too: skip the array.
+  if (message.length <= MAX_MESSAGE_LENGTH) return message;
+  // Over the upper bound: count code points once (walking points, not UTF-16
+  // units, so a surrogate pair at the boundary is never split) and reuse them.
+  const points = Array.from(message);
+  if (points.length <= MAX_MESSAGE_LENGTH) return message;
+  return `${points.slice(0, MAX_MESSAGE_LENGTH - 1).join('')}…`;
 }
 
 /**
@@ -108,7 +113,7 @@ const CARDINAL_16 = [
 ] as const;
 
 function radiansToCardinal(radians: number): string {
-  const deg = ((radiansToDegrees(radians) % 360) + 360) % 360;
+  const deg = radiansToDegrees(normalizeAngle0To2Pi(radians));
   const idx = Math.floor((deg + 11.25) / 22.5) % 16;
   return CARDINAL_16[idx] ?? 'N';
 }
@@ -487,10 +492,14 @@ export class WeatherNotifier {
     out: PathValue[]
   ): void {
     for (const band of bands) {
+      const desired = value >= band.threshold ? band.state : 'normal';
+      // On exit (desired 'normal') pass an empty message so a cleared alert
+      // does not carry stale hazard text, matching clearBands and
+      // evaluateSevereCondition.
       this.maybeTransition(
         band.path,
-        value >= band.threshold ? band.state : 'normal',
-        () => `${band.prefix}: ${scalarSuffix()}`,
+        desired,
+        desired === 'normal' ? () => '' : () => `${band.prefix}: ${scalarSuffix()}`,
         out
       );
     }
@@ -508,10 +517,12 @@ export class WeatherNotifier {
     out: PathValue[]
   ): void {
     for (const band of bands) {
+      const desired = value < band.threshold ? band.state : 'normal';
+      // Empty message on exit so a cleared alert carries no stale hazard text.
       this.maybeTransition(
         band.path,
-        value < band.threshold ? band.state : 'normal',
-        () => `${band.prefix}: ${scalarSuffix()}`,
+        desired,
+        desired === 'normal' ? () => '' : () => `${band.prefix}: ${scalarSuffix()}`,
         out
       );
     }

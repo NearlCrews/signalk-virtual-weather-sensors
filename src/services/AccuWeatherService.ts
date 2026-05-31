@@ -75,16 +75,17 @@ function capString(value: unknown, maxLength: number): string {
 }
 
 /**
- * Lowercased retryable error code substrings, computed once at module load
- * so isRetryableError doesn't recompute on every retry classification.
+ * Lowercased retryable error code substrings. An array, not a Set: membership is
+ * tested by substring (`message.includes`), not exact key, so a Set buys nothing.
+ * Lowercased once at module load so isRetryableError does not recompute it.
  */
-const RETRYABLE_ERROR_SUBSTRINGS: ReadonlySet<string> = new Set([
+const RETRYABLE_ERROR_SUBSTRINGS: ReadonlyArray<string> = [
   ERROR_CODES.NETWORK.API_RATE_LIMIT.toLowerCase(),
   ERROR_CODES.NETWORK.NETWORK_ERROR.toLowerCase(),
   'timeout',
   'econnreset',
   'enotfound',
-]);
+];
 
 /**
  * AccuWeather API client for weather data operations
@@ -92,6 +93,21 @@ const RETRYABLE_ERROR_SUBSTRINGS: ReadonlySet<string> = new Set([
  */
 /** Maximum number of entries in location cache before pruning */
 const MAX_CACHE_SIZE = 100;
+
+/**
+ * Evict the lowest-`ageValue` entries from `map` until it holds at most
+ * MAX_CACHE_SIZE. Returns the number removed. Shared by the location and
+ * forecast cache prunes so the sort-and-slice-oldest eviction lives in one place.
+ */
+function evictOldestOverCap<K, V>(map: Map<K, V>, ageValue: (entry: V) => number): number {
+  if (map.size <= MAX_CACHE_SIZE) return 0;
+  const entries = Array.from(map.entries()).sort((a, b) => ageValue(a[1]) - ageValue(b[1]));
+  const toRemove = entries.slice(0, entries.length - MAX_CACHE_SIZE);
+  for (const [key] of toRemove) {
+    map.delete(key);
+  }
+  return toRemove.length;
+}
 
 /** How often the location cache prune sweep runs (5 minutes). */
 const CACHE_PRUNE_INTERVAL_MS = 5 * 60 * 1000;
@@ -105,18 +121,24 @@ const REQUEST_WINDOW_HOURS = 24;
 const HOUR_MS = 60 * 60 * 1000;
 
 /**
- * Heat-stress index from wet-bulb globe temperature, banded on the US military
- * WBGT flag cutoffs (green 26.7, yellow 27.8, red 29.4, black 32.2 C). A
- * precautionary bias on a crew-safety index favours these standard flag
- * values over looser bands that would activate each warning roughly 0.5 to
- * 1.5 C late.
+ * US military WBGT flag cutoffs in Celsius (green, yellow, red, black). A
+ * precautionary bias on a crew-safety index favours these standard flag values
+ * over looser bands that would activate each warning roughly 0.5 to 1.5 C late.
  */
+const WBGT_FLAG_CUTOFFS_C = {
+  GREEN: 26.7,
+  YELLOW: 27.8,
+  RED: 29.4,
+  BLACK: 32.2,
+} as const;
+
+/** Heat-stress index (0 low to 4 extreme) from wet-bulb globe temperature, banded on the WBGT military flags. */
 function calculateHeatStressIndex(wetBulbGlobeTemperatureK: number): number {
   const wbgtC = kelvinToCelsius(wetBulbGlobeTemperatureK);
-  if (wbgtC < 26.7) return 0;
-  if (wbgtC < 27.8) return 1;
-  if (wbgtC < 29.4) return 2;
-  if (wbgtC < 32.2) return 3;
+  if (wbgtC < WBGT_FLAG_CUTOFFS_C.GREEN) return 0;
+  if (wbgtC < WBGT_FLAG_CUTOFFS_C.YELLOW) return 1;
+  if (wbgtC < WBGT_FLAG_CUTOFFS_C.RED) return 2;
+  if (wbgtC < WBGT_FLAG_CUTOFFS_C.BLACK) return 3;
   return 4;
 }
 
@@ -235,11 +257,13 @@ export class AccuWeatherService {
    */
   private requestCount = 0;
   /**
-   * Circular buffer of per-hour request counts spanning the last 24 hours.
-   * `requestWindow[i]` holds the count for the hour offset `i` from
-   * `requestWindowBaseHour` (midnight-aligned to 1970 epoch hour). On each
-   * request we rotate forward by the elapsed hours, zeroing skipped buckets,
-   * which keeps memory at exactly 24 numbers regardless of uptime.
+   * Fixed-length array of 24 hourly request-count buckets spanning the last 24
+   * hours. The last slot (`requestWindow[REQUEST_WINDOW_HOURS - 1]`) is the
+   * current hour; earlier indices step into the past. `rotateRequestWindow`
+   * shifts the array left by the number of elapsed hours (dropping the oldest,
+   * pushing zeros at the current-hour end), so memory stays at exactly 24
+   * numbers regardless of uptime. The current-hour epoch index lives in
+   * `requestWindowCurrentHour`.
    */
   private requestWindow: number[] = new Array(REQUEST_WINDOW_HOURS).fill(0);
   /**
@@ -255,6 +279,12 @@ export class AccuWeatherService {
    * Weather API consumers rather than the plugin's own fetch timer.
    */
   private forecastCache = new Map<string, { data: unknown; expiresAt: number }>();
+  /**
+   * In-flight location searches keyed by location-cache key, so concurrent cold
+   * lookups for the same coordinates share one upstream call instead of each
+   * spending a request. Entries clear when the search settles.
+   */
+  private inFlightLocationSearch = new Map<string, Promise<AccuWeatherLocation>>();
 
   constructor(apiKey: string, logger: Logger = () => {}, config?: Partial<AccuWeatherConfig>) {
     // Validate before any field assignment so a throw cannot leave the instance
@@ -478,15 +508,8 @@ export class AccuWeatherService {
         this.forecastCache.delete(key);
       }
     }
-    if (this.forecastCache.size > MAX_CACHE_SIZE) {
-      const entries = Array.from(this.forecastCache.entries()).sort(
-        (a, b) => a[1].expiresAt - b[1].expiresAt
-      );
-      const toRemove = entries.slice(0, entries.length - MAX_CACHE_SIZE);
-      for (const [key] of toRemove) {
-        this.forecastCache.delete(key);
-      }
-    }
+    // If still over the cap, drop the soonest-to-expire entries.
+    evictOldestOverCap(this.forecastCache, (entry) => entry.expiresAt);
   }
 
   /**
@@ -652,18 +675,8 @@ export class AccuWeatherService {
       }
     }
 
-    // If still over max size, remove oldest entries
-    if (this.locationCache.size > MAX_CACHE_SIZE) {
-      const entries = Array.from(this.locationCache.entries()).sort(
-        (a, b) => a[1].timestamp - b[1].timestamp
-      );
-
-      const toRemove = entries.slice(0, entries.length - MAX_CACHE_SIZE);
-      for (const [key] of toRemove) {
-        this.locationCache.delete(key);
-        pruned++;
-      }
-    }
+    // If still over max size, remove oldest entries.
+    pruned += evictOldestOverCap(this.locationCache, (entry) => entry.timestamp);
 
     if (pruned > 0) {
       this.logger('debug', 'Location cache pruned', {
@@ -690,7 +703,7 @@ export class AccuWeatherService {
       return cached.location.Key;
     }
 
-    const locationData = await this.searchLocation(location);
+    const locationData = await this.searchLocationCoalesced(cacheKey, location);
 
     this.locationCache.set(cacheKey, {
       location: locationData,
@@ -705,6 +718,27 @@ export class AccuWeatherService {
     });
 
     return locationData.Key;
+  }
+
+  /**
+   * Coalesce concurrent cold location searches for the same coordinates onto a
+   * single upstream call. Without this a dashboard hitting getHourlyForecast and
+   * getDailyForecast at once on an empty cache would fire two identical location
+   * searches, spending two requests against the free 50/day key for one lookup.
+   * The in-flight entry clears when the search settles (success or failure).
+   * @private
+   */
+  private searchLocationCoalesced(
+    cacheKey: string,
+    location: GeoLocation
+  ): Promise<AccuWeatherLocation> {
+    const existing = this.inFlightLocationSearch.get(cacheKey);
+    if (existing) return existing;
+    const promise = this.searchLocation(location).finally(() => {
+      this.inFlightLocationSearch.delete(cacheKey);
+    });
+    this.inFlightLocationSearch.set(cacheKey, promise);
+    return promise;
   }
 
   /**
@@ -835,9 +869,11 @@ export class AccuWeatherService {
   }
 
   /**
-   * Read a Response body as JSON with a maximum byte cap.
-   * Prevents a malicious or runaway upstream from forcing us to buffer huge
-   * payloads in memory before the JSON parser ever sees them.
+   * Read a Response body as JSON with a size cap. The Content-Length check
+   * rejects an oversized declared body before `response.text()` buffers it; the
+   * post-read length check is a fallback for a missing (chunked) or lying
+   * Content-Length, bounding what reaches `JSON.parse` (the body is already
+   * buffered by then, so it caps the parse step, not the buffering).
    * @private
    */
   private async readBoundedJson<T>(response: Response): Promise<T> {
@@ -851,12 +887,13 @@ export class AccuWeatherService {
       }
     }
 
-    // Always read as text with a length check: Content-Length may be missing
-    // (chunked encoding) or lie about the body size.
+    // Read as text with a length check: Content-Length may be missing (chunked
+    // encoding) or lie about the body size. `text.length` is UTF-16 code units,
+    // not bytes, but as an upper-bound safety cap that distinction is immaterial.
     const text = await response.text();
     if (text.length > MAX_RESPONSE_BYTES) {
       throw new Error(
-        `${ERROR_CODES.NETWORK.RESPONSE_TOO_LARGE}: AccuWeather response is ${text.length} bytes (max ${MAX_RESPONSE_BYTES})`
+        `${ERROR_CODES.NETWORK.RESPONSE_TOO_LARGE}: AccuWeather response is ${text.length} characters (max ${MAX_RESPONSE_BYTES})`
       );
     }
 
@@ -934,38 +971,54 @@ export class AccuWeatherService {
           `${ERROR_CODES.DATA.INVALID_WEATHER_DATA}: Location not found - ${message}`
         );
       case 429:
-        if (attempt < this.config.retryAttempts) {
-          this.logger('warn', 'Rate limited by API, will retry', {
-            attempt,
-            retryAfterMs,
-            retryAfterHeader: !!retryAfterMs,
-          });
-          throw Object.assign(
-            new Error(`${ERROR_CODES.NETWORK.API_RATE_LIMIT}: Rate limited, retrying - ${message}`),
-            { retryAfterMs }
-          );
-        }
-        throw new Error(`${ERROR_CODES.NETWORK.API_RATE_LIMIT}: Rate limit exceeded - ${message}`);
+        return this.throwRetryableStatus(attempt, retryAfterMs, {
+          code: ERROR_CODES.NETWORK.API_RATE_LIMIT,
+          logLabel: 'Rate limited by API, will retry',
+          retryingMessage: `Rate limited, retrying - ${message}`,
+          finalMessage: `Rate limit exceeded - ${message}`,
+        });
       case 503:
-        if (attempt < this.config.retryAttempts) {
-          this.logger('warn', 'Service unavailable, will retry', {
-            attempt,
-            retryAfterMs,
-            retryAfterHeader: !!retryAfterMs,
-          });
-          throw Object.assign(
-            new Error(
-              `${ERROR_CODES.NETWORK.NETWORK_ERROR}: Service temporarily unavailable, retrying - ${message}`
-            ),
-            { retryAfterMs }
+        return this.throwRetryableStatus(attempt, retryAfterMs, {
+          code: ERROR_CODES.NETWORK.NETWORK_ERROR,
+          logLabel: 'Service unavailable, will retry',
+          retryingMessage: `Service temporarily unavailable, retrying - ${message}`,
+          finalMessage: `Service unavailable - ${message}`,
+        });
+      default:
+        // A 5xx is a server fault that may recover, so tag it retryable
+        // (NETWORK_ERROR). A 4xx is a client fault that will not change on
+        // retry, so tag it non-retryable to avoid burning attempts and quota.
+        if (statusCode >= 500) {
+          throw new Error(
+            `${ERROR_CODES.NETWORK.NETWORK_ERROR}: API request failed (${statusCode}) - ${message}`
           );
         }
-        throw new Error(`${ERROR_CODES.NETWORK.NETWORK_ERROR}: Service unavailable - ${message}`);
-      default:
         throw new Error(
-          `${ERROR_CODES.NETWORK.NETWORK_ERROR}: API request failed (${statusCode}) - ${message}`
+          `${ERROR_CODES.NETWORK.API_INVALID_RESPONSE}: API request failed (${statusCode}) - ${message}`
         );
     }
+  }
+
+  /**
+   * Throw a retryable-status error: while attempts remain, log and throw an
+   * Error tagged with `retryAfterMs` so `makeApiRequest` retries; on the last
+   * attempt throw a plain final error. Shared by the 429 and 503 branches.
+   * @private
+   */
+  private throwRetryableStatus(
+    attempt: number,
+    retryAfterMs: number | null,
+    opts: { code: string; logLabel: string; retryingMessage: string; finalMessage: string }
+  ): never {
+    if (attempt < this.config.retryAttempts) {
+      this.logger('warn', opts.logLabel, {
+        attempt,
+        retryAfterMs,
+        retryAfterHeader: !!retryAfterMs,
+      });
+      throw Object.assign(new Error(`${opts.code}: ${opts.retryingMessage}`), { retryAfterMs });
+    }
+    throw new Error(`${opts.code}: ${opts.finalMessage}`);
   }
 
   /**
@@ -1024,7 +1077,7 @@ export class AccuWeatherService {
   private isRetryableError(error: unknown): boolean {
     if (error instanceof Error) {
       const message = error.message.toLowerCase();
-      // Module-level Set avoids recomputing toLowerCase() on every retry decision.
+      // The module-level lowercased list avoids recomputing toLowerCase() on every retry decision.
       for (const needle of RETRYABLE_ERROR_SUBSTRINGS) {
         if (message.includes(needle)) return true;
       }
@@ -1041,7 +1094,10 @@ export class AccuWeatherService {
   }
 
   /**
-   * Clear location cache (useful for testing or configuration changes)
+   * Clear the location and forecast caches. Used by the test suite; production
+   * never calls it, because a config change tears down the service and
+   * constructs a fresh one (caches start empty), so there is no in-place
+   * cache-invalidation path to trigger.
    */
   public clearLocationCache(): void {
     this.locationCache.clear();
