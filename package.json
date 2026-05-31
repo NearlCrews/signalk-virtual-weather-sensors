@@ -31,6 +31,9 @@
     "screenshots": [
       "assets/screenshots/config-panel-status.png",
       "assets/screenshots/config-panel-notifications.png"
+    ],
+    "recommends": [
+      "signalk-nmea2000-emitter-cannon"
     ]
   },
   "main": "dist/index.js",
@@ -119,7 +122,7 @@
     "security-audit": "npm audit --audit-level=moderate",
     "prepack": "npm run build",
     "prepublishOnly": "npm run validate && npm run build",
-    "prepare": "husky || true",
+    "hooks": "husky",
     "create-release": "gh release create v$npm_package_version --generate-notes",
     "release": "git rev-parse \"v$npm_package_version\" >/dev/null 2>&1 && { echo \"tag v$npm_package_version already exists\"; exit 1; } ; git tag v$npm_package_version && git push --tags && git push && npm run create-release"
   },

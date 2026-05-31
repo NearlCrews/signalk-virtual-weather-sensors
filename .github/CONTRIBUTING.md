@@ -43,8 +43,11 @@ This project adheres to a Code of Conduct that all contributors are expected to 
 ### Installation
 
 ```bash
-# Install dependencies (automatically sets up husky pre-commit hooks)
+# Install dependencies
 npm install
+
+# Optional: enable the Biome pre-commit hook (manual, not auto-installed)
+npm run hooks
 
 # Run tests to verify setup
 npm run test:run

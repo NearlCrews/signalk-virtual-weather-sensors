@@ -6,9 +6,16 @@ name: SignalK Plugin CI
 # SignalK/signalk-server/.github/workflows/plugin-ci.yml exists on the
 # published version's commit; without one it applies a scoring penalty. The
 # tag trigger guarantees a run exists on the exact commit each release is
-# published from. The reusable workflow runs npm ci, the build, and npm pack
-# across Linux, macOS, and Windows on Node 20, 22, and 24, plus the armv7
-# Cerbo GX lane on Node 20 (supported here: engines.node is >=20.18).
+# published from.
+#
+# We pin nothing but `build-command` and take the reusable workflow's current
+# defaults (follow the inputs documented at the top of the canonical file, not
+# this comment, which can drift): node-versions ["22","24"], enable-armv7 true.
+# It runs npm ci, the build, package and lifecycle validation, and the App
+# Store install simulation across Linux (x64 and arm64), macOS, and Windows on
+# Node 22 and 24, plus an armv7 Cerbo GX lane on Node 20 and an es-check es2023
+# gate. engines.node here is >=20.18; Node 20 (the Cerbo GX runtime) is covered
+# by the armv7 and es-check lanes rather than the desktop test matrix.
 
 on:
   push:
