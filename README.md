@@ -13,21 +13,20 @@ follow the [Signal K 1.8.2 specification](https://signalk.org/specification/1.8.
 and align with NMEA2000 emission via a companion plugin. A free AccuWeather API
 key is required.
 
-## What's New in v1.7.1
+## What's New in v1.7.2
 
-A small observability and cleanup release. The config panel now shows whether
-the Signal K v2 Weather API provider is registered this start cycle, via a new
-"Weather API" status card backed by a `weatherProviderRegistered` flag on the
-`/api/status` payload, so an operator can confirm at a glance that the forecast
-endpoints are live. The rest of the release is internal de-duplication from a
-four-agent `/simplify` pass: a shared `elapsedSinceMs` time helper, a
-`ratio`-parameterized `isApiQuotaReached`, a single-sourced AccuWeather provider
-name, and consolidated AccuWeather URL building. No emitted paths, delta shape,
-or notification behavior changed, and all 326 tests pass.
+A cleanup and compliance release from a five-agent whole-codebase audit. It
+fixes a handful of edge-case bugs: a partial forecast with a missing temperature
+no longer emits 0 K, cleared severe-weather notifications no longer carry stale
+hazard text, a NaN speed-over-ground is rejected, and a non-retryable HTTP error
+no longer burns retry attempts. It also de-duplicates shared cache, retry, and
+navigation logic, and fixes the SignalK plugin-ci App Store install simulation so
+the App Store Indicators show green. No emitted measurement path, delta shape, or
+notification band changed, and all 327 tests pass.
 
-See the [Changelog](CHANGELOG.md#171---2026-05-28) for the full Added /
+See the [Changelog](CHANGELOG.md#172---2026-05-31) for the full Fixed /
 Internal detail, or the
-[GitHub release](https://github.com/NearlCrews/signalk-virtual-weather-sensors/releases/tag/v1.7.1).
+[GitHub release](https://github.com/NearlCrews/signalk-virtual-weather-sensors/releases/tag/v1.7.2).
 
 ## Features
 
