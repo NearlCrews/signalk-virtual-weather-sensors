@@ -259,11 +259,9 @@ export const SIGNALK_PATHS = {
 
 /** Physical constants and conversion factors */
 export const UNITS = {
-  /** Temperature conversions */
+  /** Temperature conversions. Pure data: the Fahrenheit converters are behaviour and live in conversions.ts. */
   TEMPERATURE: {
     CELSIUS_TO_KELVIN: 273.15,
-    FAHRENHEIT_TO_CELSIUS: (f: number) => ((f - 32) * 5) / 9,
-    CELSIUS_TO_FAHRENHEIT: (c: number) => (c * 9) / 5 + 32,
   },
 
   /** Pressure conversions */
@@ -347,12 +345,20 @@ export const FORECAST_CACHE = {
 // Data Validation Constants
 // ===============================
 
+/**
+ * Lowest plausible Earth sea-level atmospheric pressure in Pascals (800 mbar):
+ * a reading below this is non-physical from any real barometer. Shared by the
+ * NMEA2000 clamp floor and the validation floor so the one physical limit is
+ * stated once; the two MAX bounds differ by design (NMEA2000 allows extreme highs).
+ */
+const PRESSURE_MIN_PA = 80000;
+
 /** NMEA2000-spec sanitization ranges. Used by sanitizeForNMEA2000 to clamp before bus emission. */
 export const NMEA2000_LIMITS = {
   /** NMEA2000 environmental temperature range in Celsius */
   TEMPERATURE_C: { MIN: -40, MAX: 85 },
   /** Atmospheric pressure range in Pascals (MAX raised above VALIDATION_LIMITS to allow extreme weather) */
-  PRESSURE_PA: { MIN: 80000, MAX: 120000 },
+  PRESSURE_PA: { MIN: PRESSURE_MIN_PA, MAX: 120000 },
   /** Maximum wind speed in m/s (200 knots, NMEA2000 max) */
   WIND_SPEED_MAX_MS: 102.3,
 } as const;
@@ -392,7 +398,7 @@ export const VALIDATION_LIMITS = {
   },
 
   PRESSURE: {
-    MIN: 80000, // 800 mbar in Pascals
+    MIN: PRESSURE_MIN_PA, // 800 mbar in Pascals
     MAX: 108000, // 1080 mbar in Pascals
   },
 
@@ -440,7 +446,6 @@ export const VALIDATION_LIMITS = {
 export const ERROR_CODES = {
   CONFIGURATION: {
     INVALID_API_KEY: 'INVALID_API_KEY',
-    MISSING_LOCATION: 'MISSING_LOCATION',
     INVALID_COORDINATES: 'INVALID_COORDINATES',
   },
 
@@ -456,8 +461,6 @@ export const ERROR_CODES = {
 
   DATA: {
     INVALID_WEATHER_DATA: 'INVALID_WEATHER_DATA',
-    STALE_VESSEL_DATA: 'STALE_VESSEL_DATA',
-    CALCULATION_ERROR: 'CALCULATION_ERROR',
   },
 
   SYSTEM: {

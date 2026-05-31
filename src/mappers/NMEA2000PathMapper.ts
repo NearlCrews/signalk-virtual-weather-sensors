@@ -263,7 +263,7 @@ export class NMEA2000PathMapper {
 
   constructor(logger: Logger = () => {}) {
     this.logger = logger;
-    this.logger('info', 'NMEA2000PathMapper initialized');
+    this.logger('debug', 'NMEA2000PathMapper initialized');
   }
 
   /**

@@ -18,7 +18,7 @@ describe('WindCalculator', () => {
   describe('Constructor', () => {
     it('should initialize with logger', () => {
       calculator = new WindCalculator(mockLogger);
-      expect(mockLogger).toHaveBeenCalledWith('info', expect.stringContaining('initialized'));
+      expect(mockLogger).toHaveBeenCalledWith('debug', expect.stringContaining('initialized'));
     });
 
     it('should work with default logger', () => {

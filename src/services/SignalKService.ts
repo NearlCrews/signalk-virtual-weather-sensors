@@ -8,8 +8,9 @@ import { SIGNALK_PATHS, VALIDATION_LIMITS } from '../constants/index.js';
 import type { GeoLocation, Logger, PluginState, VesselNavigationData } from '../types/index.js';
 import {
   elapsedSinceMs,
+  isValidBearing,
   isValidCoordinates,
-  msToKnots,
+  isValidVesselSpeed,
   radiansToDegrees,
   toErrorMessage,
 } from '../utils/conversions.js';
@@ -174,42 +175,41 @@ export class SignalKService {
    * @returns Speed in m/s or null if not available
    */
   public getVesselSpeedOverGround(): number | null {
+    return this.readNumericSelfPath(NAV.SPEED_OVER_GROUND, isValidVesselSpeed, 'speed over ground');
+  }
+
+  /**
+   * Read a numeric leaf from a `self` navigation path: validate the SignalK
+   * data shape, reject excluded sources, and range-check via `isValid`. Returns
+   * null when absent, from an excluded source, non-numeric, or out of range.
+   * `isValid` also rejects non-finite values (a NaN slips past a bare
+   * `typeof === 'number'` since `NaN < MIN` and `NaN > MAX` are both false).
+   * Shared by the speed, heading, and magnetic-variation getters.
+   * @private
+   */
+  private readNumericSelfPath(
+    path: string,
+    isValid: (value: number) => boolean,
+    label: string
+  ): number | null {
     try {
-      const speedData = this.app.getSelfPath(NAV.SPEED_OVER_GROUND);
-
-      if (!this.isValidSignalKData(speedData) || typeof speedData.value !== 'number') {
-        this.logger('debug', 'No speed over ground data available');
+      const data = this.app.getSelfPath(path);
+      if (!this.isValidSignalKData(data) || typeof data.value !== 'number') {
         return null;
       }
-
-      if (this.isExcludedSource(speedData)) {
-        this.logger('debug', 'Ignoring speed data from excluded source', {
-          source: speedData.$source,
-        });
+      if (this.isExcludedSource(data)) {
+        this.logger('debug', `Ignoring ${label} from excluded source`, { source: data.$source });
         return null;
       }
-
-      const speed = speedData.value;
-
-      if (
-        speed < VALIDATION_LIMITS.VESSEL_SPEED.MIN ||
-        speed > VALIDATION_LIMITS.VESSEL_SPEED.MAX
-      ) {
-        this.logger('warn', 'Invalid speed value', { speed });
+      const value = data.value;
+      if (!isValid(value)) {
+        this.logger('warn', `Invalid ${label} value`, { value });
         return null;
       }
-
-      this.logger('debug', 'Retrieved vessel speed over ground', {
-        speed,
-        speedKnots: msToKnots(speed).toFixed(1),
-        source: speedData.$source,
-      });
-
-      return speed;
+      this.logger('debug', `Retrieved ${label}`, { value, source: data.$source });
+      return value;
     } catch (error) {
-      this.logger('error', 'Error retrieving vessel speed over ground', {
-        error: toErrorMessage(error),
-      });
+      this.logger('error', `Error retrieving ${label}`, { error: toErrorMessage(error) });
       return null;
     }
   }
@@ -245,7 +245,7 @@ export class SignalKService {
 
         const course = courseData.value;
 
-        if (!this.isValidCourse(course)) {
+        if (!isValidBearing(course)) {
           this.logger('warn', `Invalid ${path} value`, {
             course,
             courseDegrees: radiansToDegrees(course),
@@ -292,22 +292,7 @@ export class SignalKService {
    * @private
    */
   private getHeading(path: typeof NAV.HEADING_TRUE | typeof NAV.HEADING_MAGNETIC): number | null {
-    try {
-      const headingData = this.app.getSelfPath(path);
-      if (!this.isValidSignalKData(headingData) || typeof headingData.value !== 'number') {
-        return null;
-      }
-      if (this.isExcludedSource(headingData)) {
-        return null;
-      }
-      const heading = headingData.value;
-      return this.isValidCourse(heading) ? heading : null;
-    } catch (error) {
-      this.logger('error', `Error retrieving ${path}`, {
-        error: toErrorMessage(error),
-      });
-      return null;
-    }
+    return this.readNumericSelfPath(path, isValidBearing, path);
   }
 
   /**
@@ -315,31 +300,12 @@ export class SignalKService {
    * @returns Magnetic variation in radians (positive = East) or null if not available
    */
   public getMagneticVariation(): number | null {
-    try {
-      const variationData = this.app.getSelfPath(NAV.MAGNETIC_VARIATION);
-
-      if (!this.isValidSignalKData(variationData) || typeof variationData.value !== 'number') {
-        return null;
-      }
-
-      if (this.isExcludedSource(variationData)) {
-        return null;
-      }
-
-      const variation = variationData.value;
-
-      // Validate variation (should be reasonable: -π to π)
-      if (!Number.isFinite(variation) || Math.abs(variation) > Math.PI) {
-        return null;
-      }
-
-      return variation;
-    } catch (error) {
-      this.logger('error', 'Error retrieving magnetic variation', {
-        error: toErrorMessage(error),
-      });
-      return null;
-    }
+    // Magnetic variation is a signed offset in radians: plausible range is -π to π.
+    return this.readNumericSelfPath(
+      NAV.MAGNETIC_VARIATION,
+      (variation) => Math.abs(variation) <= Math.PI,
+      'magnetic variation'
+    );
   }
 
   /**
@@ -366,8 +332,8 @@ export class SignalKService {
         typeof this.cachedData.speedOverGround === 'number' &&
         typeof this.cachedData.courseOverGroundTrue === 'number'
       ),
-      // See getVesselNavigationData() for the explicit null-check rationale.
-      dataAge: dataAge !== null ? dataAge : undefined,
+      // `?? undefined` (not `|| undefined`) so a freshly written age of 0 survives.
+      dataAge: dataAge ?? undefined,
     };
   }
 
@@ -432,14 +398,6 @@ export class SignalKService {
       if (source.includes(excluded)) return true;
     }
     return false;
-  }
-
-  private isValidCourse(course: number): boolean {
-    return (
-      Number.isFinite(course) &&
-      course >= VALIDATION_LIMITS.WIND_DIRECTION.MIN &&
-      course <= VALIDATION_LIMITS.WIND_DIRECTION.MAX
-    );
   }
 
   /**

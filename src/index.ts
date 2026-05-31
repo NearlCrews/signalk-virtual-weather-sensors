@@ -123,19 +123,7 @@ export default function createPlugin(app: ServerAPI): Plugin {
 
         instance.state = 'stopping';
 
-        // Unregister the weather provider here, where `app` is in scope (cleanup
-        // takes only the instance). unRegister lives on app.weatherApi with a
-        // capital R; the optional chain tolerates an older server.
-        if (instance.weatherProviderRegistered) {
-          try {
-            app.weatherApi?.unRegister(PLUGIN.NAME);
-          } catch (error) {
-            instance.logger('error', 'Error unregistering weather provider', {
-              error: toErrorMessage(error),
-            });
-          }
-          instance.weatherProviderRegistered = false;
-        }
+        unregisterWeatherProvider(instance, app);
 
         await cleanup(instance);
 
@@ -441,7 +429,32 @@ async function handleStartupError(
   // display name, so no need to repeat 'signalk-virtual-weather-sensors' here.
   setBanner(instance, app, 'error', `Startup failed: ${errorMessage}`);
 
+  // Unregister before cleanup: if registration succeeded but a later start step
+  // threw, cleanup alone would reset the flag without unregistering, leaking the
+  // provider in the server (a later stop() would then skip unregistration).
+  unregisterWeatherProvider(instance, app);
+
   await cleanup(instance);
+}
+
+/**
+ * Unregister the Signal K weather provider if it was registered this cycle.
+ * Lives outside cleanup() because it needs `app` in scope; shared by stop() and
+ * handleStartupError so a throw after registration cannot leak the provider in
+ * the server. unRegister lives on app.weatherApi with a capital R; the optional
+ * chain tolerates an older server.
+ * @private
+ */
+function unregisterWeatherProvider(instance: PluginInstance, app: ServerAPI): void {
+  if (!instance.weatherProviderRegistered) return;
+  try {
+    app.weatherApi?.unRegister(PLUGIN.NAME);
+  } catch (error) {
+    instance.logger('error', 'Error unregistering weather provider', {
+      error: toErrorMessage(error),
+    });
+  }
+  instance.weatherProviderRegistered = false;
 }
 
 /**
@@ -540,7 +553,7 @@ function emitWeatherTick(instance: PluginInstance, app: ServerAPI, maxStalenessM
   // would waste CPU on the steady-state case.
   let notificationValues: PathValue[] = [];
   if (weatherData !== instance.cachedWeatherDataRef) {
-    const refreshed = refreshCachedDelta(instance, app, weatherData);
+    const refreshed = refreshCachedDelta(instance, app, weatherData, instance.pathMapper);
     if (refreshed === null) return;
     notificationValues = refreshed;
   }
@@ -579,23 +592,25 @@ function emitWeatherTick(instance: PluginInstance, app: ServerAPI, maxStalenessM
 function refreshCachedDelta(
   instance: PluginInstance,
   app: ServerAPI,
-  weatherData: WeatherData
+  weatherData: WeatherData,
+  pathMapper: NMEA2000PathMapper
 ): PathValue[] | null {
-  const pathMapper = instance.pathMapper;
-  if (!pathMapper) return [];
   try {
     instance.cachedDelta = pathMapper.mapToSignalKPaths(weatherData);
     instance.cachedWeatherDataRef = weatherData;
     return instance.notifier?.evaluate(weatherData) ?? [];
   } catch (error) {
-    // Mapper failure: drop the cached delta so we stop emitting stale data
-    // with a fresh timestamp (which would hide the failure from operators).
+    // Mapper failure: drop the cached delta so we stop emitting stale data with
+    // a fresh timestamp (which would hide the failure from operators). Pin
+    // cachedWeatherDataRef to this snapshot so the emission tick's ref-equality
+    // guard skips re-mapping (and re-logging) the same failing data every tick;
+    // the next fetch yields a new snapshot that re-attempts the mapping.
     const errorMessage = toErrorMessage(error);
     instance.logger('error', 'Mapping weather data to Signal K paths failed', {
       error: errorMessage,
     });
     instance.cachedDelta = null;
-    instance.cachedWeatherDataRef = null;
+    instance.cachedWeatherDataRef = weatherData;
     setBanner(instance, app, 'error', `Weather mapping failed: ${errorMessage}`);
     return null;
   }
@@ -878,9 +893,11 @@ function registerPanelRoutes(router: IRouter, instance: PluginInstance): void {
       const result = await testApiKey(apiKey);
       res.json(result);
     } catch (error) {
-      // Server-side log carries the full error; the client gets a sanitized
-      // single-line message bounded in length to avoid leaking URL fragments
-      // or stack-derived text to any LAN-side caller.
+      // testApiKey already catches and sanitizes verifyApiKey failures, so this
+      // outer catch only fires on an unexpected throw (e.g. AccuWeatherService
+      // construction). Server-side log carries the full error; the client gets a
+      // sanitized, length-bounded single-line message so no URL fragments or
+      // stack-derived text leak to a LAN-side caller.
       const fullMessage = toErrorMessage(error);
       instance.logger('error', 'Test-key endpoint failed', { error: fullMessage });
       res.status(500).json({ ok: false, message: sanitizeClientErrorMessage(fullMessage) });

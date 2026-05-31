@@ -42,9 +42,11 @@ describe('Temperature conversions', () => {
     expect(celsiusToKelvin(-40)).toBeCloseTo(233.15, 5);
   });
 
-  it('celsiusToKelvin returns 0 for non-finite input', () => {
-    expect(celsiusToKelvin(Number.NaN)).toBe(0);
-    expect(celsiusToKelvin(Number.POSITIVE_INFINITY)).toBe(0);
+  it('celsiusToKelvin returns the 0°C-equivalent for non-finite input', () => {
+    // Matches the 0°C-equivalent fallback of the sibling temperature converters
+    // rather than flooring garbage to absolute zero.
+    expect(celsiusToKelvin(Number.NaN)).toBe(273.15);
+    expect(celsiusToKelvin(Number.POSITIVE_INFINITY)).toBe(273.15);
   });
 
   it('kelvinToCelsius', () => {

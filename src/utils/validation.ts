@@ -118,30 +118,32 @@ interface NumericConfigRule {
   readonly aboveMaxWarning: string;
 }
 
+// Bounds reference CONFIG_DEFAULTS (the same source the sanitizer clamps to) so
+// the validator warning threshold and the runtime clamp cannot drift.
 const NUMERIC_CONFIG_RULES: ReadonlyArray<NumericConfigRule> = [
   {
     key: 'updateFrequency',
     notFiniteError: 'Update frequency must be a finite number',
-    min: 1,
-    belowMinError: 'Update frequency must be at least 1 minute',
-    max: 60,
-    aboveMaxWarning: 'Update frequency over 60 minutes may result in stale data',
+    min: CONFIG_DEFAULTS.UPDATE_FREQUENCY_MIN,
+    belowMinError: `Update frequency must be at least ${CONFIG_DEFAULTS.UPDATE_FREQUENCY_MIN} minute`,
+    max: CONFIG_DEFAULTS.UPDATE_FREQUENCY_MAX,
+    aboveMaxWarning: `Update frequency over ${CONFIG_DEFAULTS.UPDATE_FREQUENCY_MAX} minutes may result in stale data`,
   },
   {
     key: 'emissionInterval',
     notFiniteError: 'Emission interval must be a finite number',
-    min: 1,
-    belowMinError: 'Emission interval must be at least 1 second',
-    max: 60,
-    aboveMaxWarning: 'Emission interval over 60 seconds may not be suitable for real-time NMEA2000',
+    min: CONFIG_DEFAULTS.EMISSION_INTERVAL_MIN,
+    belowMinError: `Emission interval must be at least ${CONFIG_DEFAULTS.EMISSION_INTERVAL_MIN} second`,
+    max: CONFIG_DEFAULTS.EMISSION_INTERVAL_MAX,
+    aboveMaxWarning: `Emission interval over ${CONFIG_DEFAULTS.EMISSION_INTERVAL_MAX} seconds may not be suitable for real-time NMEA2000`,
   },
   {
     key: 'dailyApiQuota',
     notFiniteError: 'Daily API quota must be a finite number',
-    min: 0,
+    min: CONFIG_DEFAULTS.DAILY_API_QUOTA_MIN,
     belowMinError: 'Daily API quota must be 0 or greater (0 disables the cap)',
-    max: DEFAULT_CONFIG.DAILY_API_QUOTA_MAX,
-    aboveMaxWarning: `Daily API quota over ${DEFAULT_CONFIG.DAILY_API_QUOTA_MAX} is unusual; clamping to ${DEFAULT_CONFIG.DAILY_API_QUOTA_MAX}`,
+    max: CONFIG_DEFAULTS.DAILY_API_QUOTA_MAX,
+    aboveMaxWarning: `Daily API quota over ${CONFIG_DEFAULTS.DAILY_API_QUOTA_MAX} is unusual; clamping to ${CONFIG_DEFAULTS.DAILY_API_QUOTA_MAX}`,
   },
 ];
 

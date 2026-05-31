@@ -38,6 +38,41 @@ function mapPrecipitationKind(type: string | null | undefined): PrecipitationKin
 type SKOutside = NonNullable<SKWeatherData['outside']>;
 type SKWind = NonNullable<SKWeatherData['wind']>;
 
+/**
+ * Convert an optional Celsius reading to Kelvin, returning undefined for a
+ * missing or non-numeric value. Guards against a partial forecast where a
+ * temperature block is absent: `celsiusToKelvin` floors non-finite input to
+ * 0 K, so an unguarded null would otherwise emit absolute zero.
+ */
+function optionalCelsiusToKelvin(value: unknown): number | undefined {
+  const celsius = asOptionalNumber(value);
+  return celsius !== undefined ? celsiusToKelvin(celsius) : undefined;
+}
+
+/** Cloud-cover and precipitation fields shared by the hourly forecast and daily-half shapes. */
+interface CloudPrecipSource {
+  readonly HasPrecipitation?: boolean;
+  readonly PrecipitationType?: string | null;
+  readonly CloudCover?: number;
+  readonly TotalLiquid?: { readonly Value: number };
+}
+
+/** Build the cloud-cover and precipitation portion of an SKOutside, shared by the hourly and daily mappers. */
+function buildCloudAndPrecip(source: CloudPrecipSource | undefined): Partial<SKOutside> {
+  const cloudCoverPct = asOptionalNumber(source?.CloudCover);
+  const precipitationMm = asOptionalNumber(source?.TotalLiquid?.Value);
+  const precipitationType = source?.HasPrecipitation
+    ? mapPrecipitationKind(source.PrecipitationType)
+    : undefined;
+  return {
+    ...(cloudCoverPct !== undefined && { cloudCover: percentageToRatio(cloudCoverPct) }),
+    ...(precipitationMm !== undefined && {
+      precipitationVolume: precipitationMm * UNITS.PRECIPITATION.MM_TO_M,
+    }),
+    ...(precipitationType !== undefined && { precipitationType }),
+  };
+}
+
 /** Build the wind block from a speed/direction/gust source, omitting absent fields. */
 function buildWind(
   speedKmh: number | undefined,
@@ -59,36 +94,29 @@ export function mapHourlyToForecasts(
   hours: ReadonlyArray<AccuWeatherHourlyForecast>
 ): SKWeatherData[] {
   return hours.map((hour) => {
-    const temperature = celsiusToKelvin(hour.Temperature.Value);
+    const temperatureK = optionalCelsiusToKelvin(hour.Temperature?.Value);
     const dewPointC = asOptionalNumber(hour.DewPoint?.Value);
     const realFeelC = asOptionalNumber(hour.RealFeelTemperature?.Value);
     const humidityPct = asOptionalNumber(hour.RelativeHumidity);
     const rhRatio = humidityPct !== undefined ? percentageToRatio(humidityPct) : undefined;
     const visibilityKm = asOptionalNumber(hour.Visibility?.Value);
     const uvIndex = asOptionalNumber(hour.UVIndex);
-    const cloudCoverPct = asOptionalNumber(hour.CloudCover);
-    const precipitationMm = asOptionalNumber(hour.TotalLiquid?.Value);
-    const precipitationType = hour.HasPrecipitation
-      ? mapPrecipitationKind(hour.PrecipitationType)
-      : undefined;
 
     const outside: SKOutside = {
-      temperature,
+      ...(temperatureK !== undefined && { temperature: temperatureK }),
       ...(dewPointC !== undefined && { dewPointTemperature: celsiusToKelvin(dewPointC) }),
       ...(realFeelC !== undefined && { feelsLikeTemperature: celsiusToKelvin(realFeelC) }),
       ...(rhRatio !== undefined && {
         relativeHumidity: rhRatio,
-        absoluteHumidity: calculateAbsoluteHumidity(temperature, rhRatio),
+        ...(temperatureK !== undefined && {
+          absoluteHumidity: calculateAbsoluteHumidity(temperatureK, rhRatio),
+        }),
       }),
       ...(visibilityKm !== undefined && {
         horizontalVisibility: visibilityKm * UNITS.LENGTH.KM_TO_M,
       }),
       ...(uvIndex !== undefined && { uvIndex }),
-      ...(cloudCoverPct !== undefined && { cloudCover: percentageToRatio(cloudCoverPct) }),
-      ...(precipitationMm !== undefined && {
-        precipitationVolume: precipitationMm * UNITS.PRECIPITATION.MM_TO_M,
-      }),
-      ...(precipitationType !== undefined && { precipitationType }),
+      ...buildCloudAndPrecip(hour),
     };
 
     const wind = buildWind(
@@ -124,21 +152,14 @@ export function mapDailyToForecasts(response: AccuWeatherDailyForecastResponse):
     // the Night half is intentionally not folded into the same daily record.
     const half = day.Day;
     const uvIndex = dailyUvIndex(day.AirAndPollen);
-    const cloudCoverPct = asOptionalNumber(half?.CloudCover);
-    const precipitationMm = asOptionalNumber(half?.TotalLiquid?.Value);
-    const precipitationType = half?.HasPrecipitation
-      ? mapPrecipitationKind(half.PrecipitationType)
-      : undefined;
+    const minTemperatureK = optionalCelsiusToKelvin(day.Temperature?.Minimum?.Value);
+    const maxTemperatureK = optionalCelsiusToKelvin(day.Temperature?.Maximum?.Value);
 
     const outside: SKOutside = {
-      minTemperature: celsiusToKelvin(day.Temperature.Minimum.Value),
-      maxTemperature: celsiusToKelvin(day.Temperature.Maximum.Value),
+      ...(minTemperatureK !== undefined && { minTemperature: minTemperatureK }),
+      ...(maxTemperatureK !== undefined && { maxTemperature: maxTemperatureK }),
       ...(uvIndex !== undefined && { uvIndex }),
-      ...(cloudCoverPct !== undefined && { cloudCover: percentageToRatio(cloudCoverPct) }),
-      ...(precipitationMm !== undefined && {
-        precipitationVolume: precipitationMm * UNITS.PRECIPITATION.MM_TO_M,
-      }),
-      ...(precipitationType !== undefined && { precipitationType }),
+      ...buildCloudAndPrecip(half),
     };
 
     const wind = buildWind(

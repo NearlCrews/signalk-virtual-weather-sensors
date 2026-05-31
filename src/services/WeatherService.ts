@@ -78,10 +78,9 @@ export class WeatherService {
   private updateCount = 0;
   private errorCount = 0;
   /**
-   * Consecutive fetch failures since the last success. Once it crosses
-   * `CONSECUTIVE_FAILURE_LIMIT`, a `setPluginError` is published so operators
-   * see the underlying error rather than the stale-data banner kicking in
-   * after 2x updateFrequency.
+   * Consecutive fetch failures since the last success. Every failure escalates
+   * immediately (see `escalateFetchError`); the streak only drives the cosmetic
+   * `(N consecutive)` suffix on the error banner, there is no threshold gate.
    */
   private consecutiveFailures = 0;
   /**
@@ -280,7 +279,7 @@ export class WeatherService {
       return 'API key rejected: update key in plugin settings';
     }
 
-    const used = this.accuWeatherService.getRequestCountLast24h();
+    const used = this.getRequestCountLast24h();
     const prefix = this.shouldShowQuotaWarning(used)
       ? PLUGIN.STATUS.RUNNING_QUOTA_WARN
       : PLUGIN.STATUS.RUNNING;
@@ -342,10 +341,7 @@ export class WeatherService {
    * stale-data error path then surfaces the pause to operators.
    */
   public isQuotaExhausted(): boolean {
-    return isApiQuotaReached(
-      this.accuWeatherService.getRequestCountLast24h(),
-      this.config.dailyApiQuota
-    );
+    return isApiQuotaReached(this.getRequestCountLast24h(), this.config.dailyApiQuota);
   }
 
   /**
@@ -354,7 +350,7 @@ export class WeatherService {
    * letting a periodic setPluginStatus call silently overwrite the error.
    */
   public formatQuotaExhaustedMessage(): string {
-    const used = this.accuWeatherService.getRequestCountLast24h();
+    const used = this.getRequestCountLast24h();
     const quota = this.config.dailyApiQuota;
     return `AccuWeather daily quota reached (${used}/${quota} in last 24h). Fetches paused until the rolling window drops below the cap. To resume sooner, raise dailyApiQuota or increase updateFrequency.`;
   }
@@ -401,7 +397,7 @@ export class WeatherService {
    * @private
    */
   private addJitter(baseInterval: number): number {
-    const jitterRange = baseInterval * 0.1; // ±10% jitter
+    const jitterRange = baseInterval * 0.1;
     const jitter = (Math.random() - 0.5) * 2 * jitterRange;
     return Math.round(baseInterval + jitter);
   }
@@ -591,10 +587,6 @@ export class WeatherService {
       vesselData
     );
 
-    if (apparentWindSpeed === undefined && apparentWindAngle === undefined) {
-      return weatherData;
-    }
-
     // Apparent wind chill: the cold a person on deck feels, using the wind the
     // moving vessel makes. Omitted when no apparent wind speed was derived; the
     // mapper then falls back to the theoretical wind chill.
@@ -721,7 +713,7 @@ export class WeatherService {
     vesselData: VesselNavigationData
   ): number | null {
     const vesselHeading = vesselData.headingTrue ?? vesselData.courseOverGroundTrue;
-    if (vesselHeading === undefined || vesselHeading === null) {
+    if (vesselHeading === undefined) {
       return null;
     }
     return this.windCalculator.normalizeAngle(windDirection - vesselHeading);
