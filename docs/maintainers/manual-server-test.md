@@ -19,9 +19,9 @@ Reproducible end-to-end check of `signalk-virtual-weather-sensors` running again
 - [ ] The panel shows a **Status** card followed by three collapsed sections (**AccuWeather API key**, **Fetch and emission cadence**, **Severe-weather notifications**). Click a section header to expand it before editing its fields.
 - [ ] Paste the AccuWeather key into **AccuWeather API Key**.
 - [ ] Leave **Update Frequency (minutes)** at the default `30` for the test run (or temporarily lower it to 1 to speed up verification, then restore before regular use).
-- [ ] Leave **Emission Interval (seconds)** at the default `5` for the test run.
+- [ ] Leave **Broadcast interval (seconds)** at the default `5` for the test run.
 - [ ] Leave **Daily API Call Quota** at the default `50` for a free-tier check, OR raise it to your paid-tier limit to skip the quota verification step at the end.
-- [ ] Click **Submit**. The plugin restarts.
+- [ ] Click **Save** in the sticky footer (enabled once the form has unsaved changes). The plugin restarts and the panel confirms the restart.
 - [ ] Within ~10 seconds the status banner under the plugin name should change from `Stopped` to `Running, awaiting first update` (or `Running, awaiting first update (0/50 today)` when the quota is on).
 - [ ] Within `Update Frequency` minutes (default 30; the plugin schedules its first fetch on a short startup timer roughly 5 seconds after start) the banner should switch to `Running, last update just now (1 update, 2 API requests)` (the first cycle costs one location-search call plus one current-conditions call). With `dailyApiQuota > 0` the suffix gains `, 2/50 today`. Subsequent updates show `(N updates, M API requests, M/Q today)` with the counters climbing.
 

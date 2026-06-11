@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Signal K plugin that provides comprehensive weather data from AccuWeather API with NMEA2000-compatible environmental measurements. Outputs 24+ weather data points including temperatures, wind, atmospheric conditions, and marine safety indices.
+Signal K plugin that provides comprehensive weather data from AccuWeather API with NMEA2000-compatible environmental measurements. Outputs 30+ weather data points including temperatures, wind, atmospheric conditions, and marine safety indices.
 
 ## Commands
 
@@ -41,7 +41,7 @@ src/
 ├── index.ts                    # Plugin entry point & lifecycle (start/stop/registerWithRouter)
 ├── services/
 │   ├── WeatherService.ts       # Orchestration: coordinates API, navigation, calculations
-│   ├── AccuWeatherService.ts   # API client: 24+ field extraction, location caching, verifyApiKey
+│   ├── AccuWeatherService.ts   # API client: 30+ field extraction, location caching, verifyApiKey
 │   └── SignalKService.ts       # Vessel navigation data retrieval
 ├── calculators/
 │   └── WindCalculator.ts       # Vector math for apparent wind, Beaufort scale
@@ -49,17 +49,20 @@ src/
 │   └── NMEA2000PathMapper.ts   # Weather data → Signal K delta messages
 ├── notifications/
 │   └── WeatherNotifier.ts      # Transition state machine: WeatherData → notifications.environment.* deltas
-├── configpanel/                # React 19 federated config panel (bundled by webpack to public/)
-│   ├── index.js                # Module Federation entry
-│   └── PluginConfigurationPanel.jsx
+├── configpanel/                # React 19 federated config panel, TypeScript (bundled by webpack to public/)
+│   ├── index.tsx               # Module Federation entry
+│   ├── PluginConfigurationPanel.tsx  # Composition root: theme injection, section state, save orchestration
+│   ├── styles.ts               # --svws-* design tokens: scale + LIGHT/DARK/NIGHT palettes, THEME_STYLE
+│   ├── api-base.ts             # API_BASE plus panel-shared helpers (toErrorText, clampNumber, fetchJson)
+│   ├── components/             # Section, NumberInput, StatusDashboard, ApiKeyField, NotificationToggles, FooterBar, ThemeToggle
+│   └── hooks/                  # useStatus (visibility-gated polling), usePanelConfig (form state, dirty tracking, save flow)
 ├── utils/
-│   ├── validation.ts           # Config validation, NMEA2000 range sanitization, API_KEY_MIN_LENGTH
+│   ├── validation.ts           # Config validation, NMEA2000 range sanitization
 │   ├── conversions.ts          # Unit conversions (temp, pressure, wind, Beaufort scale) + `asTimestamp` brand helper
 │   └── skDelta.ts              # Shared SK delta primitives: pv / me / buildValuesDelta / buildMetaDelta
 ├── constants/
 │   ├── index.ts                # PGN numbers, Signal K paths, notification paths + thresholds, validation limits, TEST_KEY_LOCATION
-│   ├── notifications-shared.js # Shared NOTIFICATION_LABELS + DEFAULT_NOTIFICATIONS consumed by both TS runtime and JSX panel
-│   └── notifications-shared.d.ts # Type shim for the .js module under allowJs:false
+│   └── notifications-shared.ts # Single source for runtime, schema, and panel: NOTIFICATION_LABELS, NOTIFICATION_MASTER_LABEL, DEFAULT_NOTIFICATIONS, CONFIG_DEFAULTS, API_KEY_MIN_LENGTH, QUOTA_WARN_RATIO, PLUGIN_NAME, validateKeyLength
 └── types/
     └── index.ts                # All interfaces (readonly), type guards, NotificationsConfig, NotificationValue, PanelStatusResponse
 ```
@@ -108,9 +111,10 @@ Test configuration in `vitest.config.ts` includes path aliases (`@/`, `@/service
 - **Notification message enrichment**: each band's `message` packs adjacent context the operator can act on without subscribing to extra paths. Wind: `"Gale-force wind: Bf9 from SW, 19 m/s, gusts 27 m/s, 998 hPa"`. Visibility: `"Reduced visibility: 0.8 km, ceiling 90 m, rain 2.5 mm/h"` (ceiling and precip rate appended when finite). Heat: `"High heat stress: HSI 3, WBGT 32 C, RH 78%, RealFeel 35 C"`. Cold: `"Cold exposure caution: wind chill -2 C, air 1 C, wind 12 m/s"`. Severe: `"Thunderstorms: Severe thunderstorms approaching, 998 hPa"`. Every message is capped at `MAX_MESSAGE_LENGTH = 80` chars (with `…` truncation) so it renders cleanly on the marine displays most likely to bridge through `signalk-to-nmea2000` (NMEA 2000 Alert PGN Text fields render 64..128 chars across the Garmin/Raymarine/B&G/Furuno fleet; 80 is a safe common denominator). Helpers `formatWindSuffix` / `formatVisibilitySuffix` / `formatHeatSuffix` / `formatColdSuffix` / `formatSevereSuffix` live alongside the `WeatherNotifier` class in `src/notifications/WeatherNotifier.ts` so the format and the band evaluators stay together.
 - **Banner dedupe**: every `setPluginStatus` / `setPluginError` call in `index.ts` routes through `setBanner()` which dedupes consecutive identical `(kind, message)` pairs. A flapping API or steady-state quota pause therefore lands one banner write per unique message, not one per 5-second emission tick. `WeatherService.updateWeatherData` also pushes the live banner directly on the first successful update so the "awaiting first update" string flips the moment data lands.
 - **Shared SK delta primitives**: `src/utils/skDelta.ts` exports `pv` (PathValue builder), `me` (Meta builder), `buildValuesDelta(values, timestamp?)`, `buildMetaDelta(meta)`, plus `SELF_CONTEXT` and `ACCUWEATHER_SOURCE` branded-cast constants. Mapper, notifier, and plugin entry all build deltas through this module instead of hand-rolling the envelope.
-- **Federated React config panel** (since v1.5.0; loads cleanly since v1.5.1 fixed the ESM federation library type): `src/configpanel/PluginConfigurationPanel.jsx` is the panel component, bundled by `webpack.config.cjs` (must be `.cjs` because our `package.json` is `"type": "module"`) into `public/` via `ModuleFederationPlugin`. React 19 is declared `singleton` so the panel shares the host admin UI's React. The `signalk-plugin-configurator` keyword in `package.json` triggers the SK admin UI to load the panel in place of the auto-generated rjsf form; the JSON `schema()` is kept as a fallback for older admin UIs.
+- **Federated React config panel** (since v1.5.0; loads cleanly since v1.5.1 fixed the ESM federation library type; TypeScript since v1.8.0): `src/configpanel/PluginConfigurationPanel.tsx` is the composition root, with `components/`, `hooks/`, `styles.ts` (design tokens), and `api-base.ts` (panel-shared helpers), all bundled by `webpack.config.cjs` (must be `.cjs` because our `package.json` is `"type": "module"`) into `public/` via `ModuleFederationPlugin`. babel transpiles (`@babel/preset-typescript` + `@babel/preset-react`); types are checked separately by `tsconfig.panel.json` via `npm run type-check:panel` (chained into `type-check`). The root `tsconfig.json` excludes `src/configpanel` so the runtime declaration build never compiles the panel. React 19 is declared `singleton` so the panel shares the host admin UI's React. The `signalk-plugin-configurator` keyword in `package.json` triggers the SK admin UI to load the panel in place of the auto-generated rjsf form; the JSON `schema()` is kept as a fallback for older admin UIs (an ESM federation container loads only on admin UI 2.27.0+, so older hosts fall back to the rjsf form).
+- **Panel theming and accessibility** (since v1.8.0, aligned with the signalk-nmea2000-emitter-cannon panel): `styles.ts` defines a `--svws-*` CSS custom-property contract with scale tokens plus LIGHT, DARK, and NIGHT (night-red helm) palettes, each with a `color-scheme` declaration and documented WCAG AA contrast ratios on muted text. The host admin UI theme is matched via `[data-bs-theme="dark"] .svws-panel`; an explicit user pick (ThemeToggle: Auto/Light/Dark/Night) pins a `data-svws-theme` attribute persisted to localStorage key `svws-theme`. A hex literal in a component (rather than `styles.ts`) is a defect. Marine sizing: 22px checkboxes, 36px minimum button height. The panel tracks dirty state (sticky FooterBar with Save and Discard, `beforeunload` guard), confirms the post-save restart via status polling before claiming success, and renders the stat dashboard even when stopped.
 - **ESM federation gotcha (load-bearing)**: because `package.json` has `"type": "module"`, `signalk-server` injects the panel script as `<script type="module">` (see `signalk-server/src/serverroutes.ts` ~line 265), and the admin UI loader expects ESM `.get` / `.init` exports on the resolved module. The webpack config therefore MUST use `experiments.outputModule: true`, `output.module: true`, `output.chunkFormat: 'module'`, and `library: { type: 'module' }`. A `library: { type: 'var' }` bundle would assign to `window.<safeName>` via a classic script and export nothing via ESM, so the admin UI's `await import()` resolves to an empty module and logs `Could not load module signalk-virtual-weather-sensors` with no other diagnostic. v1.5.0 shipped with this bug; v1.5.1 fixes it. Panel chunks are emitted as `.mjs`.
-- **Shared notification labels and defaults**: `src/constants/notifications-shared.js` (plain ESM, no TS, no `allowJs:false` conflict thanks to a co-located `.d.ts` shim) is the single source of truth for `NOTIFICATION_LABELS` (the 5 sub-toggle strings) and `DEFAULT_NOTIFICATIONS` (the master+sub defaults). Both the TS plugin runtime (schema titles in `src/index.ts`, defaults in `src/constants/index.ts`) and the JSX federated panel import from it. Labels and defaults can no longer drift between the federated panel and the rjsf fallback form.
+- **Shared cross-boundary constants**: `src/constants/notifications-shared.ts` is the single source of truth consumed by the TS runtime, the rjsf schema in `src/index.ts`, and the federated panel: `NOTIFICATION_LABELS` (5 sub-toggle strings), `NOTIFICATION_MASTER_LABEL`, `NOTIFICATION_BAND_KEYS`, `DEFAULT_NOTIFICATIONS`, `CONFIG_DEFAULTS`, `API_KEY_MIN_LENGTH`, `QUOTA_WARN_RATIO`, `PLUGIN_NAME` / `PLUGIN_DISPLAY_NAME`, and `validateKeyLength()`. Existing imports use the `.js` specifier (NodeNext style); webpack resolves them to the `.ts` source via `extensionAlias`. Labels, defaults, bounds, and the quota ratio can no longer drift between the panel, the schema, and the runtime. (Until v1.8.0 this was a plain-JS module with a hand-synced `.d.ts` shim; both collapsed into the single `.ts` file.)
 - **Panel-supporting REST endpoints**: `Plugin.registerWithRouter` mounts `GET /api/status` (live banner + 24h API count + minutes since last fetch + active-notification count + `weatherProviderRegistered` flag, typed as `PanelStatusResponse` in `src/types/index.ts`; the panel renders the flag as a "Weather API" On/Off stat card) and `POST /api/test-key` (probes a candidate AccuWeather key with one `AccuWeatherService.verifyApiKey()` call, single AccuWeather API call per test). Both endpoints are read-only or non-mutating; neither persists a key. The panel polls `/api/status` every 10 s. `TEST_KEY_LOCATION` (Greenwich Observatory coords, arbitrary fixed point) lives in `src/constants/index.ts`.
 
 ## Technology Stack
@@ -118,10 +122,10 @@ Test configuration in `vitest.config.ts` includes path aliases (`@/`, `@/service
 - TypeScript 6.0+ (strict mode, ES2023 target)
 - Node.js 20.18+ (ESM only)
 - `@signalk/server-api` 2.24+ as a `peerDependency` (the Signal K server provides it at runtime; not bundled). Used for `Plugin`, `ServerAPI`, `Delta`, `PathValue`, `Meta`, `MetaValue`, `SourceRef`, and `SKVersion` types.
-- esbuild 0.28+ for bundling (current bundle ~98 KB)
+- esbuild 0.28+ for bundling (current bundle ~98 KiB)
 - Biome 2.4+ for linting/formatting (with `noFloatingPromises` / `noMisusedPromises` enabled)
-- Vitest 4.1+ for testing (327 tests across 13 files; mutation score 67% via Stryker.js, opt-in via `npm run mutation-test`). `npm test` runs once (registry/CI safe); `npm run test:watch` is the interactive watcher.
-- React 19, webpack 5, @babel/preset-react, babel-loader, @types/express for the federated config panel (panel-only deps, runtime is unaffected)
+- Vitest 4.1+ for testing (334 tests across 13 files; mutation score 67% via Stryker.js, opt-in via `npm run mutation-test`). `npm test` runs once (registry/CI safe); `npm run test:watch` is the interactive watcher.
+- React 19, webpack 5, @babel/preset-react, @babel/preset-typescript, babel-loader, @types/react, @types/express for the federated config panel (panel-only deps, runtime is unaffected); panel types checked by `tsconfig.panel.json`
 - Husky + lint-staged for an opt-in pre-commit hook (enable with `npm run hooks`; there is intentionally no `prepare` script, since its lifecycle banner breaks the SignalK App Store install simulation on Node 22's npm 10)
 
 ## Documentation Structure

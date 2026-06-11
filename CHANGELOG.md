@@ -5,6 +5,54 @@ All notable changes to the signalk-virtual-weather-sensors project will be docum
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.8.0] - 2026-06-11
+
+A seven-lane whole-codebase cleanup audit followed by a full config-panel
+rebuild. The panel is now TypeScript end to end and aligned with the
+signalk-nmea2000-emitter-cannon panel architecture: design tokens with light,
+dark, and night-red themes, WCAG AA contrast, marine-sized touch targets,
+dirty-state tracking with Save and Discard, and a first-run callout. On the
+runtime side the request timeout now bounds the whole response rather than just
+the headers, overlapping weather updates coalesce into a single fetch, and a
+quota pause no longer halts the NMEA2000 keep-alive while cached data is still
+fresh. No emitted measurement path, delta shape, or notification band changed,
+and all 334 tests pass.
+
+### Added
+
+- **Config panel themes.** Auto, Light, Dark, and Night (night-red helm mode) via a `--svws-*` design-token contract in `styles.ts`; the panel follows the host Admin UI theme by default and pins an explicit pick to localStorage. Muted text meets WCAG AA contrast in every palette, interactive elements get a visible `:focus-visible` ring, and checkboxes and buttons are sized for wet fingers (22 px and 36 px minimum).
+- **Dirty-state handling.** The panel tracks unsaved edits, shows an "Unsaved changes" indicator in a sticky footer with Save and Discard, guards `beforeunload` while dirty, and still confirms the plugin actually restarted after a save before claiming success.
+- **First-run callout.** With no API key configured, the panel says so and auto-opens the API key section instead of presenting three collapsed sections.
+- **Accessibility wiring.** Collapsible sections expose `aria-expanded` plus `aria-controls` and show a collapsed-state value summary; the API-key test result and save outcome announce via `role="status"` live regions; the notification toggles sit in a `fieldset` with a `legend` and stay readable when disabled.
+- **Clamping number inputs.** Cadence fields clamp to their bounds on commit and blur on wheel so scrolling cannot silently change values.
+- **Status dashboard improvements.** The five stat cards render when the plugin is stopped (previously hidden exactly when diagnostics were needed), the status dot has an adjacent text label, large counts use locale formatting, "Minutes since fetch" is spelled out, and a failed status poll surfaces a retry banner plus a stale-poll marker instead of silently freezing.
+- **Night-mode screenshot** added to the App Store gallery, and **signalk-binnacle** added to the "Works well with" list (it detects and prefers this plugin's Signal K v2 Weather API).
+
+### Fixed
+
+- **Request timeout now bounds the body read.** The abort timer was disarmed when response headers arrived, so a stalled or trickling body was bounded only by undici's 300 s inactivity default instead of the configured 10 s `requestTimeout`. The timer now stays armed across the body read.
+- **Overlapping weather updates coalesce (single-flight).** A slow fetch overlapping the next scheduled tick, or a `forceUpdate` racing the timer, ran concurrent fetches that double-spent API quota and raced the post-fetch state writes. Overlapping callers now join the in-flight fetch.
+- **Quota pause no longer halts the keep-alive.** Hitting the daily quota stops fetches, but the 5-second re-emission of still-fresh cached data now continues until the staleness guard trips, so NMEA2000 consumers do not drop the virtual sensor; the quota banner still surfaces immediately and wins over the stale message.
+- **Misleading notifications label.** "Enable PGN notifications" renamed to "Enable severe-weather notifications" in both the panel and the schema: the plugin emits Signal K-native notifications, and PGN bridging requires the separate signalk-to-nmea2000 plugin.
+- **API-key placeholder feedback.** The placeholder check now runs before the min-length check, so "demo"-style keys get the actionable "appears to be a placeholder" message instead of a generic "too short".
+- **Log sanitizer redacts inside arrays.** A sensitive key nested in an array entry (for example `{ items: [{ apiKey }] }`) previously bypassed redaction.
+- **Documentation corrections.** The location-cache TTL in `docs/troubleshooting.md` (1 hour, not 2), the per-file test breakdown and test tree in `docs/DEVELOPMENT.md` (two Weather API provider test files were missing), and the "24+" data-point count in `CLAUDE.md` (30+).
+
+### Changed
+
+- **Config panel rewritten in TypeScript** from one 612-line JSX file to a composition of `components/`, `hooks/`, `styles.ts`, and `api-base.ts`, type-checked by a dedicated `tsconfig.panel.json` (wired into `npm run type-check`). webpack gains `@babel/preset-typescript` and an `.js`-to-`.ts` `extensionAlias`; the load-bearing ESM module-federation settings are unchanged.
+- **`notifications-shared` is now TypeScript.** The plain-JS module and its hand-synced `.d.ts` shim collapsed into one `.ts` file that single-sources the master notification label, the plugin name and display name, the quota warn ratio, the notification band keys, and the API-key length validation for the runtime, the rjsf schema, and the panel.
+- **Tick banner selection moved into `WeatherService.getTickBanner()`**, which owns the precedence (quota message, then stale message, then live status) and the stale-message format; the banner's "90%" now derives from `QUOTA_WARN_RATIO` so the text cannot drift from the gate.
+- **Notifier band sets carry their comparison direction** (`ascending` for wind and heat, `descending` for visibility and cold), so a miswired evaluator call is unrepresentable; the two near-identical band evaluators merged into one.
+- **Dropped the `prepack` script.** `prepublishOnly` already validates and builds on publish; `prepack` made `npm publish` build twice.
+
+### Internal
+
+- **De-duplication from the audit.** The course-over-ground fallback chain reuses `readNumericSelfPath`, `capForChartplotter` reuses `truncateToCodePoints`, `pascalsToMillibars` restores converter symmetry, `withEmissionTimestamp` rebuilds through `buildValuesDelta`, `getHealthStatus` reads the clock once via a shared `hasCompleteData`, `CachedVesselData` is `readonly`, and the log sanitizer collapsed to one recursive walker with one depth policy.
+- **Panel render hygiene.** A healthy, unchanged status poll performs zero state writes (previously six full-tree re-renders per minute); the panel shares `toErrorText`, `clampNumber`, and `fetchJson` helpers instead of three copies of each.
+- **Tests 327 to 334.** New coverage: the stalled-body-read abort, single-flight coalescing, and tick-banner precedence.
+- **Dead code removed.** `DEFAULT_CONFIG.DAILY_API_QUOTA_MAX`, an unreachable apparent-wind fallback, a stale Zod reference, and the write-only render-trigger state in the status hook.
+
 ## [1.7.2] - 2026-05-31
 
 Whole-codebase cleanup pass driven by a five-agent audit (`/cleanup`):

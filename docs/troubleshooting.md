@@ -25,7 +25,7 @@ traffic, confirm the egress IP is not on AccuWeather's block list.
 ## `API_RATE_LIMIT: Rate limit exceeded` (HTTP 429)
 
 The free tier allows 50 calls per day. Each `updateFrequency` tick costs 1 call
-(location lookups are cached for 2 hours, so they rarely cost extra).
+(location lookups are cached for 1 hour, so they rarely cost extra).
 
 Fix: the default `updateFrequency` of 30 minutes uses 48 calls/day, which sits
 inside the free-tier 50/day cap. If you have lowered `updateFrequency` below

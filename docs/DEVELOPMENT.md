@@ -73,7 +73,7 @@ export default function createPlugin(app: ServerAPI): Plugin {
 #### esbuild 0.28+
 - **Purpose**: Fast, modern JavaScript bundler for the plugin runtime
 - **Configuration**: [`esbuild.config.js`](../esbuild.config.js)
-- **Performance**: ~98 KB bundle in tens of milliseconds (the build script logs the live size after every run)
+- **Performance**: ~98 KiB bundle in tens of milliseconds (the build script logs the live size after every run)
 - **Features**:
   - ES2023 target compilation
   - Source map generation
@@ -82,7 +82,7 @@ export default function createPlugin(app: ServerAPI): Plugin {
   - Banner injection for plugin metadata
 
 **Build Outputs:**
-- `dist/index.js`: main plugin bundle (~98 KB)
+- `dist/index.js`: main plugin bundle (~98 KiB)
 - `dist/index.js.map`: source map
 - `dist/index.d.ts` and per-source `*.d.ts`: TypeScript declarations
 - `public/remoteEntry.js` plus federated chunks (.mjs): the React config panel, bundled by webpack via `ModuleFederationPlugin` (see [`webpack.config.cjs`](../webpack.config.cjs)). Independent of the esbuild bundle above; both are produced by `npm run build`.
@@ -137,13 +137,15 @@ src/__tests__/
 │   └── WindCalculator.test.ts        # Vector wind / wind chill / heat index
 ├── mappers/
 │   ├── NMEA2000PathMapper.test.ts    # Delta build + meta delta
+│   ├── WeatherProviderMapper.test.ts # AccuWeather forecast -> SK Weather API envelope
 │   └── delta-schema.test.ts          # Ajv conformance against the SK 1.8.2 JSON schema
 ├── notifications/
 │   └── WeatherNotifier.test.ts       # Transition state machine across hazard bands
 ├── services/
-│   ├── WeatherService.test.ts        # Orchestration / lifecycle
+│   ├── WeatherService.test.ts        # Orchestration / lifecycle / single-flight / tick banner
 │   ├── SignalKService.test.ts        # Navigation data + caching
-│   └── AccuWeatherService.test.ts    # API integration + retry/error paths
+│   ├── AccuWeatherService.test.ts    # API integration + retry/error/timeout paths
+│   └── WeatherProviderAdapter.test.ts # SK v2 Weather API provider surface
 ├── integration/
 │   └── weather-flow.integration.test.ts  # End-to-end smoke against stubbed global.fetch
 └── utils/
@@ -183,13 +185,16 @@ signalk-virtual-weather-sensors/
 │   ├── index.ts                       # Plugin entry: lifecycle, schema, emission timer, REST routes
 │   ├── calculators/
 │   │   └── WindCalculator.ts          # Vector wind, wind chill, heat index
-│   ├── configpanel/                   # Federated React config panel
-│   │   ├── index.js                   # Module Federation entry
-│   │   └── PluginConfigurationPanel.jsx
+│   ├── configpanel/                   # Federated React config panel (TypeScript)
+│   │   ├── index.tsx                  # Module Federation entry
+│   │   ├── PluginConfigurationPanel.tsx  # Composition root
+│   │   ├── styles.ts                  # --svws-* design tokens, light/dark/night themes
+│   │   ├── api-base.ts                # API_BASE + panel-shared helpers
+│   │   ├── components/                # Section, NumberInput, StatusDashboard, ApiKeyField, ...
+│   │   └── hooks/                     # useStatus, usePanelConfig
 │   ├── constants/
 │   │   ├── index.ts                   # TS constants (PGNs, paths, validation limits)
-│   │   ├── notifications-shared.js    # Shared JS module: labels, defaults, API_KEY_MIN_LENGTH
-│   │   └── notifications-shared.d.ts  # Type shim for the .js module
+│   │   └── notifications-shared.ts    # Shared module: labels, defaults, bounds, key validation
 │   ├── mappers/
 │   │   └── NMEA2000PathMapper.ts      # WeatherData -> SK delta + one-shot meta delta
 │   ├── notifications/
@@ -297,7 +302,7 @@ npm run security-audit     # Check for vulnerabilities
 
 #### Deployment
 ```bash
-npm run build              # Production build (also runs via the prepack hook)
+npm run build              # Production build (also runs via prepublishOnly before publish)
 npm run prepublishOnly     # Validate + build before publishing
 npm run release            # Tag, push, and create the GitHub release (auto-triggers npm publish workflow)
 ```
@@ -317,20 +322,22 @@ process, coding standards, and commit conventions.
 ## Testing Strategy
 
 The suite covers unit behavior, service integration, calculation accuracy,
-edge and boundary conditions, and error handling. **Total: 327 tests** across
+edge and boundary conditions, and error handling. **Total: 334 tests** across
 13 test files.
 
-- [`index.test.ts`](../src/__tests__/index.test.ts): plugin entry point, meta-delta one-shot invariant, banner dedupe regression, stale-data and quota-exhausted emission-tick branches, panel REST endpoint registration + status + test-key (short-key + long-key-rejected paths) (11 tests)
-- [`WeatherService.test.ts`](../src/__tests__/services/WeatherService.test.ts): core orchestration plus quota-aware status banner format and pluralization (29 tests)
+- [`index.test.ts`](../src/__tests__/index.test.ts): plugin entry point, meta-delta one-shot invariant, banner dedupe regression, stale-data and quota-exhausted emission-tick branches, panel REST endpoint registration + status + test-key (short-key + long-key-rejected paths) (14 tests)
+- [`WeatherService.test.ts`](../src/__tests__/services/WeatherService.test.ts): core orchestration, quota-aware status banner format and pluralization, single-flight update coalescing, and tick-banner precedence (quota beats stale beats live status) (35 tests)
 - [`SignalKService.test.ts`](../src/__tests__/services/SignalKService.test.ts): navigation data (36 tests)
-- [`AccuWeatherService.test.ts`](../src/__tests__/services/AccuWeatherService.test.ts): API integration, retry/error paths, rolling 24h request window including a backward clock jump (32 tests)
-- [`WindCalculator.test.ts`](../src/__tests__/calculators/WindCalculator.test.ts): vector mathematics plus mutation-test-driven boundary cases for wind chill, heat index, beam-wind apparent angle (34 tests)
-- [`NMEA2000PathMapper.test.ts`](../src/__tests__/mappers/NMEA2000PathMapper.test.ts): path mapping plus one-shot meta delta (19 tests)
+- [`AccuWeatherService.test.ts`](../src/__tests__/services/AccuWeatherService.test.ts): API integration, retry/error paths, the stalled-body-read timeout abort, rolling 24h request window including a backward clock jump (37 tests)
+- [`WindCalculator.test.ts`](../src/__tests__/calculators/WindCalculator.test.ts): vector mathematics plus mutation-test-driven boundary cases for wind chill, heat index, beam-wind apparent angle (40 tests)
+- [`NMEA2000PathMapper.test.ts`](../src/__tests__/mappers/NMEA2000PathMapper.test.ts): path mapping plus one-shot meta delta (20 tests)
 - [`mappers/delta-schema.test.ts`](../src/__tests__/mappers/delta-schema.test.ts): Ajv conformance against the `@signalk/signalk-schema@1.8.2` JSON Schema for both values and meta deltas, plus a vocabulary assertion that loads canonical leaves from the live `groups/environment.json` (8 tests)
-- [`notifications/WeatherNotifier.test.ts`](../src/__tests__/notifications/WeatherNotifier.test.ts): notification state machine, entry/exit edges across wind/visibility/heat/cold/severe-condition bands, master + per-category toggles, WeatherIcon severity mapping, SK 1.8.2 value-shape conformance, reset() semantics, enriched-message format per band, 16-point cardinal mapping, clear-to-normal when a band's driver field is absent, and the `MAX_MESSAGE_LENGTH` ceiling (31 tests)
+- [`mappers/WeatherProviderMapper.test.ts`](../src/__tests__/mappers/WeatherProviderMapper.test.ts): AccuWeather hourly and daily forecast mapping to the SK Weather API envelope (7 tests)
+- [`notifications/WeatherNotifier.test.ts`](../src/__tests__/notifications/WeatherNotifier.test.ts): notification state machine, entry/exit edges across wind/visibility/heat/cold/severe-condition bands, master + per-category toggles, WeatherIcon severity mapping, SK 1.8.2 value-shape conformance, reset() semantics, enriched-message format per band, 16-point cardinal mapping, clear-to-normal when a band's driver field is absent, and the `MAX_MESSAGE_LENGTH` ceiling (52 tests)
+- [`services/WeatherProviderAdapter.test.ts`](../src/__tests__/services/WeatherProviderAdapter.test.ts): SK v2 Weather API provider surface (5 tests)
 - [`integration/weather-flow.integration.test.ts`](../src/__tests__/integration/weather-flow.integration.test.ts): end-to-end smoke against a stubbed `global.fetch`: happy-path delta shape, 429 retry, 401 unauthorized (3 tests)
-- [`utils/conversions.test.ts`](../src/__tests__/utils/conversions.test.ts): unit conversions plus mutation-test-driven boundary cases for `normalizeAnglePiToPi`, air density, and Beaufort scale (33 tests)
-- [`utils/validation.test.ts`](../src/__tests__/utils/validation.test.ts): config validation, AccuWeather-response schema checks, and NMEA2000 sanitization (29 tests)
+- [`utils/conversions.test.ts`](../src/__tests__/utils/conversions.test.ts): unit conversions plus mutation-test-driven boundary cases for `normalizeAnglePiToPi`, air density, and Beaufort scale (39 tests)
+- [`utils/validation.test.ts`](../src/__tests__/utils/validation.test.ts): config validation, AccuWeather-response schema checks, and NMEA2000 sanitization (38 tests)
 
 ### Running Specific Tests
 

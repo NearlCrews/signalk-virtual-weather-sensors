@@ -13,20 +13,20 @@ follow the [Signal K 1.8.2 specification](https://signalk.org/specification/1.8.
 and align with NMEA2000 emission via a companion plugin. A free AccuWeather API
 key is required.
 
-## What's New in v1.7.2
+## What's New in v1.8.0
 
-A cleanup and compliance release from a five-agent whole-codebase audit. It
-fixes a handful of edge-case bugs: a partial forecast with a missing temperature
-no longer emits 0 K, cleared severe-weather notifications no longer carry stale
-hazard text, a NaN speed-over-ground is rejected, and a non-retryable HTTP error
-no longer burns retry attempts. It also de-duplicates shared cache, retry, and
-navigation logic, and fixes the SignalK plugin-ci App Store install simulation so
-the App Store Indicators show green. No emitted measurement path, delta shape, or
-notification band changed, and all 327 tests pass.
+A whole-codebase cleanup audit followed by a full config-panel rebuild. The
+panel is now TypeScript end to end with light, dark, and night-red helm themes,
+WCAG AA contrast, marine-sized touch targets, unsaved-changes tracking with
+Save and Discard, and a first-run callout. Under the hood, the request timeout
+now bounds the entire response instead of just the headers, overlapping weather
+updates coalesce into a single fetch so quota is never double-spent, and a
+daily-quota pause no longer interrupts the NMEA2000 keep-alive while cached
+data is still fresh. No emitted measurement path, delta shape, or notification
+band changed, and all 334 tests pass.
 
-See the [Changelog](CHANGELOG.md#172---2026-05-31) for the full Fixed /
-Internal detail, or the
-[GitHub release](https://github.com/NearlCrews/signalk-virtual-weather-sensors/releases/tag/v1.7.2).
+See the [Changelog](CHANGELOG.md#180---2026-06-11) for the full detail, or the
+[GitHub release](https://github.com/NearlCrews/signalk-virtual-weather-sensors/releases/tag/v1.8.0).
 
 ## Features
 
@@ -41,8 +41,9 @@ Internal detail, or the
 - Apparent wind calculated from true wind and vessel motion
 - Severe-weather notifications (opt-in, off by default) for wind, visibility,
   heat, cold, and severe conditions
-- React config panel in the Admin UI with a live status card and inline API
-  key test, with a JSON-schema form fallback for older Admin UIs
+- React config panel in the Admin UI with a live status dashboard, inline API
+  key test, unsaved-changes tracking, and light, dark, and night-red themes,
+  with a JSON-schema form fallback for older Admin UIs
 - NMEA2000 path alignment for bridging via a companion emitter plugin
 - `$source: 'accuweather'` on every delta, so real onboard sensors can win on
   source priority
@@ -80,7 +81,7 @@ Configure in the Signal K Admin UI under **Server -> Plugin Config**.
 |---------|-------------|---------|-------|
 | AccuWeather API Key | Required. Free key from AccuWeather. | n/a | n/a |
 | Update Frequency | Minutes between weather fetches. The default 30 uses 48 calls/day, inside the free-tier 50/day cap. | 30 | 1 to 60 |
-| Emission Interval | Seconds between delta emissions to the NMEA2000 network. | 5 | 1 to 60 |
+| Broadcast Interval | Seconds between delta emissions to the NMEA2000 network. | 5 | 1 to 60 |
 | Daily API Call Quota | Cap on AccuWeather calls per rolling 24h window. 0 disables the cap. | 50 | 0 to 1000 |
 | Severe-weather notifications | Master toggle plus per-category sub-toggles (wind, visibility, heat, cold, severe). | master off, sub-toggles on | boolean |
 
@@ -95,6 +96,10 @@ the last fetch:
 The severe-weather notification toggles (opt-in, off by default):
 
 ![Config panel: severe-weather notification toggles](assets/screenshots/config-panel-notifications.png)
+
+The night-red helm theme, designed to preserve night vision at the chart table:
+
+![Config panel: night-red theme](assets/screenshots/config-panel-night.png)
 
 ## What it emits
 

@@ -1,6 +1,6 @@
 {
   "name": "signalk-virtual-weather-sensors",
-  "version": "1.7.2",
+  "version": "1.8.0",
   "description": "Signal K plugin: AccuWeather marine weather as 30+ environment deltas, severe-weather notifications, NMEA2000-ready",
   "keywords": [
     "signalk-node-server-plugin",
@@ -30,10 +30,12 @@
     "appIcon": "./assets/icons/icon-192.png",
     "screenshots": [
       "assets/screenshots/config-panel-status.png",
-      "assets/screenshots/config-panel-notifications.png"
+      "assets/screenshots/config-panel-notifications.png",
+      "assets/screenshots/config-panel-night.png"
     ],
     "recommends": [
-      "signalk-nmea2000-emitter-cannon"
+      "signalk-nmea2000-emitter-cannon",
+      "signalk-binnacle"
     ]
   },
   "main": "dist/index.js",
@@ -77,6 +79,7 @@
   "devDependencies": {
     "@babel/core": "^7.29.0",
     "@babel/preset-react": "^7.28.5",
+    "@babel/preset-typescript": "^7.29.7",
     "@biomejs/biome": "^2.4.15",
     "@signalk/server-api": "^2.24.0",
     "@signalk/signalk-schema": "^1.8.2",
@@ -85,6 +88,7 @@
     "@stryker-mutator/vitest-runner": "^9.6.1",
     "@types/express": "^5.0.6",
     "@types/node": "^25.9.1",
+    "@types/react": "^19.2.17",
     "@vitest/coverage-v8": "^4.1.7",
     "@vitest/ui": "^4.1.7",
     "ajv": "^8.20.0",
@@ -113,14 +117,14 @@
     "test:coverage": "vitest run --coverage",
     "test:run": "vitest run",
     "mutation-test": "stryker run",
-    "type-check": "tsc --noEmit",
+    "type-check": "tsc --noEmit && npm run type-check:panel",
+    "type-check:panel": "tsc -p tsconfig.panel.json --noEmit",
     "lint": "biome check .",
     "lint:fix": "biome check --write .",
     "format": "biome format --write .",
     "clean": "node scripts/clean.mjs",
     "validate": "npm run type-check && npm run lint && npm run test:run",
     "security-audit": "npm audit --audit-level=moderate",
-    "prepack": "npm run build",
     "prepublishOnly": "npm run validate && npm run build",
     "hooks": "husky",
     "create-release": "gh release create v$npm_package_version --generate-notes",
