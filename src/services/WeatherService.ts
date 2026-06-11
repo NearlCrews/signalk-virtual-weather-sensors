@@ -46,6 +46,12 @@ interface ApparentWind {
   readonly apparentWindAngle?: number;
 }
 
+/** Banner the emission tick should push, as selected by `getTickBanner`. */
+export interface TickBanner {
+  readonly kind: 'status' | 'error';
+  readonly message: string;
+}
+
 /**
  * Single sink for every status / error banner write. Routed through the
  * plugin-entry-level `setBanner` so identical consecutive `(kind, message)`
@@ -69,6 +75,9 @@ export class WeatherService {
 
   private state: PluginState = 'stopped';
   private updateTimer: NodeJS.Timeout | null = null;
+  // Single-flight latch for updateWeatherData: overlapping callers join the
+  // in-flight fetch instead of starting a second one (see updateWeatherData).
+  private updateInFlight: Promise<void> | null = null;
   private initialUpdateTimer: NodeJS.Timeout | null = null;
 
   private currentWeatherData: WeatherData | null = null;
@@ -126,8 +135,14 @@ export class WeatherService {
       useVesselPosition: true,
     });
 
+    // The fallback must carry dailyApiQuota: without it the injected-service
+    // path (production, index.ts) and this direct-construction path (tests)
+    // would disagree on quota gating for forecast fetches.
     this.accuWeatherService =
-      accuWeatherService ?? new AccuWeatherService(this.config.accuWeatherApiKey, this.logger);
+      accuWeatherService ??
+      new AccuWeatherService(this.config.accuWeatherApiKey, this.logger, {
+        dailyApiQuota: this.config.dailyApiQuota,
+      });
     this.signalKService = signalKService ?? new SignalKService(this.app, this.logger);
     this.windCalculator = windCalculator ?? new WindCalculator(this.logger);
 
@@ -247,6 +262,57 @@ export class WeatherService {
   /** Milliseconds since the last successful weather fetch, or null if none yet. */
   public getDataAgeMs(): number | null {
     return elapsedSinceMs(this.lastUpdate ? this.lastUpdate.getTime() : null);
+  }
+
+  /**
+   * Age threshold beyond which fetched weather data counts as stale:
+   * `STALENESS_FACTOR` times the fetch cadence, so one missed fetch is
+   * tolerated and the second trips the watchdog.
+   * @private
+   */
+  private maxStalenessMs(): number {
+    return PLUGIN.STALENESS_FACTOR * this.config.updateFrequency * 60_000;
+  }
+
+  /**
+   * True once the last successful fetch is older than `maxStalenessMs()`.
+   * The emission tick uses this to stop broadcasting outdated data; false
+   * before the first fetch (there is nothing stale to withhold).
+   */
+  public isDataStale(): boolean {
+    const ageMs = this.getDataAgeMs();
+    return ageMs !== null && ageMs > this.maxStalenessMs();
+  }
+
+  /**
+   * Banner the emission tick should push this tick. Owns the precedence:
+   * the quota-exhausted error wins (it tells the operator WHY fetches paused,
+   * even when the data has also gone stale), then the stale-data error, then
+   * the live status banner. The caller routes the result through its dedupe
+   * sink and separately gates emission on `isDataStale()`.
+   */
+  public getTickBanner(): TickBanner {
+    if (this.isQuotaExhausted()) {
+      return { kind: 'error', message: this.formatQuotaExhaustedMessage() };
+    }
+    const ageMs = this.getDataAgeMs();
+    if (ageMs !== null && ageMs > this.maxStalenessMs()) {
+      return { kind: 'error', message: this.formatStaleMessage(ageMs) };
+    }
+    return { kind: 'status', message: this.formatStatusBanner() };
+  }
+
+  /**
+   * Operator-facing stale-data banner message. Floors (not rounds) so a delta
+   * that has crossed the threshold by, say, 30 seconds reports the actual
+   * whole minute since last update, not the next minute up. Pluralizes for
+   * the "1 minute ago" boundary.
+   * @private
+   */
+  private formatStaleMessage(ageMs: number): string {
+    const ageMin = msToWholeMinutes(ageMs);
+    const unit = ageMin === 1 ? 'minute' : 'minutes';
+    return `Weather data stale: last update ${ageMin} ${unit} ago`;
   }
 
   /**
@@ -372,7 +438,9 @@ export class WeatherService {
   }
 
   /**
-   * Force immediate weather data update
+   * Force immediate weather data update. No production caller: kept public for
+   * the test suite (like `AccuWeatherService.clearLocationCache`), where it is
+   * the cadence-independent way to drive `updateWeatherData`.
    */
   public async forceUpdate(): Promise<void> {
     this.logger('info', 'Forcing immediate weather update');
@@ -431,10 +499,25 @@ export class WeatherService {
   }
 
   /**
-   * Update weather data from AccuWeather API
+   * Update weather data from AccuWeather API. Single-flight: a scheduled tick
+   * that fires while a slow fetch is still in flight (or a forceUpdate racing
+   * the timer) joins the existing fetch instead of starting a second one.
+   * Concurrent fetches would double-spend API quota and race the post-fetch
+   * writes to currentWeatherData, lastUpdate, and updateCount.
    * @private
    */
-  private async updateWeatherData(): Promise<void> {
+  private updateWeatherData(): Promise<void> {
+    if (this.updateInFlight !== null) {
+      return this.updateInFlight;
+    }
+    const run = this.runWeatherUpdate().finally(() => {
+      this.updateInFlight = null;
+    });
+    this.updateInFlight = run;
+    return run;
+  }
+
+  private async runWeatherUpdate(): Promise<void> {
     const startTime = Date.now();
 
     // Bad key has been seen previously: do not refetch. The update timer is

@@ -27,8 +27,10 @@ import type {
 import {
   kelvinToCelsius,
   normalizeAngle0To2Pi,
+  pascalsToMillibars,
   radiansToDegrees,
   ratioToPercentage,
+  truncateToCodePoints,
 } from '../utils/conversions.js';
 import { pv } from '../utils/skDelta.js';
 
@@ -73,13 +75,15 @@ export const MAX_MESSAGE_LENGTH = 80;
 
 function capForChartplotter(message: string): string {
   // UTF-16 length is an upper bound on code-point count, so a string within the
-  // cap by UTF-16 units is within it by code points too: skip the array.
+  // cap by UTF-16 units is within it by code points too: fast-return without
+  // the helper (which would return short strings unchanged, but applying the
+  // ellipsis branch unconditionally would suffix short messages too).
   if (message.length <= MAX_MESSAGE_LENGTH) return message;
-  // Over the upper bound: count code points once (walking points, not UTF-16
-  // units, so a surrogate pair at the boundary is never split) and reuse them.
-  const points = Array.from(message);
-  if (points.length <= MAX_MESSAGE_LENGTH) return message;
-  return `${points.slice(0, MAX_MESSAGE_LENGTH - 1).join('')}…`;
+  const truncated = truncateToCodePoints(message, MAX_MESSAGE_LENGTH - 1);
+  // The helper returns the input unchanged when it is already within the cap
+  // by code points (surrogate pairs inflate UTF-16 length); only a genuinely
+  // over-cap message gets the ellipsis.
+  return truncated === message ? message : `${truncated}…`;
 }
 
 /**
@@ -119,7 +123,7 @@ function radiansToCardinal(radians: number): string {
 }
 
 function paToHpa(pressurePa: number): number {
-  return Math.round(pressurePa / UNITS.PRESSURE.MILLIBAR_TO_PASCAL);
+  return Math.round(pascalsToMillibars(pressurePa));
 }
 
 function kToCRounded(kelvin: number): number {
@@ -138,8 +142,10 @@ function msRounded(ms: number): number {
   return Math.round(ms * 10) / 10;
 }
 
-function metersToKm(meters: number): string {
-  return (meters / UNITS.LENGTH.KM_TO_M).toFixed(1);
+// Returns a number like the sibling unit helpers (paToHpa, kToCRounded,
+// msRounded); the call site applies the one-decimal presentation.
+function metersToKm(meters: number): number {
+  return meters / UNITS.LENGTH.KM_TO_M;
 }
 
 /**
@@ -181,7 +187,7 @@ function formatWindSuffix(data: WeatherData): string {
 function formatVisibilitySuffix(data: WeatherData): string {
   const vis = data.visibility;
   if (vis === undefined) return '';
-  const parts: string[] = [`${metersToKm(vis)} km`];
+  const parts: string[] = [`${metersToKm(vis).toFixed(1)} km`];
   if (isFiniteNumber(data.cloudCeiling)) {
     parts.push(`ceiling ${Math.round(data.cloudCeiling)} m`);
   }
@@ -280,10 +286,9 @@ const WEATHER_ICON_SEVERITY: ReadonlyMap<number, IconSeverity> = new Map([
 
 /**
  * One row of a hazard-band table. The band activates with `state` when the
- * reading crosses `threshold` (compared `>= threshold` for ascending bands
- * like wind and heat, `< threshold` for descending bands like visibility and
- * cold); otherwise it clears with `normal`. `prefix` is the human-readable
- * lead-in for the notification message (e.g. `Gale-force wind`).
+ * reading crosses `threshold` (in the direction its owning {@link BandSet}
+ * declares); otherwise it clears with `normal`. `prefix` is the
+ * human-readable lead-in for the notification message (e.g. `Gale-force wind`).
  */
 interface Band {
   readonly path: string;
@@ -292,77 +297,101 @@ interface Band {
   readonly prefix: string;
 }
 
-const WIND_BANDS: ReadonlyArray<Band> = [
-  {
-    path: NOTIFICATION_PATHS.WIND_GALE,
-    threshold: NOTIFICATION_THRESHOLDS.WIND.GALE_BEAUFORT,
-    state: 'warn',
-    prefix: 'Gale-force wind',
-  },
-  {
-    path: NOTIFICATION_PATHS.WIND_STORM,
-    threshold: NOTIFICATION_THRESHOLDS.WIND.STORM_BEAUFORT,
-    state: 'alarm',
-    prefix: 'Storm-force wind',
-  },
-  {
-    path: NOTIFICATION_PATHS.WIND_HURRICANE,
-    threshold: NOTIFICATION_THRESHOLDS.WIND.HURRICANE_BEAUFORT,
-    state: 'emergency',
-    prefix: 'Hurricane-force wind',
-  },
-];
+/**
+ * A hazard category's bands together with the comparison direction they share.
+ * Carrying the direction on the set (rather than as an `evaluateBands`
+ * argument) makes a mismatched call impossible: ascending sets (wind, heat)
+ * activate as the reading rises (`>= threshold`), descending sets (visibility,
+ * cold) as it falls (`< threshold`).
+ */
+interface BandSet {
+  readonly direction: 'ascending' | 'descending';
+  readonly bands: ReadonlyArray<Band>;
+}
 
-const HEAT_BANDS: ReadonlyArray<Band> = [
-  {
-    path: NOTIFICATION_PATHS.HEAT_CAUTION,
-    threshold: NOTIFICATION_THRESHOLDS.HEAT_STRESS.CAUTION_INDEX,
-    state: 'warn',
-    prefix: 'Heat stress caution',
-  },
-  {
-    path: NOTIFICATION_PATHS.HEAT_HIGH,
-    threshold: NOTIFICATION_THRESHOLDS.HEAT_STRESS.HIGH_INDEX,
-    state: 'alarm',
-    prefix: 'High heat stress',
-  },
-  {
-    path: NOTIFICATION_PATHS.HEAT_EXTREME,
-    threshold: NOTIFICATION_THRESHOLDS.HEAT_STRESS.EXTREME_INDEX,
-    state: 'emergency',
-    prefix: 'Extreme heat stress',
-  },
-];
+const WIND_BANDS: BandSet = {
+  direction: 'ascending',
+  bands: [
+    {
+      path: NOTIFICATION_PATHS.WIND_GALE,
+      threshold: NOTIFICATION_THRESHOLDS.WIND.GALE_BEAUFORT,
+      state: 'warn',
+      prefix: 'Gale-force wind',
+    },
+    {
+      path: NOTIFICATION_PATHS.WIND_STORM,
+      threshold: NOTIFICATION_THRESHOLDS.WIND.STORM_BEAUFORT,
+      state: 'alarm',
+      prefix: 'Storm-force wind',
+    },
+    {
+      path: NOTIFICATION_PATHS.WIND_HURRICANE,
+      threshold: NOTIFICATION_THRESHOLDS.WIND.HURRICANE_BEAUFORT,
+      state: 'emergency',
+      prefix: 'Hurricane-force wind',
+    },
+  ],
+};
 
-const VISIBILITY_BANDS: ReadonlyArray<Band> = [
-  {
-    path: NOTIFICATION_PATHS.VISIBILITY_LOW,
-    threshold: NOTIFICATION_THRESHOLDS.VISIBILITY.LOW_M,
-    state: 'warn',
-    prefix: 'Reduced visibility',
-  },
-  {
-    path: NOTIFICATION_PATHS.VISIBILITY_VERY_LOW,
-    threshold: NOTIFICATION_THRESHOLDS.VISIBILITY.VERY_LOW_M,
-    state: 'alarm',
-    prefix: 'Very low visibility',
-  },
-];
+const HEAT_BANDS: BandSet = {
+  direction: 'ascending',
+  bands: [
+    {
+      path: NOTIFICATION_PATHS.HEAT_CAUTION,
+      threshold: NOTIFICATION_THRESHOLDS.HEAT_STRESS.CAUTION_INDEX,
+      state: 'warn',
+      prefix: 'Heat stress caution',
+    },
+    {
+      path: NOTIFICATION_PATHS.HEAT_HIGH,
+      threshold: NOTIFICATION_THRESHOLDS.HEAT_STRESS.HIGH_INDEX,
+      state: 'alarm',
+      prefix: 'High heat stress',
+    },
+    {
+      path: NOTIFICATION_PATHS.HEAT_EXTREME,
+      threshold: NOTIFICATION_THRESHOLDS.HEAT_STRESS.EXTREME_INDEX,
+      state: 'emergency',
+      prefix: 'Extreme heat stress',
+    },
+  ],
+};
 
-const COLD_BANDS: ReadonlyArray<Band> = [
-  {
-    path: NOTIFICATION_PATHS.COLD_CAUTION,
-    threshold: NOTIFICATION_THRESHOLDS.COLD.CAUTION_K,
-    state: 'warn',
-    prefix: 'Cold exposure caution',
-  },
-  {
-    path: NOTIFICATION_PATHS.COLD_EXTREME,
-    threshold: NOTIFICATION_THRESHOLDS.COLD.EXTREME_K,
-    state: 'alarm',
-    prefix: 'Extreme cold exposure',
-  },
-];
+const VISIBILITY_BANDS: BandSet = {
+  direction: 'descending',
+  bands: [
+    {
+      path: NOTIFICATION_PATHS.VISIBILITY_LOW,
+      threshold: NOTIFICATION_THRESHOLDS.VISIBILITY.LOW_M,
+      state: 'warn',
+      prefix: 'Reduced visibility',
+    },
+    {
+      path: NOTIFICATION_PATHS.VISIBILITY_VERY_LOW,
+      threshold: NOTIFICATION_THRESHOLDS.VISIBILITY.VERY_LOW_M,
+      state: 'alarm',
+      prefix: 'Very low visibility',
+    },
+  ],
+};
+
+const COLD_BANDS: BandSet = {
+  direction: 'descending',
+  bands: [
+    {
+      path: NOTIFICATION_PATHS.COLD_CAUTION,
+      threshold: NOTIFICATION_THRESHOLDS.COLD.CAUTION_K,
+      state: 'warn',
+      prefix: 'Cold exposure caution',
+    },
+    {
+      path: NOTIFICATION_PATHS.COLD_EXTREME,
+      threshold: NOTIFICATION_THRESHOLDS.COLD.EXTREME_K,
+      state: 'alarm',
+      prefix: 'Extreme cold exposure',
+    },
+  ],
+};
 
 /**
  * Translates `WeatherData` snapshots into Signal K notification deltas under
@@ -446,7 +475,7 @@ export class WeatherNotifier {
       this.clearBands(WIND_BANDS, out);
       return;
     }
-    this.evaluateAscendingBands(WIND_BANDS, bft, () => formatWindSuffix(data), out);
+    this.evaluateBands(WIND_BANDS, bft, () => formatWindSuffix(data), out);
   }
 
   /**
@@ -460,7 +489,7 @@ export class WeatherNotifier {
       this.clearBands(VISIBILITY_BANDS, out);
       return;
     }
-    this.evaluateDescendingBands(VISIBILITY_BANDS, vis, () => formatVisibilitySuffix(data), out);
+    this.evaluateBands(VISIBILITY_BANDS, vis, () => formatVisibilitySuffix(data), out);
   }
 
   /**
@@ -475,50 +504,30 @@ export class WeatherNotifier {
       this.clearBands(HEAT_BANDS, out);
       return;
     }
-    this.evaluateAscendingBands(HEAT_BANDS, hsi, () => formatHeatSuffix(data), out);
+    this.evaluateBands(HEAT_BANDS, hsi, () => formatHeatSuffix(data), out);
   }
 
   /**
-   * Drive a set of ascending bands against one numeric reading. Each band
-   * activates with its declared state when `value >= band.threshold`,
-   * clears with `normal` otherwise. The scalar-suffix producer is invoked
-   * lazily inside `maybeTransition` only when a transition actually fires,
-   * so steady-state evaluations skip string formatting entirely.
+   * Drive a band set against one numeric reading, using the comparison
+   * direction the set declares (ascending: `value >= threshold`; descending:
+   * `value < threshold`). Each band clears with `normal` otherwise. The
+   * scalar-suffix producer is invoked lazily inside `maybeTransition` only
+   * when a transition actually fires, so steady-state evaluations skip string
+   * formatting entirely.
    */
-  private evaluateAscendingBands(
-    bands: ReadonlyArray<Band>,
+  private evaluateBands(
+    set: BandSet,
     value: number,
     scalarSuffix: () => string,
     out: PathValue[]
   ): void {
-    for (const band of bands) {
-      const desired = value >= band.threshold ? band.state : 'normal';
+    for (const band of set.bands) {
+      const active =
+        set.direction === 'ascending' ? value >= band.threshold : value < band.threshold;
+      const desired = active ? band.state : 'normal';
       // On exit (desired 'normal') pass an empty message so a cleared alert
       // does not carry stale hazard text, matching clearBands and
       // evaluateSevereCondition.
-      this.maybeTransition(
-        band.path,
-        desired,
-        desired === 'normal' ? () => '' : () => `${band.prefix}: ${scalarSuffix()}`,
-        out
-      );
-    }
-  }
-
-  /**
-   * Descending counterpart to {@link evaluateAscendingBands}: each band
-   * activates when `value < band.threshold` (visibility and cold both fall
-   * into hazard as the reading drops). The suffix producer is invoked lazily.
-   */
-  private evaluateDescendingBands(
-    bands: ReadonlyArray<Band>,
-    value: number,
-    scalarSuffix: () => string,
-    out: PathValue[]
-  ): void {
-    for (const band of bands) {
-      const desired = value < band.threshold ? band.state : 'normal';
-      // Empty message on exit so a cleared alert carries no stale hazard text.
       this.maybeTransition(
         band.path,
         desired,
@@ -535,8 +544,8 @@ export class WeatherNotifier {
    * alarm on the bus until a later response happens to carry the driver again.
    * Mirrors the clear-to-normal path in {@link evaluateSevereCondition}.
    */
-  private clearBands(bands: ReadonlyArray<Band>, out: PathValue[]): void {
-    for (const band of bands) {
+  private clearBands(set: BandSet, out: PathValue[]): void {
+    for (const band of set.bands) {
       this.maybeTransition(band.path, 'normal', () => '', out);
     }
   }
@@ -553,7 +562,7 @@ export class WeatherNotifier {
       this.clearBands(COLD_BANDS, out);
       return;
     }
-    this.evaluateDescendingBands(COLD_BANDS, windChillK, () => formatColdSuffix(data), out);
+    this.evaluateBands(COLD_BANDS, windChillK, () => formatColdSuffix(data), out);
   }
 
   /**

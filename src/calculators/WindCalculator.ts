@@ -99,10 +99,9 @@ export class WindCalculator {
     );
 
     return {
-      // Defensive: with the validator's finite-input gate above, sqrt of two
-      // finite squared values is always finite. The fallback can never fire
-      // at runtime, but it documents intent for an isolated reader.
-      apparentWindSpeed: Number.isFinite(apparentSpeed) ? apparentSpeed : trueWindSpeed,
+      // The validator's finite-and-range gate above means sqrt of the two
+      // squared components is always finite here; no fallback needed.
+      apparentWindSpeed: apparentSpeed,
       apparentWindAngle: apparentAngle,
       isValid: true,
     };

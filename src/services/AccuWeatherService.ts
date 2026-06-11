@@ -87,10 +87,6 @@ const RETRYABLE_ERROR_SUBSTRINGS: ReadonlyArray<string> = [
   'enotfound',
 ];
 
-/**
- * AccuWeather API client for weather data operations
- * Provides type-safe interface to AccuWeather REST API with caching and error handling
- */
 /** Maximum number of entries in location cache before pruning */
 const MAX_CACHE_SIZE = 100;
 
@@ -150,8 +146,12 @@ function calculateHeatStressIndex(wetBulbGlobeTemperatureK: number): number {
 function extractEnhancedTemperatures(
   conditions: AccuWeatherCurrentConditions
 ): Partial<WeatherData> {
-  const toKelvin = (celsius: number | undefined): number | undefined =>
-    typeof celsius === 'number' ? celsiusToKelvin(celsius) : undefined;
+  // Routed through asOptionalNumber (like extractEnhancedConditions) so both
+  // extractors apply the same numeric narrowing at the API boundary.
+  const toKelvin = (celsius: unknown): number | undefined => {
+    const value = asOptionalNumber(celsius);
+    return value !== undefined ? celsiusToKelvin(value) : undefined;
+  };
   const realFeel = toKelvin(conditions.RealFeelTemperature?.Metric?.Value);
   const realFeelShade = toKelvin(conditions.RealFeelTemperatureShade?.Metric?.Value);
   const wetBulbTemperature = toKelvin(conditions.WetBulbTemperature?.Metric?.Value);
@@ -243,6 +243,11 @@ function extractConditionDetails(conditions: AccuWeatherCurrentConditions): Part
   };
 }
 
+/**
+ * AccuWeather API client for weather data operations.
+ * Provides a type-safe interface to the AccuWeather REST API with location and
+ * forecast caching, retry and backoff, and rolling-24h quota tracking.
+ */
 export class AccuWeatherService {
   private readonly config: AccuWeatherConfig;
   private readonly logger: Logger;
@@ -819,8 +824,6 @@ export class AccuWeatherService {
         signal: controller.signal,
       });
 
-      clearTimeout(timeout);
-
       // Counted after the response lands so timeouts and network errors do
       // not consume quota (AccuWeather's own quota only charges for requests
       // that reach their service). Error responses (401, 403, 429, 503)
@@ -833,10 +836,12 @@ export class AccuWeatherService {
         await this.handleApiError(response, attempt);
       }
 
+      // The timeout must stay armed across this call: `fetch` resolves at
+      // headers-received, and without the signal the body read would be
+      // bounded only by undici's 300 s inactivity default instead of the
+      // configured requestTimeout.
       return await this.readBoundedJson<T>(response);
     } catch (error) {
-      clearTimeout(timeout);
-
       if (error instanceof Error && error.name === 'AbortError') {
         if (attempt < this.config.retryAttempts) {
           this.logger('warn', 'Request timeout, retrying', {
@@ -865,6 +870,8 @@ export class AccuWeatherService {
       }
 
       throw error;
+    } finally {
+      clearTimeout(timeout);
     }
   }
 

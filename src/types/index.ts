@@ -176,8 +176,8 @@ export interface NotificationsConfig {
 }
 
 /**
- * Runtime plugin configuration with validation
- * Uses Zod schema for type-safe configuration parsing
+ * Runtime plugin configuration, validated and normalized by
+ * `ConfigurationValidator` in `utils/validation.ts`.
  */
 export interface PluginConfiguration {
   /** AccuWeather API key (required) */

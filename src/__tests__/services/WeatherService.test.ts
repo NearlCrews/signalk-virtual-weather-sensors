@@ -349,6 +349,70 @@ describe('WeatherService - Data Emission', () => {
 
     await service.stop();
   });
+
+  it('coalesces overlapping updates into a single fetch (single-flight)', async () => {
+    const weatherData = {
+      temperature: 293.15,
+      pressure: 101325,
+      humidity: 0.6,
+      windSpeed: 5,
+      windDirection: Math.PI,
+      dewPoint: 285.15,
+      windChill: 293.15,
+      heatIndex: 293.15,
+      timestamp: new Date().toISOString(),
+    };
+    let resolveFetch: ((data: typeof weatherData) => void) | undefined;
+    const mockAccu = {
+      fetchCurrentWeather: vi.fn(
+        () =>
+          new Promise((resolve) => {
+            resolveFetch = resolve;
+          })
+      ),
+      getRequestCount: vi.fn(() => 1),
+      getRequestCountLast24h: vi.fn(() => 1),
+      getCacheStats: vi.fn(() => ({ size: 0 })),
+    };
+    const mockSignalK = {
+      getVesselNavigationData: vi.fn(() => ({
+        position: { latitude: 60, longitude: 5 },
+        isComplete: false,
+      })),
+      getHealthStatus: vi.fn(() => ({ status: 'ok', isStale: false })),
+      clearCache: vi.fn(),
+    };
+
+    const service = new WeatherService(
+      mockApp as never,
+      config,
+      mockLogger,
+      undefined,
+      mockAccu as never,
+      mockSignalK as never
+    );
+    await service.start();
+
+    // Two updates racing: the second must join the first fetch, not start a
+    // second one (a second fetch would double-spend API quota).
+    const first = service.forceUpdate();
+    const second = service.forceUpdate();
+    expect(mockAccu.fetchCurrentWeather).toHaveBeenCalledTimes(1);
+
+    resolveFetch?.(weatherData);
+    await Promise.all([first, second]);
+
+    expect(mockAccu.fetchCurrentWeather).toHaveBeenCalledTimes(1);
+    expect(service.getServiceStatus().updateCount).toBe(1);
+
+    // A fresh update after the in-flight one settled fetches again.
+    const third = service.forceUpdate();
+    expect(mockAccu.fetchCurrentWeather).toHaveBeenCalledTimes(2);
+    resolveFetch?.(weatherData);
+    await third;
+
+    await service.stop();
+  });
 });
 
 describe('WeatherService - Quota Banner', () => {
@@ -450,6 +514,119 @@ describe('WeatherService - Quota Banner', () => {
     expect(message).toContain('Fetches paused');
     // Operators need to know HOW to resume.
     expect(message).toMatch(/raise dailyApiQuota|increase updateFrequency/);
+  });
+});
+
+describe('WeatherService - Tick Banner and Staleness', () => {
+  let mockApp: ReturnType<typeof createMockApp>;
+  let mockLogger: ReturnType<typeof createMockLogger>;
+
+  /** Stand-in AccuWeatherService that pins both counters; see Quota Banner block. */
+  const makeFakeAccu = (last24h: number, cumulative = last24h) =>
+    ({
+      getRequestCount: () => cumulative,
+      getRequestCountLast24h: () => last24h,
+      getCacheStats: () => ({ size: 0 }),
+    }) as unknown as import('../../services/AccuWeatherService.js').AccuWeatherService;
+
+  /** Pin the last successful fetch `ageMinutes` in the past without a real fetch. */
+  const pinLastUpdate = (service: WeatherService, ageMinutes: number): void => {
+    (service as unknown as { lastUpdate: Date }).lastUpdate = new Date(
+      Date.now() - ageMinutes * 60_000
+    );
+  };
+
+  beforeEach(() => {
+    mockApp = createMockApp();
+    mockLogger = createMockLogger();
+  });
+
+  it('isDataStale is false before the first fetch and inside the staleness window', () => {
+    // updateFrequency 5 min, STALENESS_FACTOR 2: stale past 10 minutes.
+    const config = createTestConfig({ updateFrequency: 5, dailyApiQuota: 0 });
+    const service = new WeatherService(
+      mockApp as never,
+      config,
+      mockLogger,
+      undefined,
+      makeFakeAccu(0)
+    );
+
+    expect(service.isDataStale()).toBe(false);
+
+    pinLastUpdate(service, 5);
+    expect(service.isDataStale()).toBe(false);
+
+    pinLastUpdate(service, 15);
+    expect(service.isDataStale()).toBe(true);
+  });
+
+  it('returns the live status banner while data is fresh and quota has headroom', () => {
+    const config = createTestConfig({ updateFrequency: 5, dailyApiQuota: 50 });
+    const service = new WeatherService(
+      mockApp as never,
+      config,
+      mockLogger,
+      undefined,
+      makeFakeAccu(10)
+    );
+    pinLastUpdate(service, 1);
+
+    const banner = service.getTickBanner();
+    expect(banner.kind).toBe('status');
+    expect(banner.message).toContain('Running');
+  });
+
+  it('returns the stale-data error once age crosses the staleness window', () => {
+    const config = createTestConfig({ updateFrequency: 5, dailyApiQuota: 0 });
+    const service = new WeatherService(
+      mockApp as never,
+      config,
+      mockLogger,
+      undefined,
+      makeFakeAccu(0)
+    );
+    pinLastUpdate(service, 15);
+
+    const banner = service.getTickBanner();
+    expect(banner.kind).toBe('error');
+    expect(banner.message).toBe('Weather data stale: last update 15 minutes ago');
+  });
+
+  it('uses singular "minute" at the one-minute stale boundary', () => {
+    // updateFrequency 0.5 min keeps the threshold (1 minute) below the pinned
+    // 1.5-minute age so the stale branch fires with a floored age of 1.
+    const config = createTestConfig({ updateFrequency: 0.5, dailyApiQuota: 0 });
+    const service = new WeatherService(
+      mockApp as never,
+      config,
+      mockLogger,
+      undefined,
+      makeFakeAccu(0)
+    );
+    pinLastUpdate(service, 1.5);
+
+    expect(service.getTickBanner().message).toBe('Weather data stale: last update 1 minute ago');
+  });
+
+  it('prefers the quota-exhausted error over the stale-data error', () => {
+    const config = createTestConfig({ updateFrequency: 5, dailyApiQuota: 50 });
+    const service = new WeatherService(
+      mockApp as never,
+      config,
+      mockLogger,
+      undefined,
+      makeFakeAccu(50)
+    );
+    // Stale too: the quota message must win because it explains WHY fetches paused.
+    pinLastUpdate(service, 15);
+
+    const banner = service.getTickBanner();
+    expect(banner.kind).toBe('error');
+    expect(banner.message).toContain('AccuWeather daily quota reached');
+    expect(banner.message).not.toContain('stale');
+    // Staleness still gates emission independently of the banner choice.
+    expect(service.isDataStale()).toBe(true);
   });
 });
 

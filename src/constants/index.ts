@@ -3,13 +3,21 @@
  * Centralized configuration values and NMEA2000 specifications
  */
 
-import { CONFIG_DEFAULTS, DEFAULT_NOTIFICATIONS } from './notifications-shared.js';
+import {
+  CONFIG_DEFAULTS,
+  DEFAULT_NOTIFICATIONS,
+  PLUGIN_DISPLAY_NAME,
+  PLUGIN_NAME,
+  QUOTA_WARN_RATIO,
+} from './notifications-shared.js';
 
 export {
   API_KEY_MIN_LENGTH,
   CONFIG_DEFAULTS,
   DEFAULT_NOTIFICATIONS,
   NOTIFICATION_LABELS,
+  NOTIFICATION_MASTER_LABEL,
+  QUOTA_WARN_RATIO,
 } from './notifications-shared.js';
 
 /**
@@ -26,8 +34,8 @@ export const TEST_KEY_LOCATION = { latitude: 51.4779, longitude: 0.0015 } as con
 
 /** Plugin identification and versioning */
 export const PLUGIN = {
-  NAME: 'signalk-virtual-weather-sensors',
-  DISPLAY_NAME: 'Virtual Weather Sensors',
+  NAME: PLUGIN_NAME,
+  DISPLAY_NAME: PLUGIN_DISPLAY_NAME,
   DESCRIPTION:
     'Signal K plugin providing comprehensive weather data from AccuWeather API with NMEA2000-compatible environmental measurements',
   VERSION: process.env.PKG_VERSION || '1.0.0',
@@ -46,7 +54,7 @@ export const PLUGIN = {
   STATUS: {
     RUNNING: 'Running',
     /** Banner prefix once 24h API usage crosses `API_QUOTA.WARN_RATIO`. */
-    RUNNING_QUOTA_WARN: 'Running [quota 90% used]',
+    RUNNING_QUOTA_WARN: `Running [quota ${Math.round(QUOTA_WARN_RATIO * 100)}% used]`,
     STOPPED: 'Stopped',
   },
   /** Delay before first weather fetch after start, in ms */
@@ -65,7 +73,7 @@ export const PLUGIN = {
 
 /**
  * Default plugin configuration settings. Numeric defaults and bounds live in
- * `notifications-shared.js` (`CONFIG_DEFAULTS`) so the rjsf schema, the
+ * `notifications-shared.ts` (`CONFIG_DEFAULTS`) so the rjsf schema, the
  * runtime sanitizer, and the federated JSX panel cannot drift.
  *
  * INVARIANT: if `UPDATE_FREQUENCY` drops below `Math.ceil(1440 / DAILY_API_QUOTA)`
@@ -76,7 +84,6 @@ export const DEFAULT_CONFIG = {
   UPDATE_FREQUENCY: CONFIG_DEFAULTS.UPDATE_FREQUENCY, // minutes
   EMISSION_INTERVAL: CONFIG_DEFAULTS.EMISSION_INTERVAL, // seconds
   DAILY_API_QUOTA: CONFIG_DEFAULTS.DAILY_API_QUOTA,
-  DAILY_API_QUOTA_MAX: CONFIG_DEFAULTS.DAILY_API_QUOTA_MAX,
   LOCATION_CACHE_TIMEOUT: 3600, // seconds (1 hour)
   REQUEST_TIMEOUT: 10000, // milliseconds
   RETRY_ATTEMPTS: 3,
@@ -86,8 +93,8 @@ export const DEFAULT_CONFIG = {
    * existing measurement-only behaviour is preserved on upgrade. The per-
    * category toggles default to true so a single flip of `enabled` lights up
    * the full set; operators can untick individual categories from the admin UI.
-   * Values come from notifications-shared.js so the JSX panel and the rjsf
-   * schema agree on the canonical defaults.
+   * Values come from notifications-shared.ts so the federated panel and the
+   * rjsf schema agree on the canonical defaults.
    */
   NOTIFICATIONS: {
     ENABLED: DEFAULT_NOTIFICATIONS.enabled,
@@ -106,7 +113,7 @@ export const DEFAULT_CONFIG = {
  * 24h window drops below the cap.
  */
 export const API_QUOTA = {
-  WARN_RATIO: 0.9,
+  WARN_RATIO: QUOTA_WARN_RATIO,
   EXHAUST_RATIO: 1.0,
 } as const;
 

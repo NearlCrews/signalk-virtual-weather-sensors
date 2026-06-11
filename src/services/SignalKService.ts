@@ -11,7 +11,6 @@ import {
   isValidBearing,
   isValidCoordinates,
   isValidVesselSpeed,
-  radiansToDegrees,
   toErrorMessage,
 } from '../utils/conversions.js';
 
@@ -47,15 +46,20 @@ interface SignalKDataValue {
   $source?: string;
 }
 
+/**
+ * Snapshot of vessel navigation data. `readonly` enforces the replace-wholesale
+ * invariant documented on EMPTY_CACHED_VESSEL_DATA: the cache is never mutated
+ * in place, only swapped for a fresh object.
+ */
 interface CachedVesselData {
-  position: GeoLocation | null;
-  speedOverGround: number | null;
-  courseOverGroundTrue: number | null;
-  headingTrue: number | null;
-  headingMagnetic: number | null;
-  magneticVariation: number | null;
+  readonly position: GeoLocation | null;
+  readonly speedOverGround: number | null;
+  readonly courseOverGroundTrue: number | null;
+  readonly headingTrue: number | null;
+  readonly headingMagnetic: number | null;
+  readonly magneticVariation: number | null;
   /** Wall-clock millisecond timestamp of the most recent cache write (null when never written). */
-  lastUpdateMs: number | null;
+  readonly lastUpdateMs: number | null;
 }
 
 /**
@@ -184,7 +188,8 @@ export class SignalKService {
    * null when absent, from an excluded source, non-numeric, or out of range.
    * `isValid` also rejects non-finite values (a NaN slips past a bare
    * `typeof === 'number'` since `NaN < MIN` and `NaN > MAX` are both false).
-   * Shared by the speed, heading, and magnetic-variation getters.
+   * Shared by the speed, course-fallback, heading, and magnetic-variation
+   * getters.
    * @private
    */
   private readNumericSelfPath(
@@ -229,41 +234,9 @@ export class SignalKService {
    */
   public getVesselCourseOverGroundTrue(): number | null {
     for (const path of COURSE_FALLBACK_PATHS) {
-      try {
-        const courseData = this.app.getSelfPath(path);
-
-        if (!this.isValidSignalKData(courseData) || typeof courseData.value !== 'number') {
-          continue;
-        }
-
-        if (this.isExcludedSource(courseData)) {
-          this.logger('debug', `Ignoring ${path} data from excluded source`, {
-            source: courseData.$source,
-          });
-          continue;
-        }
-
-        const course = courseData.value;
-
-        if (!isValidBearing(course)) {
-          this.logger('warn', `Invalid ${path} value`, {
-            course,
-            courseDegrees: radiansToDegrees(course),
-          });
-          continue;
-        }
-
-        this.logger('debug', `Retrieved vessel course from ${path}`, {
-          course,
-          courseDegrees: radiansToDegrees(course).toFixed(1),
-          source: courseData.$source,
-        });
-
+      const course = this.readNumericSelfPath(path, isValidBearing, path);
+      if (course !== null) {
         return course;
-      } catch (error) {
-        this.logger('error', `Error retrieving ${path}`, {
-          error: toErrorMessage(error),
-        });
       }
     }
 
@@ -327,14 +300,25 @@ export class SignalKService {
       headingTrue: this.cachedData.headingTrue ?? undefined,
       headingMagnetic: this.cachedData.headingMagnetic ?? undefined,
       magneticVariation: this.cachedData.magneticVariation ?? undefined,
-      isComplete: !!(
-        this.cachedData.position &&
-        typeof this.cachedData.speedOverGround === 'number' &&
-        typeof this.cachedData.courseOverGroundTrue === 'number'
-      ),
+      isComplete: this.hasCompleteData(),
       // `?? undefined` (not `|| undefined`) so a freshly written age of 0 survives.
       dataAge: dataAge ?? undefined,
     };
+  }
+
+  /**
+   * True when the cache holds the position, speed, and course trio the
+   * apparent-wind math needs. Shared by `getCachedNavigationData` and
+   * `getHealthStatus` so the latter does not build a full navigation snapshot
+   * (with its second `Date.now()` read) just to extract this flag.
+   * @private
+   */
+  private hasCompleteData(): boolean {
+    return !!(
+      this.cachedData.position &&
+      typeof this.cachedData.speedOverGround === 'number' &&
+      typeof this.cachedData.courseOverGroundTrue === 'number'
+    );
   }
 
   /**
@@ -411,13 +395,12 @@ export class SignalKService {
   } {
     const dataAge = this.getDataAge();
     const isStale = this.isAgeStale(dataAge);
-    const cachedData = this.getCachedNavigationData();
 
     return {
       status: isStale ? 'error' : 'running',
       dataAge,
       isStale,
-      hasComplete: cachedData.isComplete,
+      hasComplete: this.hasCompleteData(),
     };
   }
 }

@@ -18,9 +18,11 @@ import {
   DEFAULT_CONFIG,
   ERROR_CODES,
   NOTIFICATION_LABELS,
+  NOTIFICATION_MASTER_LABEL,
   PLUGIN,
   TEST_KEY_LOCATION,
 } from './constants/index.js';
+import { validateKeyLength } from './constants/notifications-shared.js';
 import { NMEA2000PathMapper } from './mappers/NMEA2000PathMapper.js';
 import { WeatherNotifier } from './notifications/WeatherNotifier.js';
 import { AccuWeatherService } from './services/AccuWeatherService.js';
@@ -34,7 +36,7 @@ import type {
   PluginState,
   WeatherData,
 } from './types/index.js';
-import { asTimestamp, msToWholeMinutes, toErrorMessage } from './utils/conversions.js';
+import { msToWholeMinutes, toErrorMessage } from './utils/conversions.js';
 import { buildValuesDelta } from './utils/skDelta.js';
 import { ConfigurationValidator } from './utils/validation.js';
 
@@ -208,7 +210,7 @@ export default function createPlugin(app: ServerAPI): Plugin {
           properties: {
             enabled: {
               type: 'boolean',
-              title: 'Enable PGN notifications',
+              title: NOTIFICATION_MASTER_LABEL,
               default: DEFAULT_CONFIG.NOTIFICATIONS.ENABLED,
             },
             wind: {
@@ -489,11 +491,10 @@ function setupEnhancedEmissionSystem(
   app: ServerAPI
 ): void {
   const emissionInterval = config.emissionInterval * 1000;
-  const maxStalenessMs = PLUGIN.STALENESS_FACTOR * config.updateFrequency * 60_000;
 
   instance.emissionTimer = setInterval(() => {
     try {
-      emitWeatherTick(instance, app, maxStalenessMs);
+      emitWeatherTick(instance, app);
     } catch (error) {
       instance.logger('error', 'Error in emission timer', {
         error: toErrorMessage(error),
@@ -509,11 +510,11 @@ function setupEnhancedEmissionSystem(
 /**
  * Single emission tick: refreshes the cached delta when weather data has
  * changed, builds a fresh outbound delta with the current emission timestamp
- * (not the cached observation time), and skips emission entirely when upstream
- * data has gone stale beyond `maxStalenessMs`.
+ * (not the cached observation time), and skips emission entirely when the
+ * service reports the upstream data has gone stale.
  * @private
  */
-function emitWeatherTick(instance: PluginInstance, app: ServerAPI, maxStalenessMs: number): void {
+function emitWeatherTick(instance: PluginInstance, app: ServerAPI): void {
   if (!instance.weatherService || !instance.pathMapper) {
     return;
   }
@@ -522,30 +523,20 @@ function emitWeatherTick(instance: PluginInstance, app: ServerAPI, maxStalenessM
     return;
   }
 
-  // Quota-exhausted before staleness: when both fire the quota-specific
-  // message wins because it tells the operator WHY fetches paused.
-  if (instance.weatherService.isQuotaExhausted()) {
-    setBanner(instance, app, 'error', instance.weatherService.formatQuotaExhaustedMessage());
+  // Banner precedence (quota-exhausted, then stale, then live status) is
+  // owned by WeatherService.getTickBanner; this tick just routes the result
+  // through the setBanner dedupe, so identical ticks within the same minute
+  // are no-ops and only message changes hit the SK API.
+  const banner = instance.weatherService.getTickBanner();
+  setBanner(instance, app, banner.kind, banner.message);
+
+  // Staleness gates emission, not just the banner: quota exhaustion alone
+  // keeps broadcasting cached in-window data on the keep-alive cadence so
+  // NMEA2000 consumers do not drop the virtual sensor, but data past the
+  // staleness watchdog must stop being restamped with fresh timestamps.
+  if (instance.weatherService.isDataStale()) {
     return;
   }
-
-  const ageMs = instance.weatherService.getDataAgeMs();
-  if (ageMs !== null && ageMs > maxStalenessMs) {
-    // Floor (not round) so a delta that has crossed the threshold by, say,
-    // 30 seconds reports the actual whole minute since last update, not the
-    // next minute up. Pluralize for the "1 minute ago" boundary.
-    const ageMin = msToWholeMinutes(ageMs);
-    const unit = ageMin === 1 ? 'minute' : 'minutes';
-    setBanner(instance, app, 'error', `Weather data stale: last update ${ageMin} ${unit} ago`);
-    return;
-  }
-
-  // Re-push the banner every fresh tick so the admin UI sees "last update Nm
-  // ago" rather than the start-time "awaiting first update" string. Dedupe in
-  // setBanner means we only actually hit the SK API when the message changes
-  // (typically once per minute as the age counter ticks up), and identical
-  // ticks during the same minute are no-ops.
-  setBanner(instance, app, 'status', instance.weatherService.formatStatusBanner());
 
   // Only rebuild delta when weather data changes (reference comparison).
   // Notifications are evaluated on the same edge: transitions only fire when
@@ -623,17 +614,12 @@ function refreshCachedDelta(
  * @private
  */
 function withEmissionTimestamp(cached: Delta): Delta {
-  const now = asTimestamp(new Date().toISOString());
-  // `buildValuesDelta` always emits a single-update delta, so the .map() form
-  // here was over-general. Inlining the lone update keeps the intent obvious
-  // and a future multi-update shape would fail the type-check rather than
-  // silently re-stamp every entry.
+  // The cached delta is always a single-update values delta built by
+  // `buildValuesDelta`, so restamping is a rebuild through the same helper,
+  // which stamps the current wall-clock time when no timestamp is passed.
   const update = cached.updates[0];
-  if (update === undefined) return cached;
-  return {
-    ...cached,
-    updates: [{ ...update, timestamp: now }],
-  };
+  if (update === undefined || !('values' in update)) return cached;
+  return buildValuesDelta(update.values);
 }
 
 /**
@@ -770,42 +756,52 @@ function createLogger(app: ServerAPI): Logger {
 const SENSITIVE_LOG_KEY_PATTERN = /apikey|api_key|password|secret|token/;
 
 /**
- * Cap on metadata-object nesting before recursion is truncated. The
- * comparison `depth >= SANITIZE_MAX_DEPTH` truncates AT the cap rather than
- * one level past it, so the cap name matches the deepest level the function
- * actually processes.
+ * Cap on metadata nesting (objects and arrays alike) before recursion is
+ * truncated. A container AT this depth becomes the `'[depth-truncated]'`
+ * marker, so the cap names the deepest level whose contents are still walked.
  */
 const SANITIZE_MAX_DEPTH = 5;
 
 /**
- * Sanitize log metadata to remove sensitive information. Walks nested plain
- * objects with a depth cap and a `WeakSet` of seen references so a cyclic or
- * pathologically deep metadata bag cannot stack-overflow the Node process when
- * a warn / error is logged.
+ * Sanitize log metadata to remove sensitive information. Thin typed entry
+ * point: `sanitizeLogValue` is the sole recursive walker and owns the depth
+ * cap, the circular-reference guard, and the sensitive-key redaction. The
+ * top-level metadata bag is a fresh object at depth 0, so the walker always
+ * returns an object here; the cast restores the entry point's record type.
  * @private
  */
-function sanitizeLogMetadata(
-  metadata: Record<string, unknown>,
-  depth = 0,
-  seen: WeakSet<object> = new WeakSet()
-): Record<string, unknown> {
+function sanitizeLogMetadata(metadata: Record<string, unknown>): Record<string, unknown> {
+  return sanitizeLogValue(metadata, 0, new WeakSet()) as Record<string, unknown>;
+}
+
+/**
+ * Recursively sanitize one metadata value. Primitives pass through; any
+ * container past the depth cap collapses to a marker string (a cyclic or
+ * pathologically deep metadata bag must not stack-overflow the Node process
+ * when a warn / error is logged); objects redact sensitive keys, and arrays
+ * walk each element so a nested `{ items: [{ apiKey }] }` cannot bypass
+ * redaction.
+ * @private
+ */
+function sanitizeLogValue(value: unknown, depth: number, seen: WeakSet<object>): unknown {
+  if (typeof value !== 'object' || value === null) {
+    return value;
+  }
   if (depth >= SANITIZE_MAX_DEPTH) {
-    return { _sanitizerNote: 'depth-truncated' };
+    return '[depth-truncated]';
+  }
+  if (seen.has(value)) {
+    return '[CIRCULAR]';
+  }
+  seen.add(value);
+  if (Array.isArray(value)) {
+    return value.map((entry) => sanitizeLogValue(entry, depth + 1, seen));
   }
   const sanitized: Record<string, unknown> = {};
-  for (const [key, value] of Object.entries(metadata)) {
-    if (SENSITIVE_LOG_KEY_PATTERN.test(key.toLowerCase())) {
-      sanitized[key] = '[REDACTED]';
-    } else if (typeof value === 'object' && value !== null && !Array.isArray(value)) {
-      if (seen.has(value)) {
-        sanitized[key] = '[CIRCULAR]';
-      } else {
-        seen.add(value);
-        sanitized[key] = sanitizeLogMetadata(value as Record<string, unknown>, depth + 1, seen);
-      }
-    } else {
-      sanitized[key] = value;
-    }
+  for (const [key, entry] of Object.entries(value)) {
+    sanitized[key] = SENSITIVE_LOG_KEY_PATTERN.test(key.toLowerCase())
+      ? '[REDACTED]'
+      : sanitizeLogValue(entry, depth + 1, seen);
   }
   return sanitized;
 }
@@ -881,11 +877,9 @@ function registerPanelRoutes(router: IRouter, instance: PluginInstance): void {
     // routers run; the body is therefore the parsed JSON object.
     const body = (req.body ?? {}) as { apiKey?: unknown };
     const apiKey = typeof body.apiKey === 'string' ? body.apiKey.trim() : '';
-    if (apiKey.length < API_KEY_MIN_LENGTH) {
-      res.status(400).json({
-        ok: false,
-        message: `API key must be at least ${API_KEY_MIN_LENGTH} characters.`,
-      });
+    const keyLengthError = validateKeyLength(apiKey);
+    if (keyLengthError) {
+      res.status(400).json({ ok: false, message: keyLengthError });
       return;
     }
     testKeyHits.push(now);

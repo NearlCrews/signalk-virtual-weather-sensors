@@ -80,6 +80,17 @@ function validateApiKey(
     return;
   }
 
+  // Placeholder check runs BEFORE the min-length check: realistic placeholders
+  // ("your_api_key", "demo") are shorter than API_KEY_MIN_LENGTH, so checking
+  // length first would mask the more actionable "placeholder" message behind a
+  // generic "too short".
+  if (API_KEY_PLACEHOLDER_PATTERNS.some((pattern) => pattern.test(trimmedKey))) {
+    errors.push(
+      'AccuWeather API key appears to be a placeholder. Please enter your actual API key.'
+    );
+    return;
+  }
+
   if (trimmedKey.length < API_KEY_MIN_LENGTH) {
     errors.push(
       `AccuWeather API key is too short (minimum ${API_KEY_MIN_LENGTH} characters). Get your key at https://developer.accuweather.com/`
@@ -92,12 +103,6 @@ function validateApiKey(
   if (API_KEY_INVALID_CHARS.test(trimmedKey)) {
     warnings.push(
       'AccuWeather API key contains whitespace or control characters. Please verify your key is correct.'
-    );
-  }
-
-  if (API_KEY_PLACEHOLDER_PATTERNS.some((pattern) => pattern.test(trimmedKey))) {
-    errors.push(
-      'AccuWeather API key appears to be a placeholder. Please enter your actual API key.'
     );
   }
 }

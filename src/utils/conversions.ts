@@ -91,6 +91,12 @@ export function millibarsToPA(millibars: number): number {
   return millibars * UNITS.PRESSURE.MILLIBAR_TO_PASCAL;
 }
 
+/** Inverse of {@link millibarsToPA}. 1 hPa = 1 millibar, so this also yields hPa. */
+export function pascalsToMillibars(pascals: number): number {
+  if (!Number.isFinite(pascals)) return 0;
+  return pascals / UNITS.PRESSURE.MILLIBAR_TO_PASCAL;
+}
+
 export function kmhToMS(kmh: number): number {
   if (!Number.isFinite(kmh)) return 0;
   return kmh * UNITS.WIND_SPEED.KMH_TO_MS;

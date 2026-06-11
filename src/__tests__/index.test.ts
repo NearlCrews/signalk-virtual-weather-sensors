@@ -18,8 +18,11 @@ const { stubState } = vi.hoisted(() => ({
     getCurrentWeatherData: (() => null) as () => unknown,
     formatStatusBanner: (() => 'Running, awaiting first update') as () => string,
     getDataAgeMs: (() => 1000) as () => number | null,
-    isQuotaExhausted: (() => false) as () => boolean,
-    formatQuotaExhaustedMessage: (() => 'AccuWeather daily quota reached') as () => string,
+    getTickBanner: (() => ({
+      kind: 'status' as const,
+      message: 'Running, awaiting first update',
+    })) as () => { kind: 'status' | 'error'; message: string },
+    isDataStale: (() => false) as () => boolean,
     isApiKeyRejected: (() => false) as () => boolean,
   },
 }));
@@ -29,8 +32,8 @@ vi.mock('../services/WeatherService.js', () => {
     public formatStatusBanner = vi.fn(() => stubState.formatStatusBanner());
     public getCurrentWeatherData = vi.fn(() => stubState.getCurrentWeatherData());
     public getDataAgeMs = vi.fn(() => stubState.getDataAgeMs());
-    public isQuotaExhausted = vi.fn(() => stubState.isQuotaExhausted());
-    public formatQuotaExhaustedMessage = vi.fn(() => stubState.formatQuotaExhaustedMessage());
+    public getTickBanner = vi.fn(() => stubState.getTickBanner());
+    public isDataStale = vi.fn(() => stubState.isDataStale());
     public getRequestCountLast24h = vi.fn(() => 0);
     public isApiKeyRejected = vi.fn(() => stubState.isApiKeyRejected());
     // Typed against the real WeatherServiceStatus so an interface change
@@ -107,8 +110,11 @@ function resetStubState(): void {
   stubState.getCurrentWeatherData = () => null;
   stubState.formatStatusBanner = () => 'Running, awaiting first update';
   stubState.getDataAgeMs = () => 1000;
-  stubState.isQuotaExhausted = () => false;
-  stubState.formatQuotaExhaustedMessage = () => 'AccuWeather daily quota reached';
+  stubState.getTickBanner = () => ({
+    kind: 'status',
+    message: 'Running, awaiting first update',
+  });
+  stubState.isDataStale = () => false;
 }
 
 describe('plugin entry: meta delta is shipped exactly once per lifetime', () => {
@@ -222,7 +228,10 @@ describe('plugin entry: meta delta is shipped exactly once per lifetime', () => 
     // emission tick must re-push with the new "last update" string because
     // the message changed (dedupe key changed too).
     stubState.getCurrentWeatherData = () => ({ temperature: 283.15 });
-    stubState.formatStatusBanner = () => 'Running, last update just now (1 update)';
+    stubState.getTickBanner = () => ({
+      kind: 'status',
+      message: 'Running, last update just now (1 update)',
+    });
 
     await vi.advanceTimersByTimeAsync(3500);
 
@@ -246,16 +255,17 @@ describe('plugin entry: emission-tick error branches (O6)', () => {
     vi.useRealTimers();
   });
 
-  // Stale-data branch: when ageMs > STALENESS_FACTOR * updateFrequency * 60_000,
-  // emitWeatherTick calls setPluginError with a "Weather data stale" message
-  // and skips emission. The setBanner dedupe means the error is pushed once
-  // and re-pushes within the same minute are coalesced.
-  it('calls setPluginError with stale-data message once age crosses the staleness window', async () => {
+  // Stale-data tick: the service reports an error banner and isDataStale, so
+  // emitWeatherTick routes the error through setBanner and skips emission.
+  // Banner precedence itself (quota over stale over status) is covered in
+  // WeatherService.test.ts where getTickBanner lives.
+  it('pushes the stale-data error banner once and skips emission while stale', async () => {
     stubState.getCurrentWeatherData = () => ({ temperature: 283.15 });
-    stubState.formatStatusBanner = () => 'Running, last update 0m ago (1 update)';
-    // updateFrequency = 5 min, STALENESS_FACTOR = 2, so threshold = 600_000 ms.
-    // 15 minutes is well past the threshold and renders as "15 minutes ago".
-    stubState.getDataAgeMs = () => 15 * 60_000;
+    stubState.getTickBanner = () => ({
+      kind: 'error',
+      message: 'Weather data stale: last update 15 minutes ago',
+    });
+    stubState.isDataStale = () => true;
 
     const app = buildMockApp();
     const plugin = createPlugin(app as never);
@@ -265,28 +275,27 @@ describe('plugin entry: emission-tick error branches (O6)', () => {
     // to a single setPluginError call with the staleness message.
     await vi.advanceTimersByTimeAsync(3500);
 
-    expect(app.setPluginError).toHaveBeenCalled();
     const staleCalls = app.setPluginError.mock.calls.filter((call) =>
       String(call[0]).startsWith('Weather data stale:')
     );
-    expect(staleCalls.length).toBeGreaterThanOrEqual(1);
-    expect(String(staleCalls[0]?.[0])).toContain('15 minutes ago');
-    // Dedupe: at most one stale-data error per identical message.
     expect(staleCalls.length).toBe(1);
+    expect(String(staleCalls[0]?.[0])).toContain('15 minutes ago');
+    // Stale data must not keep broadcasting with fresh timestamps.
+    expect(app.handleMessage).not.toHaveBeenCalled();
 
     await plugin.stop();
   });
 
-  // Quota-exhausted branch fires before the staleness check. When both would
-  // apply the quota message wins because it tells the operator WHY fetches paused.
-  it('calls setPluginError with quota-exhausted message when isQuotaExhausted is true', async () => {
+  // Quota exhaustion gates fetches, not emission: the tick pushes the quota
+  // error banner but keeps broadcasting the cached in-window data so NMEA2000
+  // consumers do not drop the virtual sensor.
+  it('pushes the quota-exhausted error banner and keeps emitting in-window data', async () => {
     stubState.getCurrentWeatherData = () => ({ temperature: 283.15 });
-    stubState.isQuotaExhausted = () => true;
-    stubState.formatQuotaExhaustedMessage = () =>
-      'AccuWeather daily quota reached (50/50 in last 24h). Fetches paused.';
-    // Make the data look stale too so we verify the quota branch takes
-    // precedence over staleness.
-    stubState.getDataAgeMs = () => 15 * 60_000;
+    stubState.getTickBanner = () => ({
+      kind: 'error',
+      message: 'AccuWeather daily quota reached (50/50 in last 24h). Fetches paused.',
+    });
+    stubState.isDataStale = () => false;
 
     const app = buildMockApp();
     const plugin = createPlugin(app as never);
@@ -294,16 +303,12 @@ describe('plugin entry: emission-tick error branches (O6)', () => {
     await plugin.start(baseSettings, () => {});
     await vi.advanceTimersByTimeAsync(3500);
 
-    expect(app.setPluginError).toHaveBeenCalled();
     const quotaCalls = app.setPluginError.mock.calls.filter((call) =>
       String(call[0]).includes('AccuWeather daily quota reached')
     );
     expect(quotaCalls.length).toBeGreaterThanOrEqual(1);
-    // No stale-data message should slip through: quota takes precedence.
-    const staleCalls = app.setPluginError.mock.calls.filter((call) =>
-      String(call[0]).startsWith('Weather data stale:')
-    );
-    expect(staleCalls.length).toBe(0);
+    // Emission continues: the data is still inside the staleness window.
+    expect(app.handleMessage).toHaveBeenCalled();
 
     await plugin.stop();
   });

@@ -61,6 +61,37 @@ describe('AccuWeatherService', () => {
     });
   });
 
+  describe('request timeout', () => {
+    it('aborts a stalled body read once requestTimeout elapses', async () => {
+      // fetch resolves at headers-received; the timeout must stay armed across
+      // the body read or a stalled body bypasses requestTimeout entirely.
+      const stallingService = new AccuWeatherService('test-api-key', mockLogger, {
+        requestTimeout: 20,
+        retryAttempts: 1,
+      });
+      (global.fetch as Mock).mockImplementation((_url: string, init: { signal: AbortSignal }) => {
+        const { signal } = init;
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          headers: new Headers(),
+          text: () =>
+            new Promise((_resolve, reject) => {
+              signal.addEventListener('abort', () =>
+                reject(
+                  Object.assign(new Error('This operation was aborted'), { name: 'AbortError' })
+                )
+              );
+            }),
+        });
+      });
+
+      await expect(
+        stallingService.verifyApiKey({ latitude: 51.4778, longitude: -0.0015 })
+      ).rejects.toThrow(/API_TIMEOUT/);
+    });
+  });
+
   describe('fetchCurrentWeather', () => {
     const testLocation: GeoLocation = {
       latitude: 37.7749,
