@@ -1,0 +1,20 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "jsx": "react-jsx",
+    "lib": ["DOM", "DOM.Iterable", "ES2023"],
+    "types": ["react"],
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "noEmit": true,
+    "declaration": false,
+    "declarationMap": false,
+    "sourceMap": false
+  },
+  // Imported modules (src/types/index.ts, the shared constants) are pulled
+  // into the program automatically; only the panel roots need listing. The
+  // base config's exclude must be overridden because it excludes
+  // src/configpanel from the Node runtime build.
+  "include": ["src/configpanel/**/*"],
+  "exclude": ["node_modules", "dist"]
+}

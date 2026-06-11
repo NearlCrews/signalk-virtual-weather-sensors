@@ -32,7 +32,7 @@ const packageJson = require('./package.json');
 const containerName = packageJson.name.replace(/[-@/]/g, '_');
 
 module.exports = {
-  entry: './src/configpanel/index.js',
+  entry: './src/configpanel/index.tsx',
   mode: 'production',
   experiments: { outputModule: true },
   output: {
@@ -44,15 +44,26 @@ module.exports = {
   module: {
     rules: [
       {
-        test: /\.jsx?$/,
+        test: /\.[jt]sx?$/,
         loader: 'babel-loader',
         exclude: /node_modules/,
-        options: { presets: ['@babel/preset-react'] },
+        options: {
+          presets: [
+            ['@babel/preset-typescript', { isTSX: true, allExtensions: true }],
+            ['@babel/preset-react', { runtime: 'automatic' }],
+          ],
+        },
       },
     ],
   },
   resolve: {
-    extensions: ['.js', '.jsx'],
+    extensions: ['.tsx', '.ts', '.jsx', '.js'],
+    // Map ESM-style ".js" specifiers onto sibling ".ts" sources so
+    // panel-reachable modules can use the same import paths the Node plugin
+    // build (esbuild) accepts.
+    extensionAlias: {
+      '.js': ['.ts', '.tsx', '.js'],
+    },
   },
   plugins: [
     new ModuleFederationPlugin({
