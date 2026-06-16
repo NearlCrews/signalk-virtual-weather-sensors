@@ -21,6 +21,9 @@ import {
   CONFIG_DEFAULTS,
   NOTIFICATION_BAND_KEYS,
   QUOTA_WARN_RATIO,
+  WEATHER_PROVIDER_IDS,
+  WEATHER_PROVIDER_LABELS,
+  type WeatherProviderId,
 } from '../constants/notifications-shared.js';
 import ApiKeyField from './components/ApiKeyField.js';
 import FooterBar from './components/FooterBar.js';
@@ -82,9 +85,14 @@ export default function PluginConfigurationPanel({
     return () => window.removeEventListener('beforeunload', onBeforeUnload);
   }, [dirty]);
 
-  // First run: not running and no saved key means the next step is always
-  // "add a key", so surface the callout and open the API key section once.
-  const firstRun = status !== null && !status.running && savedForm.accuWeatherApiKey.trim() === '';
+  // First run: AccuWeather selected, not running, and no saved key means the
+  // next step is always "add a key", so surface the callout and open the source
+  // section once. Keyless Open-Meteo runs without a key, so it never triggers.
+  const firstRun =
+    status !== null &&
+    !status.running &&
+    savedForm.weatherProvider === 'accuweather' &&
+    savedForm.accuWeatherApiKey.trim() === '';
   const autoOpened = useRef(false);
   useEffect(() => {
     if (firstRun && !autoOpened.current) {
@@ -103,7 +111,12 @@ export default function PluginConfigurationPanel({
   };
 
   const enabledBands = NOTIFICATION_BAND_KEYS.filter((key) => form.notifications[key]).length;
-  const quotaSummary = form.dailyApiQuota === 0 ? 'no cap' : `quota ${form.dailyApiQuota}/day`;
+  const isAccuWeather = form.weatherProvider === 'accuweather';
+  const quotaSummary = !isAccuWeather
+    ? 'keyless'
+    : form.dailyApiQuota === 0
+      ? 'no cap'
+      : `quota ${form.dailyApiQuota}/day`;
 
   return (
     <div className="svws-panel" style={S.root}>
@@ -143,19 +156,67 @@ export default function PluginConfigurationPanel({
 
       <Section
         id="svws-section-apikey"
-        title="AccuWeather API key"
+        title="Weather source"
         open={openSections.apiKey}
         onToggle={() => toggleSection('apiKey')}
-        summary={form.accuWeatherApiKey.trim() ? 'configured' : 'not set'}
+        summary={
+          form.weatherProvider === 'accuweather'
+            ? form.accuWeatherApiKey.trim()
+              ? 'AccuWeather (key set)'
+              : 'AccuWeather (no key)'
+            : 'Open-Meteo (keyless)'
+        }
       >
-        <ApiKeyField
-          value={form.accuWeatherApiKey}
-          keyError={keyError}
-          onChange={(next) => {
-            setField('accuWeatherApiKey', next);
-            clearKeyError();
-          }}
-        />
+        <div style={S.fieldRow}>
+          <label style={S.label} htmlFor="svws-provider">
+            Provider
+          </label>
+          <select
+            id="svws-provider"
+            style={S.input}
+            value={form.weatherProvider}
+            onChange={(e) => setField('weatherProvider', e.target.value as WeatherProviderId)}
+          >
+            {WEATHER_PROVIDER_IDS.map((id) => (
+              <option key={id} value={id}>
+                {WEATHER_PROVIDER_LABELS[id]}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        {form.weatherProvider === 'accuweather' ? (
+          <ApiKeyField
+            value={form.accuWeatherApiKey}
+            keyError={keyError}
+            onChange={(next) => {
+              setField('accuWeatherApiKey', next);
+              clearKeyError();
+            }}
+          />
+        ) : (
+          <>
+            <div style={S.fieldRow}>
+              <label style={S.label} htmlFor="svws-ombase">
+                Open-Meteo base URL
+              </label>
+              <input
+                id="svws-ombase"
+                type="text"
+                style={S.input}
+                value={form.openMeteoBaseUrl}
+                placeholder="https://api.open-meteo.com"
+                onChange={(e) => setField('openMeteoBaseUrl', e.target.value)}
+              />
+            </div>
+            <p style={S.help}>
+              Weather data by Open-Meteo.com (CC BY 4.0), no API key required. The free public
+              service is for non-commercial use; commercial users should self-host the open-source
+              Open-Meteo server or use a paid plan and enter its URL above. Leave blank to use the
+              public service.
+            </p>
+          </>
+        )}
       </Section>
 
       <Section
@@ -179,8 +240,9 @@ export default function PluginConfigurationPanel({
           />
         </div>
         <p style={S.help}>
-          Each fetch costs one AccuWeather API call. 30 min uses 48 calls/day, comfortably under the
-          free-tier {CONFIG_DEFAULTS.DAILY_API_QUOTA}/day cap.
+          {isAccuWeather
+            ? `Each fetch costs one AccuWeather API call. 30 min uses 48 calls/day, comfortably under the free-tier ${CONFIG_DEFAULTS.DAILY_API_QUOTA}/day cap.`
+            : 'How often new weather data is fetched from Open-Meteo. Open-Meteo is keyless with generous limits, so a shorter interval is fine.'}
         </p>
 
         <div style={S.fieldRow}>
@@ -201,23 +263,27 @@ export default function PluginConfigurationPanel({
           AccuWeather fetch cadence.
         </p>
 
-        <div style={S.fieldRow}>
-          <label style={S.label} htmlFor="svws-quota">
-            Daily API call quota
-          </label>
-          <NumberInput
-            id="svws-quota"
-            value={form.dailyApiQuota}
-            min={CONFIG_DEFAULTS.DAILY_API_QUOTA_MIN}
-            max={CONFIG_DEFAULTS.DAILY_API_QUOTA_MAX}
-            units="calls per 24h (0 = no cap)"
-            onChange={(n) => setField('dailyApiQuota', n)}
-          />
-        </div>
-        <p style={S.help}>
-          At {Math.round(QUOTA_WARN_RATIO * 100)}% usage the banner warns; at 100% fetches pause
-          until the rolling window drops.
-        </p>
+        {isAccuWeather ? (
+          <>
+            <div style={S.fieldRow}>
+              <label style={S.label} htmlFor="svws-quota">
+                Daily API call quota
+              </label>
+              <NumberInput
+                id="svws-quota"
+                value={form.dailyApiQuota}
+                min={CONFIG_DEFAULTS.DAILY_API_QUOTA_MIN}
+                max={CONFIG_DEFAULTS.DAILY_API_QUOTA_MAX}
+                units="calls per 24h (0 = no cap)"
+                onChange={(n) => setField('dailyApiQuota', n)}
+              />
+            </div>
+            <p style={S.help}>
+              At {Math.round(QUOTA_WARN_RATIO * 100)}% usage the banner warns; at 100% fetches pause
+              until the rolling window drops. Applies to AccuWeather only.
+            </p>
+          </>
+        ) : null}
       </Section>
 
       <Section
