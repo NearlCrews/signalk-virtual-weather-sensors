@@ -460,6 +460,62 @@ export interface OpenMeteoCurrentResponse {
 }
 
 /**
+ * Sea-state data in SI units, sourced from Open-Meteo Marine independently of
+ * the atmospheric provider. All fields are optional: the marine model has no
+ * data for inland points, and a partial response carries only what is present.
+ * Directions follow the plugin's conventions: wave and swell directions are the
+ * direction the waves come FROM (true, like wind); the surface-current direction
+ * is the set (the direction the current flows TOWARD, true), matching the Signal
+ * K `environment.current.setTrue` semantics.
+ */
+export interface MarineData {
+  /** ISO 8601 timestamp of the marine reading. */
+  readonly timestamp: string;
+  /** Significant wave height in meters. */
+  readonly significantWaveHeight?: number;
+  /** Mean wave direction (from) in radians, true. */
+  readonly waveDirection?: number;
+  /** Mean wave period in seconds. */
+  readonly wavePeriod?: number;
+  /** Wind-wave (locally generated) height in meters. */
+  readonly windWaveHeight?: number;
+  /** Swell height in meters. */
+  readonly swellHeight?: number;
+  /** Swell direction (from) in radians, true. */
+  readonly swellDirection?: number;
+  /** Swell period in seconds. */
+  readonly swellPeriod?: number;
+  /** Sea surface temperature in Kelvin. */
+  readonly seaSurfaceTemperature?: number;
+  /** Surface current speed (drift) in m/s. */
+  readonly surfaceCurrentSpeed?: number;
+  /** Surface current set (direction flowing toward) in radians, true. */
+  readonly surfaceCurrentDirection?: number;
+}
+
+/**
+ * Open-Meteo Marine `/v1/marine` current-block response. Only the fields the
+ * plugin maps are typed, all optional. Wave and swell heights are meters,
+ * periods seconds, directions degrees; `ocean_current_velocity` is km/h and
+ * `sea_surface_temperature` is Celsius.
+ */
+export interface OpenMeteoMarineResponse {
+  readonly current?: {
+    readonly time?: string;
+    readonly wave_height?: number;
+    readonly wave_direction?: number;
+    readonly wave_period?: number;
+    readonly wind_wave_height?: number;
+    readonly swell_wave_height?: number;
+    readonly swell_wave_direction?: number;
+    readonly swell_wave_period?: number;
+    readonly ocean_current_velocity?: number;
+    readonly ocean_current_direction?: number;
+    readonly sea_surface_temperature?: number;
+  };
+}
+
+/**
  * AccuWeather location search response
  */
 export interface AccuWeatherLocation {
