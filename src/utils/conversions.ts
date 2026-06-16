@@ -336,3 +336,52 @@ export function calculateBeaufortScale(windSpeed: number): number {
 
   return 12;
 }
+
+/**
+ * US military WBGT flag cutoffs in Celsius (green, yellow, red, black). A
+ * precautionary bias on a crew-safety index favours these standard flag values
+ * over looser bands that would activate each warning roughly 0.5 to 1.5 C late.
+ */
+const WBGT_FLAG_CUTOFFS_C = {
+  GREEN: 26.7,
+  YELLOW: 27.8,
+  RED: 29.4,
+  BLACK: 32.2,
+} as const;
+
+/**
+ * Heat-stress index (0 low to 4 extreme) from wet-bulb globe temperature in
+ * Kelvin, banded on the WBGT military flags. Shared by every provider so the
+ * heat-stress notification band behaves identically regardless of source.
+ */
+export function calculateHeatStressIndex(wetBulbGlobeTemperatureK: number): number {
+  const wbgtC = kelvinToCelsius(wetBulbGlobeTemperatureK);
+  if (wbgtC < WBGT_FLAG_CUTOFFS_C.GREEN) return 0;
+  if (wbgtC < WBGT_FLAG_CUTOFFS_C.YELLOW) return 1;
+  if (wbgtC < WBGT_FLAG_CUTOFFS_C.RED) return 2;
+  if (wbgtC < WBGT_FLAG_CUTOFFS_C.BLACK) return 3;
+  return 4;
+}
+
+/**
+ * Estimate wet-bulb globe temperature (Kelvin) from air temperature and
+ * relative humidity using the Australian Bureau of Meteorology simplified shade
+ * approximation. Providers that do not supply a measured WBGT (Open-Meteo) use
+ * this so the heat-stress band still functions. It is a SHADE estimate with no
+ * direct-solar or wind term, so it reads conservatively low relative to a full
+ * outdoor WBGT under strong sun.
+ *
+ *   WBGT = 0.567·Ta + 0.393·e + 3.94   (Ta in C, e = vapour pressure in hPa)
+ *   e = RH · 6.105 · exp(17.27·Ta / (237.7 + Ta))   (RH as ratio 0..1)
+ *
+ * Reference: Australian Bureau of Meteorology, "Thermal Comfort observations".
+ */
+export function estimateWetBulbGlobeTemperature(
+  temperatureK: number,
+  relativeHumidity: number
+): number {
+  const ta = kelvinToCelsius(temperatureK);
+  const vapourPressure = relativeHumidity * 6.105 * Math.exp((17.27 * ta) / (237.7 + ta));
+  const wbgtC = 0.567 * ta + 0.393 * vapourPressure + 3.94;
+  return celsiusToKelvin(wbgtC);
+}

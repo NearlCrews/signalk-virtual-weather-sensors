@@ -29,6 +29,7 @@ import {
   calculateAbsoluteHumidity,
   calculateAirDensity,
   calculateBeaufortScale,
+  calculateHeatStressIndex,
   celsiusToKelvin,
   degreesToRadians,
   isApiQuotaReached,
@@ -37,7 +38,6 @@ import {
   isValidPressure,
   isValidTemperature,
   isValidWindSpeed,
-  kelvinToCelsius,
   kmhToMS,
   millibarsToPA,
   normalizeAngle0To2Pi,
@@ -117,28 +117,6 @@ const MAX_RETRY_AFTER_MS = 60_000;
 const REQUEST_WINDOW_HOURS = 24;
 /** Hour expressed in milliseconds, used by the rolling window rotation. */
 const HOUR_MS = 60 * 60 * 1000;
-
-/**
- * US military WBGT flag cutoffs in Celsius (green, yellow, red, black). A
- * precautionary bias on a crew-safety index favours these standard flag values
- * over looser bands that would activate each warning roughly 0.5 to 1.5 C late.
- */
-const WBGT_FLAG_CUTOFFS_C = {
-  GREEN: 26.7,
-  YELLOW: 27.8,
-  RED: 29.4,
-  BLACK: 32.2,
-} as const;
-
-/** Heat-stress index (0 low to 4 extreme) from wet-bulb globe temperature, banded on the WBGT military flags. */
-function calculateHeatStressIndex(wetBulbGlobeTemperatureK: number): number {
-  const wbgtC = kelvinToCelsius(wetBulbGlobeTemperatureK);
-  if (wbgtC < WBGT_FLAG_CUTOFFS_C.GREEN) return 0;
-  if (wbgtC < WBGT_FLAG_CUTOFFS_C.YELLOW) return 1;
-  if (wbgtC < WBGT_FLAG_CUTOFFS_C.RED) return 2;
-  if (wbgtC < WBGT_FLAG_CUTOFFS_C.BLACK) return 3;
-  return 4;
-}
 
 /**
  * Decode the optional enhanced-temperature fields, all in Kelvin. Free-tier
