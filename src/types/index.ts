@@ -3,6 +3,8 @@
  * Provides comprehensive type safety for AccuWeather API integration and NMEA2000 data
  */
 
+import type { WeatherProviderId } from '../constants/notifications-shared.js';
+
 // ===============================
 // Weather Data Types
 // ===============================
@@ -200,8 +202,25 @@ export interface NotificationsConfig {
  * `ConfigurationValidator` in `utils/validation.ts`.
  */
 export interface PluginConfiguration {
-  /** AccuWeather API key (required) */
+  /**
+   * Selected weather source. New installs default to `open-meteo` (keyless);
+   * an existing AccuWeather install is preserved on upgrade. See
+   * `resolveWeatherProvider`.
+   */
+  readonly weatherProvider: WeatherProviderId;
+
+  /**
+   * AccuWeather API key. Empty string when using a keyless provider
+   * (`open-meteo`); required only when `weatherProvider` is `accuweather`.
+   */
   readonly accuWeatherApiKey: string;
+
+  /**
+   * Open-Meteo host override (empty string uses the default public host). Lets
+   * a commercial user point at a self-hosted or paid Open-Meteo instance, since
+   * the free public service is non-commercial.
+   */
+  readonly openMeteoBaseUrl: string;
 
   /** Weather data update frequency in minutes (default: 30; see CONFIG_DEFAULTS). */
   readonly updateFrequency: number;

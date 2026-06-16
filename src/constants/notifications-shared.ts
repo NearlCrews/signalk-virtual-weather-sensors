@@ -79,6 +79,43 @@ export const CONFIG_DEFAULTS = Object.freeze({
  */
 export const QUOTA_WARN_RATIO = 0.9;
 
+/**
+ * Selectable weather source. `open-meteo` is keyless, global, and the default
+ * for new installs; `accuweather` requires an API key and supplies exclusive
+ * fields (RealFeel, plain-language text, pressure tendency, precipitation type).
+ */
+export type WeatherProviderId = 'open-meteo' | 'accuweather';
+
+/** Valid provider ids, in panel display order (keyless default first). */
+export const WEATHER_PROVIDER_IDS: ReadonlyArray<WeatherProviderId> = Object.freeze([
+  'open-meteo',
+  'accuweather',
+]);
+
+/** Default provider for a fresh install: keyless so the plugin works out of the box. */
+export const DEFAULT_WEATHER_PROVIDER: WeatherProviderId = 'open-meteo';
+
+/** Panel and schema labels for the provider picker. */
+export const WEATHER_PROVIDER_LABELS: Readonly<Record<WeatherProviderId, string>> = Object.freeze({
+  'open-meteo': 'Open-Meteo (free, no API key, global)',
+  accuweather: 'AccuWeather (requires an API key)',
+});
+
+/**
+ * Resolve the effective provider from saved config. An explicit, valid
+ * `weatherProvider` always wins. Otherwise (legacy config written before this
+ * option existed) an existing AccuWeather key keeps AccuWeather active so an
+ * upgrade does not silently switch a working install or change its `$source`;
+ * a fresh install with no key defaults to Open-Meteo.
+ */
+export function resolveWeatherProvider(
+  explicit: unknown,
+  hasAccuWeatherKey: boolean
+): WeatherProviderId {
+  if (explicit === 'open-meteo' || explicit === 'accuweather') return explicit;
+  return hasAccuWeatherKey ? 'accuweather' : 'open-meteo';
+}
+
 /** Minimum length for any plausible AccuWeather API key. */
 export const API_KEY_MIN_LENGTH = 20;
 

@@ -25,9 +25,15 @@ const baseValidWeather = (): Partial<WeatherData> => ({
 });
 
 describe('validateConfiguration / sanitizeConfiguration', () => {
-  it('errors when API key is missing', () => {
+  it('is valid for an empty config (new installs default to keyless Open-Meteo)', () => {
     const result = validateConfiguration({});
+    expect(result.isValid).toBe(true);
+  });
+
+  it('errors when AccuWeather is selected without a key', () => {
+    const result = validateConfiguration({ weatherProvider: 'accuweather' });
     expect(result.isValid).toBe(false);
+    expect(result.errors.some((e) => e.includes('API key is required'))).toBe(true);
   });
 
   it('errors when API key is too short', () => {
@@ -130,6 +136,55 @@ describe('validateConfiguration / sanitizeConfiguration', () => {
   it('exposes the grouped validator namespace', () => {
     expect(ConfigurationValidator.validateConfiguration).toBe(validateConfiguration);
     expect(ConfigurationValidator.sanitizeConfiguration).toBe(sanitizeConfiguration);
+  });
+
+  describe('weather provider selection', () => {
+    it('is valid for Open-Meteo with no key', () => {
+      const result = validateConfiguration({ weatherProvider: 'open-meteo' });
+      expect(result.isValid).toBe(true);
+    });
+
+    it('rejects an unknown provider id', () => {
+      const result = validateConfiguration({
+        weatherProvider: 'darksky' as unknown as 'open-meteo',
+      });
+      expect(result.isValid).toBe(false);
+      expect(result.errors.some((e) => e.includes('Unknown weather provider'))).toBe(true);
+    });
+
+    it('rejects a non-http Open-Meteo base URL', () => {
+      const result = validateConfiguration({
+        weatherProvider: 'open-meteo',
+        openMeteoBaseUrl: 'ftp://example.test',
+      });
+      expect(result.isValid).toBe(false);
+      expect(result.errors.some((e) => e.includes('base URL'))).toBe(true);
+    });
+
+    it('accepts a valid self-hosted Open-Meteo base URL', () => {
+      const result = validateConfiguration({
+        weatherProvider: 'open-meteo',
+        openMeteoBaseUrl: 'https://meteo.example.test',
+      });
+      expect(result.isValid).toBe(true);
+    });
+
+    it('defaults an empty config to Open-Meteo', () => {
+      expect(sanitizeConfiguration({}).weatherProvider).toBe('open-meteo');
+    });
+
+    it('preserves an existing AccuWeather install (key present, no explicit provider)', () => {
+      const c = sanitizeConfiguration({ accuWeatherApiKey: 'A1b2C3d4E5f6G7h8I9j0K1l2' });
+      expect(c.weatherProvider).toBe('accuweather');
+    });
+
+    it('honors an explicit provider over the key heuristic', () => {
+      const c = sanitizeConfiguration({
+        weatherProvider: 'open-meteo',
+        accuWeatherApiKey: 'A1b2C3d4E5f6G7h8I9j0K1l2',
+      });
+      expect(c.weatherProvider).toBe('open-meteo');
+    });
   });
 
   describe('dailyApiQuota field', () => {
