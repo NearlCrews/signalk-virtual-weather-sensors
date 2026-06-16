@@ -7,6 +7,7 @@
 import type { ServerAPI } from '@signalk/server-api';
 import { WindCalculator } from '../calculators/WindCalculator.js';
 import { API_QUOTA, ERROR_CODES, PERFORMANCE, PLUGIN } from '../constants/index.js';
+import type { CurrentWeatherProvider } from '../providers/WeatherProvider.js';
 import {
   isCompleteNavigationData,
   type Logger,
@@ -36,7 +37,7 @@ export interface WeatherServiceStatus {
   readonly errorCount: number;
   readonly hasWeatherData: boolean;
   readonly signalKHealth: ReturnType<SignalKService['getHealthStatus']>;
-  readonly cacheStats: ReturnType<AccuWeatherService['getCacheStats']>;
+  readonly cacheStats: ReturnType<CurrentWeatherProvider['getCacheStats']>;
   readonly apiRequestCount: number;
 }
 
@@ -69,7 +70,7 @@ export class WeatherService {
   private readonly config: PluginConfiguration;
   private readonly logger: Logger;
 
-  private readonly accuWeatherService: AccuWeatherService;
+  private readonly accuWeatherService: CurrentWeatherProvider;
   private readonly signalKService: SignalKService;
   private readonly windCalculator: WindCalculator;
 
@@ -113,7 +114,7 @@ export class WeatherService {
     config: PluginConfiguration,
     logger: Logger = () => {},
     windCalculator?: WindCalculator,
-    accuWeatherService?: AccuWeatherService,
+    accuWeatherService?: CurrentWeatherProvider,
     signalKService?: SignalKService,
     setBanner?: BannerSink
   ) {

@@ -13,6 +13,7 @@ import {
   UNITS,
 } from '../constants/index.js';
 import { accuWeatherSevereCondition } from '../providers/accuweather-severity.js';
+import type { CurrentWeatherProvider } from '../providers/WeatherProvider.js';
 import type {
   AccuWeatherConfig,
   AccuWeatherCurrentConditions,
@@ -249,7 +250,12 @@ function extractConditionDetails(conditions: AccuWeatherCurrentConditions): Part
  * Provides a type-safe interface to the AccuWeather REST API with location and
  * forecast caching, retry and backoff, and rolling-24h quota tracking.
  */
-export class AccuWeatherService {
+export class AccuWeatherService implements CurrentWeatherProvider {
+  /** Provider name for the v2 registration and logs. */
+  public readonly name = PLUGIN.PROVIDER_NAME;
+  /** `$source` stamped on AccuWeather-sourced deltas. */
+  public readonly sourceRef = PLUGIN.SOURCE_REF;
+
   private readonly config: AccuWeatherConfig;
   private readonly logger: Logger;
   private locationCache = new Map<string, { location: AccuWeatherLocation; timestamp: number }>();
