@@ -184,22 +184,30 @@ describe('plugin entry: meta delta is shipped exactly once per lifetime', () => 
     expect(typeof plugin.stop).toBe('function');
   });
 
-  it('declares the accuWeatherApiKey property with a minLength enforcement', () => {
-    // The SK admin UI's rjsf wrapper discards the outer `required` array
-    // (see schema() docblock in src/index.ts), so the plugin enforces the
-    // API key via a `minLength` on the property itself plus a runtime
-    // validateConfiguration check. This test pins both: the field must be
-    // present in properties and carry a minLength gate so blank submissions
-    // are rejected at the form layer.
+  it('declares a provider picker and a key field without a blocking minLength', () => {
+    // The key is now optional: a keyless Open-Meteo install must be able to
+    // submit a blank key, so the schema carries NO minLength (which would
+    // reject a blank submission at the form layer). The key is instead enforced
+    // at runtime by validateConfiguration, but only when the provider is
+    // AccuWeather. The schema must expose the provider picker defaulting to the
+    // keyless source, plus the Open-Meteo base-URL field.
     const app = buildMockApp();
     const plugin = createPlugin(app as never);
 
     const schema = plugin.schema?.() as {
-      properties?: { accuWeatherApiKey?: { type?: string; minLength?: number } };
+      properties?: {
+        weatherProvider?: { type?: string; enum?: string[]; default?: string };
+        accuWeatherApiKey?: { type?: string; minLength?: number };
+        openMeteoBaseUrl?: { type?: string };
+      };
     };
     expect(schema).toBeDefined();
+    expect(schema.properties?.weatherProvider?.type).toBe('string');
+    expect(schema.properties?.weatherProvider?.enum).toContain('open-meteo');
+    expect(schema.properties?.weatherProvider?.default).toBe('open-meteo');
     expect(schema.properties?.accuWeatherApiKey?.type).toBe('string');
-    expect(schema.properties?.accuWeatherApiKey?.minLength).toBeGreaterThan(0);
+    expect(schema.properties?.accuWeatherApiKey?.minLength).toBeUndefined();
+    expect(schema.properties?.openMeteoBaseUrl?.type).toBe('string');
   });
 
   // Regression: prior code only called setPluginStatus once at start (when

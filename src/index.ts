@@ -10,21 +10,25 @@ import {
   type Plugin,
   type ServerAPI,
   SKVersion,
+  type SourceRef,
 } from '@signalk/server-api';
 import type { IRouter, Request, Response } from 'express';
 import {
-  API_KEY_MIN_LENGTH,
   CONFIG_DEFAULTS,
   DEFAULT_CONFIG,
+  DEFAULT_WEATHER_PROVIDER,
   ERROR_CODES,
   NOTIFICATION_LABELS,
   NOTIFICATION_MASTER_LABEL,
   PLUGIN,
   TEST_KEY_LOCATION,
+  WEATHER_PROVIDER_IDS,
+  WEATHER_PROVIDER_LABELS,
 } from './constants/index.js';
 import { validateKeyLength } from './constants/notifications-shared.js';
 import { NMEA2000PathMapper } from './mappers/NMEA2000PathMapper.js';
 import { WeatherNotifier } from './notifications/WeatherNotifier.js';
+import { createCurrentWeatherProvider } from './providers/createCurrentWeatherProvider.js';
 import { AccuWeatherService } from './services/AccuWeatherService.js';
 import { WeatherProviderAdapter } from './services/WeatherProviderAdapter.js';
 import { WeatherService } from './services/WeatherService.js';
@@ -37,7 +41,7 @@ import type {
   WeatherData,
 } from './types/index.js';
 import { msToWholeMinutes, toErrorMessage } from './utils/conversions.js';
-import { buildValuesDelta } from './utils/skDelta.js';
+import { buildValuesDelta, toSourceRef } from './utils/skDelta.js';
 import { ConfigurationValidator } from './utils/validation.js';
 
 /** Distinguishes a banner string pushed via setPluginStatus from one pushed via setPluginError. */
@@ -62,6 +66,8 @@ interface PluginInstance {
   metaEmitted: boolean;
   /** True once app.registerWeatherProvider has been called this start cycle. */
   weatherProviderRegistered: boolean;
+  /** `$source` of the active provider, stamped on notification and re-broadcast deltas. */
+  sourceRef: SourceRef;
   /**
    * Last (kind, message) pushed to the admin UI. Used to dedupe identical
    * setPluginStatus / setPluginError calls so a flapping API doesn't oscillate
@@ -89,6 +95,7 @@ export default function createPlugin(app: ServerAPI): Plugin {
     cachedWeatherDataRef: null,
     metaEmitted: false,
     weatherProviderRegistered: false,
+    sourceRef: toSourceRef(PLUGIN.SOURCE_REF),
     lastBanner: null,
   };
 
@@ -166,14 +173,31 @@ export default function createPlugin(app: ServerAPI): Plugin {
      */
     schema: () => ({
       type: 'object',
-      description: 'AccuWeather to Signal K with NMEA2000-compatible environmental measurements.',
+      description:
+        'Weather to Signal K with NMEA2000-compatible environmental measurements. Open-Meteo (default) is free and needs no API key; AccuWeather needs a key and adds extra fields.',
       properties: {
+        weatherProvider: {
+          type: 'string',
+          title: 'Weather source',
+          description:
+            'Open-Meteo is free, global, and needs no API key. AccuWeather requires a key and adds RealFeel, plain-language conditions text, pressure tendency, and precipitation type.',
+          enum: [...WEATHER_PROVIDER_IDS],
+          enumNames: WEATHER_PROVIDER_IDS.map((id) => WEATHER_PROVIDER_LABELS[id]),
+          default: DEFAULT_WEATHER_PROVIDER,
+        },
         accuWeatherApiKey: {
           type: 'string',
           title: 'AccuWeather API Key',
-          description: 'Get your API key at https://developer.accuweather.com/',
+          description:
+            'Required only when the weather source is AccuWeather. Get your API key at https://developer.accuweather.com/',
           default: '',
-          minLength: API_KEY_MIN_LENGTH,
+        },
+        openMeteoBaseUrl: {
+          type: 'string',
+          title: 'Open-Meteo base URL (optional)',
+          description:
+            'Leave blank to use the free public Open-Meteo service (non-commercial use only). Commercial users can self-host the open-source server or use a paid plan and enter its URL here.',
+          default: '',
         },
         updateFrequency: {
           type: 'integer',
@@ -248,7 +272,9 @@ export default function createPlugin(app: ServerAPI): Plugin {
      */
     uiSchema: () => ({
       'ui:order': [
+        'weatherProvider',
         'accuWeatherApiKey',
+        'openMeteoBaseUrl',
         'updateFrequency',
         'emissionInterval',
         'dailyApiQuota',
@@ -352,38 +378,44 @@ async function startServices(
   const bannerSink = (kind: 'status' | 'error', message: string): void => {
     setBanner(instance, app, kind, message);
   };
-  // One shared AccuWeatherService so the provider's on-demand forecast fetches
-  // and the current-conditions loop draw from a single rolling-24h quota window.
-  const accuWeatherService = new AccuWeatherService(config.accuWeatherApiKey, instance.logger, {
-    dailyApiQuota: config.dailyApiQuota,
-  });
+  // Construct the provider the config selects (keyless Open-Meteo by default,
+  // AccuWeather when chosen with a key). For AccuWeather this is one shared
+  // instance so the current-conditions loop and the on-demand forecast adapter
+  // draw from a single rolling-24h quota window.
+  const provider = createCurrentWeatherProvider(config, instance.logger);
+  instance.sourceRef = toSourceRef(provider.sourceRef);
   instance.weatherService = new WeatherService(
     app,
     config,
     instance.logger,
     undefined,
-    accuWeatherService,
+    provider,
     undefined,
     bannerSink
   );
-  instance.pathMapper = new NMEA2000PathMapper(instance.logger);
+  instance.pathMapper = new NMEA2000PathMapper(instance.logger, instance.sourceRef);
   // Construct the notifier even when notifications are disabled at the master
   // level so a hot-reload from disabled -> enabled does not need a restart.
   // `evaluate()` short-circuits when `config.notifications.enabled` is false.
   instance.notifier = new WeatherNotifier(config.notifications, instance.logger);
   await instance.weatherService.start();
 
-  // Register the Signal K Weather API provider. The typeof guard tolerates a
-  // server older than the 2.24 peer floor that lacks the registry method.
-  if (typeof app.registerWeatherProvider === 'function') {
-    const adapter = new WeatherProviderAdapter(accuWeatherService, instance.logger);
+  // Register the Signal K v2 Weather API provider. Only AccuWeather implements
+  // forecasts today, so the provider is advertised only when AccuWeather is
+  // active; under Open-Meteo the emission path still works and forecasts are a
+  // later addition. The typeof guard tolerates a server older than the 2.24
+  // peer floor that lacks the registry method.
+  if (typeof app.registerWeatherProvider !== 'function') {
+    instance.logger('warn', 'Server lacks registerWeatherProvider; weather API not exposed');
+  } else if (provider instanceof AccuWeatherService) {
+    const adapter = new WeatherProviderAdapter(provider, instance.logger);
     app.registerWeatherProvider(adapter.toProvider());
     instance.weatherProviderRegistered = true;
-    instance.logger('info', 'Registered Signal K weather provider', {
-      provider: PLUGIN.PROVIDER_NAME,
-    });
+    instance.logger('info', 'Registered Signal K weather provider', { provider: provider.name });
   } else {
-    instance.logger('warn', 'Server lacks registerWeatherProvider; weather API not exposed');
+    instance.logger('info', 'Weather API forecasts not advertised for the selected provider', {
+      provider: provider.name,
+    });
   }
 
   setupEnhancedEmissionSystem(instance, config, app);
@@ -560,7 +592,11 @@ function emitWeatherTick(instance: PluginInstance, app: ServerAPI): void {
   // notifier returned PathValues only on transition, so a non-empty list here
   // always represents an entry or exit edge.
   if (notificationValues.length > 0) {
-    app.handleMessage(PLUGIN.NAME, buildValuesDelta(notificationValues), SKVersion.v1);
+    app.handleMessage(
+      PLUGIN.NAME,
+      buildValuesDelta(notificationValues, undefined, instance.sourceRef),
+      SKVersion.v1
+    );
   }
 
   // Ship the static meta block once per plugin lifetime, AFTER the first
@@ -616,10 +652,12 @@ function refreshCachedDelta(
 function withEmissionTimestamp(cached: Delta): Delta {
   // The cached delta is always a single-update values delta built by
   // `buildValuesDelta`, so restamping is a rebuild through the same helper,
-  // which stamps the current wall-clock time when no timestamp is passed.
+  // which stamps the current wall-clock time when no timestamp is passed. The
+  // original `$source` (the active provider's) is preserved so re-broadcasts do
+  // not silently revert to the default source ref.
   const update = cached.updates[0];
   if (update === undefined || !('values' in update)) return cached;
-  return buildValuesDelta(update.values);
+  return buildValuesDelta(update.values, undefined, update.$source);
 }
 
 /**
@@ -667,6 +705,16 @@ function validateAndNormalizeSettings(settings: unknown, logger: Logger): Plugin
   const rawSettings = settings as Record<string, unknown>;
 
   const partialConfig: Partial<PluginConfiguration> = {
+    // Provider and base URL are spread in only when present so legacy config
+    // (written before these options existed) leaves them absent, letting
+    // resolveWeatherProvider apply the migration-safe default. An invalid
+    // provider string is caught by validation.
+    ...(typeof rawSettings.weatherProvider === 'string' && {
+      weatherProvider: rawSettings.weatherProvider as PluginConfiguration['weatherProvider'],
+    }),
+    ...(typeof rawSettings.openMeteoBaseUrl === 'string' && {
+      openMeteoBaseUrl: rawSettings.openMeteoBaseUrl,
+    }),
     accuWeatherApiKey:
       typeof rawSettings.accuWeatherApiKey === 'string' ? rawSettings.accuWeatherApiKey : '',
     updateFrequency:

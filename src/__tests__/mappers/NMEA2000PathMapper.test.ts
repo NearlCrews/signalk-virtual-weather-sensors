@@ -6,6 +6,7 @@
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { NMEA2000PathMapper } from '../../mappers/NMEA2000PathMapper.js';
+import { toSourceRef } from '../../utils/skDelta.js';
 import { createMockWeatherData, getValuesFromDelta as getValues } from '../setup.js';
 
 describe('NMEA2000PathMapper', () => {
@@ -27,6 +28,20 @@ describe('NMEA2000PathMapper', () => {
 
     it('should work with default logger', () => {
       expect(() => new NMEA2000PathMapper()).not.toThrow();
+    });
+
+    it('defaults the delta $source to accuweather', () => {
+      const update = mapper.mapToSignalKPaths(createMockWeatherData()).updates[0];
+      expect(update).toHaveProperty('$source', 'accuweather');
+    });
+
+    it('stamps a provided provider sourceRef on values and meta deltas', () => {
+      const om = new NMEA2000PathMapper(mockLogger, toSourceRef('open-meteo'));
+      expect(om.mapToSignalKPaths(createMockWeatherData()).updates[0]).toHaveProperty(
+        '$source',
+        'open-meteo'
+      );
+      expect(om.buildMetaDelta().updates[0]).toHaveProperty('$source', 'open-meteo');
     });
   });
 
