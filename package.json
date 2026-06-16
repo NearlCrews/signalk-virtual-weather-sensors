@@ -1,7 +1,7 @@
 {
   "name": "signalk-virtual-weather-sensors",
-  "version": "1.8.0",
-  "description": "Signal K plugin: AccuWeather marine weather as 30+ environment deltas, severe-weather notifications, NMEA2000-ready",
+  "version": "1.9.0",
+  "description": "Signal K plugin: keyless Open-Meteo or AccuWeather marine weather as 30+ environment deltas, severe-weather notifications, NMEA2000-ready",
   "keywords": [
     "signalk-node-server-plugin",
     "signalk-plugin-configurator",

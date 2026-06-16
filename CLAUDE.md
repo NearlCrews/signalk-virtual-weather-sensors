@@ -4,7 +4,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Signal K plugin that provides comprehensive weather data from AccuWeather API with NMEA2000-compatible environmental measurements. Outputs 30+ weather data points including temperatures, wind, atmospheric conditions, and marine safety indices.
+Signal K plugin that provides comprehensive weather data with NMEA2000-compatible environmental measurements. Outputs 30+ weather data points including temperatures, wind, atmospheric conditions, and marine safety indices.
+
+**Multi-provider (since v1.9.0).** The plugin sources current conditions through a `CurrentWeatherProvider` seam (`src/providers/WeatherProvider.ts`), so the orchestration and the path mapper are provider-agnostic over the internal SI `WeatherData` type. Two providers implement it: keyless global **Open-Meteo** (`OpenMeteoService`, the default for new installs) and **AccuWeather** (`AccuWeatherService`, optional, key-gated, kept for its exclusive fields). `resolveWeatherProvider` in `constants/notifications-shared.ts` picks the provider migration-safely: an explicit `weatherProvider` wins, otherwise an existing AccuWeather key keeps AccuWeather active and a fresh install defaults to Open-Meteo, so an upgrade never silently switches a working install or its `$source`. `createCurrentWeatherProvider` (`src/providers/`) constructs the selection; `index.ts` injects it into `WeatherService` and `NMEA2000PathMapper`. The active provider's `sourceRef` is threaded through `skDelta` so Open-Meteo deltas carry `$source: 'open-meteo'` and AccuWeather keeps `accuweather`. AccuWeather retired its permanent free tier (now a 14-day trial, then paid), which is why a keyless default exists. The v2 Weather API forecast provider is advertised only when AccuWeather is active (Open-Meteo forecast support is planned). Open-Meteo provides fewer fields than AccuWeather: no RealFeel, RealFeel shade, measured WBGT (estimated via `estimateWetBulbGlobeTemperature` so the heat-stress band still works), pressure tendency, precipitation type, ceiling, visibility obstruction, or 24h departure; severe-condition text comes from WMO weather codes. The provider-specific condition-to-severity maps live in `src/providers/accuweather-severity.ts` and `src/providers/open-meteo-severity.ts`, and the notifier consumes the provider-agnostic `WeatherData.severeCondition` they produce.
 
 ## Commands
 
@@ -25,7 +27,7 @@ npm run test:coverage  # Coverage report (80% thresholds)
 npm run test:ui        # Interactive UI
 ```
 
-### Lint & Format
+### Lint and Format
 ```bash
 npm run lint           # Biome check
 npm run lint:fix       # Auto-fix issues
@@ -38,15 +40,17 @@ npm run validate       # All checks (pre-commit uses this)
 
 ```
 src/
-├── index.ts                    # Plugin entry point & lifecycle (start/stop/registerWithRouter)
+├── index.ts                    # Plugin entry point and lifecycle (start/stop/registerWithRouter)
 ├── services/
-│   ├── WeatherService.ts       # Orchestration: coordinates API, navigation, calculations
-│   ├── AccuWeatherService.ts   # API client: 30+ field extraction, location caching, verifyApiKey
-│   └── SignalKService.ts       # Vessel navigation data retrieval
+│   ├── WeatherService.ts           # Orchestration: coordinates API, navigation, calculations
+│   ├── AccuWeatherService.ts       # API client: 30+ field extraction, location caching, verifyApiKey
+│   ├── WeatherProviderAdapter.ts   # SK v2 Weather API provider: getForecasts(point/daily), quota-shared
+│   └── SignalKService.ts           # Vessel navigation data retrieval
 ├── calculators/
-│   └── WindCalculator.ts       # Vector math for apparent wind, Beaufort scale
+│   └── WindCalculator.ts           # Vector math for apparent wind, Beaufort scale
 ├── mappers/
-│   └── NMEA2000PathMapper.ts   # Weather data → Signal K delta messages
+│   ├── NMEA2000PathMapper.ts       # Weather data → Signal K delta messages
+│   └── WeatherProviderMapper.ts    # AccuWeather forecast responses → SK v2 WeatherData envelope
 ├── notifications/
 │   └── WeatherNotifier.ts      # Transition state machine: WeatherData → notifications.environment.* deltas
 ├── configpanel/                # React 19 federated config panel, TypeScript (bundled by webpack to public/)
@@ -107,7 +111,7 @@ Test configuration in `vitest.config.ts` includes path aliases (`@/`, `@/service
 - **Daily API quota**: `dailyApiQuota` config option (default 50, range 0 to 1000; 0 disables). `AccuWeatherService` tracks usage via a rolling 24h window backed by 24 fixed hourly buckets that rotate on read/write (O(1) memory regardless of uptime). Accessor: `getRequestCountLast24h()`.
 - **PGNs** (when paired with `signalk-nmea2000-emitter-cannon`): 130311/130314 (pressure), 130312/130316 (temperatures via fixed enum slots: temperature, dewPoint, apparentWindChill, theoreticalWindChill, heatIndex), 130313 (relativeHumidity), 130306 (wind: `speedOverGround`, `directionTrue`). The plugin's synthetic apparent wind (`environment.weather.windSpeedApparent` / `windAngleApparent`) is producer-namespaced; it bridges to PGN 130306 only through the cannon's opt-in `WIND_WEATHER_APPARENT` conversion, which is off by default so it cannot compete with a real masthead anemometer. Gust (`environment.weather.speedGust`) does not bridge: the cannon ships no conversion for it. Instance numbers and bus priority are assigned by the companion plugin, not embedded in the deltas this plugin produces.
 - **Notifications** (opt-in, off by default): `notifications.environment.*` per SK 1.8.2 notifications.html. Distinct paths per band (`wind.gale|storm|hurricane`, `visibility.low|veryLow`, `heat.caution|high|extreme`, `cold.caution|extreme`, `weather.severe`) so consumers caching by path+id see independent transitions. Value shape `{ state, method, message, timestamp }`, `state: 'normal'` on exit. The notifier is a pure transition emitter (Map of last-seen states), so unchanged snapshots produce zero output. Bridging to N2K Alert PGN 126983 / 126985 requires the separate `signalk-to-nmea2000` plugin: this plugin emits SK-native deltas only. Config branch: `notifications: { enabled, wind, visibility, heat, cold, weather }`.
-- **Weather API provider**: `index.ts` registers a Signal K v2 Weather API provider via `app.registerWeatherProvider(...)` in `startServices`, and unregisters via `app.weatherApi.unRegister(PLUGIN.NAME)` in the `stop` closure. `WeatherProviderAdapter` (`src/services/WeatherProviderAdapter.ts`) implements the provider; `getForecasts('point')` is backed by the AccuWeather 12-hour hourly endpoint and `getForecasts('daily')` by the 5-day daily endpoint, both mapped to the SI `WeatherData` envelope by pure functions in `src/mappers/WeatherProviderMapper.ts`. `getObservations` and `getWarnings` throw `'Not supported!'` for now (Phases 2 and 3). Forecast fetches share the one `AccuWeatherService` instance, its location-key cache, and its rolling-24h quota window; an on-demand forecast cache (`FORECAST_CACHE` TTLs: 30 min hourly, 3 h daily) plus stale-on-quota-exhaustion keeps a polling consumer from exhausting the free 50/day key. Registering the provider is what makes the server advertise `weather` in `/signalk/v2/features`, which is the flag dashboards like signalk-open-binnacle gate their weather UI on.
+- **Weather API provider**: `index.ts` registers a Signal K v2 Weather API provider via `app.registerWeatherProvider(...)` in `startServices`, and unregisters via `app.weatherApi.unRegister(PLUGIN.NAME)` in the `stop` closure. `WeatherProviderAdapter` (`src/services/WeatherProviderAdapter.ts`) implements the provider; `getForecasts('point')` is backed by the AccuWeather 12-hour hourly endpoint and `getForecasts('daily')` by the 5-day daily endpoint, both mapped to the SI `WeatherData` envelope by pure functions in `src/mappers/WeatherProviderMapper.ts`. `getObservations` and `getWarnings` throw `'Not supported!'` for now (Phases 2 and 3). Forecast fetches share the one `AccuWeatherService` instance, its location-key cache, and its rolling-24h quota window; an on-demand forecast cache (`FORECAST_CACHE` TTLs: 30 min hourly, 3 h daily) plus stale-on-quota-exhaustion keeps a polling consumer from exhausting the free 50/day key. Registering the provider is what makes the server advertise `weather` in `/signalk/v2/features`, which is the flag dashboards like signalk-binnacle gate their weather UI on.
 - **Notification message enrichment**: each band's `message` packs adjacent context the operator can act on without subscribing to extra paths. Wind: `"Gale-force wind: Bf9 from SW, 19 m/s, gusts 27 m/s, 998 hPa"`. Visibility: `"Reduced visibility: 0.8 km, ceiling 90 m, rain 2.5 mm/h"` (ceiling and precip rate appended when finite). Heat: `"High heat stress: HSI 3, WBGT 32 C, RH 78%, RealFeel 35 C"`. Cold: `"Cold exposure caution: wind chill -2 C, air 1 C, wind 12 m/s"`. Severe: `"Thunderstorms: Severe thunderstorms approaching, 998 hPa"`. Every message is capped at `MAX_MESSAGE_LENGTH = 80` chars (with `…` truncation) so it renders cleanly on the marine displays most likely to bridge through `signalk-to-nmea2000` (NMEA 2000 Alert PGN Text fields render 64..128 chars across the Garmin/Raymarine/B&G/Furuno fleet; 80 is a safe common denominator). Helpers `formatWindSuffix` / `formatVisibilitySuffix` / `formatHeatSuffix` / `formatColdSuffix` / `formatSevereSuffix` live alongside the `WeatherNotifier` class in `src/notifications/WeatherNotifier.ts` so the format and the band evaluators stay together.
 - **Banner dedupe**: every `setPluginStatus` / `setPluginError` call in `index.ts` routes through `setBanner()` which dedupes consecutive identical `(kind, message)` pairs. A flapping API or steady-state quota pause therefore lands one banner write per unique message, not one per 5-second emission tick. `WeatherService.updateWeatherData` also pushes the live banner directly on the first successful update so the "awaiting first update" string flips the moment data lands.
 - **Shared SK delta primitives**: `src/utils/skDelta.ts` exports `pv` (PathValue builder), `me` (Meta builder), `buildValuesDelta(values, timestamp?)`, `buildMetaDelta(meta)`, plus `SELF_CONTEXT` and `ACCUWEATHER_SOURCE` branded-cast constants. Mapper, notifier, and plugin entry all build deltas through this module instead of hand-rolling the envelope.
@@ -156,6 +160,6 @@ docs/
 
 ## Release Process
 
-- **README carries the latest release's notes.** The README has a `## What's New in vX.Y.Z` section, placed right after the intro paragraph and before `## Features`. It holds ONLY the most recent release, overwritten on every release (never an accumulating list); the full history stays in `CHANGELOG.md`.
-- **What's New content shape.** A 2-to-4 sentence prose summary, not the Keep-a-Changelog bullet list. Source it from the `CHANGELOG.md` entry's lead paragraph (`CHANGELOG.md` is canonical, written first, lead-paragraph-first). The section ends with two links: the `CHANGELOG.md#xyz` anchor for that version and the GitHub release tag URL. GitHub anchor for `## [1.5.3] - 2026-05-16` is `#153---2026-05-16` (brackets and dots dropped, spaces to dashes).
-- **Release step.** `docs/maintainers/RELEASE.md` Fast Path step 1 includes overwriting the README `## What's New` section. Bump the heading version and the changelog anchor each release.
+- **README carries the latest release's notes.** The README has a `## What's new in X.Y.Z` section, placed right after the intro and safety blockquote and before `## What it does`. It holds ONLY the most recent release, overwritten on every release (never an accumulating list); the full history stays in `CHANGELOG.md`.
+- **What's new content shape.** A one-sentence lead, then 3 to 5 bolded-lead bullets sourced from the `CHANGELOG.md` entry (`CHANGELOG.md` is canonical, written first), then a closing line linking the version's changelog anchor and the changelog for the full list. Each release heading in `CHANGELOG.md` carries an explicit `<a id="vXYZ"></a>` anchor (version digits without dots, e.g. `#v180` for 1.8.0); link that anchor, not the GitHub auto-generated heading anchor.
+- **Release step.** `docs/maintainers/RELEASE.md` Fast Path step 1 includes overwriting the README `## What's new` section. Bump the heading version, add the new `<a id="vXYZ"></a>` anchor in `CHANGELOG.md`, and update the README link each release.
