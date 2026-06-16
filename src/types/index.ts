@@ -87,11 +87,19 @@ export interface WeatherData {
   /** Human-readable weather description (e.g. "Partly cloudy"). */
   readonly description?: string;
   /**
-   * AccuWeather icon code (1..44) used by the notification state machine to
-   * detect severe-condition categories. Stored on WeatherData so downstream
-   * notifiers do not have to re-parse the original API response.
+   * AccuWeather icon code (1..44). Retained as provider provenance; the
+   * notifier no longer reads it (see `severeCondition`). Open-Meteo and other
+   * providers leave it unset.
    */
   readonly weatherIcon?: number;
+  /**
+   * Provider-agnostic severe-condition classification, set by each provider's
+   * transform from its own condition encoding (AccuWeather icon code,
+   * Open-Meteo WMO weather code). The notifier's severe band consumes this so
+   * it never has to know a provider-specific code. Absent when the current
+   * condition is benign.
+   */
+  readonly severeCondition?: SevereCondition;
   /** ISO 8601 timestamp of measurement */
   readonly timestamp: string;
 
@@ -112,6 +120,18 @@ export interface WeatherData {
   readonly precipitationType?: string;
   /** Obstruction reducing visibility (e.g. "Fog", "Haze", "Smoke"). */
   readonly visibilityObstruction?: string;
+}
+
+/**
+ * Provider-agnostic severe-condition classification carried on `WeatherData`.
+ * `state` is the notification severity the severe band should raise; `label`
+ * is the human-readable lead-in for the notification message (e.g.
+ * `Thunderstorms`). Each provider's transform produces this from its own
+ * condition encoding so the notifier stays provider-neutral.
+ */
+export interface SevereCondition {
+  readonly state: NotificationState;
+  readonly label: string;
 }
 
 /**

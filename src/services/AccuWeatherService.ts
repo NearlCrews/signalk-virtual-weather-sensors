@@ -12,6 +12,7 @@ import {
   PLUGIN,
   UNITS,
 } from '../constants/index.js';
+import { accuWeatherSevereCondition } from '../providers/accuweather-severity.js';
 import type {
   AccuWeatherConfig,
   AccuWeatherCurrentConditions,
@@ -619,6 +620,10 @@ export class AccuWeatherService {
       enhancedTemps.wetBulbGlobeTemperature !== undefined
         ? calculateHeatStressIndex(enhancedTemps.wetBulbGlobeTemperature)
         : undefined;
+    // Normalize the AccuWeather icon code into a provider-agnostic severe
+    // condition here, at the provider boundary, so the notifier never decodes
+    // an AccuWeather-specific value.
+    const severeCondition = accuWeatherSevereCondition(enhancedConditions.weatherIcon);
 
     // Beaufort is a sustained-wind scale (WMO): a gust must not inflate it.
     const beaufortScale = calculateBeaufortScale(windSpeed);
@@ -647,6 +652,7 @@ export class AccuWeatherService {
       ...enhancedConditions,
       ...conditionDetails,
       ...(heatStressIndex !== undefined && { heatStressIndex }),
+      ...(severeCondition !== undefined && { severeCondition }),
     };
 
     // Validate transformed data

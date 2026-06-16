@@ -246,45 +246,6 @@ function formatSevereSuffix(data: WeatherData, label: string): string {
 }
 
 /**
- * Severity mapping for AccuWeather `WeatherIcon` codes (1..44). Only codes
- * that warrant a marine-relevant alert appear here; codes 1..10 (sunny/cloudy
- * variants) and the fog/wind/hot/cold codes 30..32 are absent because their
- * hazards are surfaced through the dedicated visibility, temperature, and
- * wind-band notifications. Codes 33..40 (clear/cloudy night variants) are
- * deliberately absent for the same reason.
- *
- * AccuWeather icon catalogue: https://developer.accuweather.com/weather-icons
- */
-interface IconSeverity {
-  readonly state: NotificationState;
-  readonly label: string;
-}
-
-const WEATHER_ICON_SEVERITY: ReadonlyMap<number, IconSeverity> = new Map([
-  [15, { state: 'warn', label: 'Thunderstorms' }],
-  [16, { state: 'warn', label: 'Thunderstorms' }],
-  [17, { state: 'warn', label: 'Thunderstorms' }],
-  // Flurries (mild snow showers). Same operator action as full Snow at code
-  // 22, so the same `warn` severity applies. The deliberately-absent codes
-  // 12..14 (rain showers) and 18 (Rain) are excluded because liquid
-  // precipitation without thunder is surfaced through the visibility-low
-  // band's rain-rate suffix, not as a standalone severe-weather alert.
-  [19, { state: 'warn', label: 'Flurries' }],
-  [20, { state: 'warn', label: 'Flurries' }],
-  [21, { state: 'warn', label: 'Flurries' }],
-  [22, { state: 'warn', label: 'Snow' }],
-  [23, { state: 'warn', label: 'Snow' }],
-  [24, { state: 'alarm', label: 'Ice' }],
-  [25, { state: 'warn', label: 'Sleet' }],
-  [26, { state: 'warn', label: 'Freezing rain' }],
-  [29, { state: 'warn', label: 'Rain and snow' }],
-  [41, { state: 'warn', label: 'Thunderstorms' }],
-  [42, { state: 'warn', label: 'Thunderstorms' }],
-  [43, { state: 'warn', label: 'Snow' }],
-  [44, { state: 'warn', label: 'Snow' }],
-]);
-
-/**
  * One row of a hazard-band table. The band activates with `state` when the
  * reading crosses `threshold` (in the direction its owning {@link BandSet}
  * declares); otherwise it clears with `normal`. `prefix` is the
@@ -566,18 +527,18 @@ export class WeatherNotifier {
   }
 
   /**
-   * Severe weather condition: single path whose state varies by icon code.
-   * Returns to `normal` whenever the current icon falls outside the severity
-   * table. Description comes from the response's `WeatherText` so consumers
-   * see the operator-friendly phrase rather than a numeric code; on exit
-   * the message is empty so consumers see `state: 'normal'` without a fake
-   * "No severe weather" phrase being parsed as a real condition. Barometric
-   * pressure is appended when finite: a thunderstorm icon paired with a
-   * falling barometer is a useful operational signal.
+   * Severe weather condition: single path whose state varies by the
+   * provider-agnostic `severeCondition` each provider's transform supplies.
+   * Returns to `normal` whenever the current condition is benign (no
+   * `severeCondition`). Description comes from the response's `WeatherText`
+   * so consumers see the operator-friendly phrase; on exit the message is
+   * empty so consumers see `state: 'normal'` without a fake "No severe
+   * weather" phrase being parsed as a real condition. Barometric pressure is
+   * appended when finite: a thunderstorm paired with a falling barometer is a
+   * useful operational signal.
    */
   private evaluateSevereCondition(data: WeatherData, out: PathValue[]): void {
-    const icon = data.weatherIcon;
-    const severity = icon !== undefined ? WEATHER_ICON_SEVERITY.get(icon) : undefined;
+    const severity = data.severeCondition;
 
     if (severity === undefined) {
       this.maybeTransition(NOTIFICATION_PATHS.WEATHER_SEVERE, 'normal', () => '', out);
