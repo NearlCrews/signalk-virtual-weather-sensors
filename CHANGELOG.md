@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 <a id="v190"></a>
 
-## [1.9.0] - 2026-06-16
+## [1.9.0] - 2026-06-17
 
 A keyless, global weather source so the plugin works out of the box.
 AccuWeather retired its permanent free tier (it is now a 14-day trial, then a
