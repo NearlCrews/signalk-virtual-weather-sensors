@@ -43,6 +43,11 @@ no signup. Existing AccuWeather installs are preserved unchanged on upgrade.
   endpoint now serves current conditions for the requested position (including
   pressure and pressure tendency the forecasts do not carry) instead of
   returning an error, on a short-TTL quota-aware cache.
+- **v2 Weather API warnings (US waters).** The `warnings` endpoint now serves
+  region-aware severe-weather alerts: NWS CAP active alerts for US waters
+  (keyless, best-effort), and an empty list elsewhere rather than a fabricated
+  alert. Met.no MetAlerts for Nordic waters is planned. Warnings ride the v2
+  provider, so they are exposed while AccuWeather is the active source.
 
 ### Changed
 
