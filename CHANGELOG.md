@@ -30,6 +30,15 @@ no signup. Existing AccuWeather installs are preserved unchanged on upgrade.
 - **Configurable Open-Meteo endpoint.** An `openMeteoBaseUrl` option so a
   commercial user can point at a self-hosted Open-Meteo server or a paid plan
   (the free public service is for non-commercial use).
+- **Optional sea-state layer.** A `marineData` toggle (off by default) adds a
+  keyless Open-Meteo Marine fetch, independent of the atmospheric source. It
+  emits sea surface temperature on the canonical `environment.water.temperature`
+  leaf, surface current on the canonical `environment.current` node, and waves
+  and swell (significant height, period, direction, and wind-wave height) on
+  producer-namespaced `environment.water.waves.*` / `swell.*` leaves with meta.
+  The marine deltas carry a distinct `open-meteo-marine` `$source` so the model
+  sea temperature and current yield to a real sensor under source priorities,
+  and inland points (no marine data) emit nothing.
 
 ### Changed
 

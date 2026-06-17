@@ -32,6 +32,9 @@ AccuWeather retired its permanent free tier, so the plugin no longer depends on 
   so commercial users can self-host or use a paid plan.
 - **Per-provider `$source`** so consumers can set source priorities: Open-Meteo
   data carries `$source: 'open-meteo'`, AccuWeather keeps `accuweather`.
+- **Optional sea state** (off by default): a keyless Open-Meteo Marine layer adds
+  waves, swell, sea surface temperature, and surface current on `environment.water.*`
+  and `environment.current`.
 
 Open-Meteo provides fewer fields than AccuWeather (no RealFeel or measured
 wet-bulb globe temperature, for example; the plugin estimates the heat-stress
