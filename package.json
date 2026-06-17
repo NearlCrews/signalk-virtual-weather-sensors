@@ -77,9 +77,9 @@
     "@signalk/server-api": ">=2.24.0"
   },
   "devDependencies": {
-    "@babel/core": "^7.29.0",
-    "@babel/preset-react": "^7.28.5",
-    "@babel/preset-typescript": "^7.29.7",
+    "@babel/core": "^8.0.1",
+    "@babel/preset-react": "^8.0.1",
+    "@babel/preset-typescript": "^8.0.1",
     "@biomejs/biome": "^2.4.15",
     "@signalk/server-api": "^2.24.0",
     "@signalk/signalk-schema": "^1.8.2",
