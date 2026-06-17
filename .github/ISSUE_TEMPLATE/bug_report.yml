@@ -87,6 +87,18 @@ body:
       required: true
 
   - type: dropdown
+    id: install-method
+    attributes:
+      label: Install Method
+      description: How did you install the plugin?
+      options:
+        - Signal K App Store
+        - npm install
+        - From source (git clone)
+    validations:
+      required: true
+
+  - type: dropdown
     id: os
     attributes:
       label: Operating System
@@ -110,8 +122,9 @@ body:
       placeholder: |
         {
           "accuWeatherApiKey": "REDACTED",
-          "updateFrequency": 5,
-          "emissionInterval": 5
+          "updateFrequency": 30,
+          "emissionInterval": 5,
+          "dailyApiQuota": 50
         }
 
   - type: checkboxes

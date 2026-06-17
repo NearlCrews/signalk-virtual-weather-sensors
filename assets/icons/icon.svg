@@ -11,6 +11,8 @@
   This variant's badge: warm yellow (#FBC02D) with a dark thundercloud
   glyph (cloud + lightning bolt), signaling weather/atmosphere with
   enough visual movement to distinguish the plugin at thumbnail size.
+  The cloud and bolt are drawn slightly bolder than the original cut so
+  the silhouette holds up at 32px.
 -->
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512" role="img" aria-label="Virtual Weather Sensors plugin icon">
   <defs>
@@ -40,10 +42,10 @@
     (#1B3A4B) so they read as a single thundercloud silhouette at 32px.
   -->
   <g fill="#1B3A4B">
-    <circle cx="364" cy="376" r="22"/>
-    <circle cx="396" cy="364" r="30"/>
-    <circle cx="420" cy="380" r="20"/>
-    <rect x="358" y="374" width="68" height="24" rx="12"/>
-    <path d="M 376 400 v 28 h 8 v 22 l 17 -30 h -10 l 10 -20 z"/>
+    <circle cx="362" cy="374" r="23"/>
+    <circle cx="396" cy="362" r="31"/>
+    <circle cx="421" cy="378" r="21"/>
+    <rect x="356" y="372" width="72" height="26" rx="13"/>
+    <path d="M 378 398 v 30 h 9 v 24 l 19 -33 h -11 l 11 -21 z"/>
   </g>
 </svg>

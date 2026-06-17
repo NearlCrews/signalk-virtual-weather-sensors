@@ -1,338 +1,90 @@
-# Contributing to Signal K Virtual Weather Sensors
+# Contributing
 
-Thank you for your interest in contributing to Signal K Virtual Weather Sensors! This document provides guidelines and instructions for contributing to the project.
-
-## Table of Contents
-
-- [Code of Conduct](#code-of-conduct)
-- [Getting Started](#getting-started)
-- [Development Setup](#development-setup)
-- [How to Contribute](#how-to-contribute)
-- [Coding Standards](#coding-standards)
-- [Testing Guidelines](#testing-guidelines)
-- [Commit Message Guidelines](#commit-message-guidelines)
-- [Pull Request Process](#pull-request-process)
-- [Reporting Bugs](#reporting-bugs)
-- [Suggesting Features](#suggesting-features)
+Thanks for your interest in contributing to Virtual Weather Sensors
+(`signalk-virtual-weather-sensors`).
 
 ## Code of Conduct
 
-This project adheres to a Code of Conduct that all contributors are expected to follow. Please read [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) before contributing.
+This project follows the [Code of Conduct](CODE_OF_CONDUCT.md). By
+participating, you agree to uphold it.
 
-## Getting Started
+## Reporting bugs
 
-1. **Fork the repository** on GitHub
-2. **Clone your fork** locally:
-   ```bash
-   git clone https://github.com/YOUR-USERNAME/signalk-virtual-weather-sensors.git
-   cd signalk-virtual-weather-sensors
-   ```
-3. **Add upstream remote**:
-   ```bash
-   git remote add upstream https://github.com/NearlCrews/signalk-virtual-weather-sensors.git
-   ```
+Check existing issues first to avoid duplicates, then open a bug report with:
 
-## Development Setup
+- A clear title and description
+- Steps to reproduce
+- Expected vs actual behavior
+- Environment details (plugin version, Signal K server version, Node.js
+  version, OS)
+- Relevant log output and the plugin configuration, with the AccuWeather
+  API key redacted
 
-### Prerequisites
+## Suggesting enhancements
 
-- Node.js 20.18 or higher
-- npm (comes with Node.js)
-- Git
+Open a feature request issue describing the proposed feature, the use case it
+serves, and any implementation ideas you have.
 
-### Installation
+## Pull requests
 
-```bash
-# Install dependencies
-npm install
+1. Fork the repository and create a feature branch from `main`.
+2. Follow the [development guide](../docs/DEVELOPMENT.md) for setup, build,
+   and test commands. Optional: enable the Biome pre-commit hook with
+   `npm run hooks` (it is not auto-installed).
+3. Make focused commits with clear messages (see below).
+4. Add tests for any new functionality and keep the existing suite green.
+5. Run `npm run validate` (type-check, lint, and tests) and `npm run build`
+   before pushing.
+6. Update documentation (`README.md`, `CHANGELOG.md`, `docs/`) as needed.
+7. Open a pull request with a clear description of the change. For changes
+   that touch emitted Signal K paths or NMEA2000 alignment, see the
+   compliance checklist in
+   [DEVELOPMENT.md](../docs/DEVELOPMENT.md#signal-k-standards-compliance).
 
-# Optional: enable the Biome pre-commit hook (manual, not auto-installed)
-npm run hooks
+## Code style
 
-# Run tests to verify setup
-npm run test:run
+- All source is TypeScript under `src/`. The plugin runtime is bundled to
+  `dist/` by esbuild; the React config panel under `src/configpanel/` is
+  bundled to `public/` by webpack.
+- Keep modules focused and small. Shared cross-boundary constants belong in
+  `src/constants/notifications-shared.ts`; shared types in
+  `src/types/index.ts`.
+- Lint and format with Biome (`npm run lint`, or `npm run lint:fix` to
+  auto-fix).
+- Do not edit `dist/` or `public/`; they are generated build output.
+- Tests live in `src/__tests__/`, mirroring the source structure, and run
+  on Vitest (`npm test` for a single run, `npm run test:watch` for the
+  watcher).
+- Default to no comments. Add one only when the WHY is non-obvious (a hidden
+  constraint, a subtle invariant, or a workaround).
 
-# Build the project
-npm run build
-```
+## Architecture rule
 
-### Available Scripts
+This repository ships exactly ONE npm package and ONE Signal K plugin. Keep
+the code modular by splitting it into focused files under `src/`. Never split
+the project into multiple npm packages or a monorepo. New functionality is a
+new module under `src/`, not a new package.
 
-```bash
-npm run dev              # Development mode with hot reload
-npm run build            # Production build
-npm run test             # Run all tests once (registry/CI safe)
-npm run test:watch       # Run tests in watch mode
-npm run test:run         # Run all tests once (alias of test)
-npm run test:coverage    # Generate coverage report
-npm run lint             # Check code quality
-npm run lint:fix         # Fix auto-fixable issues
-npm run format           # Format code
-npm run type-check       # Verify TypeScript types
-npm run validate         # Run all quality checks
-```
+See [CLAUDE.md](../CLAUDE.md) for the full set of project conventions and
+[docs/DEVELOPMENT.md](../docs/DEVELOPMENT.md) for the module layout and the
+build, test, and release commands.
 
-## How to Contribute
+## Commit messages
 
-### Reporting Bugs
-
-1. **Check existing issues** to avoid duplicates
-2. **Use the bug report template** when creating a new issue
-3. **Include detailed information**:
-   - Steps to reproduce
-   - Expected behavior
-   - Actual behavior
-   - Environment details (Node.js version, OS, Signal K version)
-   - Relevant logs or error messages
-
-### Suggesting Features
-
-1. **Check existing feature requests** to avoid duplicates
-2. **Use the feature request template** when creating a new issue
-3. **Provide context**:
-   - Use case and problem you're trying to solve
-   - Proposed solution or approach
-   - Alternative solutions considered
-   - Impact on existing functionality
-
-### Making Code Changes
-
-1. **Create a feature branch** from `main`:
-   ```bash
-   git checkout -b feature/your-feature-name
-   ```
-
-2. **Make your changes** following the coding standards
-
-3. **Write or update tests** for your changes
-
-4. **Run validation** before committing:
-   ```bash
-   npm run validate
-   ```
-
-5. **Commit your changes** with meaningful commit messages
-
-6. **Push to your fork**:
-   ```bash
-   git push origin feature/your-feature-name
-   ```
-
-7. **Create a Pull Request** on GitHub
-
-## Coding Standards
-
-### TypeScript
-
-- Use **TypeScript 6.0+** with strict mode
-- Use **@signalk/server-api** types (`Plugin`, `ServerAPI`) for Signal K integration
-- Provide explicit type annotations for function parameters and return types
-- Use interfaces for object shapes
-- Avoid `any` type unless absolutely necessary
-- Use type guards for runtime type checking
-
-### Code Style
-
-- Follow the **Biome** configuration in [`biome.json`](../biome.json)
-- Use **ES2023** features appropriately
-- Prefer `const` over `let`, avoid `var`
-- Use arrow functions for anonymous functions
-- Use template literals for string interpolation
-
-### Naming Conventions
-
-- **Variables/Functions**: `camelCase`
-- **Classes/Interfaces**: `PascalCase`
-- **Constants**: `UPPER_SNAKE_CASE`
-- **Private class members**: prefix with `_` (e.g., `_privateMethod`)
-- **Files**: `camelCase.ts` or `PascalCase.ts` for classes
-
-### Documentation
-
-- Add **JSDoc comments** for all public APIs
-- Include `@param`, `@returns`, and `@throws` tags
-- Document complex algorithms or business logic
-- Keep comments up to date with code changes
-
-### File Organization
+Use conventional-commit prefixes that match the actual diff scope:
 
 ```
-src/
-├── calculators/     # Mathematical and meteorological calculations
-├── configpanel/     # Federated React config panel (bundled by webpack to public/)
-├── constants/       # Constant values and configuration defaults
-├── mappers/         # Data transformation and path mapping
-├── notifications/   # Severe-weather notification state machine
-├── services/        # Core services (Weather, AccuWeather, Signal K)
-├── types/           # TypeScript type definitions
-├── utils/           # Utility functions (validation, conversion, SK delta primitives)
-└── __tests__/       # Test files mirroring source structure
+feat: add pressure-tendency path to the weather branch
+fix: clamp the rolling quota window after a backward clock jump
+docs: update the configuration table for the new default cadence
+test: cover the quota-exhausted emission tick
+chore: update dependencies
 ```
 
-## Testing Guidelines
+## License and attribution
 
-### Test Coverage
-
-- Aim for **80%+ code coverage**
-- Write tests for all new features
-- Update tests when modifying existing code
-- Test edge cases and error conditions
-
-### Test Structure
-
-```typescript
-describe('Component/Feature', () => {
-  describe('method or functionality', () => {
-    it('should do expected behavior', () => {
-      // Arrange
-      const input = setupTestData();
-      
-      // Act
-      const result = methodUnderTest(input);
-      
-      // Assert
-      expect(result).toBe(expectedValue);
-    });
-  });
-});
-```
-
-### Test Types
-
-- **Unit tests**: Test individual functions and classes in isolation
-- **Integration tests**: Test service interactions
-- **Validation tests**: Verify data validation logic
-- **Calculation tests**: Ensure mathematical accuracy
-
-### Running Tests
-
-```bash
-npm run test           # Run all tests once (registry/CI safe)
-npm run test:watch     # Watch mode for development
-npm run test:run       # Run once (alias of test, used by validate)
-npm run test:coverage  # Generate coverage report
-npm run test:ui        # Interactive test UI
-```
-
-## Commit Message Guidelines
-
-Follow the [Conventional Commits](https://www.conventionalcommits.org/) specification:
-
-```
-<type>(<scope>): <subject>
-
-<body>
-
-<footer>
-```
-
-### Types
-
-- `feat`: New feature
-- `fix`: Bug fix
-- `docs`: Documentation changes
-- `style`: Code style changes (formatting, no logic change)
-- `refactor`: Code refactoring
-- `perf`: Performance improvements
-- `test`: Adding or updating tests
-- `chore`: Maintenance tasks (dependencies, build config)
-- `ci`: CI/CD configuration changes
-
-### Examples
-
-```
-feat(calculator): add Magnus formula for dew point calculation
-
-Implement the Magnus formula for more accurate dew point calculations
-in marine environments with temperature range -40°C to +50°C.
-
-Closes #123
-```
-
-```
-fix(mapper): rename humidity path to relativeHumidity per Signal K 1.8.2
-
-The 1.8.2 vocabulary defines environment.outside.relativeHumidity, not
-.humidity. Consumers and PGN 130313 routing only bind to the canonical
-name.
-
-Fixes #456
-```
-
-## Pull Request Process
-
-### Before Submitting
-
-1. ✅ **All tests pass**: `npm run test:run`
-2. ✅ **No linting errors**: `npm run lint`
-3. ✅ **Type checking passes**: `npm run type-check`
-4. ✅ **Code is formatted**: `npm run format`
-5. ✅ **Branch is up to date** with `main`
-
-### PR Requirements
-
-1. **Clear title** following commit message guidelines
-2. **Detailed description** explaining what and why
-3. **Link related issues** using keywords (Fixes #123, Closes #456)
-4. **Update documentation** if needed
-5. **Add tests** for new functionality
-6. **Update CHANGELOG.md** if user-facing changes
-
-### Review Process
-
-1. Automated checks must pass (CI/CD pipeline)
-2. At least one maintainer approval required
-3. All review comments must be addressed
-4. Branch must be up to date with `main`
-
-### After Merge
-
-1. Delete your feature branch
-2. Update your local repository:
-   ```bash
-   git checkout main
-   git pull upstream main
-   ```
-
-## Development Tips
-
-### Working with Signal K
-
-- Test with a local Signal K server instance
-- Use the Signal K server debug mode for detailed logs
-- Verify NMEA2000 data using Signal K instruments
-
-### Weather API Testing
-
-- Use AccuWeather's free trial API key for development
-- Mock API responses in tests to avoid rate limits
-- Test error handling for API failures
-
-### Debugging
-
-```bash
-# Run with debugging enabled
-NODE_ENV=development npm run dev
-
-# Run specific test file (single-shot, not watch mode)
-npx vitest run src/__tests__/calculators/WindCalculator.test.ts
-
-# Check bundle size
-npm run build
-ls -lh dist/
-```
-
-## Questions or Need Help?
-
-- 📖 Check [DEVELOPMENT.md](../docs/DEVELOPMENT.md) for detailed technical documentation
-- 🐛 Search [existing issues](https://github.com/NearlCrews/signalk-virtual-weather-sensors/issues)
-- 💬 Open a [discussion](https://github.com/NearlCrews/signalk-virtual-weather-sensors/discussions)
-- 📧 Contact maintainers via GitHub
-
-## License
-
-By contributing, you agree that your contributions will be licensed under the Apache-2.0 License. See [LICENSE](../LICENSE) for details.
-
----
-
-**Thank you for contributing to Signal K Virtual Weather Sensors!** 🚢⛵
+By contributing, you agree your contributions are licensed under the
+Apache-2.0 License that covers this project. The plugin fetches data from
+the AccuWeather API under AccuWeather's terms of use; do not commit API
+keys, and keep the existing log redaction in place for any new code path
+that could log configuration values.
