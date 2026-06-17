@@ -140,11 +140,11 @@ export default function PluginConfigurationPanel({
         </div>
       ) : null}
 
-      {/* Shown when the plugin reports not running and the saved configuration
-          has no API key: the one situation where the panel knows exactly what
-          the next step is. An inline callout, deliberately not a modal; the
-          effect above also auto-opens the API key section so the input is one
-          glance away. */}
+      {/* Shown only when AccuWeather is the saved source, the plugin is not
+          running, and no key is saved: the one situation where the panel knows
+          exactly what the next step is. An inline callout, deliberately not a
+          modal; the effect above also auto-opens the source section so the key
+          input is one glance away. */}
       {firstRun ? (
         <div style={S.callout}>
           <span>
@@ -219,13 +219,14 @@ export default function PluginConfigurationPanel({
         )}
 
         <div style={S.checkboxRow}>
-          <label style={S.checkboxLabel}>
-            <input
-              type="checkbox"
-              style={S.checkbox}
-              checked={form.marineData}
-              onChange={(e) => setField('marineData', e.target.checked)}
-            />
+          <input
+            id="svws-marine"
+            type="checkbox"
+            style={S.checkbox}
+            checked={form.marineData}
+            onChange={(e) => setField('marineData', e.target.checked)}
+          />
+          <label htmlFor="svws-marine" style={S.checkboxLabel}>
             Emit sea state (waves, swell, sea temperature, current)
           </label>
         </div>
@@ -257,7 +258,7 @@ export default function PluginConfigurationPanel({
         </div>
         <p style={S.help}>
           {isAccuWeather
-            ? `Each fetch costs one AccuWeather API call. 30 min uses 48 calls/day, comfortably under the free-tier ${CONFIG_DEFAULTS.DAILY_API_QUOTA}/day cap.`
+            ? `Each fetch costs one AccuWeather API call. 30 min uses 48 calls/day, within the default ${CONFIG_DEFAULTS.DAILY_API_QUOTA}/day quota.`
             : 'How often new weather data is fetched from Open-Meteo. Open-Meteo is keyless with generous limits, so a shorter interval is fine.'}
         </p>
 
@@ -276,7 +277,7 @@ export default function PluginConfigurationPanel({
         </div>
         <p style={S.help}>
           How often the cached weather payload is re-emitted to the Signal K bus. Independent of the
-          AccuWeather fetch cadence.
+          weather fetch cadence.
         </p>
 
         {isAccuWeather ? (
