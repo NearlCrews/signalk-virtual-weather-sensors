@@ -44,15 +44,27 @@ npm run validate       # All checks (pre-commit uses this)
 src/
 ├── index.ts                    # Plugin entry point and lifecycle (start/stop/registerWithRouter)
 ├── services/
-│   ├── WeatherService.ts           # Orchestration: coordinates API, navigation, calculations
-│   ├── AccuWeatherService.ts       # API client: 30+ field extraction, location caching, verifyApiKey
-│   ├── WeatherProviderAdapter.ts   # SK v2 Weather API provider: getForecasts(point/daily), quota-shared
+│   ├── WeatherService.ts           # Orchestration: coordinates provider, navigation, calculations, marine layer
+│   ├── OpenMeteoService.ts         # Keyless Open-Meteo current-conditions provider (default source)
+│   ├── AccuWeatherService.ts       # AccuWeather provider: 30+ field extraction, location caching, verifyApiKey
+│   ├── OpenMeteoMarineService.ts   # Keyless Open-Meteo Marine sea-state fetch (optional marineData layer)
+│   ├── WarningsService.ts          # Region-aware getWarnings: NWS CAP active alerts for US waters
+│   ├── WeatherProviderAdapter.ts   # SK v2 Weather API provider: getForecasts(point/daily), getObservations, getWarnings
 │   └── SignalKService.ts           # Vessel navigation data retrieval
+├── providers/
+│   ├── WeatherProvider.ts          # CurrentWeatherProvider seam (provider-agnostic over internal SI WeatherData)
+│   ├── createCurrentWeatherProvider.ts  # Constructs the resolved provider (Open-Meteo or AccuWeather)
+│   ├── open-meteo-severity.ts      # WMO weather code to severe-condition classification
+│   └── accuweather-severity.ts     # AccuWeather icon code to severe-condition classification
 ├── calculators/
 │   └── WindCalculator.ts           # Vector math for apparent wind, Beaufort scale
 ├── mappers/
 │   ├── NMEA2000PathMapper.ts       # Weather data → Signal K delta messages
-│   └── WeatherProviderMapper.ts    # AccuWeather forecast responses → SK v2 WeatherData envelope
+│   ├── OpenMeteoMapper.ts          # Open-Meteo current block → internal SI WeatherData (parallels AccuWeather transform)
+│   ├── MarinePathMapper.ts         # MarineData → environment.water.* / environment.current deltas plus meta
+│   ├── OpenMeteoMarineMapper.ts    # Open-Meteo Marine current block → internal MarineData
+│   ├── WarningsMapper.ts           # NWS CAP alerts → SK v2 WeatherWarning shape
+│   └── WeatherProviderMapper.ts    # AccuWeather forecast and current responses → SK v2 WeatherData envelope
 ├── notifications/
 │   └── WeatherNotifier.ts      # Transition state machine: WeatherData → notifications.environment.* deltas
 ├── configpanel/                # React 19 federated config panel, TypeScript (bundled by webpack to public/)
@@ -63,8 +75,9 @@ src/
 │   ├── components/             # Section, NumberInput, StatusDashboard, ApiKeyField, NotificationToggles, FooterBar, ThemeToggle
 │   └── hooks/                  # useStatus (visibility-gated polling), usePanelConfig (form state, dirty tracking, save flow)
 ├── utils/
-│   ├── validation.ts           # Config validation, NMEA2000 range sanitization
-│   ├── conversions.ts          # Unit conversions (temp, pressure, wind, Beaufort scale) + `asTimestamp` brand helper
+│   ├── validation.ts           # Config validation, NMEA2000 range sanitization, `assertValidCoordinates`
+│   ├── conversions.ts          # Unit conversions (temp, pressure, wind, Beaufort scale) + `asTimestamp` and `asStringOrEmpty` helpers
+│   ├── http.ts                 # Shared fetch helpers: `fetchJson`, `readBoundedJson`, `normalizeBaseUrl`, `DEFAULT_REQUEST_TIMEOUT_MS`
 │   └── skDelta.ts              # Shared SK delta primitives: pv / me / buildValuesDelta / buildMetaDelta
 ├── constants/
 │   ├── index.ts                # PGN numbers, Signal K paths, notification paths + thresholds, validation limits, TEST_KEY_LOCATION
@@ -75,8 +88,8 @@ src/
 
 ### Data Flow
 ```
-AccuWeather API → AccuWeatherService → WeatherService
-                                            ↓
+Open-Meteo / AccuWeather API → CurrentWeatherProvider → WeatherService
+                                                             ↓
 Signal K Server ← NMEA2000PathMapper ← WindCalculator
 ```
 
@@ -105,8 +118,8 @@ Test configuration in `vitest.config.ts` includes path aliases (`@/`, `@/service
 
 - **Canonical paths only under canonical containers**: `environment.outside.{temperature,pressure,relativeHumidity,dewPointTemperature,apparentWindChillTemperature,theoreticalWindChillTemperature,heatIndexTemperature,airDensity}` and `environment.wind.{speedOverGround,directionTrue}` are the only leaves the plugin emits under `environment.outside.*` / `environment.wind.*`. Calculated apparent wind is producer-namespaced (see below): it is synthetic and must not squat the canonical anemometer leaves. `heatIndexTemperature` carries a computed NWS Rothfusz heat index, not AccuWeather RealFeel. Both wind-chill leaves are emitted: `theoreticalWindChillTemperature` is wind chill from the true (ground-referenced) wind; `apparentWindChillTemperature` is wind chill from the apparent wind once vessel motion is folded in, falling back to the theoretical value when no vessel motion data is available. The 1.8.2 vocabulary defines those containers as leaf-only; squatting an object node like `environment.outside.derived` violates that contract.
 - **Producer-namespaced branch for everything else**: `environment.weather.*` holds AccuWeather extensions (UV, visibility, cloud cover, absolute humidity, precipitation, 24h departure, wet bulb temperatures, apparent temperature, RealFeel, RealFeel shade, pressure tendency, precipitation type, visibility obstruction, plain-language weather description) and plugin-derived values (Beaufort scale, gust factor, heat stress index, wind gust speed, apparent wind speed and angle: `windSpeedApparent` / `windAngleApparent`). Source provenance is in `$source`, not in the path, so consumers can swap weather providers without re-subscribing.
-- **AccuWeather wind is ground-referenced**, so the plugin emits `speedOverGround` only. It does NOT emit `speedTrue` (which is water-referenced and would clobber a real anemometer feed on a moving vessel). Wind direction is true-north per the WMO surface-wind convention; the rationale is pinned in `AccuWeatherService.transformWeatherData`.
-- **`$source: 'accuweather'`** is set on every delta (constant lives in `PLUGIN.SOURCE_REF`) so users can configure source priorities to prefer real onboard sensors.
+- **Provider wind is ground-referenced** (both Open-Meteo and AccuWeather report a regional ground wind), so the plugin emits `speedOverGround` only. It does NOT emit `speedTrue` (which is water-referenced and would clobber a real anemometer feed on a moving vessel). Wind direction is true-north per the WMO surface-wind convention; the rationale is pinned in `AccuWeatherService.transformWeatherData`.
+- **Per-provider `$source`**: the active provider's source ref is set on every weather delta (`open-meteo` by default, `accuweather` when AccuWeather is active; the AccuWeather constant lives in `PLUGIN.SOURCE_REF`), and marine deltas carry their own `open-meteo-marine`, so users can configure source priorities to prefer real onboard sensors and a provider swap does not change paths.
 - **Meta delta**: `NMEA2000PathMapper.buildMetaDelta()` returns a one-shot meta delta describing units/labels/descriptions for every `environment.weather.*` measurement path AND every `notifications.environment.*` path. `index.ts` ships it exactly once per start() cycle, after the first values delta (admin-UI rendering workaround, not a spec ordering requirement), via `app.handleMessage(..., SKVersion.v1)`. The meta-emitted flag resets in `cleanup()` so a restart re-attaches the meta block.
 - **`displayUnits` meta hints**: the Signal K unit-preferences system categorizes a path purely by its SI base unit when the path is not in the server's `default-categories.json` (which only covers canonical spec paths). Every `environment.weather.*` path is non-canonical, so a path declaring `units: 'm'` gets bucketed with distances (rendered in miles/feet) and one declaring `units: 'K'` is treated as an absolute temperature (the K-to-C/F offset applied). Two paths carry a quantity whose base unit lies about its kind: `precipitationLastHour` is a depth (would show as miles) and `temperatureDeparture24h` is a delta (would show as an absolute Fahrenheit temperature). Both pin a `displayUnits` block in their `NON_CANONICAL_META` entry (`precipitationLastHour` -> custom `mm` conversion; `temperatureDeparture24h` -> `base` identity) so the data browser renders them correctly. The emitted value and `units` are unchanged; `displayUnits` is a render hint only. Do NOT emit a precipitation rate in `m/s`: AccuWeather provides no instantaneous rate, and `m/s` collides with the speed category.
 - **Status banner**: `WeatherService.formatStatusBanner()` returns the live `Running, last update Nm ago (N updates, K API requests)` string used by `setPluginStatus` (or `Running, awaiting first update` before the first fetch). The `K API requests` suffix is appended only when `AccuWeatherService.getRequestCount()` is non-zero. When `dailyApiQuota > 0` the suffix gains a `, K/Q today` segment showing the rolling 24h count; at 90% the prefix flips to `Running [quota 90% used]`, and at 100% the plugin trips `setPluginError` via `WeatherService.isQuotaExhausted()` and skips fetches until usage drops. Format and counters live together on `WeatherService`; `index.ts` just routes the call. The banner is re-pushed on every successful `emitWeatherTick` so the age and counters stay current (and the start-time `awaiting first update` string flips as soon as the first fetch lands).
@@ -128,9 +141,9 @@ Test configuration in `vitest.config.ts` includes path aliases (`@/`, `@/service
 - TypeScript 6.0+ (strict mode, ES2023 target)
 - Node.js 20.18+ (ESM only)
 - `@signalk/server-api` 2.24+ as a `peerDependency` (the Signal K server provides it at runtime; not bundled). Used for `Plugin`, `ServerAPI`, `Delta`, `PathValue`, `Meta`, `MetaValue`, `SourceRef`, and `SKVersion` types.
-- esbuild 0.28+ for bundling (current bundle ~98 KiB)
+- esbuild 0.28+ for bundling (current bundle ~125 KB)
 - Biome 2.4+ for linting/formatting (with `noFloatingPromises` / `noMisusedPromises` enabled)
-- Vitest 4.1+ for testing (334 tests across 13 files; mutation score 67% via Stryker.js, opt-in via `npm run mutation-test`). `npm test` runs once (registry/CI safe); `npm run test:watch` is the interactive watcher.
+- Vitest 4.1+ for testing (404 tests across 23 files; mutation score 67% via Stryker.js, opt-in via `npm run mutation-test`). `npm test` runs once (registry/CI safe); `npm run test:watch` is the interactive watcher.
 - React 19, webpack 5, @babel/preset-react, @babel/preset-typescript, babel-loader, @types/react, @types/express for the federated config panel (panel-only deps, runtime is unaffected); panel types checked by `tsconfig.panel.json`
 - Husky + lint-staged for an opt-in pre-commit hook (enable with `npm run hooks`; there is intentionally no `prepare` script, since its lifecycle banner breaks the SignalK App Store install simulation on Node 22's npm 10)
 

@@ -67,6 +67,14 @@ no signup. Existing AccuWeather installs are preserved unchanged on upgrade.
   and three wave lines) is unchanged, and all PNG sizes are regenerated from the
   updated SVG.
 
+### Internal
+
+- Shared helpers consolidated with no behavior change: a single
+  `assertValidCoordinates` coordinate guard in `validation.ts`, a
+  `normalizeBaseUrl` base-URL helper and a `DEFAULT_REQUEST_TIMEOUT_MS` constant
+  in a new `http.ts`, and an `asStringOrEmpty` coercion in `conversions.ts`,
+  plus deduplicated test fixtures.
+
 ### Notes
 
 - **Open-Meteo field parity.** Open-Meteo does not provide RealFeel, RealFeel

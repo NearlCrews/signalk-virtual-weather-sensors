@@ -4,6 +4,10 @@ The plugin surfaces every fault as a status banner in the Signal K Admin UI
 (Server -> Plugin Config) and in the server log. This guide maps each banner
 string to a cause and a fix.
 
+The API-key, rate-limit, and quota banners below apply only when AccuWeather is
+the selected weather source. The default Open-Meteo source is keyless and has no
+per-key quota, so those banners do not appear under it.
+
 ## `API_UNAUTHORIZED: Invalid API key` (HTTP 401)
 
 The AccuWeather server rejected the key. No weather deltas are emitted while
@@ -24,11 +28,13 @@ traffic, confirm the egress IP is not on AccuWeather's block list.
 
 ## `API_RATE_LIMIT: Rate limit exceeded` (HTTP 429)
 
-The free tier allows 50 calls per day. Each `updateFrequency` tick costs 1 call
-(location lookups are cached for 1 hour, so they rarely cost extra).
+AccuWeather rate-limited the request, and AccuWeather enforces its own per-plan
+daily limit. The plugin defaults to a 50 calls/day budget. Each
+`updateFrequency` tick costs 1 call (location lookups are cached for 1 hour, so
+they rarely cost extra).
 
 Fix: the default `updateFrequency` of 30 minutes uses 48 calls/day, which sits
-inside the free-tier 50/day cap. If you have lowered `updateFrequency` below
+inside the default 50/day budget. If you have lowered `updateFrequency` below
 30, raise it back: at 5 minutes the plugin would burn 288 calls/day. See
 `examples/slow-update.json` for an ultra-conservative 60-minute profile (24
 calls/day) suitable when the key is shared with other AccuWeather consumers.

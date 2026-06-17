@@ -7,12 +7,28 @@ For an overview and installation, see the [README](../README.md).
 
 Paths marked **canonical** are defined in the
 [Signal K 1.8.2 vocabulary](https://signalk.org/specification/1.8.2/doc/vesselsBranch.html)
-and live under `environment.outside.*` or `environment.wind.*`. Everything else
-(AccuWeather extensions like UV, visibility, and cloud cover, plus
-plugin-derived values like Beaufort scale and heat stress) lives under a
-producer-namespaced `environment.weather.*` branch, so the canonical containers
-stay leaf-only as the spec requires. The plugin ships a one-shot Signal K
-`meta` block describing units and labels for every non-canonical path.
+and live under `environment.outside.*`, `environment.wind.*`, the
+`environment.water.temperature` leaf, and the `environment.current` node.
+Everything else (provider extensions like UV, visibility, and cloud cover,
+plugin-derived values like Beaufort scale and heat stress, and the wave and
+swell leaves under `environment.water.*`) lives under a producer namespace, so
+the canonical containers stay leaf-only as the spec requires. The plugin ships
+a one-shot Signal K `meta` block describing units and labels for every
+non-canonical path.
+
+## Source provenance
+
+Every delta carries a `$source` so consumers can set source priorities and
+prefer a real onboard sensor. The atmospheric deltas use the active provider's
+ref (`open-meteo` by default, `accuweather` when AccuWeather is configured), and
+the optional sea-state deltas use a distinct `open-meteo-marine`. Because the
+provider is recorded in `$source` rather than in the path, swapping the weather
+source does not change any path and consumers do not re-subscribe. Some
+`environment.weather.*` leaves are AccuWeather-only (RealFeel, RealFeel shade,
+AccuWeather apparent temperature, pressure tendency, precipitation type,
+visibility obstruction, cloud ceiling, and the 24-hour temperature departure);
+Open-Meteo supplies the rest and the plugin estimates the wet-bulb globe
+temperature so the heat-stress band still works.
 
 > Note: the plugin re-emits its cached delta on a fixed interval for NMEA2000
 > recognition. Each re-emission stamps the delta with the current emission
@@ -36,18 +52,20 @@ stay leaf-only as the spec requires. The plugin ships a one-shot Signal K
 
 | Path | Unit | Description |
 |------|------|-------------|
-| `environment.wind.speedOverGround` | m/s | Ground-referenced wind speed (AccuWeather is ground-referenced; this plugin does not emit `speedTrue`) |
+| `environment.wind.speedOverGround` | m/s | Ground-referenced wind speed (both Open-Meteo and AccuWeather report a ground-referenced wind; this plugin does not emit `speedTrue`) |
 | `environment.wind.directionTrue` | rad | True wind direction |
 
 Calculated apparent wind is producer-namespaced (see `windSpeedApparent` /
-`windAngleApparent` in the next section). It is synthetic, derived from
-AccuWeather's regional ground wind plus vessel motion, so it stays off the
+`windAngleApparent` in the next section). It is synthetic, derived from the
+provider's regional ground wind plus vessel motion, so it stays off the
 canonical `environment.wind` leaves that a masthead anemometer owns.
 
 ## Weather extensions (`environment.weather.*`, producer namespace)
 
 Everything in this section is outside the 1.8.2 vocabulary. The plugin ships
-meta describing units and labels.
+meta describing units and labels. Several leaves are AccuWeather-only and are
+absent under Open-Meteo; see [Source provenance](#source-provenance) for the
+list.
 
 | Path | Unit | Description |
 |------|------|-------------|
@@ -67,12 +85,41 @@ meta describing units and labels.
 | `environment.weather.gustFactor` | ratio | Gust / sustained ratio |
 | `environment.weather.beaufortScale` | (unitless) | Beaufort scale category (0..12) |
 | `environment.weather.heatStressIndex` | (unitless) | WBGT-derived heat-stress category on US military WBGT flag cutoffs: 0 (<26.7 C), 1 (26.7..27.8 C), 2 (27.8..29.4 C), 3 (29.4..32.2 C), 4 (>=32.2 C) |
-| `environment.weather.windSpeedApparent` | m/s | Apparent wind speed, calculated from AccuWeather wind and vessel motion |
+| `environment.weather.windSpeedApparent` | m/s | Apparent wind speed, calculated from the provider's wind and vessel motion |
 | `environment.weather.windAngleApparent` | rad | Apparent wind angle relative to bow (-pi..pi, negative to port); omitted when no heading is available |
 | `environment.weather.description` | (string) | Plain-language summary of the current condition |
 | `environment.weather.pressureTendency` | (unitless) | Pressure trend: -1 falling, 0 steady, +1 rising |
 | `environment.weather.precipitationType` | (string) | Precipitation type: Rain, Snow, Ice, or Mixed |
 | `environment.weather.visibilityObstruction` | (string) | Visibility obstruction: fog, haze, or smoke |
+
+## Sea state (optional marine layer)
+
+When the **Emit sea state** option is enabled, the plugin adds a keyless
+Open-Meteo Marine fetch, independent of the atmospheric source and on the same
+cadence and position. Sea surface temperature lands on the canonical
+`environment.water.temperature` leaf and surface current on the canonical
+`environment.current` object node; waves and swell are producer-namespaced under
+`environment.water.waves.*` and `environment.water.swell.*` (the 1.8.2
+vocabulary defines no canonical wave or swell leaves) and ship meta. All marine
+deltas carry `$source: 'open-meteo-marine'`, distinct from the atmospheric
+source, so the model sea temperature and current yield to a real sensor under
+source priorities. The layer is off by default, and inland points (no marine
+data) emit nothing.
+
+| Path | Unit | Description |
+|------|------|-------------|
+| `environment.water.temperature` | K | Sea surface temperature (canonical leaf) |
+| `environment.current` | object | Surface current as a single node `{ drift, setTrue }`: `drift` m/s, `setTrue` rad (canonical node, not dotted leaves) |
+| `environment.water.waves.significantHeight` | m | Significant wave height (highest third, combined wind-wave and swell) |
+| `environment.water.waves.period` | s | Mean wave period |
+| `environment.water.waves.direction` | rad | Mean direction waves come from, true north |
+| `environment.water.waves.windWaveHeight` | m | Height of locally wind-generated waves, excluding swell |
+| `environment.water.swell.height` | m | Swell height (waves from distant weather) |
+| `environment.water.swell.period` | s | Mean swell period |
+| `environment.water.swell.direction` | rad | Direction swell comes from, true north |
+
+No NMEA2000 PGN coverage is defined for the marine layer; these paths reach
+Signal K consumers only.
 
 ## NMEA2000 PGN coverage
 
@@ -143,7 +190,12 @@ multiple paths concurrently.
 | `notifications.environment.heat.extreme` | `emergency` | Heat-stress index >= 4 |
 | `notifications.environment.cold.caution` | `warn` | Wind chill below 0 C |
 | `notifications.environment.cold.extreme` | `alarm` | Wind chill below -20 C |
-| `notifications.environment.weather.severe` | `warn` or `alarm` | AccuWeather `WeatherIcon` 15-17 thunderstorms (warn), 24 ice (alarm), 25-26 sleet / freezing rain (warn), 22-23 / 29 / 41-44 snow / thunderstorms (warn) |
+| `notifications.environment.weather.severe` | `warn` or `alarm` | AccuWeather `WeatherIcon` 15-17 thunderstorms (warn), 19-21 flurries (warn), 22-23 / 29 / 43-44 snow (warn), 24 ice (alarm), 25-26 sleet / freezing rain (warn), 41-42 thunderstorms (warn) |
+
+The severe-condition trigger above lists the AccuWeather `WeatherIcon` codes.
+The band is provider-agnostic: under Open-Meteo the equivalent WMO weather codes
+map to the same `warn` and `alarm` classification, so the notification behaves
+the same regardless of source.
 
 Each notification value follows the SK 1.8.2 shape
 `{ state, method, message, timestamp }`. `state: 'normal'` is written on exit
@@ -162,9 +214,9 @@ actionable on its own:
 | Cold | `Cold exposure caution: wind chill -2 C, air 1 C, wind 12 m/s` |
 | Severe | `Thunderstorms: Severe thunderstorms approaching, 998 hPa` |
 
-Optional fields drop out cleanly when AccuWeather does not provide them: a wind
-notification on a free-tier key with no gust block just omits the `gusts ...`
-segment. Every message is capped at 80 characters (with a `…` suffix on
+Optional fields drop out cleanly when the provider does not supply them: a wind
+notification with no gust data just omits the `gusts ...` segment. Every message
+is capped at 80 characters (with a `…` suffix on
 overflow) so it renders cleanly across the chartplotter fleet that bridges
 through `signalk-to-nmea2000` to NMEA 2000 Alert PGN 126985.
 
@@ -178,21 +230,30 @@ SK webapp regardless.
 
 ## Weather API provider
 
-The plugin also registers as a Signal K v2 Weather API provider, so consumers
-can query forecasts directly through the server's REST API instead of
-subscribing to the delta stream. Two forecast endpoints are served:
+When AccuWeather is the active source, the plugin also registers as a Signal K
+v2 Weather API provider, so consumers can query weather directly through the
+server's REST API instead of subscribing to the delta stream (the forecast and
+observation endpoints are AccuWeather-backed; Open-Meteo forecast support is
+planned). These endpoints are served:
 
 - `GET /signalk/v2/api/weather/forecasts/point` returns hourly point forecasts
   from the AccuWeather 12-hour hourly source.
 - `GET /signalk/v2/api/weather/forecasts/daily` returns daily forecasts from
   the AccuWeather 5-day source.
+- `GET /signalk/v2/api/weather/observations` returns current conditions for the
+  requested position, mapped from the AccuWeather current-conditions endpoint
+  (and including the atmospheric pressure and pressure tendency the forecasts
+  omit).
+- `GET /signalk/v2/api/weather/warnings` returns region-aware severe-weather
+  alerts: keyless NWS CAP active alerts for US waters, and an empty list
+  elsewhere.
 
 Forecasts are mapped to the same SI units used everywhere else in this plugin
 (Kelvin for temperatures, m/s for wind speed, radians for wind direction,
 ratio 0 to 1 for humidity and cloud cover, and metres for distance and
 precipitation depth). Registering the provider is also what makes the server
 list `weather` under `GET /signalk/v2/features`, which is how dashboards such as
-signalk-open-binnacle detect that forecast support is available.
+signalk-binnacle detect that forecast support is available.
 
 ### Point forecast fields
 
@@ -238,7 +299,10 @@ and populates these fields when present.
 
 - Forecasts carry no `outside.pressure`: the AccuWeather forecast endpoints do
   not return atmospheric pressure, so the field is omitted on both point and
-  daily forecasts.
-- Observations (`GET /signalk/v2/api/weather/observations`) and warnings
-  (`GET /signalk/v2/api/weather/warnings`) are not served yet. Both return
-  `Not supported` for now.
+  daily forecasts. The observations endpoint does include pressure and pressure
+  tendency.
+- The v2 provider is registered only while AccuWeather is the active source;
+  under Open-Meteo the delta emission path still works but the v2 forecast,
+  observation, and warning endpoints are not advertised.
+- Warnings cover US waters today (NWS CAP); other regions return an empty list.
+  Met.no MetAlerts for Nordic waters is planned.
