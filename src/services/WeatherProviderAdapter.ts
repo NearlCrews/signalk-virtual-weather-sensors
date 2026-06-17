@@ -14,7 +14,11 @@ import type {
   WeatherWarning,
 } from '@signalk/server-api';
 import { PLUGIN } from '../constants/index.js';
-import { mapDailyToForecasts, mapHourlyToForecasts } from '../mappers/WeatherProviderMapper.js';
+import {
+  mapCurrentToObservation,
+  mapDailyToForecasts,
+  mapHourlyToForecasts,
+} from '../mappers/WeatherProviderMapper.js';
 import type { GeoLocation, Logger } from '../types/index.js';
 import type { AccuWeatherService } from './AccuWeatherService.js';
 
@@ -53,10 +57,19 @@ export class WeatherProviderAdapter {
     return typeof maxCount === 'number' && maxCount > 0 ? forecasts.slice(0, maxCount) : forecasts;
   }
 
-  private async getObservations(): Promise<SKWeatherData[]> {
-    // Phase 2: map the latest current-conditions observation. Until then, the
-    // SK-conventional signal that this provider does not serve observations.
-    throw new Error('Not supported!');
+  private async getObservations(
+    position: Position,
+    _options?: WeatherReqParams
+  ): Promise<SKWeatherData[]> {
+    this.logger('debug', 'Weather provider observation request');
+    // Honor the caller-supplied position (the endpoint passes an arbitrary
+    // lat/lon, not the vessel position), fetching current conditions there.
+    const location: GeoLocation = { latitude: position.latitude, longitude: position.longitude };
+    const observation = mapCurrentToObservation(
+      await this.accuWeather.getCurrentConditionsForLocation(location)
+    );
+    // A single current observation; descending date order is trivially satisfied.
+    return [observation];
   }
 
   private async getWarnings(): Promise<WeatherWarning[]> {

@@ -393,6 +393,35 @@ export class AccuWeatherService implements CurrentWeatherProvider {
   }
 
   /**
+   * Fetch current conditions for an ARBITRARY position, for the v2 Weather API
+   * observations endpoint (which passes a caller-supplied lat/lon, not the
+   * vessel position). Quota-aware and cached on a short TTL like the forecast
+   * methods, reusing the location-key cache and the rolling request window, so a
+   * polling observations consumer does not exhaust the key. Returns the first
+   * (current) conditions record.
+   */
+  public async getCurrentConditionsForLocation(
+    location: GeoLocation
+  ): Promise<AccuWeatherCurrentConditions> {
+    this.validateLocation(location);
+    const quotaExhausted = this.isQuotaExhausted();
+    const locationKey = await this.resolveLocationKeyForForecast(location, quotaExhausted);
+    const conditions = await this.cachedForecastFetch(
+      `observation:${locationKey}`,
+      FORECAST_CACHE.OBSERVATION_TTL_MS,
+      quotaExhausted,
+      () => this.getCurrentConditions(locationKey)
+    );
+    const first = conditions[0];
+    if (!first) {
+      throw new Error(
+        `${ERROR_CODES.DATA.INVALID_WEATHER_DATA}: No current conditions data available`
+      );
+    }
+    return first;
+  }
+
+  /**
    * Resolve the location key for a forecast call, respecting the daily quota.
    * Below the cap it does the normal cached-or-fetched lookup. At the cap it
    * refuses to spend a request on a fresh location search: it falls back to a

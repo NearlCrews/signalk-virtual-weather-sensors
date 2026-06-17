@@ -6,9 +6,14 @@
  * Every optional field is conditionally spread so a missing upstream block is
  * omitted, never emitted as a real 0.
  */
-import type { PrecipitationKind, WeatherData as SKWeatherData } from '@signalk/server-api';
+import type {
+  PrecipitationKind,
+  WeatherData as SKWeatherData,
+  TendencyKind,
+} from '@signalk/server-api';
 import { UNITS } from '../constants/index.js';
 import type {
+  AccuWeatherCurrentConditions,
   AccuWeatherDailyForecastResponse,
   AccuWeatherHourlyForecast,
 } from '../types/index.js';
@@ -18,6 +23,7 @@ import {
   celsiusToKelvin,
   degreesToRadians,
   kmhToMS,
+  millibarsToPA,
   normalizeAngle0To2Pi,
   percentageToRatio,
 } from '../utils/conversions.js';
@@ -33,6 +39,18 @@ const PRECIPITATION_KIND_BY_ACCUWEATHER: ReadonlyMap<string, PrecipitationKind> 
 function mapPrecipitationKind(type: string | null | undefined): PrecipitationKind | undefined {
   if (typeof type !== 'string') return undefined;
   return PRECIPITATION_KIND_BY_ACCUWEATHER.get(type.trim().toLowerCase());
+}
+
+/** AccuWeather PressureTendency.Code (F/S/R) to the SK TendencyKind enum. */
+const TENDENCY_KIND_BY_CODE: ReadonlyMap<string, TendencyKind> = new Map([
+  ['F', 'decreasing'],
+  ['S', 'steady'],
+  ['R', 'increasing'],
+]);
+
+function mapTendencyKind(code: string | undefined): TendencyKind | undefined {
+  if (typeof code !== 'string') return undefined;
+  return TENDENCY_KIND_BY_CODE.get(code.trim().toUpperCase());
 }
 
 type SKOutside = NonNullable<SKWeatherData['outside']>;
@@ -182,4 +200,63 @@ export function mapDailyToForecasts(response: AccuWeatherDailyForecastResponse):
       ...(Object.keys(sun).length > 0 && { sun }),
     };
   });
+}
+
+/**
+ * Map AccuWeather current conditions to a single `observation` WeatherData for
+ * the v2 Weather API observations endpoint. Current conditions use Metric/
+ * Imperial pairs (unlike the flat forecast shapes), and they carry pressure and
+ * pressure tendency that the forecast endpoints do not. Wind is mapped to the
+ * v2 envelope's `wind.speedTrue` like the forecast mappers.
+ */
+export function mapCurrentToObservation(c: AccuWeatherCurrentConditions): SKWeatherData {
+  const temperatureK = optionalCelsiusToKelvin(c.Temperature?.Metric?.Value);
+  const dewPointK = optionalCelsiusToKelvin(c.DewPoint?.Metric?.Value);
+  const feelsLikeK = optionalCelsiusToKelvin(c.RealFeelTemperature?.Metric?.Value);
+  const humidityPct = asOptionalNumber(c.RelativeHumidity);
+  const rhRatio = humidityPct !== undefined ? percentageToRatio(humidityPct) : undefined;
+  const pressureMbar = asOptionalNumber(c.Pressure?.Metric?.Value);
+  const visibilityKm = asOptionalNumber(c.Visibility?.Metric?.Value);
+  const uvIndex = asOptionalNumber(c.UVIndexFloat);
+  const cloudCoverPct = asOptionalNumber(c.CloudCover);
+  const precipitationMm = asOptionalNumber(c.Precip1hr?.Metric?.Value);
+  const precipitationType = mapPrecipitationKind(c.PrecipitationType);
+  const pressureTendency = mapTendencyKind(c.PressureTendency?.Code);
+
+  const outside: SKOutside = {
+    ...(temperatureK !== undefined && { temperature: temperatureK }),
+    ...(dewPointK !== undefined && { dewPointTemperature: dewPointK }),
+    ...(feelsLikeK !== undefined && { feelsLikeTemperature: feelsLikeK }),
+    ...(rhRatio !== undefined && {
+      relativeHumidity: rhRatio,
+      ...(temperatureK !== undefined && {
+        absoluteHumidity: calculateAbsoluteHumidity(temperatureK, rhRatio),
+      }),
+    }),
+    ...(pressureMbar !== undefined && { pressure: millibarsToPA(pressureMbar) }),
+    ...(pressureTendency !== undefined && { pressureTendency }),
+    ...(visibilityKm !== undefined && {
+      horizontalVisibility: visibilityKm * UNITS.LENGTH.KM_TO_M,
+    }),
+    ...(uvIndex !== undefined && { uvIndex }),
+    ...(cloudCoverPct !== undefined && { cloudCover: percentageToRatio(cloudCoverPct) }),
+    ...(precipitationMm !== undefined && {
+      precipitationVolume: precipitationMm * UNITS.PRECIPITATION.MM_TO_M,
+    }),
+    ...(precipitationType !== undefined && { precipitationType }),
+  };
+
+  const wind = buildWind(
+    c.Wind?.Speed?.Metric?.Value,
+    c.Wind?.Direction?.Degrees,
+    c.WindGust?.Speed?.Metric?.Value
+  );
+
+  return {
+    date: c.LocalObservationDateTime,
+    type: 'observation',
+    ...(typeof c.WeatherText === 'string' && { description: c.WeatherText }),
+    outside,
+    ...(wind !== undefined && { wind }),
+  };
 }

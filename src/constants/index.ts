@@ -378,6 +378,9 @@ export const ACCUWEATHER = {
 export const FORECAST_CACHE = {
   HOURLY_TTL_MS: 30 * 60 * 1000,
   DAILY_TTL_MS: 3 * 60 * 60 * 1000,
+  // Current conditions update roughly hourly upstream; a 10-minute floor keeps a
+  // polling observations consumer from spending a call per request per position.
+  OBSERVATION_TTL_MS: 10 * 60 * 1000,
 } as const;
 
 // ===============================
