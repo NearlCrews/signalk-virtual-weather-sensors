@@ -39,6 +39,10 @@ no signup. Existing AccuWeather installs are preserved unchanged on upgrade.
   The marine deltas carry a distinct `open-meteo-marine` `$source` so the model
   sea temperature and current yield to a real sensor under source priorities,
   and inland points (no marine data) emit nothing.
+- **v2 Weather API observations.** With an AccuWeather key, the `observations`
+  endpoint now serves current conditions for the requested position (including
+  pressure and pressure tendency the forecasts do not carry) instead of
+  returning an error, on a short-TTL quota-aware cache.
 
 ### Changed
 
