@@ -244,7 +244,7 @@ export default function createPlugin(app: ServerAPI): Plugin {
           type: 'integer',
           title: 'Daily API Call Quota',
           description:
-            'Cap on AccuWeather calls in any rolling 24-hour window. AccuWeather free tier allows 50/day. Set to 0 to disable the cap and quota warnings.',
+            'Cap on AccuWeather calls in any rolling 24-hour window (applies only when AccuWeather is the weather source). Defaults to 50/day; set to 0 to disable the cap and quota warnings.',
           default: CONFIG_DEFAULTS.DAILY_API_QUOTA,
           minimum: CONFIG_DEFAULTS.DAILY_API_QUOTA_MIN,
           maximum: CONFIG_DEFAULTS.DAILY_API_QUOTA_MAX,
@@ -989,8 +989,8 @@ function registerPanelRoutes(router: IRouter, instance: PluginInstance): void {
   // apply its security strategy to plugin routers, so this endpoint is
   // effectively unauthenticated: any client that can reach the server can
   // drive it, and each call costs one upstream AccuWeather request. The
-  // limiter caps a flood at 10 calls/minute, well under the free-tier daily
-  // allowance. /api/status is likewise unauthenticated but strictly read-only.
+  // limiter caps a flood at 10 calls/minute, well under the default daily
+  // quota. /api/status is likewise unauthenticated but strictly read-only.
   const TEST_KEY_RATE_LIMIT = 10;
   const TEST_KEY_WINDOW_MS = 60_000;
   const testKeyHits: number[] = [];
