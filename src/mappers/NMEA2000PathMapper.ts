@@ -3,10 +3,16 @@
  * Maps comprehensive weather data to standardized NMEA2000 Signal K paths.
  */
 
-import type { Delta, Meta, PathValue } from '@signalk/server-api';
+import type { Delta, Meta, PathValue, SourceRef } from '@signalk/server-api';
 import { NOTIFICATION_PATHS, SIGNALK_PATHS, UNITS } from '../constants/index.js';
 import type { Logger, WeatherData } from '../types/index.js';
-import { buildMetaDelta as buildSkMetaDelta, buildValuesDelta, me, pv } from '../utils/skDelta.js';
+import {
+  ACCUWEATHER_SOURCE,
+  buildMetaDelta as buildSkMetaDelta,
+  buildValuesDelta,
+  me,
+  pv,
+} from '../utils/skDelta.js';
 import { NMEA2000Validator } from '../utils/validation.js';
 
 /**
@@ -260,9 +266,12 @@ const NOTIFICATION_META: ReadonlyArray<Meta> = [
  */
 export class NMEA2000PathMapper {
   private readonly logger: Logger;
+  /** `$source` stamped on every delta this mapper builds; identifies the active provider. */
+  private readonly sourceRef: SourceRef;
 
-  constructor(logger: Logger = () => {}) {
+  constructor(logger: Logger = () => {}, sourceRef: SourceRef = ACCUWEATHER_SOURCE) {
     this.logger = logger;
+    this.sourceRef = sourceRef;
     this.logger('debug', 'NMEA2000PathMapper initialized');
   }
 
@@ -301,7 +310,7 @@ export class NMEA2000PathMapper {
 
     // Carries the observation timestamp through to consumers; emission-time
     // restamping for re-broadcast happens at the plugin entry point.
-    return buildValuesDelta(values, sanitizedData.timestamp);
+    return buildValuesDelta(values, sanitizedData.timestamp, this.sourceRef);
   }
 
   /**
@@ -310,7 +319,10 @@ export class NMEA2000PathMapper {
    * responsible for sending it exactly once per mapper instance.
    */
   public buildMetaDelta(): Delta {
-    return buildSkMetaDelta([...NON_CANONICAL_META, ...CANONICAL_LEAF_META, ...NOTIFICATION_META]);
+    return buildSkMetaDelta(
+      [...NON_CANONICAL_META, ...CANONICAL_LEAF_META, ...NOTIFICATION_META],
+      this.sourceRef
+    );
   }
 
   private addCoreEnvironmentalPaths(values: PathValue[], data: WeatherData): void {

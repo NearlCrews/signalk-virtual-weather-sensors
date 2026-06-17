@@ -6,7 +6,7 @@ This document outlines the steps for creating a new release of Signal K Virtual 
 
 Recent 1.4.x and 1.5.x releases used this short flow:
 
-1. On `main`: bump `package.json` version, add a `## [X.Y.Z]` section in `CHANGELOG.md`, and overwrite the README `## What's New in vX.Y.Z` section with that CHANGELOG entry's lead paragraph (update the heading version and the `#xyz` changelog anchor). The README always carries only the latest release; full history stays in `CHANGELOG.md`.
+1. On `main`: bump `package.json` version, add a `## [X.Y.Z]` section in `CHANGELOG.md` with an `<a id="vXYZ"></a>` anchor above it, and overwrite the README `## What's new in X.Y.Z` section from that CHANGELOG entry (a one-sentence lead, 3 to 5 bolded bullets, and the closing changelog links; update the heading version and the `#vXYZ` anchor). The README always carries only the latest release; full history stays in `CHANGELOG.md`.
 2. Run `npm run validate && npm run build` locally.
 3. Commit on `main`: `chore: release vX.Y.Z`.
 4. Run `npm run release`. This script tags `vX.Y.Z`, pushes the tag and the main commit, then runs `npm run create-release` (`gh release create vX.Y.Z --generate-notes`).
@@ -28,7 +28,7 @@ The longer release-branch + PR workflow below is aspirational best practice for 
 ### Documentation
 
 - [ ] `README.md` is up to date with new features
-- [ ] README `## What's New in vX.Y.Z` section overwritten with the new release summary
+- [ ] README `## What's new in X.Y.Z` section overwritten with the new release summary
 - [ ] `CHANGELOG.md` is updated with version and changes
 - [ ] `DEVELOPMENT.md` reflects current development practices
 - [ ] All code has JSDoc comments for public APIs

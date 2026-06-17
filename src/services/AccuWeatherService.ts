@@ -12,6 +12,8 @@ import {
   PLUGIN,
   UNITS,
 } from '../constants/index.js';
+import { accuWeatherSevereCondition } from '../providers/accuweather-severity.js';
+import type { CurrentWeatherProvider } from '../providers/WeatherProvider.js';
 import type {
   AccuWeatherConfig,
   AccuWeatherCurrentConditions,
@@ -27,6 +29,7 @@ import {
   calculateAbsoluteHumidity,
   calculateAirDensity,
   calculateBeaufortScale,
+  calculateHeatStressIndex,
   celsiusToKelvin,
   degreesToRadians,
   isApiQuotaReached,
@@ -35,7 +38,6 @@ import {
   isValidPressure,
   isValidTemperature,
   isValidWindSpeed,
-  kelvinToCelsius,
   kmhToMS,
   millibarsToPA,
   normalizeAngle0To2Pi,
@@ -115,28 +117,6 @@ const MAX_RETRY_AFTER_MS = 60_000;
 const REQUEST_WINDOW_HOURS = 24;
 /** Hour expressed in milliseconds, used by the rolling window rotation. */
 const HOUR_MS = 60 * 60 * 1000;
-
-/**
- * US military WBGT flag cutoffs in Celsius (green, yellow, red, black). A
- * precautionary bias on a crew-safety index favours these standard flag values
- * over looser bands that would activate each warning roughly 0.5 to 1.5 C late.
- */
-const WBGT_FLAG_CUTOFFS_C = {
-  GREEN: 26.7,
-  YELLOW: 27.8,
-  RED: 29.4,
-  BLACK: 32.2,
-} as const;
-
-/** Heat-stress index (0 low to 4 extreme) from wet-bulb globe temperature, banded on the WBGT military flags. */
-function calculateHeatStressIndex(wetBulbGlobeTemperatureK: number): number {
-  const wbgtC = kelvinToCelsius(wetBulbGlobeTemperatureK);
-  if (wbgtC < WBGT_FLAG_CUTOFFS_C.GREEN) return 0;
-  if (wbgtC < WBGT_FLAG_CUTOFFS_C.YELLOW) return 1;
-  if (wbgtC < WBGT_FLAG_CUTOFFS_C.RED) return 2;
-  if (wbgtC < WBGT_FLAG_CUTOFFS_C.BLACK) return 3;
-  return 4;
-}
 
 /**
  * Decode the optional enhanced-temperature fields, all in Kelvin. Free-tier
@@ -248,7 +228,12 @@ function extractConditionDetails(conditions: AccuWeatherCurrentConditions): Part
  * Provides a type-safe interface to the AccuWeather REST API with location and
  * forecast caching, retry and backoff, and rolling-24h quota tracking.
  */
-export class AccuWeatherService {
+export class AccuWeatherService implements CurrentWeatherProvider {
+  /** Provider name for the v2 registration and logs. */
+  public readonly name = PLUGIN.PROVIDER_NAME;
+  /** `$source` stamped on AccuWeather-sourced deltas. */
+  public readonly sourceRef = PLUGIN.SOURCE_REF;
+
   private readonly config: AccuWeatherConfig;
   private readonly logger: Logger;
   private locationCache = new Map<string, { location: AccuWeatherLocation; timestamp: number }>();
@@ -405,6 +390,35 @@ export class AccuWeatherService {
       quotaExhausted,
       () => this.fetchDailyForecast(locationKey)
     );
+  }
+
+  /**
+   * Fetch current conditions for an ARBITRARY position, for the v2 Weather API
+   * observations endpoint (which passes a caller-supplied lat/lon, not the
+   * vessel position). Quota-aware and cached on a short TTL like the forecast
+   * methods, reusing the location-key cache and the rolling request window, so a
+   * polling observations consumer does not exhaust the key. Returns the first
+   * (current) conditions record.
+   */
+  public async getCurrentConditionsForLocation(
+    location: GeoLocation
+  ): Promise<AccuWeatherCurrentConditions> {
+    this.validateLocation(location);
+    const quotaExhausted = this.isQuotaExhausted();
+    const locationKey = await this.resolveLocationKeyForForecast(location, quotaExhausted);
+    const conditions = await this.cachedForecastFetch(
+      `observation:${locationKey}`,
+      FORECAST_CACHE.OBSERVATION_TTL_MS,
+      quotaExhausted,
+      () => this.getCurrentConditions(locationKey)
+    );
+    const first = conditions[0];
+    if (!first) {
+      throw new Error(
+        `${ERROR_CODES.DATA.INVALID_WEATHER_DATA}: No current conditions data available`
+      );
+    }
+    return first;
   }
 
   /**
@@ -619,6 +633,10 @@ export class AccuWeatherService {
       enhancedTemps.wetBulbGlobeTemperature !== undefined
         ? calculateHeatStressIndex(enhancedTemps.wetBulbGlobeTemperature)
         : undefined;
+    // Normalize the AccuWeather icon code into a provider-agnostic severe
+    // condition here, at the provider boundary, so the notifier never decodes
+    // an AccuWeather-specific value.
+    const severeCondition = accuWeatherSevereCondition(enhancedConditions.weatherIcon);
 
     // Beaufort is a sustained-wind scale (WMO): a gust must not inflate it.
     const beaufortScale = calculateBeaufortScale(windSpeed);
@@ -647,6 +665,7 @@ export class AccuWeatherService {
       ...enhancedConditions,
       ...conditionDetails,
       ...(heatStressIndex !== undefined && { heatStressIndex }),
+      ...(severeCondition !== undefined && { severeCondition }),
     };
 
     // Validate transformed data

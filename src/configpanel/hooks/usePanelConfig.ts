@@ -5,7 +5,9 @@ import { useCallback, useState } from 'react';
 import {
   CONFIG_DEFAULTS,
   DEFAULT_NOTIFICATIONS,
+  DEFAULT_WEATHER_PROVIDER,
   validateKeyLength,
+  type WeatherProviderId,
 } from '../../constants/notifications-shared.js';
 import type {
   NotificationsConfig,
@@ -37,14 +39,20 @@ export interface SaveAction {
  */
 function formStateFromConfig(c: unknown): PanelFormState {
   const cfg = (c ?? {}) as {
+    weatherProvider?: WeatherProviderId;
     accuWeatherApiKey?: string;
+    openMeteoBaseUrl?: string;
+    marineData?: boolean;
     updateFrequency?: number;
     emissionInterval?: number;
     dailyApiQuota?: number;
     notifications?: Partial<NotificationsFormState>;
   };
   return {
+    weatherProvider: cfg.weatherProvider ?? DEFAULT_WEATHER_PROVIDER,
     accuWeatherApiKey: cfg.accuWeatherApiKey || '',
+    openMeteoBaseUrl: cfg.openMeteoBaseUrl ?? '',
+    marineData: cfg.marineData ?? false,
     updateFrequency: cfg.updateFrequency ?? CONFIG_DEFAULTS.UPDATE_FREQUENCY,
     emissionInterval: cfg.emissionInterval ?? CONFIG_DEFAULTS.EMISSION_INTERVAL,
     dailyApiQuota: cfg.dailyApiQuota ?? CONFIG_DEFAULTS.DAILY_API_QUOTA,
@@ -57,7 +65,10 @@ function formStateFromConfig(c: unknown): PanelFormState {
 // key-order drift.
 function formsEqual(a: PanelFormState, b: PanelFormState): boolean {
   return (
+    a.weatherProvider === b.weatherProvider &&
     a.accuWeatherApiKey === b.accuWeatherApiKey &&
+    a.openMeteoBaseUrl === b.openMeteoBaseUrl &&
+    a.marineData === b.marineData &&
     a.updateFrequency === b.updateFrequency &&
     a.emissionInterval === b.emissionInterval &&
     a.dailyApiQuota === b.dailyApiQuota &&
@@ -188,6 +199,7 @@ export function usePanelConfig(
       const payload: PanelFormState = {
         ...form,
         accuWeatherApiKey: trimmedKey,
+        openMeteoBaseUrl: form.openMeteoBaseUrl.trim(),
         notifications: { ...form.notifications },
       };
       await Promise.resolve(hostSave(payload));

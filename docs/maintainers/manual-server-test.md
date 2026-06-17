@@ -6,8 +6,8 @@ Reproducible end-to-end check of `signalk-virtual-weather-sensors` running again
 
 - [ ] **Signal K server version recorded.** Run `signalk-server --version` on the host. The plugin depends on `@signalk/server-api >=2.24.0` (per `package.json` `peerDependencies`), which the server provides at runtime.
 - [ ] **Server is running and reachable.** Default Admin UI is at `http://<host>:3000/admin/`.
-- [ ] **AccuWeather API key in hand.** Free key from <https://developer.accuweather.com/>. Free tier is sufficient: the plugin tolerates the missing `Precip1hr` / `Past24HourTemperatureDeparture` fields.
-- [ ] **Vessel `navigation.position` is being published.** The plugin needs a position to query AccuWeather. Confirm in the Admin UI **Data Browser** that `vessels.self.navigation.position` has a current value (any source: GPS, sim, or manual `PUT`).
+- [ ] **AccuWeather API key in hand.** Get a key from <https://developer.accuweather.com/>. This checklist exercises the AccuWeather source; the default source is keyless Open-Meteo, which emits `$source: open-meteo` with a smaller field set. The plugin tolerates the missing `Precip1hr` / `Past24HourTemperatureDeparture` fields some keys do not include.
+- [ ] **Vessel `navigation.position` is being published.** The plugin needs a position to query the weather provider. Confirm in the Admin UI **Data Browser** that `vessels.self.navigation.position` has a current value (any source: GPS, sim, or manual `PUT`).
 - [ ] **Plugin built locally.** From the repo root: `npm install && npm run build`. Confirm `dist/index.js` exists.
 - [ ] **Plugin symlinked into the server.** `ln -s "$(pwd)" ~/.signalk/node_modules/signalk-virtual-weather-sensors`. Restart the server: `sudo systemctl restart signalk` (or whatever supervises it).
 - [ ] **Plugin appears in Admin UI.** Open **Server -> Plugin Config**. Confirm an entry titled **Signal K Virtual Weather Sensors** is listed.
@@ -16,11 +16,12 @@ Reproducible end-to-end check of `signalk-virtual-weather-sensors` running again
 
 - [ ] Open **Server -> Plugin Config -> Signal K Virtual Weather Sensors**.
 - [ ] Toggle **Active** on.
-- [ ] The panel shows a **Status** card followed by three collapsed sections (**AccuWeather API key**, **Fetch and emission cadence**, **Severe-weather notifications**). Click a section header to expand it before editing its fields.
+- [ ] The panel shows a **Status** card followed by three collapsed sections (**Weather source**, **Fetch and emission cadence**, **Severe-weather notifications**). Click a section header to expand it before editing its fields.
+- [ ] In **Weather source**, set **Provider** to the AccuWeather option. The default is Open-Meteo (keyless); selecting AccuWeather reveals the **AccuWeather API Key** field and emits `$source: accuweather`, which the rest of this checklist verifies.
 - [ ] Paste the AccuWeather key into **AccuWeather API Key**.
 - [ ] Leave **Update Frequency (minutes)** at the default `30` for the test run (or temporarily lower it to 1 to speed up verification, then restore before regular use).
 - [ ] Leave **Broadcast interval (seconds)** at the default `5` for the test run.
-- [ ] Leave **Daily API Call Quota** at the default `50` for a free-tier check, OR raise it to your paid-tier limit to skip the quota verification step at the end.
+- [ ] Leave **Daily API Call Quota** at the default `50` for a default-quota check, OR raise it to your plan limit to skip the quota verification step at the end.
 - [ ] Click **Save** in the sticky footer (enabled once the form has unsaved changes). The plugin restarts and the panel confirms the restart.
 - [ ] Within ~10 seconds the status banner under the plugin name should change from `Stopped` to `Running, awaiting first update` (or `Running, awaiting first update (0/50 today)` when the quota is on).
 - [ ] Within `Update Frequency` minutes (default 30; the plugin schedules its first fetch on a short startup timer roughly 5 seconds after start) the banner should switch to `Running, last update just now (1 update, 2 API requests)` (the first cycle costs one location-search call plus one current-conditions call). With `dailyApiQuota > 0` the suffix gains `, 2/50 today`. Subsequent updates show `(N updates, M API requests, M/Q today)` with the counters climbing.
@@ -53,13 +54,13 @@ Open **Server -> Data Browser**. Filter by `vessels.self`. For each path below c
 - [ ] `environment.weather.cloudCover` (ratio 0 to 1)
 - [ ] `environment.weather.cloudCeiling` (m)
 - [ ] `environment.weather.absoluteHumidity` (kg/m3)
-- [ ] `environment.weather.realFeel` (K, AccuWeather RealFeel; may be absent on free-tier)
+- [ ] `environment.weather.realFeel` (K, AccuWeather RealFeel; may be absent on some plans)
 - [ ] `environment.weather.realFeelShade` (K)
 - [ ] `environment.weather.wetBulbTemperature` (K)
 - [ ] `environment.weather.wetBulbGlobeTemperature` (K)
 - [ ] `environment.weather.apparentTemperature` (K)
-- [ ] `environment.weather.temperatureDeparture24h` (K delta, may be absent on free-tier; data browser should show a Kelvin delta, not an absolute temperature)
-- [ ] `environment.weather.precipitationLastHour` (m, may be absent on free-tier; data browser should show mm, not miles)
+- [ ] `environment.weather.temperatureDeparture24h` (K delta, may be absent on some plans; data browser should show a Kelvin delta, not an absolute temperature)
+- [ ] `environment.weather.precipitationLastHour` (m, may be absent on some plans; data browser should show mm, not miles)
 - [ ] `environment.weather.speedGust` (m/s)
 - [ ] `environment.weather.gustFactor` (ratio, may be absent when wind is calm)
 - [ ] `environment.weather.windSpeedApparent` (m/s, present only when `navigation.speedOverGround` and a course over ground are available)
@@ -70,6 +71,15 @@ Open **Server -> Data Browser**. Filter by `vessels.self`. For each path below c
 ### Meta verification
 
 - [ ] In the Data Browser, click any `environment.weather.*` path. The right-hand details panel shows `units` (e.g. `K`, `m`, `m/s`, `ratio`) and a `displayName`. Confirm both are populated. The plugin ships these once at startup via a meta delta.
+
+### Optional: sea state (`environment.water.*`, when **Emit sea state** is on)
+
+Enable **Emit sea state** in **Weather source**, save, and (for a coastal or offshore position) confirm these appear with `$source: open-meteo-marine`. Inland points have no marine data, so the layer emits nothing there.
+
+- [ ] `environment.water.temperature` (K)
+- [ ] `environment.current` (object node with `drift` in m/s and `setTrue` in rad)
+- [ ] `environment.water.waves.significantHeight` (m), `waves.period` (s), and `waves.direction` (rad)
+- [ ] `environment.water.swell.height` (m), `swell.period` (s), and `swell.direction` (rad)
 
 ## 3. Status banner verification
 

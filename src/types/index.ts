@@ -3,6 +3,8 @@
  * Provides comprehensive type safety for AccuWeather API integration and NMEA2000 data
  */
 
+import type { WeatherProviderId } from '../constants/notifications-shared.js';
+
 // ===============================
 // Weather Data Types
 // ===============================
@@ -87,11 +89,19 @@ export interface WeatherData {
   /** Human-readable weather description (e.g. "Partly cloudy"). */
   readonly description?: string;
   /**
-   * AccuWeather icon code (1..44) used by the notification state machine to
-   * detect severe-condition categories. Stored on WeatherData so downstream
-   * notifiers do not have to re-parse the original API response.
+   * AccuWeather icon code (1..44). Retained as provider provenance; the
+   * notifier no longer reads it (see `severeCondition`). Open-Meteo and other
+   * providers leave it unset.
    */
   readonly weatherIcon?: number;
+  /**
+   * Provider-agnostic severe-condition classification, set by each provider's
+   * transform from its own condition encoding (AccuWeather icon code,
+   * Open-Meteo WMO weather code). The notifier's severe band consumes this so
+   * it never has to know a provider-specific code. Absent when the current
+   * condition is benign.
+   */
+  readonly severeCondition?: SevereCondition;
   /** ISO 8601 timestamp of measurement */
   readonly timestamp: string;
 
@@ -112,6 +122,18 @@ export interface WeatherData {
   readonly precipitationType?: string;
   /** Obstruction reducing visibility (e.g. "Fog", "Haze", "Smoke"). */
   readonly visibilityObstruction?: string;
+}
+
+/**
+ * Provider-agnostic severe-condition classification carried on `WeatherData`.
+ * `state` is the notification severity the severe band should raise; `label`
+ * is the human-readable lead-in for the notification message (e.g.
+ * `Thunderstorms`). Each provider's transform produces this from its own
+ * condition encoding so the notifier stays provider-neutral.
+ */
+export interface SevereCondition {
+  readonly state: NotificationState;
+  readonly label: string;
 }
 
 /**
@@ -180,8 +202,32 @@ export interface NotificationsConfig {
  * `ConfigurationValidator` in `utils/validation.ts`.
  */
 export interface PluginConfiguration {
-  /** AccuWeather API key (required) */
+  /**
+   * Selected weather source. New installs default to `open-meteo` (keyless);
+   * an existing AccuWeather install is preserved on upgrade. See
+   * `resolveWeatherProvider`.
+   */
+  readonly weatherProvider: WeatherProviderId;
+
+  /**
+   * AccuWeather API key. Empty string when using a keyless provider
+   * (`open-meteo`); required only when `weatherProvider` is `accuweather`.
+   */
   readonly accuWeatherApiKey: string;
+
+  /**
+   * Open-Meteo host override (empty string uses the default public host). Lets
+   * a commercial user point at a self-hosted or paid Open-Meteo instance, since
+   * the free public service is non-commercial.
+   */
+  readonly openMeteoBaseUrl: string;
+
+  /**
+   * Emit the optional sea-state layer (waves, swell, sea surface temperature,
+   * surface current) from the keyless Open-Meteo Marine API. Off by default; it
+   * is a separate fetch and only meaningful for coastal and offshore vessels.
+   */
+  readonly marineData: boolean;
 
   /** Weather data update frequency in minutes (default: 30; see CONFIG_DEFAULTS). */
   readonly updateFrequency: number;
@@ -391,6 +437,89 @@ export interface AccuWeatherCurrentConditions {
   readonly PrecipitationType?: string | null;
   /** Obstruction reducing visibility (e.g. "Fog"); empty string when none. */
   readonly ObstructionsToVisibility?: string;
+}
+
+/**
+ * Open-Meteo `/v1/forecast` current-block response. Only the fields the plugin
+ * maps are typed, and all are optional because Open-Meteo omits a variable when
+ * it is not requested or is unavailable for the point. The service requests
+ * `wind_speed_unit=ms`, so `wind_speed_10m` and `wind_gusts_10m` are m/s;
+ * `pressure_msl` is hPa, temperatures are Celsius, `visibility` is meters, and
+ * `cloud_cover` and `relative_humidity_2m` are percentages.
+ */
+export interface OpenMeteoCurrentResponse {
+  readonly current?: {
+    readonly time?: string;
+    readonly temperature_2m?: number;
+    readonly relative_humidity_2m?: number;
+    readonly apparent_temperature?: number;
+    readonly precipitation?: number;
+    readonly weather_code?: number;
+    readonly cloud_cover?: number;
+    readonly pressure_msl?: number;
+    readonly wind_speed_10m?: number;
+    readonly wind_direction_10m?: number;
+    readonly wind_gusts_10m?: number;
+    readonly dew_point_2m?: number;
+    readonly visibility?: number;
+    readonly uv_index?: number;
+  };
+}
+
+/**
+ * Sea-state data in SI units, sourced from Open-Meteo Marine independently of
+ * the atmospheric provider. All fields are optional: the marine model has no
+ * data for inland points, and a partial response carries only what is present.
+ * Directions follow the plugin's conventions: wave and swell directions are the
+ * direction the waves come FROM (true, like wind); the surface-current direction
+ * is the set (the direction the current flows TOWARD, true), matching the Signal
+ * K `environment.current.setTrue` semantics.
+ */
+export interface MarineData {
+  /** ISO 8601 timestamp of the marine reading. */
+  readonly timestamp: string;
+  /** Significant wave height in meters. */
+  readonly significantWaveHeight?: number;
+  /** Mean wave direction (from) in radians, true. */
+  readonly waveDirection?: number;
+  /** Mean wave period in seconds. */
+  readonly wavePeriod?: number;
+  /** Wind-wave (locally generated) height in meters. */
+  readonly windWaveHeight?: number;
+  /** Swell height in meters. */
+  readonly swellHeight?: number;
+  /** Swell direction (from) in radians, true. */
+  readonly swellDirection?: number;
+  /** Swell period in seconds. */
+  readonly swellPeriod?: number;
+  /** Sea surface temperature in Kelvin. */
+  readonly seaSurfaceTemperature?: number;
+  /** Surface current speed (drift) in m/s. */
+  readonly surfaceCurrentSpeed?: number;
+  /** Surface current set (direction flowing toward) in radians, true. */
+  readonly surfaceCurrentDirection?: number;
+}
+
+/**
+ * Open-Meteo Marine `/v1/marine` current-block response. Only the fields the
+ * plugin maps are typed, all optional. Wave and swell heights are meters,
+ * periods seconds, directions degrees; `ocean_current_velocity` is km/h and
+ * `sea_surface_temperature` is Celsius.
+ */
+export interface OpenMeteoMarineResponse {
+  readonly current?: {
+    readonly time?: string;
+    readonly wave_height?: number;
+    readonly wave_direction?: number;
+    readonly wave_period?: number;
+    readonly wind_wave_height?: number;
+    readonly swell_wave_height?: number;
+    readonly swell_wave_direction?: number;
+    readonly swell_wave_period?: number;
+    readonly ocean_current_velocity?: number;
+    readonly ocean_current_direction?: number;
+    readonly sea_surface_temperature?: number;
+  };
 }
 
 /**

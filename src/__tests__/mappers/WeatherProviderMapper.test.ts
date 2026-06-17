@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { mapDailyToForecasts, mapHourlyToForecasts } from '../../mappers/WeatherProviderMapper.js';
+import {
+  mapCurrentToObservation,
+  mapDailyToForecasts,
+  mapHourlyToForecasts,
+} from '../../mappers/WeatherProviderMapper.js';
 import type {
+  AccuWeatherCurrentConditions,
   AccuWeatherDailyForecastResponse,
   AccuWeatherHourlyForecast,
 } from '../../types/index.js';
@@ -139,5 +144,57 @@ describe('mapDailyToForecasts', () => {
     expect(f?.wind).toBeUndefined();
     expect(f?.sun).toBeUndefined();
     expect(f?.description).toBeUndefined();
+  });
+});
+
+describe('mapCurrentToObservation', () => {
+  const current = {
+    LocalObservationDateTime: '2026-06-17T12:00:00+00:00',
+    WeatherText: 'Mostly cloudy',
+    Temperature: { Metric: { Value: 18, Unit: 'C' } },
+    DewPoint: { Metric: { Value: 12, Unit: 'C' } },
+    RealFeelTemperature: { Metric: { Value: 17, Unit: 'C' } },
+    RelativeHumidity: 70,
+    Pressure: { Metric: { Value: 1012, Unit: 'mb' } },
+    PressureTendency: { Code: 'R' },
+    Visibility: { Metric: { Value: 16, Unit: 'km' } },
+    UVIndexFloat: 4,
+    CloudCover: 80,
+    Precip1hr: { Metric: { Value: 2, Unit: 'mm' } },
+    PrecipitationType: 'Rain',
+    Wind: { Speed: { Metric: { Value: 36, Unit: 'km/h' } }, Direction: { Degrees: 90 } },
+    WindGust: { Speed: { Metric: { Value: 54, Unit: 'km/h' } } },
+  } as unknown as AccuWeatherCurrentConditions;
+
+  it('maps the observation envelope with pressure, tendency, and wind', () => {
+    const obs = mapCurrentToObservation(current);
+    expect(obs.type).toBe('observation');
+    expect(obs.date).toBe('2026-06-17T12:00:00+00:00');
+    expect(obs.description).toBe('Mostly cloudy');
+    expect(obs.outside?.temperature).toBeCloseTo(291.15, 2);
+    expect(obs.outside?.dewPointTemperature).toBeCloseTo(285.15, 2);
+    expect(obs.outside?.feelsLikeTemperature).toBeCloseTo(290.15, 2);
+    expect(obs.outside?.relativeHumidity).toBeCloseTo(0.7, 3);
+    expect(obs.outside?.pressure).toBeCloseTo(101200, 0);
+    expect(obs.outside?.pressureTendency).toBe('increasing');
+    expect(obs.outside?.horizontalVisibility).toBeCloseTo(16000, 0);
+    expect(obs.outside?.uvIndex).toBe(4);
+    expect(obs.outside?.cloudCover).toBeCloseTo(0.8, 3);
+    expect(obs.outside?.precipitationVolume).toBeCloseTo(0.002, 6);
+    expect(obs.outside?.precipitationType).toBe('rain');
+    expect(obs.wind?.speedTrue).toBeCloseTo(10, 2);
+    expect(obs.wind?.directionTrue).toBeCloseTo(Math.PI / 2, 5);
+    expect(obs.wind?.gust).toBeCloseTo(15, 2);
+  });
+
+  it('omits absent blocks', () => {
+    const sparse = {
+      LocalObservationDateTime: 't',
+      Temperature: { Metric: { Value: 10, Unit: 'C' } },
+    } as unknown as AccuWeatherCurrentConditions;
+    const obs = mapCurrentToObservation(sparse);
+    expect(obs.outside?.pressure).toBeUndefined();
+    expect(obs.outside?.pressureTendency).toBeUndefined();
+    expect(obs.wind).toBeUndefined();
   });
 });

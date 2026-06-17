@@ -152,6 +152,7 @@ ${DARK_TOKENS}}
 .svws-panel[data-svws-theme="night"] {
 ${NIGHT_TOKENS}}
 .svws-panel input:focus-visible,
+.svws-panel select:focus-visible,
 .svws-panel button:focus-visible,
 .svws-panel a:focus-visible {
   outline: 2px solid var(--svws-accent);
@@ -171,7 +172,8 @@ ${NIGHT_TOKENS}}
    interactive elements get a shared brightness response here, with a short
    transition so the shift reads as a response rather than a flicker.
    Disabled buttons opt out. */
-.svws-panel input {
+.svws-panel input,
+.svws-panel select {
   transition:
     background-color 120ms ease,
     border-color 120ms ease;

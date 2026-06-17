@@ -94,7 +94,7 @@ export default function ApiKeyField({ value, keyError, onChange }: Props): React
         </button>
       </div>
       <p style={S.help}>
-        Get one free at{' '}
+        Get a key at{' '}
         <a
           style={S.link}
           href="https://developer.accuweather.com/"

@@ -9,10 +9,12 @@ import {
   calculateAbsoluteHumidity,
   calculateAirDensity,
   calculateBeaufortScale,
+  calculateHeatStressIndex,
   calculateSaturationVaporPressure,
   celsiusToKelvin,
   clamp,
   degreesToRadians,
+  estimateWetBulbGlobeTemperature,
   fahrenheitToKelvin,
   isApiQuotaReached,
   isValidCoordinates,
@@ -259,6 +261,38 @@ describe('Atmospheric calculations', () => {
       // `<` to `<=` would push 0.3 into scale 0 instead of 1.
       expect(calculateBeaufortScale(0.299)).toBe(0);
       expect(calculateBeaufortScale(0.3)).toBe(1);
+    });
+  });
+});
+
+describe('Heat stress', () => {
+  describe('calculateHeatStressIndex', () => {
+    it('bands WBGT (Kelvin) onto the 0..4 military-flag scale', () => {
+      expect(calculateHeatStressIndex(celsiusToKelvin(25))).toBe(0);
+      expect(calculateHeatStressIndex(celsiusToKelvin(27))).toBe(1);
+      expect(calculateHeatStressIndex(celsiusToKelvin(28))).toBe(2);
+      expect(calculateHeatStressIndex(celsiusToKelvin(30))).toBe(3);
+      expect(calculateHeatStressIndex(celsiusToKelvin(33))).toBe(4);
+    });
+    it('applies the green cutoff near 26.7 C (mutation guard)', () => {
+      // GREEN cutoff is 26.7 C: just below stays 0, just above crosses to 1.
+      // Values are offset to avoid Celsius/Kelvin float round-trip noise at the
+      // exact boundary.
+      expect(calculateHeatStressIndex(celsiusToKelvin(26.65))).toBe(0);
+      expect(calculateHeatStressIndex(celsiusToKelvin(26.75))).toBe(1);
+    });
+  });
+
+  describe('estimateWetBulbGlobeTemperature', () => {
+    it('estimates a hot, humid shade WBGT near 32.6 C at 30 C / 70% RH', () => {
+      const wbgtC = kelvinToCelsius(estimateWetBulbGlobeTemperature(celsiusToKelvin(30), 0.7));
+      expect(wbgtC).toBeGreaterThan(32);
+      expect(wbgtC).toBeLessThan(33);
+    });
+    it('rises with humidity at the same air temperature', () => {
+      const dry = estimateWetBulbGlobeTemperature(celsiusToKelvin(30), 0.3);
+      const humid = estimateWetBulbGlobeTemperature(celsiusToKelvin(30), 0.9);
+      expect(humid).toBeGreaterThan(dry);
     });
   });
 });

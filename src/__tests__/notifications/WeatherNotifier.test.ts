@@ -10,6 +10,7 @@
 import { describe, expect, it } from 'vitest';
 import { NOTIFICATION_PATHS } from '../../constants/index.js';
 import { MAX_MESSAGE_LENGTH, WeatherNotifier } from '../../notifications/WeatherNotifier.js';
+import { accuWeatherSevereCondition } from '../../providers/accuweather-severity.js';
 import type { NotificationsConfig, NotificationValue, WeatherData } from '../../types/index.js';
 import { createMockWeatherData } from '../setup.js';
 
@@ -26,9 +27,20 @@ function makeNotifier(overrides: Partial<NotificationsConfig> = {}): WeatherNoti
   return new WeatherNotifier({ ...ALL_ENABLED, ...overrides });
 }
 
-/** Convenience: build a WeatherData snapshot with the helpers below. */
+/**
+ * Convenience: build a WeatherData snapshot. A `weatherIcon` in the extras is
+ * translated through the AccuWeather severity mapping into the provider-agnostic
+ * `severeCondition` the notifier actually consumes, so these tests exercise the
+ * same icon-to-condition path the AccuWeather transform produces at runtime.
+ */
 function snapshot(extras: Partial<WeatherData>): WeatherData {
-  return createMockWeatherData({ ...extras });
+  const { weatherIcon, ...rest } = extras;
+  const severeCondition =
+    weatherIcon !== undefined ? accuWeatherSevereCondition(weatherIcon) : rest.severeCondition;
+  return createMockWeatherData({
+    ...rest,
+    ...(severeCondition !== undefined && { severeCondition }),
+  });
 }
 
 /** Pull the value object out of a notification PathValue for shape assertions. */

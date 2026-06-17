@@ -5,9 +5,92 @@ All notable changes to the signalk-virtual-weather-sensors project will be docum
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+<a id="v190"></a>
+
+## [1.9.0] - 2026-06-17
+
+A keyless, global weather source so the plugin works out of the box.
+AccuWeather retired its permanent free tier (it is now a 14-day trial, then a
+paid plan), so a new install defaults to Open-Meteo, which needs no API key and
+no signup. Existing AccuWeather installs are preserved unchanged on upgrade.
+
+### Added
+
+- **Open-Meteo provider, free and keyless.** A new global weather source backed
+  by national models (ECMWF, GFS, ICON, and others). It supplies temperature,
+  wind, pressure, humidity, dew point, cloud cover, UV, visibility, gusts, and
+  precipitation, and the plugin recomputes wind chill and heat index and
+  estimates the wet-bulb globe temperature so the heat-stress notification band
+  still works without a measured value.
+- **Weather-source selection.** A `weatherProvider` option (Open-Meteo or
+  AccuWeather) with a picker in the config panel. New installs default to
+  Open-Meteo; an install that already has an AccuWeather key stays on AccuWeather.
+- **Configurable Open-Meteo endpoint.** An `openMeteoBaseUrl` option so a
+  commercial user can point at a self-hosted Open-Meteo server or a paid plan
+  (the free public service is for non-commercial use).
+- **Optional sea-state layer.** A `marineData` toggle (off by default) adds a
+  keyless Open-Meteo Marine fetch, independent of the atmospheric source. It
+  emits sea surface temperature on the canonical `environment.water.temperature`
+  leaf, surface current on the canonical `environment.current` node, and waves
+  and swell (significant height, period, direction, and wind-wave height) on
+  producer-namespaced `environment.water.waves.*` / `swell.*` leaves with meta.
+  The marine deltas carry a distinct `open-meteo-marine` `$source` so the model
+  sea temperature and current yield to a real sensor under source priorities,
+  and inland points (no marine data) emit nothing.
+- **v2 Weather API observations.** With an AccuWeather key, the `observations`
+  endpoint now serves current conditions for the requested position (including
+  pressure and pressure tendency the forecasts do not carry) instead of
+  returning an error, on a short-TTL quota-aware cache.
+- **v2 Weather API warnings (US waters).** The `warnings` endpoint now serves
+  region-aware severe-weather alerts: NWS CAP active alerts for US waters
+  (keyless, best-effort), and an empty list elsewhere rather than a fabricated
+  alert. Met.no MetAlerts for Nordic waters is planned. Warnings ride the v2
+  provider, so they are exposed while AccuWeather is the active source.
+
+### Changed
+
+- **AccuWeather is now optional.** It remains a supported source for its
+  exclusive fields (RealFeel, plain-language conditions text, pressure tendency,
+  precipitation type) when a key is configured. The API key is no longer required.
+- **Per-provider `$source`.** Deltas now carry the active provider's source ref,
+  so Open-Meteo data is `$source: 'open-meteo'` while AccuWeather stays
+  `accuweather`. Existing source-priority rules keep working because an upgrade
+  never silently switches a configured AccuWeather install.
+- **The severe-condition notification is provider-agnostic.** Each source maps
+  its own condition encoding (AccuWeather icon code, Open-Meteo WMO weather code)
+  to a shared classification, so the band behaves the same regardless of source.
+- Plugin icon badge refresh: the thundercloud glyph keeps its design but the
+  cloud and lightning bolt are drawn slightly larger and bolder so the badge
+  reads better at app-store thumbnail size. The family base (deep-ocean gradient
+  and three wave lines) is unchanged, and all PNG sizes are regenerated from the
+  updated SVG.
+
+### Internal
+
+- Shared helpers consolidated with no behavior change: a single
+  `assertValidCoordinates` coordinate guard in `validation.ts`, a
+  `normalizeBaseUrl` base-URL helper and a `DEFAULT_REQUEST_TIMEOUT_MS` constant
+  in a new `http.ts`, and an `asStringOrEmpty` coercion in `conversions.ts`,
+  plus deduplicated test fixtures.
+
+### Notes
+
+- **Open-Meteo field parity.** Open-Meteo does not provide RealFeel, RealFeel
+  shade, a measured wet-bulb globe temperature (the plugin estimates the
+  heat-stress index instead), pressure tendency, precipitation type, cloud
+  ceiling, visibility obstruction, or the 24-hour temperature departure. Those
+  `environment.weather.*` leaves are emitted only under AccuWeather. The severe
+  condition text comes from WMO weather codes.
+- The Signal K v2 Weather API forecast endpoints are advertised only when
+  AccuWeather is the active source; Open-Meteo forecast support is planned.
+
+<a id="v180"></a>
+
 ## [1.8.0] - 2026-06-11
 
-A seven-lane whole-codebase cleanup audit followed by a full config-panel
+A whole-codebase cleanup followed by a full config-panel
 rebuild. The panel is now TypeScript end to end and aligned with the
 signalk-nmea2000-emitter-cannon panel architecture: design tokens with light,
 dark, and night-red themes, WCAG AA contrast, marine-sized touch targets,
@@ -48,16 +131,17 @@ and all 334 tests pass.
 
 ### Internal
 
-- **De-duplication from the audit.** The course-over-ground fallback chain reuses `readNumericSelfPath`, `capForChartplotter` reuses `truncateToCodePoints`, `pascalsToMillibars` restores converter symmetry, `withEmissionTimestamp` rebuilds through `buildValuesDelta`, `getHealthStatus` reads the clock once via a shared `hasCompleteData`, `CachedVesselData` is `readonly`, and the log sanitizer collapsed to one recursive walker with one depth policy.
+- **De-duplication.** The course-over-ground fallback chain reuses `readNumericSelfPath`, `capForChartplotter` reuses `truncateToCodePoints`, `pascalsToMillibars` restores converter symmetry, `withEmissionTimestamp` rebuilds through `buildValuesDelta`, `getHealthStatus` reads the clock once via a shared `hasCompleteData`, `CachedVesselData` is `readonly`, and the log sanitizer collapsed to one recursive walker with one depth policy.
 - **Panel render hygiene.** A healthy, unchanged status poll performs zero state writes (previously six full-tree re-renders per minute); the panel shares `toErrorText`, `clampNumber`, and `fetchJson` helpers instead of three copies of each.
 - **Tests 327 to 334.** New coverage: the stalled-body-read abort, single-flight coalescing, and tick-banner precedence.
 - **Dead code removed.** `DEFAULT_CONFIG.DAILY_API_QUOTA_MAX`, an unreachable apparent-wind fallback, a stale Zod reference, and the write-only render-trigger state in the status hook.
 
+<a id="v172"></a>
+
 ## [1.7.2] - 2026-05-31
 
-Whole-codebase cleanup pass driven by a five-agent audit (`/cleanup`):
-correctness fixes to the forecast mapper and notification clears, broad
-de-duplication, and doc-accuracy corrections. No emitted measurement path,
+Whole-codebase cleanup pass: correctness fixes to the forecast mapper and
+notification clears, broad de-duplication, and doc-accuracy corrections. No emitted measurement path,
 delta shape, public config, or notification band changed.
 
 ### Fixed
@@ -82,13 +166,15 @@ delta shape, public config, or notification band changed.
 
 - Corrected the esbuild bundle size (~98 KB) and the test count (327 across 13 files) in `docs/DEVELOPMENT.md` and `CLAUDE.md`, and the husky hook setup (now manual via `npm run hooks`) in `docs/DEVELOPMENT.md` and `.github/CONTRIBUTING.md`.
 
+<a id="v171"></a>
+
 ## [1.7.1] - 2026-05-28
 
 A small observability and cleanup release. The config panel now shows whether
 the Signal K v2 Weather API provider is registered this start cycle, via a new
 "Weather API" status card backed by a `weatherProviderRegistered` flag on the
-`/api/status` payload. The rest of the release is internal de-duplication from
-a four-agent `/simplify` pass: a shared `elapsedSinceMs` time helper, a
+`/api/status` payload. The rest of the release is internal de-duplication:
+a shared `elapsedSinceMs` time helper, a
 `ratio`-parameterized `isApiQuotaReached`, a single-sourced AccuWeather
 provider name, and consolidated AccuWeather URL building. No emitted paths,
 delta shape, or notification behavior changed, and all 326 tests pass.
@@ -104,6 +190,8 @@ delta shape, or notification behavior changed, and all 326 tests pass.
 - **AccuWeather provider name single-sourced as `PLUGIN.PROVIDER_NAME`.** The `'AccuWeather'` literal was repeated in `WeatherProviderAdapter` and the registration log; both now reference the constant so the provider identity cannot drift.
 - **Consolidated AccuWeather URL building.** New `buildApiUrl` and `buildLocationKeyUrl` helpers remove the `apikey` / `language` / `details` query-param triplet that was hand-built in three places, and the location-key path guard that was duplicated in two. The current-conditions, location-search, and forecast hops now route through them.
 - **`getHealthStatus` reads the data age once.** It derived `dataAge` and `isStale` from separate `getDataAge()` calls; both now come from a single read via a private `isAgeStale` helper, so the reported age and staleness cannot disagree across a clock tick.
+
+<a id="v170"></a>
 
 ## [1.7.0] - 2026-05-28
 
@@ -130,12 +218,12 @@ tests pass.
 
 - Promoted `asOptionalNumber` to `conversions.ts` and reused it in the forecast mapper, extracted a shared `locationCacheKey` helper and a `quotaReachedError` helper in `AccuWeatherService`, and widened `isApiQuotaReached` to treat an undefined quota as disabled.
 
+<a id="v164"></a>
+
 ## [1.6.4] - 2026-05-25
 
-A correctness and spec-polish release. A three-agent Signal K expert review of
-the whole plugin surfaced 47 findings across spec compliance, TypeScript
-lifecycle, and calculator / mapper / notifier math; 44 were fixed and three
-refuted with rationale. Highlights: every banner write now routes through the
+A correctness and spec-polish release: 44 fixes across spec compliance,
+TypeScript lifecycle, and calculator, mapper, and notifier math. Highlights: every banner write now routes through the
 plugin entry's dedupe so a flapping API or steady-state quota pause produces
 one banner per unique message rather than one per emission tick; a rejected
 API key now surfaces on the status banner and on the admin panel's `running`
@@ -179,6 +267,8 @@ and all 303 tests pass.
 - 38 new tests pin previously-uncovered cases: exact-threshold mutation guards on all four band axes (Beaufort 8 for gale-only, visibility 1852 m for `<` strictness, wind chill 273.15 K, HSI 2 for caution-only), wind-suffix gust equals sustained, visibility-suffix rain segment omitted at zero or non-finite precipitation, severe suffix missing description and missing pressure, cardinal-rose 22.5-degree boundary handling, `getActiveCount` across categories, `WindCalculator` invalid-input fallback shape, full-frame apparent-wind angle coverage including tail wind (`+pi`) and head wind (`0`), sanitizer NaN clamping on numeric fields and angles, and `apparentWindAngle` plus `windDirection` boundary folding at `+/- pi` and `2 pi`.
 - The `BannerSink` plumbing keeps `WeatherService` constructable without a sink (tests fall back to direct `app.setPlugin*` writes) so the change does not require touching every existing test fixture.
 
+<a id="v163"></a>
+
 ## [1.6.3] - 2026-05-22
 
 Corrects how precipitation and the 24-hour temperature departure are presented
@@ -190,7 +280,7 @@ speed in mph. The two surviving non-canonical paths most prone to
 mis-categorisation now ship a `displayUnits` hint so the data browser stops
 converting them: precipitation depth renders in millimetres instead of miles,
 and the 24-hour temperature departure renders as a Kelvin delta instead of an
-absolute Fahrenheit temperature. A full-codebase review pass also fixed three
+absolute Fahrenheit temperature. This release also fixes three
 latent bugs: severe-weather notification bands that could latch in an active
 state when their driver reading was missing from a partial response, an
 unguarded UV-index assignment, and a rolling-quota-window miscount after a
@@ -211,6 +301,8 @@ notification value shape, and all 265 tests pass.
 - **Severe-weather notification bands no longer latch when their driver reading is absent.** When a partial AccuWeather response omitted the wet-bulb-globe block (so `heatStressIndex` was undefined) or the visibility block, the heat and visibility evaluators returned early without driving their bands, leaving a previously active `warn`, `alarm`, or `emergency` notification stuck on the bus with no exit edge. All four scalar evaluators (wind, visibility, heat, cold) now clear their bands to `normal` when the driver reading is missing, matching the existing behaviour of the severe-condition path.
 - **UV index is guarded against a non-numeric API value.** `transformWeatherData` assigned `uvIndex` directly from `UVIndexFloat` with no type check, and the response validator never probed that field, so a `null` from a partial response could reach `environment.weather.uvIndex`. The field is now decoded with the same `typeof` guard used for the other optional conditions, and is omitted when not a number.
 - **The rolling 24h API-quota window survives a backward clock jump.** An NTP correction that moved the wall clock backward left the window's hour index stranded in the future, so subsequent requests landed in a stale bucket and aged out at the wrong time, which could falsely trip or falsely clear the quota-exhausted state. A backward jump now re-anchors the window's hour index to the corrected time.
+
+<a id="v162"></a>
 
 ## [1.6.2] - 2026-05-21
 
@@ -235,12 +327,14 @@ the delta envelope or the notification value shape, and all 259 tests pass.
 
 - **Unused validation code.** The exported `validateWeatherData` family, `isValidLatitude` / `isValidLongitude`, the internal `isValidWindDirection` helper, and the unreferenced `ERROR_CODES.SYSTEM.MEMORY_LIMIT` constant had no production caller and were removed.
 
+<a id="v161"></a>
+
 ## [1.6.1] - 2026-05-19
 
-Bug-fix release. A 12-issue review pass corrected silent failures and
-incorrect logic across the AccuWeather client, the orchestration layer, the
-notification formatter, and the Admin UI config panel, followed by a
-three-lens simplify pass. There is no change to the delta envelope or the
+Bug-fix release correcting twelve silent failures and pieces of incorrect
+logic across the AccuWeather client, the orchestration layer, the
+notification formatter, and the Admin UI config panel, plus follow-up
+cleanup. There is no change to the delta envelope or the
 notification value shape, and all 259 tests pass.
 
 ### Fixed
@@ -261,10 +355,12 @@ notification value shape, and all 259 tests pass.
 
 - **Vitest test discovery no longer scans `.claude/` worktrees**, so a local test run reflects only the project's own suite.
 
+<a id="v160"></a>
+
 ## [1.6.0] - 2026-05-16
 
-Documentation reorganization plus a three-expert codebase review (Signal K
-compliance, weather science, code quality) and its follow-up simplify pass.
+Documentation reorganization plus codebase fixes spanning Signal K
+compliance, weather science, and code quality, with follow-up cleanup.
 The Admin UI config panel also gained collapsible sections. Several
 consumer-visible path and value changes are listed under Changed; there is
 no change to the delta envelope or the notification value shape. 272 tests
@@ -293,28 +389,32 @@ pass.
 
 - **Dead `WeatherData.quality` field** and its `calculateDataQuality` computation, which were never read by any consumer or banner.
 
+<a id="v153"></a>
+
 ## [1.5.3] - 2026-05-16
 
 Documentation and maintenance release. The README is restructured for a
 cleaner npm and GitHub landing page, reference material moves into `docs/`,
-and a 4-agent full-codebase simplify pass removes duplication. No behavioral
+and a full-codebase cleanup removes duplication. No behavioral
 changes: all 275 tests pass and every `environment.*` / `notifications.*`
 delta keeps the same shape.
 
 ### Changed
 
 - **README restructured** from 245 to 129 lines so it reads as a landing page rather than a reference manual. The three Signal K path tables, the PGN table, and the two notification tables move into a new `docs/signal-k-paths.md`; the seven-entry troubleshooting catalog moves into a new `docs/troubleshooting.md`. A new Requirements section surfaces the Signal K server version, AccuWeather key, and GPS-position prerequisites. The data-flow diagram moves into `DEVELOPMENT.md`.
-- **Codebase simplify pass (4 review agents).** Behavior-preserving dedup: `SignalKService.getVesselNavigationData` delegates to `getCachedNavigationData` instead of duplicating the navigation-data assembly; `WeatherNotifier` gains a shared `evaluateDescendingBands` with `VISIBILITY_BANDS` / `COLD_BANDS` tables, replacing the copy-pasted visibility/cold evaluators; `validation.ts` numeric-config validators collapse into one `NUMERIC_CONFIG_RULES` table and the field validators share a `requireFiniteField` guard; `WeatherService.formatStatusBanner` reads the rolling 24h request count once per build; the federated panel's `doSave` routes through `fetchStatus`. Gas constants and standard air density in `conversions.ts` are now named module constants.
+- **Codebase cleanup.** Behavior-preserving dedup: `SignalKService.getVesselNavigationData` delegates to `getCachedNavigationData` instead of duplicating the navigation-data assembly; `WeatherNotifier` gains a shared `evaluateDescendingBands` with `VISIBILITY_BANDS` / `COLD_BANDS` tables, replacing the copy-pasted visibility/cold evaluators; `validation.ts` numeric-config validators collapse into one `NUMERIC_CONFIG_RULES` table and the field validators share a `requireFiniteField` guard; `WeatherService.formatStatusBanner` reads the rolling 24h request count once per build; the federated panel's `doSave` routes through `fetchStatus`. Gas constants and standard air density in `conversions.ts` are now named module constants.
 
 ### Removed
 
 - **Dead code.** `NMEA2000PathMapper.countEnhancedFields` and its 19-entry `ENHANCED_PATHS` set, which ran on every emission tick only to feed a debug-log counter.
 - **Stale docs.** `docs/app-store-status.md` (a Signal K App Store verification snapshot pinned to v1.3.2) and `TODO.md` (mostly completed checkboxes duplicating this changelog).
 
+<a id="v152"></a>
+
 ## [1.5.2] - 2026-05-12
 
-Maintenance release rolling up a 5-agent simplify pass, a SignalK-expert
-path audit, error-handling and safety hardening, and notification-message
+Maintenance release rolling up code consolidation, Signal K path
+corrections, error-handling and safety hardening, and notification-message
 enrichment. No breaking changes; existing `notifications.environment.*`
 deltas now carry richer `message` text but the same value shape. 275 tests
 pass (was 267; 8 new for the enriched messages in `WeatherNotifier.test.ts`).
@@ -346,7 +446,7 @@ pass (was 267; 8 new for the enriched messages in `WeatherNotifier.test.ts`).
 
 ### Refactored
 
-- **5-agent simplify pass and 3-agent follow-up.** Consolidated `TWO_PI` to a single export from `src/utils/conversions.ts`; added `msToWholeMinutes` and used it at 3 sites (was three inline `Math.floor(ms / 60_000)`); replaced inline range checks in `src/utils/validation.ts` with the existing `isValidTemperature` / `isValidPressure` / `isValidHumidity` / `isValidWindSpeed` / `isValidWindDirection` predicates from `conversions.ts`; refactored `WeatherService.formatStatusBanner` to build segments via `string[]` + `join(', ')` (regex strip on the leading separator is gone); flattened `BEAUFORT_THRESHOLDS` to a `readonly number[]` indexed by Beaufort number; lazy-ified the wall-clock timestamp and per-band message strings in `WeatherNotifier` so steady-state evaluations allocate nothing; dropped redundant 2nd params from the 5 `format*Suffix` helpers; replaced the file-local `ratioToPercent` with `Math.round(ratioToPercentage(...))` from conversions.ts; routed `paToHpa` through `UNITS.PRESSURE.MILLIBAR_TO_PASCAL` instead of a bare 100.
+- **Consolidation sweep.** Consolidated `TWO_PI` to a single export from `src/utils/conversions.ts`; added `msToWholeMinutes` and used it at 3 sites (was three inline `Math.floor(ms / 60_000)`); replaced inline range checks in `src/utils/validation.ts` with the existing `isValidTemperature` / `isValidPressure` / `isValidHumidity` / `isValidWindSpeed` / `isValidWindDirection` predicates from `conversions.ts`; refactored `WeatherService.formatStatusBanner` to build segments via `string[]` + `join(', ')` (regex strip on the leading separator is gone); flattened `BEAUFORT_THRESHOLDS` to a `readonly number[]` indexed by Beaufort number; lazy-ified the wall-clock timestamp and per-band message strings in `WeatherNotifier` so steady-state evaluations allocate nothing; dropped redundant 2nd params from the 5 `format*Suffix` helpers; replaced the file-local `ratioToPercent` with `Math.round(ratioToPercentage(...))` from conversions.ts; routed `paToHpa` through `UNITS.PRESSURE.MILLIBAR_TO_PASCAL` instead of a bare 100.
 
 ### Docs
 
@@ -355,7 +455,7 @@ pass (was 267; 8 new for the enriched messages in `WeatherNotifier.test.ts`).
 - **CONTRIBUTING.md, RELEASE.md**: `master` to `main` (default branch renamed 2026-05-12 was unreflected); added `configpanel/` and `notifications/` to file-organisation.
 - **SECURITY.md**: supported versions 1.4.x to 1.5.x.
 - **docs/manual-server-test.md**: default `updateFrequency` 5 to 30; auth-rejection banner text matches the new "AccuWeather rejected the configured API key" escalation.
-- **docs/app-store-status.md**: noted that the 1.3.2 snapshot is from the audit; current latest is 1.5.x.
+- **docs/app-store-status.md**: noted that the snapshot is pinned to 1.3.2; current latest is 1.5.x.
 - **`.github/pull_request_template.md`**: redirected the broken compliance-checklist anchor to `DEVELOPMENT.md#-signal-k-standards-compliance`.
 - **CLAUDE.md spec-compliance bullet**: "once per plugin lifetime" tightened to "once per start() cycle".
 
@@ -367,9 +467,11 @@ pass (was 267; 8 new for the enriched messages in `WeatherNotifier.test.ts`).
 
 - `.remember/` added to root `.gitignore` (the redundant `.remember/.gitignore` containing `*` was removed).
 
+<a id="v151"></a>
+
 ## [1.5.1] - 2026-05-12
 
-Critical fix for the v1.5.0 federated config panel, plus follow-up refinements from a third simplify pass. Operators on v1.5.0 saw a silent `Could not load module signalk-virtual-weather-sensors` in the admin UI console with the panel never rendering: the panel chunks all served 200 OK but the Module Federation library type was wrong for an ESM package. Plus a UX rename, a deduplication of label strings between the panel and the schema, and a typed `/api/status` payload. 267 tests pass (was 266; 1 new for the long-key-rejected path through `/api/test-key`).
+Critical fix for the v1.5.0 federated config panel, plus follow-up refinements. Operators on v1.5.0 saw a silent `Could not load module signalk-virtual-weather-sensors` in the admin UI console with the panel never rendering: the panel chunks all served 200 OK but the Module Federation library type was wrong for an ESM package. Plus a UX rename, a deduplication of label strings between the panel and the schema, and a typed `/api/status` payload. 267 tests pass (was 266; 1 new for the long-key-rejected path through `/api/test-key`).
 
 ### Fixed
 
@@ -392,6 +494,8 @@ Critical fix for the v1.5.0 federated config panel, plus follow-up refinements f
 ### Notes for operators on v1.5.0
 
 - The published v1.5.0 npm bundle has the broken panel. The plugin runtime works correctly on v1.5.0 (deltas emit normally, REST endpoints respond, JSON schema fallback renders for admin UIs older than 2.13), but the federated config panel never shows for admin UI v2.13+. Upgrading to v1.5.1 is recommended.
+
+<a id="v150"></a>
 
 ## [1.5.0] - 2026-05-12
 
@@ -421,6 +525,8 @@ Adds a federated React config panel: when the Signal K Admin UI v2.13+ sees the 
 - **The panel is React 19 singleton-shared.** If the Signal K Admin UI host upgrades to React 20, a matching plugin bump will be needed or the panel will fall back to its bundled React copy (still works, slightly bigger payload).
 - **Bridging notifications to NMEA 2000 Alert PGNs (126983/126985)** still requires the separate `signalk-to-nmea2000` plugin. The panel does not change this.
 
+<a id="v144"></a>
+
 ## [1.4.4] - 2026-05-12
 
 Maintenance release. Dev-deps and CI-action bumps only: the published `dist/` is byte-identical to 1.4.3 (no source code changed). Plugin behaviour, public API, and Signal K paths are unchanged.
@@ -430,9 +536,11 @@ Maintenance release. Dev-deps and CI-action bumps only: the published `dist/` is
 - `github/codeql-action` bumped from v3 to v4 in `.github/workflows/codeql.yml` (PR #9). v3 was end-of-lifed; CodeQL Default Setup was disabled in the repo settings at the same time to resolve a long-standing "advanced configurations cannot be processed when the default setup is enabled" SARIF-upload failure on every CodeQL run. Every CodeQL run on `main` is green from this release forward.
 - Dev-deps bumped via the Dependabot dev-deps group (PR #8): `@types/node` 25.6.2 to 25.7.0, `vitest` / `@vitest/coverage-v8` / `@vitest/ui` 4.1.5 to 4.1.6. The Vitest 4.1.6 release notes flag a deprecation of the `sequential` test API and one browser-test fix; neither surface is in use by this plugin's 263 tests.
 
+<a id="v143"></a>
+
 ## [1.4.3] - 2026-05-12
 
-Opt-in severe-weather notifications under `notifications.environment.*` plus the bug-fix cluster from a Signal K plugin expert audit. 263 tests pass (was 242; 21 net new: 19 in WeatherNotifier.test.ts and 2 in index.test.ts for the stale/quota emission-tick branches).
+Opt-in severe-weather notifications under `notifications.environment.*` plus a cluster of bug fixes. 263 tests pass (was 242; 21 net new: 19 in WeatherNotifier.test.ts and 2 in index.test.ts for the stale/quota emission-tick branches).
 
 ### Added
 
@@ -462,9 +570,11 @@ Opt-in severe-weather notifications under `notifications.environment.*` plus the
 - Two new emission-tick tests in `src/__tests__/index.test.ts`: stale-data branch (age past `STALENESS_FACTOR * updateFrequency` produces one `setPluginError` with the dedupe-collapsed `Weather data stale` message), quota-exhausted branch (`setPluginError` carries the quota message and takes precedence over staleness).
 - Test count: 263 across 11 files.
 
+<a id="v142"></a>
+
 ## [1.4.2] - 2026-05-11
 
-Two consecutive four-teammate Signal K plugin expert review passes (a focused UI lens on admin form / status banner / meta delta / App Store + docs, then a full-codebase lens on runtime / supporting modules / tests / docs+build) plus a parallel three-reviewer simplify pass on the resulting diff. Adds a coordinated plugin icon family across the `@NearlCrews` Signal K plugin set. 242 tests pass (was 235; 7 net new tests across banner grammar, quota messaging, `validateDailyApiQuota`, and calculator non-finite paths).
+A UI-focused fix batch covering the admin form, status banner, meta delta, and App Store presentation, followed by full-codebase fixes across the runtime, supporting modules, tests, and docs and build. Adds a coordinated plugin icon family across the `@NearlCrews` Signal K plugin set. 242 tests pass (was 235; 7 net new tests across banner grammar, quota messaging, `validateDailyApiQuota`, and calculator non-finite paths).
 
 ### Fixed
 
@@ -495,27 +605,29 @@ Two consecutive four-teammate Signal K plugin expert review passes (a focused UI
 
 ### Added
 
-- Plugin icon. 512x512 SVG source at `assets/icons/icon.svg` rasterized via `librsvg2-bin` to PNGs at 72/96/192/512. Joins a coordinated icon family across `@NearlCrews` Signal K plugins (`signalk-nmea2000-emitter-cannon`, `signalk-openrouter-companion`): rounded-square ocean gradient + three stacked wave lines as the family motif, with a bottom-right circular badge varying per plugin. This variant's badge is warm yellow with a dark cloud silhouette. `package.json` gains `signalk.appIcon: "./assets/icons/icon-192.png"` and the `files` array now includes `assets/icons/` so the PNGs ship in the tarball. Closes the "Known gap" flagged in the four-lane UI review.
+- Plugin icon. 512x512 SVG source at `assets/icons/icon.svg` rasterized via `librsvg2-bin` to PNGs at 72/96/192/512. Joins a coordinated icon family across `@NearlCrews` Signal K plugins (`signalk-nmea2000-emitter-cannon`, `signalk-openrouter-companion`): rounded-square ocean gradient + three stacked wave lines as the family motif, with a bottom-right circular badge varying per plugin. This variant's badge is warm yellow with a dark cloud silhouette. `package.json` gains `signalk.appIcon: "./assets/icons/icon-192.png"` and the `files` array now includes `assets/icons/` so the PNGs ship in the tarball. Closes the long-standing missing-icon gap.
 
-### Audit + simplify follow-through
+### Follow-through
 
-After the UI review and icon work landed, a second pass ran: a four-teammate full-codebase review (runtime + supporting modules + tests + docs/build) plus a three-reviewer simplify lens (reuse / quality / efficiency) on the resulting diff. Notable lower-severity outcomes folded in here for traceability:
+After the UI fixes and icon work landed, a second cleanup cycle followed. Notable lower-severity outcomes folded in here for traceability:
 
 - Lifecycle: `isPluginAlreadyRunning` now also blocks a concurrent `start()` while a prior `stop()` is awaiting cleanup. `SignalKService` no longer silently maps `dataAge: 0` to `undefined` (`||` to explicit null-check). `setupEnhancedEmissionSystem` now consumes `PLUGIN.STALENESS_FACTOR` instead of an inline `2 *`, eliminating the magic-number-vs-doc drift.
 - Schema: outer `title` + `required` removed from `schema()`. The Signal K admin UI's rjsf wrapper discards both; enforcement is the field-level `minLength: 20` plus `ConfigurationValidator`. Schema docblock records the rationale.
 - Wind math: `calculateApparentWindWithCompleteData` collapsed two separate calculator calls into one shared trig computation via `calculateWindAnalysis`, halving the per-update arithmetic.
 - Dead-code sweep: `PLUGIN.AUTHOR`, `DEFAULT_CONFIG.ENABLE_EVENT_DRIVEN` / `USE_VESSEL_POSITION`, three unused `UNITS` factors (inches-Hg, atm, mph), three unused `VALIDATION_LIMITS` (`COURSE_TRUE`, `VESSEL_DATA_WARN_AGE`, `VESSEL_DATA_ERROR_AGE`), and the unreachable Rothfusz low-humidity branch in `calculateHeatIndex` (gated at HEAT_INDEX_MIN_HUMIDITY_PCT=40).
-- Validation: `isValidLatitude` / `isValidLongitude` composed via `isWithinBounds` instead of inlining `Number.isFinite + bounds`. `validateUpdateFrequency` / `validateEmissionInterval` warn-over-error rationale documented (resolved the schema-vs-runtime drift question the UI review left open).
+- Validation: `isValidLatitude` / `isValidLongitude` composed via `isWithinBounds` instead of inlining `Number.isFinite + bounds`. `validateUpdateFrequency` / `validateEmissionInterval` warn-over-error rationale documented (resolving the schema-vs-runtime drift question).
 - Tests: 6 net new tests (`validateDailyApiQuota` 4 cases, calculator non-finite paths 2 cases); two flaky wall-clock perf tests removed (false negatives on slow CI without proving anything determinism tests do not); `AccuWeatherService.test.ts` switched its module-scope `global.fetch = vi.fn()` to `vi.stubGlobal` + `vi.unstubAllGlobals`; local `mockResponse` factory replaced with shared `createMockFetchResponse` from `setup.ts`.
 - Docs/build: TODO.md P1 items marked shipped; `RELEASE.md` gained a "Fast path (what we actually do)" section describing the master-commit + GH-Release-fires-publish.yml flow used for 1.4.1; stale `stryker.conf.json` checker comment rewritten; `publish.yml` workflow_dispatch example tag refreshed to v1.4.2.
-- Simplify pass on the resulting diff: trimmed comment proliferation (six WHAT-narrative lines in `cleanup()` / `validateAndNormalizeSettings()` removed, verbose constant explainers shortened, fragile cross-file pointer dropped, multi-paragraph quota-vs-staleness ordering note tightened, dead-code tense fix on `WindCalculator`, rolling-window rotation comment now states actual `O(min(elapsed, 24))` cost instead of an implicit `O(1)` claim).
+- Comment cleanup: trimmed comment proliferation (six WHAT-narrative lines in `cleanup()` / `validateAndNormalizeSettings()` removed, verbose constant explainers shortened, fragile cross-file pointer dropped, multi-paragraph quota-vs-staleness ordering note tightened, dead-code tense fix on `WindCalculator`, rolling-window rotation comment now states actual `O(min(elapsed, 24))` cost instead of an implicit `O(1)` claim).
 - Test count: 242 across 10 files. Coverage 86.74 statements / 82.36 branches / 93.78 functions / 86.86 lines, all above the 80% floor.
+
+<a id="v141"></a>
 
 ## [1.4.1] - 2026-05-11
 
-Signal K 1.8.2 spec-compliance release plus a post-audit follow-through cycle. **Includes Signal K path renames that change the wire output**: every non-1.8.2 leaf this plugin previously emitted under `environment.outside.*` or `environment.wind.*` now lives under a new producer-namespaced `environment.weather.*` branch. Consumers reading the previous path strings must update. Beyond the spec pass, this release adds an opt-in daily-quota visibility surface, a banner-refresh fix, mutation-testing infrastructure (67.44% score on the pure-function modules), end-to-end and schema-conformance test suites, four operator-facing documentation spikes, and a routine GitHub Actions + dev-deps refresh.
+Signal K 1.8.2 spec-compliance release plus a follow-through cycle. **Includes Signal K path renames that change the wire output**: every non-1.8.2 leaf this plugin previously emitted under `environment.outside.*` or `environment.wind.*` now lives under a new producer-namespaced `environment.weather.*` branch. Consumers reading the previous path strings must update. Beyond the spec pass, this release adds an opt-in daily-quota visibility surface, a banner-refresh fix, mutation-testing infrastructure (67.44% score on the pure-function modules), end-to-end and schema-conformance test suites, four operator-facing documentation spikes, and a routine GitHub Actions + dev-deps refresh.
 
-> **Note on the version skip:** 1.4.0 was published to npm from an earlier internal upload on 2025-10-13 and does not match the spec-compliance work described below. The 1.4.0 slot is therefore unusable for this release, and 1.4.1 is the first npm release of the post-audit codebase. There is no 1.4.0 → 1.4.1 changelog (this is the spec-compliance release content, re-numbered).
+> **Note on the version skip:** 1.4.0 was published to npm from an earlier internal upload on 2025-10-13 and does not match the spec-compliance work described below. The 1.4.0 slot is therefore unusable for this release, and 1.4.1 is the first npm release of the spec-compliance codebase. There is no 1.4.0 → 1.4.1 changelog (this is the spec-compliance release content, re-numbered).
 
 ### Changed -- Signal K paths (BREAKING)
 
@@ -576,7 +688,7 @@ Canonical `environment.outside.*` (temperature, pressure, relativeHumidity, dewP
 - `docs/app-store-status.md` documenting the Signal K App Store verification (plugin is live as of 2026-05-10, listed under "Weather", auto-discovered via the `signalk-node-server-plugin` npm keyword) plus a reproducible curl check. Closes the long-standing P3 "Signal K App Store submission" TODO: there is no submission step, the App Store keys off the npm keyword and the plugin already carries it.
 - `docs/weather-provider-migration.md` (migration spike to `@signalk/server-api` 2.24's `WeatherProvider`) and `docs/manual-server-test.md` (operator checklist for verifying a live install).
 
-### Simplify pass
+### Cleanup
 
 - Test helpers consolidated. `createMockSignalKApp` (in `setup.ts`) gained a typed `selfPaths` override map and is now used by both `index.test.ts` and the new integration test instead of three near-duplicate `buildMockApp` variants. `createMockFetchResponse` replaces the dead `createMockFetch` helper and provides the real Fetch API shape (Headers + content-length + text/json) that AccuWeatherService actually exercises. `getValuesFromDelta` is now the single source of truth for extracting values out of a delta and is imported by mapper, integration, and delta-schema tests.
 - `AccuWeatherService.getCacheStats()` no longer mixes location-cache state with HTTP-fetch state. The previous `{ size, requestCount }` return shape was a leaky abstraction. `getCacheStats()` is back to `{ size }`; the API request count is exposed as a dedicated top-level `apiRequestCount` field on `WeatherServiceStatus` and via `AccuWeatherService.getRequestCount()`. Two accessors collapsed to one source of truth.
@@ -592,9 +704,11 @@ Canonical `environment.outside.*` (temperature, pressure, relativeHumidity, dewP
 
 - `@signalk/server-api` 2.24 ships a first-class `WeatherProvider` interface (`registerWeatherProvider` + a typed `WeatherDataModel` whose `outside` block already covers `uvIndex`, `cloudCover`, `horizontalVisibility`, `feelsLikeTemperature`, `absoluteHumidity`, `precipitationType`, `precipitationVolume`, etc.). For data that is genuinely "weather provider" data (which this plugin is), that API is the canonical home. The producer-namespaced delta path is a defensible stopgap, not the long-term shape; a future major version should evaluate migrating to `WeatherProvider`.
 
+<a id="v133"></a>
+
 ## [1.3.3] - 2026-05-09
 
-6-agent codebase-wide cleanup pass following the 12-agent pass in v1.3.2. Findings were verified against the live Signal K master schema and the installed `@signalk/server-api` 2.24 `.d.ts`, not from memory. No public Signal K path or delta-shape changes; no configuration changes.
+Codebase-wide cleanup pass following v1.3.2. Findings were verified against the live Signal K master schema and the installed `@signalk/server-api` 2.24 `.d.ts`, not from memory. No public Signal K path or delta-shape changes; no configuration changes.
 
 ### Fixed -- correctness, reliability
 
@@ -639,9 +753,11 @@ Canonical `environment.outside.*` (temperature, pressure, relativeHumidity, dewP
 - New `HTTP Error Handling` block in `AccuWeatherService.test.ts` (5 cases): 403 → `API_FORBIDDEN`, 429 retried then succeeds, 429 exhausted → `API_RATE_LIMIT`, 503 with `Retry-After: 0` retried then succeeds, oversized `content-length` → `RESPONSE_TOO_LARGE`.
 - Tests covering removed dead exports (~30) were dropped alongside the exports.
 
+<a id="v132"></a>
+
 ## [1.3.2] - 2026-05-09
 
-12-agent codebase-wide cleanup pass following the Signal K spec compliance work in v1.3.1. No public API changes beyond the dead-export removal listed below; configuration shape unchanged. Fixes a real correctness issue (Magnus formula constant mismatch), adds defensive optional-chaining for free-tier AccuWeather responses, and bounds the error-body read previously bypassed on 4xx/5xx responses.
+Codebase-wide cleanup pass following the Signal K spec compliance work in v1.3.1. No public API changes beyond the dead-export removal listed below; configuration shape unchanged. Fixes a real correctness issue (Magnus formula constant mismatch), adds defensive optional-chaining for free-tier AccuWeather responses, and bounds the error-body read previously bypassed on 4xx/5xx responses.
 
 ### Fixed -- correctness, reliability
 
@@ -694,13 +810,15 @@ Canonical `environment.outside.*` (temperature, pressure, relativeHumidity, dewP
 
 ### Documentation
 
-- Doc-vs-code audit fixed several stale claims: clone URL pointed at the `signalk` org instead of `NearlCrews`; `npm run build:deploy` was a phantom script; `Node.js 20.0.0 or higher` understated the actual `>=20.18` floor; AccuWeather test count claimed "+1 skipped" but no skipped tests remain.
+- Doc-vs-code reconciliation fixed several stale claims: clone URL pointed at the `signalk` org instead of `NearlCrews`; `npm run build:deploy` was a phantom script; `Node.js 20.0.0 or higher` understated the actual `>=20.18` floor; AccuWeather test count claimed "+1 skipped" but no skipped tests remain.
 - Test file diagram in DEVELOPMENT.md expanded from 3 entries to all 7.
 - TODO known-issues section reset (branch coverage moved above threshold).
 
+<a id="v131"></a>
+
 ## [1.3.1] - 2026-05-09
 
-Signal K 1.8.2 spec compliance + ServerAPI hygiene pass. Driven by a 3-agent audit (spec / plugin lifecycle / signalk-server runtime) plus a 3-agent `/simplify` review. **Includes path renames that change the wire output**, so consumers reading the previous path strings must update.
+Signal K 1.8.2 spec compliance and ServerAPI hygiene pass. **Includes path renames that change the wire output**, so consumers reading the previous path strings must update.
 
 ### Changed -- Signal K paths (breaking)
 
@@ -759,9 +877,11 @@ Signal K 1.8.2 spec compliance + ServerAPI hygiene pass. Driven by a 3-agent aud
 - TODO.md compliance summary updated; the inaccurate "errors route to `app.error`" claim corrected.
 - CLAUDE.md NMEA2000-compliance section expanded into a Signal K 1.8.2 compliance section covering canonical paths, `.derived.` namespace, `$source`, meta, and PGN routing.
 
+<a id="v130"></a>
+
 ## [1.3.0] - 2026-05-05
 
-Toolchain modernization plus a 12-agent simplify pass. No breaking runtime behavior; configuration shape is unchanged. Minor-version bump because the toolchain floor (TypeScript 6, Node 20.18) and the Signal K paths emitted have both shifted in observable ways.
+Toolchain modernization plus a codebase cleanup. No breaking runtime behavior; configuration shape is unchanged. Minor-version bump because the toolchain floor (TypeScript 6, Node 20.18) and the Signal K paths emitted have both shifted in observable ways.
 
 ### Changed -- toolchain
 
@@ -819,9 +939,11 @@ Confirmed unused via grep across the entire `src/` tree:
 - README path tables corrected: dropped `environment.wind.directionApparent` and `environment.wind.directionMagnetic` (never emitted). Tech-stack versions updated. Test count corrected to 243. References to `signalk-nmea2000-emitter-cannon` use the full package name.
 - Em-dashes purged from comments and runtime log strings (was 11 occurrences across 5 files).
 
+<a id="v123"></a>
+
 ## [1.2.3] - 2026-05-03
 
-12-agent code-review pass with no public-API changes. Findings spanned reuse, code quality, efficiency, security, reliability, and the test suite; everything actionable landed (including low-priority items).
+Cleanup release with no public-API changes. Fixes span reuse, code quality, efficiency, security, reliability, and the test suite; everything actionable landed (including low-priority items).
 
 ### Fixed -- correctness, reliability
 
@@ -893,9 +1015,11 @@ Confirmed unused via grep across the entire `src/` tree:
 
 All 241 tests pass; type-check clean; biome clean.
 
+<a id="v122"></a>
+
 ## [1.2.2] - 2026-04-19
 
-Audit-driven patch release: a 5-expert review pass caught a number of Signal K spec violations, security gaps, and correctness bugs. All findings landed; no public configuration changes.
+Patch release fixing a number of Signal K spec violations, security gaps, and correctness bugs. All findings landed; no public configuration changes.
 
 ### Fixed -- Signal K spec compliance
 
@@ -947,6 +1071,8 @@ Audit-driven patch release: a 5-expert review pass caught a number of Signal K s
 
 - Statements 81.9%, Branches 78.06%, Functions 90.75%, Lines 81.87% -- branches just below the 80% threshold (concentrated in `WeatherService.ts` error paths) but the Vitest threshold is currently advisory.
 
+<a id="v120"></a>
+
 ## [1.2.0] - 2026-04-08
 
 ### Fixed
@@ -971,22 +1097,24 @@ Audit-driven patch release: a 5-expert review pass caught a number of Signal K s
 - **Unused validation namespace objects** -- `WeatherDataValidator`, `VesselDataValidator`, `ApiResponseValidator`, `ValidationOrchestrator` from `validation.ts`.
 - **Unnecessary try/catch in WindCalculator** -- Removed from 9 pure math methods. JS math operations return `NaN`/`Infinity` (handled by existing `isFinite` checks), they don't throw.
 
+<a id="v110"></a>
+
 ## [1.1.0] - 2026-01-20
 
-### 🚀 Added
+### Added
 
 #### Test Coverage
 - **WeatherService.test.ts**: 25 comprehensive tests covering initialization, lifecycle management, data emission, and configuration validation
 - **SignalKService.test.ts**: 40 tests for vessel navigation data retrieval including position, speed, course, heading, caching, and health status
 - Total test count increased from 85 to 150 tests
 
-#### Security & Reliability
+#### Security and Reliability
 - **API key log sanitization**: Automatic filtering of sensitive keys (apikey, password, secret, token) from log output
 - **Retry-After header support**: Respects server rate limit headers for 429 and 503 responses
 - **Exponential backoff**: Falls back to exponential backoff when Retry-After header not present
 - **Polling jitter**: ±10% random variation on update intervals to prevent synchronized API requests
 
-### 🔄 Changed
+### Changed
 
 #### Improved Logger Implementation
 - Warning messages now call `app.setPluginStatus()` for Signal K UI visibility
@@ -1004,7 +1132,7 @@ Audit-driven patch release: a 5-expert review pass caught a number of Signal K s
 - **Cache size limits**: Maximum 100 entries with LRU-style eviction
 - Cache pruning runs every 5 minutes to prevent memory growth
 
-### 📝 Documentation
+### Documentation
 
 #### Documented Performance Thresholds
 - `WEATHER_UPDATE` (5000ms): Based on AccuWeather API typical response times (1-3 seconds)
@@ -1013,36 +1141,40 @@ Audit-driven patch release: a 5-expert review pass caught a number of Signal K s
 - Memory thresholds: 50MB warning, 100MB critical
 - All thresholds now include detailed JSDoc explaining rationale
 
-### 🛠 Technical Improvements
+### Technical Improvements
 
 - **Official Signal K types**: Uses `Plugin` and `ServerAPI` from `@signalk/server-api` for maximum compatibility
 - **TypeScript 5.9+**: Updated all version references in documentation
 - **Vitest 4.x**: Updated testing framework with improved coverage
 - **Biome 2.3+**: Updated linting and formatting tooling
 
-### 🐛 Fixed
+### Fixed
 
 - Fixed unused import warnings in test files
 - Fixed `Math.pow()` usage replaced with `**` operator per linting rules
 - Fixed TypeScript strict mode issues with optional properties
 - Resolved all Biome linting warnings
 
+<a id="v101"></a>
+
 ## [1.0.1] - 2025-10-13
 
-### 🐛 Fixed
+### Fixed
 
 #### CI/CD
 - **GitHub Actions Permissions**: Added missing `contents:read` and `issues:write` permissions to `security-audit` job in dependency-updates workflow
 - Resolved "Resource not accessible by integration" error that prevented automated security issue creation
 - Fixed CI failures in the dependency-updates workflow
 
+<a id="v100"></a>
+
 ## [1.0.0] - 2025-10-03
 
-### 🎉 Initial Release - Modern TypeScript Signal K Weather Plugin
+### Initial Release: Modern TypeScript Signal K Weather Plugin
 
-First production release of signalk-virtual-weather-sensors - a comprehensive weather data plugin for Signal K servers with NMEA2000 compatibility and AccuWeather API integration.
+First production release of signalk-virtual-weather-sensors: a comprehensive weather data plugin for Signal K servers with NMEA2000 compatibility and AccuWeather API integration.
 
-### 🚀 Added
+### Added
 
 #### Enhanced AccuWeather Integration
 - **Indoor Humidity** monitoring from AccuWeather API
@@ -1059,7 +1191,7 @@ First production release of signalk-virtual-weather-sensors - a comprehensive we
 - **Absolute Humidity** precision calculations for atmospheric analysis
 - **Wind Gust Factor** analysis for wind safety assessment
 
-#### NMEA2000 & `signalk-nmea2000-emitter-cannon` Alignment
+#### NMEA2000 and `signalk-nmea2000-emitter-cannon` Alignment
 - **Perfect PGN alignment** with `signalk-nmea2000-emitter-cannon` conventions
 - **Multiple temperature instances** (101-111) for comprehensive temperature monitoring
 - **Enhanced humidity support** with inside/outside instances (100/101)
@@ -1080,7 +1212,7 @@ First production release of signalk-virtual-weather-sensors - a comprehensive we
 - **Development tooling** with hot reload, linting, formatting, and coverage
 - **Production logging** with structured metadata for monitoring
 
-### 🔄 Changed
+### Changed
 
 #### Breaking Changes
 - **Plugin name**: `@signalk/signalk-n2k-weather-provider` → `signalk-virtual-weather-sensors`
@@ -1096,7 +1228,7 @@ First production release of signalk-virtual-weather-sensors - a comprehensive we
 - **Error handling**: Production-ready with structured error codes and recovery
 - **Performance**: Significantly improved with TypeScript optimizations
 
-### 🛠 Technical Improvements
+### Technical Improvements
 
 #### Code Quality
 - **Zero TypeScript compilation errors** across entire codebase
@@ -1105,7 +1237,7 @@ First production release of signalk-virtual-weather-sensors - a comprehensive we
 - **Production-ready validation** for all data types and configurations
 - **Performance monitoring** with timing thresholds and resource cleanup
 
-#### Build & Development
+#### Build and Development
 - **Fast builds**: esbuild configuration for rapid development and production builds
 - **Modern testing**: Vitest framework with comprehensive test coverage
 - **Code quality**: Biome linting and formatting with TypeScript support
@@ -1118,7 +1250,7 @@ First production release of signalk-virtual-weather-sensors - a comprehensive we
 - **Resource management** with proper cleanup and memory optimization
 - **Extensible design** for future weather data sources
 
-### 📊 Data Coverage Enhancement
+### Data Coverage Enhancement
 
 #### Temperature Monitoring (8 Types)
 - Air temperature, dew point, wind chill, heat index
@@ -1137,7 +1269,7 @@ First production release of signalk-virtual-weather-sensors - a comprehensive we
 - Heat stress index, Beaufort wind safety
 - UV exposure assessment, visibility safety
 
-### 🔧 Compatibility
+### Compatibility
 
 #### Backward Compatibility
 - **Configuration**: All existing settings supported with sensible defaults
@@ -1151,7 +1283,7 @@ First production release of signalk-virtual-weather-sensors - a comprehensive we
 - **Type-safe interfaces** facilitating safe feature additions
 - **Performance headroom** for additional computational features
 
-### 🐛 Fixed
+### Fixed
 
 #### Issues from v1.0
 - **Type safety**: Eliminated runtime type errors with comprehensive TypeScript types
@@ -1166,14 +1298,14 @@ First production release of signalk-virtual-weather-sensors - a comprehensive we
 - **Documentation**: Complete inline documentation with JSDoc comments
 - **Build process**: Reliable, fast builds with proper dependency management
 
-### 📝 Signal K Standards Compliance
+### Signal K Standards Compliance
 - **95% compliance** with Signal K plugin development standards
 - Follows [Signal K Plugin Guidelines](https://demo.signalk.org/documentation/Developing/Plugins.html)
 - Implements [Configuration Schema Standards](https://demo.signalk.org/documentation/Developing/Plugins/Configuration.html)
 - Adheres to [Weather Provider Patterns](https://demo.signalk.org/documentation/Developing/Plugins/Weather_Providers.html)
 - **Note**: Humidity output as percentage (0-100) for Garmin compatibility instead of ratio (0-1)
 
-### 🔗 Repository Information
+### Repository Information
 - **GitHub**: https://github.com/NearlCrews/signalk-virtual-weather-sensors
 - **NPM Package**: signalk-virtual-weather-sensors
 - **Display Name**: Signal K Virtual Weather Sensors

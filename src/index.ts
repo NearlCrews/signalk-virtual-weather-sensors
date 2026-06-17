@@ -10,34 +10,43 @@ import {
   type Plugin,
   type ServerAPI,
   SKVersion,
+  type SourceRef,
 } from '@signalk/server-api';
 import type { IRouter, Request, Response } from 'express';
 import {
-  API_KEY_MIN_LENGTH,
   CONFIG_DEFAULTS,
   DEFAULT_CONFIG,
+  DEFAULT_WEATHER_PROVIDER,
   ERROR_CODES,
   NOTIFICATION_LABELS,
   NOTIFICATION_MASTER_LABEL,
   PLUGIN,
   TEST_KEY_LOCATION,
+  WEATHER_PROVIDER_IDS,
+  WEATHER_PROVIDER_LABELS,
 } from './constants/index.js';
 import { validateKeyLength } from './constants/notifications-shared.js';
+import { MarinePathMapper } from './mappers/MarinePathMapper.js';
 import { NMEA2000PathMapper } from './mappers/NMEA2000PathMapper.js';
+import { isMarineDataEmpty } from './mappers/OpenMeteoMarineMapper.js';
 import { WeatherNotifier } from './notifications/WeatherNotifier.js';
+import { createCurrentWeatherProvider } from './providers/createCurrentWeatherProvider.js';
 import { AccuWeatherService } from './services/AccuWeatherService.js';
+import { OpenMeteoMarineService } from './services/OpenMeteoMarineService.js';
+import { WarningsService } from './services/WarningsService.js';
 import { WeatherProviderAdapter } from './services/WeatherProviderAdapter.js';
 import { WeatherService } from './services/WeatherService.js';
 import type {
   Logger,
   LogLevel,
+  MarineData,
   PanelStatusResponse,
   PluginConfiguration,
   PluginState,
   WeatherData,
 } from './types/index.js';
 import { msToWholeMinutes, toErrorMessage } from './utils/conversions.js';
-import { buildValuesDelta } from './utils/skDelta.js';
+import { buildValuesDelta, toSourceRef } from './utils/skDelta.js';
 import { ConfigurationValidator } from './utils/validation.js';
 
 /** Distinguishes a banner string pushed via setPluginStatus from one pushed via setPluginError. */
@@ -49,6 +58,13 @@ type BannerKind = 'status' | 'error';
 interface PluginInstance {
   weatherService: WeatherService | null;
   pathMapper: NMEA2000PathMapper | null;
+  /** Null unless the optional marine layer is enabled. */
+  marinePathMapper: MarinePathMapper | null;
+  /** Cached marine values delta, rebuilt only when the marine snapshot changes. */
+  cachedMarineDelta: Delta | null;
+  cachedMarineDataRef: MarineData | null;
+  /** True once the one-shot marine meta delta has been shipped. */
+  marineMetaEmitted: boolean;
   /** Null when notifications are disabled or the plugin is stopped. */
   notifier: WeatherNotifier | null;
   emissionTimer: NodeJS.Timeout | null;
@@ -62,6 +78,8 @@ interface PluginInstance {
   metaEmitted: boolean;
   /** True once app.registerWeatherProvider has been called this start cycle. */
   weatherProviderRegistered: boolean;
+  /** `$source` of the active provider, stamped on notification and re-broadcast deltas. */
+  sourceRef: SourceRef;
   /**
    * Last (kind, message) pushed to the admin UI. Used to dedupe identical
    * setPluginStatus / setPluginError calls so a flapping API doesn't oscillate
@@ -80,6 +98,10 @@ export default function createPlugin(app: ServerAPI): Plugin {
   const instance: PluginInstance = {
     weatherService: null,
     pathMapper: null,
+    marinePathMapper: null,
+    cachedMarineDelta: null,
+    cachedMarineDataRef: null,
+    marineMetaEmitted: false,
     notifier: null,
     emissionTimer: null,
     state: 'stopped',
@@ -89,6 +111,7 @@ export default function createPlugin(app: ServerAPI): Plugin {
     cachedWeatherDataRef: null,
     metaEmitted: false,
     weatherProviderRegistered: false,
+    sourceRef: toSourceRef(PLUGIN.SOURCE_REF),
     lastBanner: null,
   };
 
@@ -166,14 +189,38 @@ export default function createPlugin(app: ServerAPI): Plugin {
      */
     schema: () => ({
       type: 'object',
-      description: 'AccuWeather to Signal K with NMEA2000-compatible environmental measurements.',
+      description:
+        'Weather to Signal K with NMEA2000-compatible environmental measurements. Open-Meteo (default) is free and needs no API key; AccuWeather needs a key and adds extra fields.',
       properties: {
+        weatherProvider: {
+          type: 'string',
+          title: 'Weather source',
+          description:
+            'Open-Meteo is free, global, and needs no API key. AccuWeather requires a key and adds RealFeel, plain-language conditions text, pressure tendency, and precipitation type.',
+          enum: [...WEATHER_PROVIDER_IDS],
+          enumNames: WEATHER_PROVIDER_IDS.map((id) => WEATHER_PROVIDER_LABELS[id]),
+          default: DEFAULT_WEATHER_PROVIDER,
+        },
         accuWeatherApiKey: {
           type: 'string',
           title: 'AccuWeather API Key',
-          description: 'Get your API key at https://developer.accuweather.com/',
+          description:
+            'Required only when the weather source is AccuWeather. Get your API key at https://developer.accuweather.com/',
           default: '',
-          minLength: API_KEY_MIN_LENGTH,
+        },
+        openMeteoBaseUrl: {
+          type: 'string',
+          title: 'Open-Meteo base URL (optional)',
+          description:
+            'Leave blank to use the free public Open-Meteo service (non-commercial use only). Commercial users can self-host the open-source server or use a paid plan and enter its URL here.',
+          default: '',
+        },
+        marineData: {
+          type: 'boolean',
+          title: 'Emit sea state (waves, swell, sea temperature, current)',
+          description:
+            'Adds a keyless Open-Meteo Marine layer on environment.water.* and environment.current. Coastal and offshore only; inland points have no data.',
+          default: false,
         },
         updateFrequency: {
           type: 'integer',
@@ -197,7 +244,7 @@ export default function createPlugin(app: ServerAPI): Plugin {
           type: 'integer',
           title: 'Daily API Call Quota',
           description:
-            'Cap on AccuWeather calls in any rolling 24-hour window. AccuWeather free tier allows 50/day. Set to 0 to disable the cap and quota warnings.',
+            'Cap on AccuWeather calls in any rolling 24-hour window (applies only when AccuWeather is the weather source). Defaults to 50/day; set to 0 to disable the cap and quota warnings.',
           default: CONFIG_DEFAULTS.DAILY_API_QUOTA,
           minimum: CONFIG_DEFAULTS.DAILY_API_QUOTA_MIN,
           maximum: CONFIG_DEFAULTS.DAILY_API_QUOTA_MAX,
@@ -248,7 +295,10 @@ export default function createPlugin(app: ServerAPI): Plugin {
      */
     uiSchema: () => ({
       'ui:order': [
+        'weatherProvider',
         'accuWeatherApiKey',
+        'openMeteoBaseUrl',
+        'marineData',
         'updateFrequency',
         'emissionInterval',
         'dailyApiQuota',
@@ -352,38 +402,63 @@ async function startServices(
   const bannerSink = (kind: 'status' | 'error', message: string): void => {
     setBanner(instance, app, kind, message);
   };
-  // One shared AccuWeatherService so the provider's on-demand forecast fetches
-  // and the current-conditions loop draw from a single rolling-24h quota window.
-  const accuWeatherService = new AccuWeatherService(config.accuWeatherApiKey, instance.logger, {
-    dailyApiQuota: config.dailyApiQuota,
-  });
+  // Construct the provider the config selects (keyless Open-Meteo by default,
+  // AccuWeather when chosen with a key). For AccuWeather this is one shared
+  // instance so the current-conditions loop and the on-demand forecast adapter
+  // draw from a single rolling-24h quota window.
+  const provider = createCurrentWeatherProvider(config, instance.logger);
+  instance.sourceRef = toSourceRef(provider.sourceRef);
+  // Optional sea-state layer (keyless Open-Meteo Marine), independent of the
+  // atmospheric provider. A self-hosted Open-Meteo instance serves /v1/marine on
+  // the same host, so pass the configured base URL through when it is set.
+  const marineService = config.marineData
+    ? new OpenMeteoMarineService(
+        instance.logger,
+        config.openMeteoBaseUrl ? { baseUrl: config.openMeteoBaseUrl } : undefined
+      )
+    : undefined;
+  if (marineService) {
+    instance.marinePathMapper = new MarinePathMapper(instance.logger);
+  }
   instance.weatherService = new WeatherService(
     app,
     config,
     instance.logger,
     undefined,
-    accuWeatherService,
+    provider,
     undefined,
-    bannerSink
+    bannerSink,
+    marineService
   );
-  instance.pathMapper = new NMEA2000PathMapper(instance.logger);
+  instance.pathMapper = new NMEA2000PathMapper(instance.logger, instance.sourceRef);
   // Construct the notifier even when notifications are disabled at the master
   // level so a hot-reload from disabled -> enabled does not need a restart.
   // `evaluate()` short-circuits when `config.notifications.enabled` is false.
   instance.notifier = new WeatherNotifier(config.notifications, instance.logger);
   await instance.weatherService.start();
 
-  // Register the Signal K Weather API provider. The typeof guard tolerates a
-  // server older than the 2.24 peer floor that lacks the registry method.
-  if (typeof app.registerWeatherProvider === 'function') {
-    const adapter = new WeatherProviderAdapter(accuWeatherService, instance.logger);
+  // Register the Signal K v2 Weather API provider. Only AccuWeather implements
+  // forecasts today, so the provider is advertised only when AccuWeather is
+  // active; under Open-Meteo the emission path still works and forecasts are a
+  // later addition. The typeof guard tolerates a server older than the 2.24
+  // peer floor that lacks the registry method.
+  if (typeof app.registerWeatherProvider !== 'function') {
+    instance.logger('warn', 'Server lacks registerWeatherProvider; weather API not exposed');
+  } else if (provider instanceof AccuWeatherService) {
+    // Warnings are keyless and region-aware (NWS for US waters), served through
+    // the v2 provider alongside the AccuWeather forecasts and observations.
+    const adapter = new WeatherProviderAdapter(
+      provider,
+      new WarningsService(instance.logger),
+      instance.logger
+    );
     app.registerWeatherProvider(adapter.toProvider());
     instance.weatherProviderRegistered = true;
-    instance.logger('info', 'Registered Signal K weather provider', {
-      provider: PLUGIN.PROVIDER_NAME,
-    });
+    instance.logger('info', 'Registered Signal K weather provider', { provider: provider.name });
   } else {
-    instance.logger('warn', 'Server lacks registerWeatherProvider; weather API not exposed');
+    instance.logger('info', 'Weather API forecasts not advertised for the selected provider', {
+      provider: provider.name,
+    });
   }
 
   setupEnhancedEmissionSystem(instance, config, app);
@@ -560,7 +635,11 @@ function emitWeatherTick(instance: PluginInstance, app: ServerAPI): void {
   // notifier returned PathValues only on transition, so a non-empty list here
   // always represents an entry or exit edge.
   if (notificationValues.length > 0) {
-    app.handleMessage(PLUGIN.NAME, buildValuesDelta(notificationValues), SKVersion.v1);
+    app.handleMessage(
+      PLUGIN.NAME,
+      buildValuesDelta(notificationValues, undefined, instance.sourceRef),
+      SKVersion.v1
+    );
   }
 
   // Ship the static meta block once per plugin lifetime, AFTER the first
@@ -570,6 +649,45 @@ function emitWeatherTick(instance: PluginInstance, app: ServerAPI): void {
   if (!instance.metaEmitted) {
     app.handleMessage(PLUGIN.NAME, instance.pathMapper.buildMetaDelta(), SKVersion.v1);
     instance.metaEmitted = true;
+  }
+
+  // Optional sea-state layer rides the same keep-alive cadence and is reached
+  // only past the staleness gate above, so marine data ages out with weather.
+  emitMarineTick(instance, app);
+}
+
+/**
+ * Emit the optional marine (sea-state) delta. No-op when the marine layer is
+ * disabled, before the first marine fetch, or for an inland point where the
+ * model has no data (so the marine meta is never shipped without real data).
+ * The cached delta is restamped each tick like the weather delta, preserving
+ * its distinct marine `$source`, and the meta block ships exactly once.
+ * @private
+ */
+function emitMarineTick(instance: PluginInstance, app: ServerAPI): void {
+  const mapper = instance.marinePathMapper;
+  if (!mapper) return;
+
+  const marine = instance.weatherService?.getCurrentMarineData();
+  if (!marine) return;
+
+  // Cheap pointer compare first: the steady-state tick (unchanged snapshot)
+  // skips the per-field emptiness scan, which only runs on a genuinely new
+  // snapshot. An inland point with no usable sea-state pins a null delta so the
+  // tick emits nothing (and the marine meta never ships without real data).
+  if (marine !== instance.cachedMarineDataRef) {
+    instance.cachedMarineDataRef = marine;
+    instance.cachedMarineDelta = isMarineDataEmpty(marine)
+      ? null
+      : mapper.mapToSignalKPaths(marine);
+  }
+  if (!instance.cachedMarineDelta) return;
+
+  app.handleMessage(PLUGIN.NAME, withEmissionTimestamp(instance.cachedMarineDelta), SKVersion.v1);
+
+  if (!instance.marineMetaEmitted) {
+    app.handleMessage(PLUGIN.NAME, mapper.buildMetaDelta(), SKVersion.v1);
+    instance.marineMetaEmitted = true;
   }
 }
 
@@ -616,10 +734,12 @@ function refreshCachedDelta(
 function withEmissionTimestamp(cached: Delta): Delta {
   // The cached delta is always a single-update values delta built by
   // `buildValuesDelta`, so restamping is a rebuild through the same helper,
-  // which stamps the current wall-clock time when no timestamp is passed.
+  // which stamps the current wall-clock time when no timestamp is passed. The
+  // original `$source` (the active provider's) is preserved so re-broadcasts do
+  // not silently revert to the default source ref.
   const update = cached.updates[0];
   if (update === undefined || !('values' in update)) return cached;
-  return buildValuesDelta(update.values);
+  return buildValuesDelta(update.values, undefined, update.$source);
 }
 
 /**
@@ -644,6 +764,7 @@ async function cleanup(instance: PluginInstance): Promise<void> {
   }
 
   instance.pathMapper = null;
+  instance.marinePathMapper = null;
   if (instance.notifier) {
     instance.notifier.reset();
     instance.notifier = null;
@@ -651,6 +772,9 @@ async function cleanup(instance: PluginInstance): Promise<void> {
   instance.cachedDelta = null;
   instance.cachedWeatherDataRef = null;
   instance.metaEmitted = false;
+  instance.cachedMarineDelta = null;
+  instance.cachedMarineDataRef = null;
+  instance.marineMetaEmitted = false;
   instance.weatherProviderRegistered = false;
   instance.lastBanner = null;
 }
@@ -667,6 +791,17 @@ function validateAndNormalizeSettings(settings: unknown, logger: Logger): Plugin
   const rawSettings = settings as Record<string, unknown>;
 
   const partialConfig: Partial<PluginConfiguration> = {
+    // Provider and base URL are spread in only when present so legacy config
+    // (written before these options existed) leaves them absent, letting
+    // resolveWeatherProvider apply the migration-safe default. An invalid
+    // provider string is caught by validation.
+    ...(typeof rawSettings.weatherProvider === 'string' && {
+      weatherProvider: rawSettings.weatherProvider as PluginConfiguration['weatherProvider'],
+    }),
+    ...(typeof rawSettings.openMeteoBaseUrl === 'string' && {
+      openMeteoBaseUrl: rawSettings.openMeteoBaseUrl,
+    }),
+    marineData: rawSettings.marineData === true,
     accuWeatherApiKey:
       typeof rawSettings.accuWeatherApiKey === 'string' ? rawSettings.accuWeatherApiKey : '',
     updateFrequency:
@@ -854,8 +989,8 @@ function registerPanelRoutes(router: IRouter, instance: PluginInstance): void {
   // apply its security strategy to plugin routers, so this endpoint is
   // effectively unauthenticated: any client that can reach the server can
   // drive it, and each call costs one upstream AccuWeather request. The
-  // limiter caps a flood at 10 calls/minute, well under the free-tier daily
-  // allowance. /api/status is likewise unauthenticated but strictly read-only.
+  // limiter caps a flood at 10 calls/minute, well under the default daily
+  // quota. /api/status is likewise unauthenticated but strictly read-only.
   const TEST_KEY_RATE_LIMIT = 10;
   const TEST_KEY_WINDOW_MS = 60_000;
   const testKeyHits: number[] = [];

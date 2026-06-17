@@ -4,18 +4,28 @@ import {
   CLOUD_CEILING_LIMITS_M,
   CONFIG_DEFAULTS,
   DEFAULT_CONFIG,
+  ERROR_CODES,
   HEAT_STRESS_INDEX_LIMITS,
   NMEA2000_LIMITS,
   PRECIPITATION_LIMITS,
   PRESSURE_TENDENCY_LIMITS,
+  resolveWeatherProvider,
   UV_INDEX_LIMITS,
   VALIDATION_LIMITS,
   VISIBILITY_LIMITS_M,
+  WEATHER_PROVIDER_IDS,
+  type WeatherProviderId,
 } from '../constants/index.js';
-import type { NotificationsConfig, PluginConfiguration, WeatherData } from '../types/index.js';
+import type {
+  GeoLocation,
+  NotificationsConfig,
+  PluginConfiguration,
+  WeatherData,
+} from '../types/index.js';
 import {
   celsiusToKelvin,
   clamp,
+  isValidCoordinates,
   normalizeAngle0To2Pi,
   normalizeAnglePiToPi,
   TWO_PI,
@@ -23,6 +33,25 @@ import {
 
 /** Re-export so callers outside this module don't need to know it lives in the shared JS module. */
 export { API_KEY_MIN_LENGTH };
+
+/**
+ * Throw a tagged INVALID_COORDINATES error unless `location` carries finite,
+ * in-range numeric latitude and longitude. Shared by the weather services so
+ * the coordinate guard is not copy-pasted per service. `context` names the
+ * caller for the error message (for example "Open-Meteo marine request").
+ */
+export function assertValidCoordinates(location: GeoLocation, context: string): void {
+  if (
+    !location ||
+    typeof location.latitude !== 'number' ||
+    typeof location.longitude !== 'number' ||
+    !isValidCoordinates(location.latitude, location.longitude)
+  ) {
+    throw new Error(
+      `${ERROR_CODES.CONFIGURATION.INVALID_COORDINATES}: invalid coordinates for ${context}`
+    );
+  }
+}
 
 /** NMEA2000 temperature bounds expressed in Kelvin (precomputed to avoid C↔K work on the hot path). */
 const NMEA2000_TEMP_K_MIN = celsiusToKelvin(NMEA2000_LIMITS.TEMPERATURE_C.MIN);
@@ -65,9 +94,14 @@ const API_KEY_PLACEHOLDER_PATTERNS: ReadonlyArray<RegExp> = [
 
 function validateApiKey(
   config: Partial<PluginConfiguration>,
+  provider: WeatherProviderId,
   errors: string[],
   warnings: string[]
 ): void {
+  // A keyless provider needs no AccuWeather key. If one is present anyway it is
+  // simply unused, so do not validate or block on it.
+  if (provider !== 'accuweather') return;
+
   if (!config.accuWeatherApiKey || typeof config.accuWeatherApiKey !== 'string') {
     errors.push('AccuWeather API key is required');
     return;
@@ -173,6 +207,31 @@ function validateNumericConfigField(
   }
 }
 
+/** Reject an unknown `weatherProvider` value (a hand-edited or future config). */
+function validateWeatherProvider(config: Partial<PluginConfiguration>, errors: string[]): void {
+  const provider = config.weatherProvider;
+  if (provider !== undefined && !WEATHER_PROVIDER_IDS.includes(provider)) {
+    errors.push(`Unknown weather provider "${String(provider)}"`);
+  }
+}
+
+/** Reject a non-empty Open-Meteo base URL that is not a parseable http(s) URL. */
+function validateOpenMeteoBaseUrl(config: Partial<PluginConfiguration>, errors: string[]): void {
+  const raw = config.openMeteoBaseUrl;
+  if (typeof raw !== 'string') return;
+  const trimmed = raw.trim();
+  if (trimmed.length === 0) return;
+  let parsed: URL | null = null;
+  try {
+    parsed = new URL(trimmed);
+  } catch {
+    parsed = null;
+  }
+  if (!parsed || (parsed.protocol !== 'http:' && parsed.protocol !== 'https:')) {
+    errors.push('Open-Meteo base URL must be a valid http(s) URL');
+  }
+}
+
 /**
  * Validate complete plugin configuration
  */
@@ -180,7 +239,13 @@ export function validateConfiguration(config: Partial<PluginConfiguration>): Val
   const errors: string[] = [];
   const warnings: string[] = [];
 
-  validateApiKey(config, errors, warnings);
+  const provider = resolveWeatherProvider(
+    config.weatherProvider,
+    (config.accuWeatherApiKey ?? '').trim().length > 0
+  );
+  validateWeatherProvider(config, errors);
+  validateApiKey(config, provider, errors, warnings);
+  validateOpenMeteoBaseUrl(config, errors);
   for (const rule of NUMERIC_CONFIG_RULES) {
     validateNumericConfigField(config, rule, errors, warnings);
   }
@@ -219,8 +284,12 @@ function sanitizeNotifications(input: unknown): NotificationsConfig {
  * invalid sub-min value that slips past the validator.
  */
 export function sanitizeConfiguration(config: Partial<PluginConfiguration>): PluginConfiguration {
+  const accuWeatherApiKey = config.accuWeatherApiKey?.trim() || '';
   return {
-    accuWeatherApiKey: config.accuWeatherApiKey?.trim() || '',
+    weatherProvider: resolveWeatherProvider(config.weatherProvider, accuWeatherApiKey.length > 0),
+    accuWeatherApiKey,
+    openMeteoBaseUrl: config.openMeteoBaseUrl?.trim() || '',
+    marineData: typeof config.marineData === 'boolean' ? config.marineData : false,
     updateFrequency: clamp(
       config.updateFrequency ?? DEFAULT_CONFIG.UPDATE_FREQUENCY,
       CONFIG_DEFAULTS.UPDATE_FREQUENCY_MIN,

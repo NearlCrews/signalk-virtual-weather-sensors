@@ -7,9 +7,11 @@
 import type { ServerAPI } from '@signalk/server-api';
 import { WindCalculator } from '../calculators/WindCalculator.js';
 import { API_QUOTA, ERROR_CODES, PERFORMANCE, PLUGIN } from '../constants/index.js';
+import type { CurrentWeatherProvider } from '../providers/WeatherProvider.js';
 import {
   isCompleteNavigationData,
   type Logger,
+  type MarineData,
   type PluginConfiguration,
   type PluginState,
   type VesselNavigationData,
@@ -22,6 +24,7 @@ import {
   toErrorMessage,
 } from '../utils/conversions.js';
 import { AccuWeatherService } from './AccuWeatherService.js';
+import type { OpenMeteoMarineService } from './OpenMeteoMarineService.js';
 import { SignalKService } from './SignalKService.js';
 
 /**
@@ -36,7 +39,7 @@ export interface WeatherServiceStatus {
   readonly errorCount: number;
   readonly hasWeatherData: boolean;
   readonly signalKHealth: ReturnType<SignalKService['getHealthStatus']>;
-  readonly cacheStats: ReturnType<AccuWeatherService['getCacheStats']>;
+  readonly cacheStats: ReturnType<CurrentWeatherProvider['getCacheStats']>;
   readonly apiRequestCount: number;
 }
 
@@ -69,7 +72,9 @@ export class WeatherService {
   private readonly config: PluginConfiguration;
   private readonly logger: Logger;
 
-  private readonly accuWeatherService: AccuWeatherService;
+  private readonly accuWeatherService: CurrentWeatherProvider;
+  /** Optional sea-state fetcher; present only when the marine layer is enabled. */
+  private readonly marineService: OpenMeteoMarineService | null;
   private readonly signalKService: SignalKService;
   private readonly windCalculator: WindCalculator;
 
@@ -81,6 +86,8 @@ export class WeatherService {
   private initialUpdateTimer: NodeJS.Timeout | null = null;
 
   private currentWeatherData: WeatherData | null = null;
+  /** Last successful marine snapshot; null until the first marine fetch (or when disabled). */
+  private currentMarineData: MarineData | null = null;
   private lastUpdate: Date | null = null;
 
   // Performance monitoring
@@ -113,9 +120,10 @@ export class WeatherService {
     config: PluginConfiguration,
     logger: Logger = () => {},
     windCalculator?: WindCalculator,
-    accuWeatherService?: AccuWeatherService,
+    accuWeatherService?: CurrentWeatherProvider,
     signalKService?: SignalKService,
-    setBanner?: BannerSink
+    setBanner?: BannerSink,
+    marineService?: OpenMeteoMarineService
   ) {
     this.app = app;
     this.config = config;
@@ -145,6 +153,7 @@ export class WeatherService {
       });
     this.signalKService = signalKService ?? new SignalKService(this.app, this.logger);
     this.windCalculator = windCalculator ?? new WindCalculator(this.logger);
+    this.marineService = marineService ?? null;
 
     this.logger('info', 'WeatherService initialized successfully');
   }
@@ -228,6 +237,7 @@ export class WeatherService {
       // and refetching on every restart burns paid LOCATION_SEARCH API calls.
       // Per-instance memory gets GC'd when the service is dropped anyway.
       this.currentWeatherData = null;
+      this.currentMarineData = null;
       this.lastUpdate = null;
       this.signalKService.clearCache();
 
@@ -257,6 +267,31 @@ export class WeatherService {
    */
   public getCurrentWeatherData(): WeatherData | null {
     return this.currentWeatherData;
+  }
+
+  /** Latest sea-state snapshot, or null when the marine layer is disabled or has no data yet. */
+  public getCurrentMarineData(): MarineData | null {
+    return this.currentMarineData;
+  }
+
+  /**
+   * Fetch the optional sea-state layer for the given position, best-effort.
+   * No-op when the marine service is not configured. A failure logs and keeps
+   * the previous snapshot so a transient marine outage does not blank the data.
+   * @private
+   */
+  private async refreshMarineData(position: {
+    readonly latitude: number;
+    readonly longitude: number;
+  }): Promise<void> {
+    if (!this.marineService) return;
+    try {
+      this.currentMarineData = await this.marineService.fetchMarine(position);
+    } catch (error) {
+      this.logger('warn', 'Marine data fetch failed; keeping last marine snapshot', {
+        error: toErrorMessage(error),
+      });
+    }
   }
 
   /** Milliseconds since the last successful weather fetch, or null if none yet. */
@@ -571,6 +606,12 @@ export class WeatherService {
       // Reset failure streaks on any successful fetch so transient outages do
       // not leave the plugin in an error state once recovery happens.
       this.consecutiveFailures = 0;
+
+      // Optional sea-state layer: fetched on the same cadence and position as
+      // the weather update. Best-effort, so a marine failure (inland point,
+      // marine host down) only logs and keeps the last marine snapshot; it never
+      // fails the weather update or trips the error banner.
+      await this.refreshMarineData(position);
 
       // Cold-start UX: the plugin entry pushes "Running, awaiting first update"
       // during start(), and the emission timer wouldn't re-push the banner
