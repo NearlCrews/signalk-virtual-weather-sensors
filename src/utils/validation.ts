@@ -263,6 +263,7 @@ export function sanitizeConfiguration(config: Partial<PluginConfiguration>): Plu
     weatherProvider: resolveWeatherProvider(config.weatherProvider, accuWeatherApiKey.length > 0),
     accuWeatherApiKey,
     openMeteoBaseUrl: config.openMeteoBaseUrl?.trim() || '',
+    marineData: typeof config.marineData === 'boolean' ? config.marineData : false,
     updateFrequency: clamp(
       config.updateFrequency ?? DEFAULT_CONFIG.UPDATE_FREQUENCY,
       CONFIG_DEFAULTS.UPDATE_FREQUENCY_MIN,

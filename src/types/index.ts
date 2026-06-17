@@ -222,6 +222,13 @@ export interface PluginConfiguration {
    */
   readonly openMeteoBaseUrl: string;
 
+  /**
+   * Emit the optional sea-state layer (waves, swell, sea surface temperature,
+   * surface current) from the keyless Open-Meteo Marine API. Off by default; it
+   * is a separate fetch and only meaningful for coastal and offshore vessels.
+   */
+  readonly marineData: boolean;
+
   /** Weather data update frequency in minutes (default: 30; see CONFIG_DEFAULTS). */
   readonly updateFrequency: number;
 

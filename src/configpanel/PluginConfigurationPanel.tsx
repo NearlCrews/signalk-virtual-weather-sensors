@@ -217,6 +217,22 @@ export default function PluginConfigurationPanel({
             </p>
           </>
         )}
+
+        <div style={S.checkboxRow}>
+          <label style={S.checkboxLabel}>
+            <input
+              type="checkbox"
+              style={S.checkbox}
+              checked={form.marineData}
+              onChange={(e) => setField('marineData', e.target.checked)}
+            />
+            Emit sea state (waves, swell, sea temperature, current)
+          </label>
+        </div>
+        <p style={S.help}>
+          Adds a keyless Open-Meteo Marine layer on environment.water.* and environment.current,
+          independent of the source above. Coastal and offshore only; inland points have no data.
+        </p>
       </Section>
 
       <Section

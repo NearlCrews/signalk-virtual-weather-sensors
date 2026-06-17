@@ -26,15 +26,19 @@ import {
   WEATHER_PROVIDER_LABELS,
 } from './constants/index.js';
 import { validateKeyLength } from './constants/notifications-shared.js';
+import { MarinePathMapper } from './mappers/MarinePathMapper.js';
 import { NMEA2000PathMapper } from './mappers/NMEA2000PathMapper.js';
+import { isMarineDataEmpty } from './mappers/OpenMeteoMarineMapper.js';
 import { WeatherNotifier } from './notifications/WeatherNotifier.js';
 import { createCurrentWeatherProvider } from './providers/createCurrentWeatherProvider.js';
 import { AccuWeatherService } from './services/AccuWeatherService.js';
+import { OpenMeteoMarineService } from './services/OpenMeteoMarineService.js';
 import { WeatherProviderAdapter } from './services/WeatherProviderAdapter.js';
 import { WeatherService } from './services/WeatherService.js';
 import type {
   Logger,
   LogLevel,
+  MarineData,
   PanelStatusResponse,
   PluginConfiguration,
   PluginState,
@@ -53,6 +57,13 @@ type BannerKind = 'status' | 'error';
 interface PluginInstance {
   weatherService: WeatherService | null;
   pathMapper: NMEA2000PathMapper | null;
+  /** Null unless the optional marine layer is enabled. */
+  marinePathMapper: MarinePathMapper | null;
+  /** Cached marine values delta, rebuilt only when the marine snapshot changes. */
+  cachedMarineDelta: Delta | null;
+  cachedMarineDataRef: MarineData | null;
+  /** True once the one-shot marine meta delta has been shipped. */
+  marineMetaEmitted: boolean;
   /** Null when notifications are disabled or the plugin is stopped. */
   notifier: WeatherNotifier | null;
   emissionTimer: NodeJS.Timeout | null;
@@ -86,6 +97,10 @@ export default function createPlugin(app: ServerAPI): Plugin {
   const instance: PluginInstance = {
     weatherService: null,
     pathMapper: null,
+    marinePathMapper: null,
+    cachedMarineDelta: null,
+    cachedMarineDataRef: null,
+    marineMetaEmitted: false,
     notifier: null,
     emissionTimer: null,
     state: 'stopped',
@@ -199,6 +214,13 @@ export default function createPlugin(app: ServerAPI): Plugin {
             'Leave blank to use the free public Open-Meteo service (non-commercial use only). Commercial users can self-host the open-source server or use a paid plan and enter its URL here.',
           default: '',
         },
+        marineData: {
+          type: 'boolean',
+          title: 'Emit sea state (waves, swell, sea temperature, current)',
+          description:
+            'Adds a keyless Open-Meteo Marine layer on environment.water.* and environment.current. Coastal and offshore only; inland points have no data.',
+          default: false,
+        },
         updateFrequency: {
           type: 'integer',
           title: 'Weather Update Frequency (minutes)',
@@ -275,6 +297,7 @@ export default function createPlugin(app: ServerAPI): Plugin {
         'weatherProvider',
         'accuWeatherApiKey',
         'openMeteoBaseUrl',
+        'marineData',
         'updateFrequency',
         'emissionInterval',
         'dailyApiQuota',
@@ -384,6 +407,18 @@ async function startServices(
   // draw from a single rolling-24h quota window.
   const provider = createCurrentWeatherProvider(config, instance.logger);
   instance.sourceRef = toSourceRef(provider.sourceRef);
+  // Optional sea-state layer (keyless Open-Meteo Marine), independent of the
+  // atmospheric provider. A self-hosted Open-Meteo instance serves /v1/marine on
+  // the same host, so pass the configured base URL through when it is set.
+  const marineService = config.marineData
+    ? new OpenMeteoMarineService(
+        instance.logger,
+        config.openMeteoBaseUrl ? { baseUrl: config.openMeteoBaseUrl } : undefined
+      )
+    : undefined;
+  if (marineService) {
+    instance.marinePathMapper = new MarinePathMapper(instance.logger);
+  }
   instance.weatherService = new WeatherService(
     app,
     config,
@@ -391,7 +426,8 @@ async function startServices(
     undefined,
     provider,
     undefined,
-    bannerSink
+    bannerSink,
+    marineService
   );
   instance.pathMapper = new NMEA2000PathMapper(instance.logger, instance.sourceRef);
   // Construct the notifier even when notifications are disabled at the master
@@ -607,6 +643,39 @@ function emitWeatherTick(instance: PluginInstance, app: ServerAPI): void {
     app.handleMessage(PLUGIN.NAME, instance.pathMapper.buildMetaDelta(), SKVersion.v1);
     instance.metaEmitted = true;
   }
+
+  // Optional sea-state layer rides the same keep-alive cadence and is reached
+  // only past the staleness gate above, so marine data ages out with weather.
+  emitMarineTick(instance, app);
+}
+
+/**
+ * Emit the optional marine (sea-state) delta. No-op when the marine layer is
+ * disabled, before the first marine fetch, or for an inland point where the
+ * model has no data (so the marine meta is never shipped without real data).
+ * The cached delta is restamped each tick like the weather delta, preserving
+ * its distinct marine `$source`, and the meta block ships exactly once.
+ * @private
+ */
+function emitMarineTick(instance: PluginInstance, app: ServerAPI): void {
+  const mapper = instance.marinePathMapper;
+  if (!mapper) return;
+
+  const marine = instance.weatherService?.getCurrentMarineData();
+  if (!marine || isMarineDataEmpty(marine)) return;
+
+  if (marine !== instance.cachedMarineDataRef) {
+    instance.cachedMarineDelta = mapper.mapToSignalKPaths(marine);
+    instance.cachedMarineDataRef = marine;
+  }
+  if (!instance.cachedMarineDelta) return;
+
+  app.handleMessage(PLUGIN.NAME, withEmissionTimestamp(instance.cachedMarineDelta), SKVersion.v1);
+
+  if (!instance.marineMetaEmitted) {
+    app.handleMessage(PLUGIN.NAME, mapper.buildMetaDelta(), SKVersion.v1);
+    instance.marineMetaEmitted = true;
+  }
 }
 
 /**
@@ -682,6 +751,7 @@ async function cleanup(instance: PluginInstance): Promise<void> {
   }
 
   instance.pathMapper = null;
+  instance.marinePathMapper = null;
   if (instance.notifier) {
     instance.notifier.reset();
     instance.notifier = null;
@@ -689,6 +759,9 @@ async function cleanup(instance: PluginInstance): Promise<void> {
   instance.cachedDelta = null;
   instance.cachedWeatherDataRef = null;
   instance.metaEmitted = false;
+  instance.cachedMarineDelta = null;
+  instance.cachedMarineDataRef = null;
+  instance.marineMetaEmitted = false;
   instance.weatherProviderRegistered = false;
   instance.lastBanner = null;
 }
@@ -715,6 +788,7 @@ function validateAndNormalizeSettings(settings: unknown, logger: Logger): Plugin
     ...(typeof rawSettings.openMeteoBaseUrl === 'string' && {
       openMeteoBaseUrl: rawSettings.openMeteoBaseUrl,
     }),
+    marineData: rawSettings.marineData === true,
     accuWeatherApiKey:
       typeof rawSettings.accuWeatherApiKey === 'string' ? rawSettings.accuWeatherApiKey : '',
     updateFrequency:

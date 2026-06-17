@@ -350,6 +350,89 @@ describe('WeatherService - Data Emission', () => {
     await service.stop();
   });
 
+  it('fetches marine data alongside weather when a marine service is provided', async () => {
+    const weatherData = {
+      temperature: 293.15,
+      pressure: 101325,
+      humidity: 0.6,
+      windSpeed: 5,
+      windDirection: Math.PI,
+      dewPoint: 285.15,
+      windChill: 293.15,
+      heatIndex: 293.15,
+      timestamp: new Date().toISOString(),
+    };
+    const vesselData = { position: { latitude: 60, longitude: 5 }, isComplete: false };
+    const marine = { timestamp: 't', significantWaveHeight: 1.2, seaSurfaceTemperature: 287.15 };
+    const mockProvider = {
+      fetchCurrentWeather: vi.fn().mockResolvedValue(weatherData),
+      getRequestCount: vi.fn(() => 1),
+      getRequestCountLast24h: vi.fn(() => 1),
+    };
+    const mockSignalK = { getVesselNavigationData: vi.fn(() => vesselData), clearCache: vi.fn() };
+    const mockMarine = { fetchMarine: vi.fn().mockResolvedValue(marine) };
+
+    const service = new WeatherService(
+      mockApp as never,
+      config,
+      mockLogger,
+      undefined,
+      mockProvider as never,
+      mockSignalK as never,
+      undefined,
+      mockMarine as never
+    );
+
+    await service.start();
+    await service.forceUpdate();
+
+    expect(mockMarine.fetchMarine).toHaveBeenCalledWith(vesselData.position);
+    expect(service.getCurrentMarineData()?.significantWaveHeight).toBe(1.2);
+
+    await service.stop();
+  });
+
+  it('keeps the weather update when the marine fetch fails (best-effort)', async () => {
+    const weatherData = {
+      temperature: 293.15,
+      pressure: 101325,
+      humidity: 0.6,
+      windSpeed: 5,
+      windDirection: Math.PI,
+      dewPoint: 285.15,
+      windChill: 293.15,
+      heatIndex: 293.15,
+      timestamp: new Date().toISOString(),
+    };
+    const vesselData = { position: { latitude: 60, longitude: 5 }, isComplete: false };
+    const mockProvider = {
+      fetchCurrentWeather: vi.fn().mockResolvedValue(weatherData),
+      getRequestCount: vi.fn(() => 1),
+      getRequestCountLast24h: vi.fn(() => 1),
+    };
+    const mockSignalK = { getVesselNavigationData: vi.fn(() => vesselData), clearCache: vi.fn() };
+    const mockMarine = { fetchMarine: vi.fn().mockRejectedValue(new Error('marine host down')) };
+
+    const service = new WeatherService(
+      mockApp as never,
+      config,
+      mockLogger,
+      undefined,
+      mockProvider as never,
+      mockSignalK as never,
+      undefined,
+      mockMarine as never
+    );
+
+    await service.start();
+    await service.forceUpdate();
+
+    expect(service.getCurrentWeatherData()).not.toBeNull();
+    expect(service.getCurrentMarineData()).toBeNull();
+
+    await service.stop();
+  });
+
   it('coalesces overlapping updates into a single fetch (single-flight)', async () => {
     const weatherData = {
       temperature: 293.15,
