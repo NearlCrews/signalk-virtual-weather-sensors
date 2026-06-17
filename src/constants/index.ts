@@ -247,6 +247,33 @@ export const SIGNALK_PATHS = {
       PRECIPITATION_TYPE: 'environment.weather.precipitationType',
       VISIBILITY_OBSTRUCTION: 'environment.weather.visibilityObstruction',
     },
+
+    /**
+     * Sea-state leaves from the optional Open-Meteo Marine layer. `temperature`
+     * is the canonical `environment.water.temperature` leaf (K); the wave and
+     * swell sub-paths are producer-namespaced extensions under the canonical
+     * `environment.water` container (the 1.8.2 vocabulary defines only
+     * `temperature` and `salinity` there, and the container is not leaf-only, so
+     * nesting `waves.*` / `swell.*` is schema-permissible and not a squat).
+     */
+    WATER: {
+      TEMPERATURE: 'environment.water.temperature',
+      WAVE_SIGNIFICANT_HEIGHT: 'environment.water.waves.significantHeight',
+      WAVE_PERIOD: 'environment.water.waves.period',
+      WAVE_DIRECTION: 'environment.water.waves.direction',
+      WIND_WAVE_HEIGHT: 'environment.water.waves.windWaveHeight',
+      SWELL_HEIGHT: 'environment.water.swell.height',
+      SWELL_PERIOD: 'environment.water.swell.period',
+      SWELL_DIRECTION: 'environment.water.swell.direction',
+    },
+
+    /**
+     * Canonical surface-current node. Per the 1.8.2 schema `environment.current`
+     * is a single OBJECT node carrying `drift` (m/s) and `setTrue` (rad), not
+     * dotted leaf paths. Sourced from the marine model, so it is `$source`-tagged
+     * distinctly and yields to a real current sensor under source priorities.
+     */
+    CURRENT: 'environment.current',
   },
 
   /**
