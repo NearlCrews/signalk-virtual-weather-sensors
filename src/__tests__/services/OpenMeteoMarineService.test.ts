@@ -6,17 +6,7 @@
 
 import { beforeEach, describe, expect, it, type Mock, vi } from 'vitest';
 import { OpenMeteoMarineService } from '../../services/OpenMeteoMarineService.js';
-
-function makeResponse(body: unknown, init: { ok?: boolean; status?: number } = {}): unknown {
-  const { ok = true, status = 200 } = init;
-  return {
-    ok,
-    status,
-    statusText: ok ? 'OK' : 'Error',
-    headers: { get: () => null },
-    text: async () => (typeof body === 'string' ? body : JSON.stringify(body)),
-  };
-}
+import { createMockFetchResponse, GREENWICH } from '../setup.js';
 
 const SAMPLE = {
   current: {
@@ -30,15 +20,13 @@ const SAMPLE = {
   },
 };
 
-const GREENWICH = { latitude: 51.4779, longitude: -0.0015 };
-
 describe('OpenMeteoMarineService', () => {
   beforeEach(() => {
     vi.stubGlobal('fetch', vi.fn());
   });
 
   it('fetches and maps marine data', async () => {
-    (global.fetch as Mock).mockResolvedValueOnce(makeResponse(SAMPLE));
+    (global.fetch as Mock).mockResolvedValueOnce(createMockFetchResponse(SAMPLE));
     const service = new OpenMeteoMarineService();
 
     const data = await service.fetchMarine(GREENWICH);
@@ -50,7 +38,7 @@ describe('OpenMeteoMarineService', () => {
   });
 
   it('requests the marine current block at the vessel position', async () => {
-    (global.fetch as Mock).mockResolvedValueOnce(makeResponse(SAMPLE));
+    (global.fetch as Mock).mockResolvedValueOnce(createMockFetchResponse(SAMPLE));
     const service = new OpenMeteoMarineService();
 
     await service.fetchMarine(GREENWICH);
@@ -63,7 +51,7 @@ describe('OpenMeteoMarineService', () => {
   });
 
   it('uses a configured base URL (self-hosted)', async () => {
-    (global.fetch as Mock).mockResolvedValueOnce(makeResponse(SAMPLE));
+    (global.fetch as Mock).mockResolvedValueOnce(createMockFetchResponse(SAMPLE));
     const service = new OpenMeteoMarineService(() => {}, {
       baseUrl: 'https://meteo.example.test/',
     });
@@ -76,7 +64,9 @@ describe('OpenMeteoMarineService', () => {
   });
 
   it('propagates a tagged error on a non-2xx status', async () => {
-    (global.fetch as Mock).mockResolvedValueOnce(makeResponse('err', { ok: false, status: 500 }));
+    (global.fetch as Mock).mockResolvedValueOnce(
+      createMockFetchResponse('err', { ok: false, status: 500 })
+    );
     const service = new OpenMeteoMarineService();
     await expect(service.fetchMarine(GREENWICH)).rejects.toThrow(/500/);
   });

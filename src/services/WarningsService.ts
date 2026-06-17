@@ -17,9 +17,7 @@ import { PLUGIN } from '../constants/index.js';
 import { mapNwsAlertsToWarnings, type NwsAlertsResponse } from '../mappers/WarningsMapper.js';
 import type { GeoLocation, Logger } from '../types/index.js';
 import { toErrorMessage } from '../utils/conversions.js';
-import { fetchJson } from '../utils/http.js';
-
-const DEFAULT_REQUEST_TIMEOUT_MS = 10_000;
+import { DEFAULT_REQUEST_TIMEOUT_MS, fetchJson } from '../utils/http.js';
 
 /** NWS requires an identifying User-Agent with contact info, or it returns 403. */
 const NWS_USER_AGENT = `${PLUGIN.NAME}/${PLUGIN.VERSION} (+https://github.com/NearlCrews/signalk-virtual-weather-sensors)`;

@@ -7,17 +7,7 @@
 
 import { beforeEach, describe, expect, it, type Mock, vi } from 'vitest';
 import { OpenMeteoService } from '../../services/OpenMeteoService.js';
-
-function makeResponse(body: unknown, init: { ok?: boolean; status?: number } = {}): unknown {
-  const { ok = true, status = 200 } = init;
-  return {
-    ok,
-    status,
-    statusText: ok ? 'OK' : 'Error',
-    headers: { get: () => null },
-    text: async () => (typeof body === 'string' ? body : JSON.stringify(body)),
-  };
-}
+import { createMockFetchResponse, GREENWICH } from '../setup.js';
 
 const SAMPLE = {
   current: {
@@ -32,15 +22,13 @@ const SAMPLE = {
   },
 };
 
-const GREENWICH = { latitude: 51.4779, longitude: -0.0015 };
-
 describe('OpenMeteoService', () => {
   beforeEach(() => {
     vi.stubGlobal('fetch', vi.fn());
   });
 
   it('fetches and maps current weather, and reports keyless quota accessors', async () => {
-    (global.fetch as Mock).mockResolvedValueOnce(makeResponse(SAMPLE));
+    (global.fetch as Mock).mockResolvedValueOnce(createMockFetchResponse(SAMPLE));
     const service = new OpenMeteoService();
 
     const data = await service.fetchCurrentWeather(GREENWICH);
@@ -55,7 +43,7 @@ describe('OpenMeteoService', () => {
   });
 
   it('requests the current block with m/s wind units at the vessel position', async () => {
-    (global.fetch as Mock).mockResolvedValueOnce(makeResponse(SAMPLE));
+    (global.fetch as Mock).mockResolvedValueOnce(createMockFetchResponse(SAMPLE));
     const service = new OpenMeteoService();
 
     await service.fetchCurrentWeather(GREENWICH);
@@ -71,7 +59,7 @@ describe('OpenMeteoService', () => {
 
   it('propagates a tagged error on a non-2xx status', async () => {
     (global.fetch as Mock).mockResolvedValueOnce(
-      makeResponse('rate limited', { ok: false, status: 429 })
+      createMockFetchResponse('rate limited', { ok: false, status: 429 })
     );
     const service = new OpenMeteoService();
 
@@ -79,7 +67,7 @@ describe('OpenMeteoService', () => {
   });
 
   it('uses a configured base URL', async () => {
-    (global.fetch as Mock).mockResolvedValueOnce(makeResponse(SAMPLE));
+    (global.fetch as Mock).mockResolvedValueOnce(createMockFetchResponse(SAMPLE));
     const service = new OpenMeteoService(() => {}, { baseUrl: 'https://meteo.example.test/' });
 
     await service.fetchCurrentWeather(GREENWICH);

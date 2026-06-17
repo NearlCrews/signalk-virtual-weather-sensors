@@ -8,19 +8,18 @@
  * paid Open-Meteo instance (the free hosted service is non-commercial).
  */
 
-import { ERROR_CODES, PLUGIN } from '../constants/index.js';
+import { PLUGIN } from '../constants/index.js';
 import { mapOpenMeteoCurrentToWeatherData } from '../mappers/OpenMeteoMapper.js';
 import type { CurrentWeatherProvider } from '../providers/WeatherProvider.js';
 import type { GeoLocation, Logger, OpenMeteoCurrentResponse, WeatherData } from '../types/index.js';
-import { isValidCoordinates, toErrorMessage } from '../utils/conversions.js';
-import { fetchJson } from '../utils/http.js';
+import { toErrorMessage } from '../utils/conversions.js';
+import { DEFAULT_REQUEST_TIMEOUT_MS, fetchJson, normalizeBaseUrl } from '../utils/http.js';
+import { assertValidCoordinates } from '../utils/validation.js';
 
 /** Default Open-Meteo host. Overridable so commercial users can self-host or use a paid plan. */
 const DEFAULT_BASE_URL = 'https://api.open-meteo.com';
 /** Forecast endpoint path. */
 const FORECAST_ENDPOINT = '/v1/forecast';
-/** Default per-request timeout in milliseconds. */
-const DEFAULT_REQUEST_TIMEOUT_MS = 10_000;
 /** Current-block variables requested. Order is cosmetic; units are set on the query. */
 const CURRENT_PARAMS = [
   'temperature_2m',
@@ -59,17 +58,14 @@ export class OpenMeteoService implements CurrentWeatherProvider {
 
   constructor(logger: Logger = () => {}, options?: OpenMeteoOptions) {
     this.logger = logger;
-    // Trim and fall back so an empty or whitespace override does not yield a
-    // broken base URL. Strip a trailing slash so endpoint joining is clean.
-    const base = options?.baseUrl?.trim();
-    this.baseUrl = (base && base.length > 0 ? base : DEFAULT_BASE_URL).replace(/\/+$/, '');
+    this.baseUrl = normalizeBaseUrl(options?.baseUrl, DEFAULT_BASE_URL);
     this.requestTimeoutMs = options?.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS;
 
     this.logger('info', 'OpenMeteoService initialized', { baseUrl: this.baseUrl });
   }
 
   public async fetchCurrentWeather(location: GeoLocation): Promise<WeatherData> {
-    this.validateLocation(location);
+    assertValidCoordinates(location, 'Open-Meteo request');
     const url = this.buildUrl(location);
 
     try {
@@ -105,20 +101,6 @@ export class OpenMeteoService implements CurrentWeatherProvider {
     url.searchParams.set('wind_speed_unit', 'ms');
     url.searchParams.set('timezone', 'GMT');
     return url;
-  }
-
-  /** Reject a malformed or out-of-range coordinate before issuing a request. */
-  private validateLocation(location: GeoLocation): void {
-    if (
-      !location ||
-      typeof location.latitude !== 'number' ||
-      typeof location.longitude !== 'number' ||
-      !isValidCoordinates(location.latitude, location.longitude)
-    ) {
-      throw new Error(
-        `${ERROR_CODES.CONFIGURATION.INVALID_COORDINATES}: invalid coordinates for Open-Meteo request`
-      );
-    }
   }
 
   /** Cumulative request count, for the status banner. */

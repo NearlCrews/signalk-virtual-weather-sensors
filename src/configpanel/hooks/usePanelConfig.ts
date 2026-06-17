@@ -199,6 +199,7 @@ export function usePanelConfig(
       const payload: PanelFormState = {
         ...form,
         accuWeatherApiKey: trimmedKey,
+        openMeteoBaseUrl: form.openMeteoBaseUrl.trim(),
         notifications: { ...form.notifications },
       };
       await Promise.resolve(hostSave(payload));

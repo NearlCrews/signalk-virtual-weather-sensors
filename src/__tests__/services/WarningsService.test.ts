@@ -6,17 +6,7 @@
 
 import { beforeEach, describe, expect, it, type Mock, vi } from 'vitest';
 import { WarningsService } from '../../services/WarningsService.js';
-
-function makeResponse(body: unknown, init: { ok?: boolean; status?: number } = {}): unknown {
-  const { ok = true, status = 200 } = init;
-  return {
-    ok,
-    status,
-    statusText: ok ? 'OK' : 'Error',
-    headers: { get: () => null },
-    text: async () => (typeof body === 'string' ? body : JSON.stringify(body)),
-  };
-}
+import { createMockFetchResponse } from '../setup.js';
 
 const MIAMI = { latitude: 25.7743, longitude: -80.1937 };
 const NORWAY = { latitude: 60.0, longitude: 10.0 };
@@ -28,7 +18,7 @@ describe('WarningsService', () => {
 
   it('fetches and maps NWS warnings for a US point', async () => {
     (global.fetch as Mock).mockResolvedValueOnce(
-      makeResponse({
+      createMockFetchResponse({
         features: [
           {
             properties: {
@@ -60,7 +50,9 @@ describe('WarningsService', () => {
   });
 
   it('returns empty on a fetch failure (best-effort)', async () => {
-    (global.fetch as Mock).mockResolvedValueOnce(makeResponse('err', { ok: false, status: 500 }));
+    (global.fetch as Mock).mockResolvedValueOnce(
+      createMockFetchResponse('err', { ok: false, status: 500 })
+    );
     const service = new WarningsService();
     const warnings = await service.getWarnings(MIAMI);
     expect(warnings).toEqual([]);

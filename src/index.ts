@@ -669,11 +669,17 @@ function emitMarineTick(instance: PluginInstance, app: ServerAPI): void {
   if (!mapper) return;
 
   const marine = instance.weatherService?.getCurrentMarineData();
-  if (!marine || isMarineDataEmpty(marine)) return;
+  if (!marine) return;
 
+  // Cheap pointer compare first: the steady-state tick (unchanged snapshot)
+  // skips the per-field emptiness scan, which only runs on a genuinely new
+  // snapshot. An inland point with no usable sea-state pins a null delta so the
+  // tick emits nothing (and the marine meta never ships without real data).
   if (marine !== instance.cachedMarineDataRef) {
-    instance.cachedMarineDelta = mapper.mapToSignalKPaths(marine);
     instance.cachedMarineDataRef = marine;
+    instance.cachedMarineDelta = isMarineDataEmpty(marine)
+      ? null
+      : mapper.mapToSignalKPaths(marine);
   }
   if (!instance.cachedMarineDelta) return;
 

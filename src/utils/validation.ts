@@ -4,6 +4,7 @@ import {
   CLOUD_CEILING_LIMITS_M,
   CONFIG_DEFAULTS,
   DEFAULT_CONFIG,
+  ERROR_CODES,
   HEAT_STRESS_INDEX_LIMITS,
   NMEA2000_LIMITS,
   PRECIPITATION_LIMITS,
@@ -15,10 +16,16 @@ import {
   WEATHER_PROVIDER_IDS,
   type WeatherProviderId,
 } from '../constants/index.js';
-import type { NotificationsConfig, PluginConfiguration, WeatherData } from '../types/index.js';
+import type {
+  GeoLocation,
+  NotificationsConfig,
+  PluginConfiguration,
+  WeatherData,
+} from '../types/index.js';
 import {
   celsiusToKelvin,
   clamp,
+  isValidCoordinates,
   normalizeAngle0To2Pi,
   normalizeAnglePiToPi,
   TWO_PI,
@@ -26,6 +33,25 @@ import {
 
 /** Re-export so callers outside this module don't need to know it lives in the shared JS module. */
 export { API_KEY_MIN_LENGTH };
+
+/**
+ * Throw a tagged INVALID_COORDINATES error unless `location` carries finite,
+ * in-range numeric latitude and longitude. Shared by the weather services so
+ * the coordinate guard is not copy-pasted per service. `context` names the
+ * caller for the error message (for example "Open-Meteo marine request").
+ */
+export function assertValidCoordinates(location: GeoLocation, context: string): void {
+  if (
+    !location ||
+    typeof location.latitude !== 'number' ||
+    typeof location.longitude !== 'number' ||
+    !isValidCoordinates(location.latitude, location.longitude)
+  ) {
+    throw new Error(
+      `${ERROR_CODES.CONFIGURATION.INVALID_COORDINATES}: invalid coordinates for ${context}`
+    );
+  }
+}
 
 /** NMEA2000 temperature bounds expressed in Kelvin (precomputed to avoid C↔K work on the hot path). */
 const NMEA2000_TEMP_K_MIN = celsiusToKelvin(NMEA2000_LIMITS.TEMPERATURE_C.MIN);

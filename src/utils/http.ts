@@ -12,6 +12,19 @@ import { toErrorMessage } from './conversions.js';
 /** Default response-body cap (1 MiB), matching the AccuWeather fetch path. */
 const DEFAULT_MAX_RESPONSE_BYTES = 1_048_576;
 
+/** Default per-request timeout for the keyless JSON clients, in milliseconds. */
+export const DEFAULT_REQUEST_TIMEOUT_MS = 10_000;
+
+/**
+ * Resolve a service base URL: a trimmed, non-empty override wins, otherwise the
+ * fallback, with any trailing slashes stripped so endpoint joining is clean.
+ * Shared by the keyless Open-Meteo clients so the idiom lives in one place.
+ */
+export function normalizeBaseUrl(override: string | undefined, fallback: string): string {
+  const trimmed = override?.trim();
+  return (trimmed && trimmed.length > 0 ? trimmed : fallback).replace(/\/+$/, '');
+}
+
 export interface FetchJsonOptions {
   /** Abort the request after this many milliseconds. */
   readonly timeoutMs: number;

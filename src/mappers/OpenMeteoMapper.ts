@@ -17,6 +17,7 @@ import { openMeteoSevereCondition } from '../providers/open-meteo-severity.js';
 import type { OpenMeteoCurrentResponse, WeatherData } from '../types/index.js';
 import {
   asOptionalNumber,
+  asStringOrEmpty,
   calculateAbsoluteHumidity,
   calculateAirDensity,
   calculateBeaufortScale,
@@ -172,7 +173,7 @@ export function mapOpenMeteoCurrentToWeatherData(response: OpenMeteoCurrentRespo
     airDensityEnhanced,
     wetBulbGlobeTemperature,
     heatStressIndex,
-    timestamp: typeof current.time === 'string' ? current.time : '',
+    timestamp: asStringOrEmpty(current.time),
     ...extractOptionalFields(current, windSpeed),
   };
 }

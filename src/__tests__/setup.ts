@@ -38,6 +38,13 @@ afterAll(() => {
 });
 
 // ===============================
+// Shared test fixtures
+// ===============================
+
+/** Greenwich-area coordinate shared by the keyless-provider service tests. */
+export const GREENWICH = { latitude: 51.4779, longitude: -0.0015 } as const;
+
+// ===============================
 // Mock Data Generators
 // ===============================
 

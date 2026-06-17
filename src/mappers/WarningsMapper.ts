@@ -37,7 +37,9 @@ function byStartAscending(a: WeatherWarning, b: WeatherWarning): number {
  * Map an NWS active-alerts response to WeatherWarning[]. The start time prefers
  * `onset` then `effective`; the end time prefers `ends` then `expires`; details
  * prefer the headline, falling back to the description. Features with no event
- * type are dropped (a warning with no `type` is not actionable).
+ * type or no start time are dropped: a warning with no `type` is not actionable,
+ * and an empty start time is not a usable timestamp and would sort to the front.
+ * NWS alerts reliably carry both, so this only drops malformed entries.
  */
 export function mapNwsAlertsToWarnings(response: NwsAlertsResponse): WeatherWarning[] {
   const features = response.features ?? [];
@@ -53,6 +55,6 @@ export function mapNwsAlertsToWarnings(response: NwsAlertsResponse): WeatherWarn
         type: str(p.event),
       };
     })
-    .filter((warning) => warning.type.length > 0);
+    .filter((warning) => warning.type.length > 0 && warning.startTime.length > 0);
   return warnings.sort(byStartAscending);
 }

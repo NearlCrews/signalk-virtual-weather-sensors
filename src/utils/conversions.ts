@@ -37,6 +37,11 @@ export function asOptionalNumber(value: unknown): number | undefined {
   return typeof value === 'number' ? value : undefined;
 }
 
+/** Return the value when it is a string, otherwise an empty string. */
+export function asStringOrEmpty(value: unknown): string {
+  return typeof value === 'string' ? value : '';
+}
+
 /**
  * True when rolling-window API usage has reached `ratio` of the daily quota cap.
  * A quota of 0, undefined, or any non-positive or non-finite value disables the

@@ -160,7 +160,7 @@ export default function PluginConfigurationPanel({
         open={openSections.apiKey}
         onToggle={() => toggleSection('apiKey')}
         summary={
-          form.weatherProvider === 'accuweather'
+          isAccuWeather
             ? form.accuWeatherApiKey.trim()
               ? 'AccuWeather (key set)'
               : 'AccuWeather (no key)'
@@ -185,7 +185,7 @@ export default function PluginConfigurationPanel({
           </select>
         </div>
 
-        {form.weatherProvider === 'accuweather' ? (
+        {isAccuWeather ? (
           <ApiKeyField
             value={form.accuWeatherApiKey}
             keyError={keyError}

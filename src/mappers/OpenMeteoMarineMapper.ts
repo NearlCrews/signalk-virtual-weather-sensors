@@ -12,6 +12,7 @@
 import type { MarineData, OpenMeteoMarineResponse } from '../types/index.js';
 import {
   asOptionalNumber,
+  asStringOrEmpty,
   celsiusToKelvin,
   degreesToRadians,
   kmhToMS,
@@ -44,7 +45,7 @@ export function mapOpenMeteoMarineToMarineData(response: OpenMeteoMarineResponse
   const surfaceCurrentDirection = toRadians(current.ocean_current_direction);
 
   return {
-    timestamp: typeof current.time === 'string' ? current.time : '',
+    timestamp: asStringOrEmpty(current.time),
     ...(significantWaveHeight !== undefined && { significantWaveHeight }),
     ...(waveDirection !== undefined && { waveDirection }),
     ...(wavePeriod !== undefined && { wavePeriod }),
