@@ -2,6 +2,7 @@ import type { Position } from '@signalk/server-api';
 import { describe, expect, it, vi } from 'vitest';
 import { PLUGIN } from '../../constants/index.js';
 import { AccuWeatherService } from '../../services/AccuWeatherService.js';
+import type { WarningsService } from '../../services/WarningsService.js';
 import { WeatherProviderAdapter } from '../../services/WeatherProviderAdapter.js';
 
 const position: Position = { latitude: 51.5, longitude: -0.12 };
@@ -82,8 +83,29 @@ describe('WeatherProviderAdapter', () => {
     expect(result[0]?.wind?.speedTrue).toBeCloseTo(5, 2);
   });
 
-  it('throws Not supported! for warnings', async () => {
+  it('throws Not supported! for warnings when no warnings service is wired', async () => {
     const provider = buildAdapter().toProvider();
     await expect(provider.methods.getWarnings(position)).rejects.toThrow('Not supported!');
+  });
+
+  it('routes warnings to the warnings service, honoring the position', async () => {
+    const accu = Object.create(AccuWeatherService.prototype) as AccuWeatherService;
+    const warnings = {
+      getWarnings: vi
+        .fn()
+        .mockResolvedValue([
+          { startTime: 's', endTime: 'e', details: 'd', source: 'NWS', type: 'Gale Warning' },
+        ]),
+    } as unknown as WarningsService;
+    const provider = new WeatherProviderAdapter(accu, warnings).toProvider();
+
+    const result = await provider.methods.getWarnings(position);
+
+    expect(warnings.getWarnings).toHaveBeenCalledWith({
+      latitude: position.latitude,
+      longitude: position.longitude,
+    });
+    expect(result).toHaveLength(1);
+    expect(result[0]?.type).toBe('Gale Warning');
   });
 });

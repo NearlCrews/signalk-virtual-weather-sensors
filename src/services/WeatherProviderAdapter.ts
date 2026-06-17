@@ -1,9 +1,10 @@
 /**
- * Adapts AccuWeather forecast data to the Signal K v2 Weather API provider
- * contract. Registration of the returned provider makes the server advertise
- * `weather` in /signalk/v2/features, which is what lets consumers like
- * signalk-open-binnacle show their weather UI. Phase 1 implements forecasts
- * only; observations and warnings throw the SK-conventional 'Not supported!'.
+ * Adapts AccuWeather data to the Signal K v2 Weather API provider contract.
+ * Registration of the returned provider advertises the provider in
+ * /signalk/v2/api/weather/_providers, which is what lets consumers like
+ * signalk-open-binnacle show their weather UI. Forecasts and observations are
+ * AccuWeather-backed; warnings come from the region-aware (keyless) WarningsService
+ * when one is supplied, otherwise warnings throw the SK-conventional 'Not supported!'.
  */
 import type {
   Position,
@@ -21,10 +22,12 @@ import {
 } from '../mappers/WeatherProviderMapper.js';
 import type { GeoLocation, Logger } from '../types/index.js';
 import type { AccuWeatherService } from './AccuWeatherService.js';
+import type { WarningsService } from './WarningsService.js';
 
 export class WeatherProviderAdapter {
   constructor(
     private readonly accuWeather: AccuWeatherService,
+    private readonly warningsService?: WarningsService,
     private readonly logger: Logger = () => {}
   ) {}
 
@@ -72,9 +75,17 @@ export class WeatherProviderAdapter {
     return [observation];
   }
 
-  private async getWarnings(): Promise<WeatherWarning[]> {
-    // Phase 3: map the AccuWeather alerts endpoint (best-effort, 403-tolerant
-    // on the free tier). Until then, signal that warnings are not served.
-    throw new Error('Not supported!');
+  private async getWarnings(position: Position): Promise<WeatherWarning[]> {
+    // Warnings are keyless and region-aware (NWS for US waters), independent of
+    // the AccuWeather forecast/observation backing. Without a warnings service
+    // wired in, signal the SK-conventional "not served".
+    if (!this.warningsService) {
+      throw new Error('Not supported!');
+    }
+    this.logger('debug', 'Weather provider warnings request');
+    return this.warningsService.getWarnings({
+      latitude: position.latitude,
+      longitude: position.longitude,
+    });
   }
 }

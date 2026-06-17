@@ -33,6 +33,7 @@ import { WeatherNotifier } from './notifications/WeatherNotifier.js';
 import { createCurrentWeatherProvider } from './providers/createCurrentWeatherProvider.js';
 import { AccuWeatherService } from './services/AccuWeatherService.js';
 import { OpenMeteoMarineService } from './services/OpenMeteoMarineService.js';
+import { WarningsService } from './services/WarningsService.js';
 import { WeatherProviderAdapter } from './services/WeatherProviderAdapter.js';
 import { WeatherService } from './services/WeatherService.js';
 import type {
@@ -444,7 +445,13 @@ async function startServices(
   if (typeof app.registerWeatherProvider !== 'function') {
     instance.logger('warn', 'Server lacks registerWeatherProvider; weather API not exposed');
   } else if (provider instanceof AccuWeatherService) {
-    const adapter = new WeatherProviderAdapter(provider, instance.logger);
+    // Warnings are keyless and region-aware (NWS for US waters), served through
+    // the v2 provider alongside the AccuWeather forecasts and observations.
+    const adapter = new WeatherProviderAdapter(
+      provider,
+      new WarningsService(instance.logger),
+      instance.logger
+    );
     app.registerWeatherProvider(adapter.toProvider());
     instance.weatherProviderRegistered = true;
     instance.logger('info', 'Registered Signal K weather provider', { provider: provider.name });
