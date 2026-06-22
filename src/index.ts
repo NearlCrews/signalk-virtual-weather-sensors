@@ -11,7 +11,6 @@ import {
   type Plugin,
   type ServerAPI,
   SKVersion,
-  type SourceRef,
 } from '@signalk/server-api';
 import type { IRouter, Request, Response } from 'express';
 import {
@@ -31,6 +30,7 @@ import { MarinePathMapper } from './mappers/MarinePathMapper.js';
 import { NMEA2000PathMapper } from './mappers/NMEA2000PathMapper.js';
 import { isMarineDataEmpty } from './mappers/OpenMeteoMarineMapper.js';
 import { WeatherNotifier } from './notifications/WeatherNotifier.js';
+import { type PluginInstance, setBanner } from './plugin/instance.js';
 import { createCurrentWeatherProvider } from './providers/createCurrentWeatherProvider.js';
 import { supportsForecasts } from './providers/WeatherProvider.js';
 import { AccuWeatherService } from './services/AccuWeatherService.js';
@@ -41,54 +41,13 @@ import { WeatherService } from './services/WeatherService.js';
 import type {
   Logger,
   LogLevel,
-  MarineData,
   PanelStatusResponse,
   PluginConfiguration,
-  PluginState,
   WeatherData,
 } from './types/index.js';
 import { msToWholeMinutes, toErrorMessage } from './utils/conversions.js';
 import { buildValuesDelta, toSourceRef } from './utils/skDelta.js';
 import { ConfigurationValidator } from './utils/validation.js';
-
-/** Distinguishes a banner string pushed via setPluginStatus from one pushed via setPluginError. */
-type BannerKind = 'status' | 'error';
-
-/**
- * Plugin instance state
- */
-interface PluginInstance {
-  weatherService: WeatherService | null;
-  pathMapper: NMEA2000PathMapper | null;
-  /** Null unless the optional marine layer is enabled. */
-  marinePathMapper: MarinePathMapper | null;
-  /** Cached marine values delta, rebuilt only when the marine snapshot changes. */
-  cachedMarineDelta: Delta | null;
-  cachedMarineDataRef: MarineData | null;
-  /** True once the one-shot marine meta delta has been shipped. */
-  marineMetaEmitted: boolean;
-  /** Null when notifications are disabled or the plugin is stopped. */
-  notifier: WeatherNotifier | null;
-  emissionTimer: NodeJS.Timeout | null;
-  state: PluginState;
-  startTime: Date | null;
-  logger: Logger;
-  /** Cached delta to avoid rebuilding on every emission tick */
-  cachedDelta: Delta | null;
-  cachedWeatherDataRef: WeatherData | null;
-  /** True once the one-shot meta delta has been shipped to the server. */
-  metaEmitted: boolean;
-  /** True once app.registerWeatherProvider has been called this start cycle. */
-  weatherProviderRegistered: boolean;
-  /** `$source` of the active provider, stamped on notification and re-broadcast deltas. */
-  sourceRef: SourceRef;
-  /**
-   * Last (kind, message) pushed to the admin UI. Used to dedupe identical
-   * setPluginStatus / setPluginError calls so a flapping API doesn't oscillate
-   * the banner every emission tick. Reset on stop().
-   */
-  lastBanner: { kind: BannerKind; message: string } | null;
-}
 
 /**
  * Main plugin factory function
@@ -113,7 +72,10 @@ export default function createPlugin(app: ServerAPI): Plugin {
     cachedWeatherDataRef: null,
     metaEmitted: false,
     weatherProviderRegistered: false,
-    sourceRef: toSourceRef('accuweather'),
+    // Pre-start placeholder, overwritten in startServices with the resolved
+    // provider's sourceRef before the first delta. Open-Meteo is the default
+    // install source, so it is the honest placeholder here.
+    sourceRef: toSourceRef('open-meteo'),
     lastBanner: null,
   };
 
@@ -535,32 +497,6 @@ function unregisterWeatherProvider(instance: PluginInstance, app: ServerAPI): vo
     });
   }
   instance.weatherProviderRegistered = false;
-}
-
-/**
- * Single entry point for every admin-UI banner push. Dedupes consecutive
- * identical (kind, message) pairs so a flapping API or a steady-state quota
- * pause doesn't oscillate the banner every 5 seconds. Identity is tracked
- * separately for `setPluginStatus` and `setPluginError` because the server
- * treats them as distinct UI bands.
- * @private
- */
-function setBanner(
-  instance: PluginInstance,
-  app: ServerAPI,
-  kind: BannerKind,
-  message: string
-): void {
-  const last = instance.lastBanner;
-  if (last !== null && last.kind === kind && last.message === message) {
-    return;
-  }
-  if (kind === 'status') {
-    app.setPluginStatus(message);
-  } else {
-    app.setPluginError(message);
-  }
-  instance.lastBanner = { kind, message };
 }
 
 function setupEnhancedEmissionSystem(
