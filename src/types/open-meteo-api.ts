@@ -52,3 +52,42 @@ export interface OpenMeteoMarineResponse {
     readonly sea_surface_temperature?: number;
   };
 }
+
+/**
+ * Open-Meteo `/v1/forecast` hourly and daily blocks. Columnar: each variable is
+ * a parallel array indexed by position in `time`. All optional, and elements may
+ * be null where Open-Meteo has a gap. Units match the current block (wind m/s via
+ * `wind_speed_unit=ms`, visibility meters, `pressure_msl` hPa, temperatures
+ * Celsius, `cloud_cover` and `relative_humidity_2m` percent, `precipitation` mm).
+ */
+export interface OpenMeteoForecastResponse {
+  readonly hourly?: {
+    readonly time?: ReadonlyArray<string>;
+    readonly temperature_2m?: ReadonlyArray<number | null>;
+    readonly relative_humidity_2m?: ReadonlyArray<number | null>;
+    readonly dew_point_2m?: ReadonlyArray<number | null>;
+    readonly apparent_temperature?: ReadonlyArray<number | null>;
+    readonly precipitation?: ReadonlyArray<number | null>;
+    readonly weather_code?: ReadonlyArray<number | null>;
+    readonly cloud_cover?: ReadonlyArray<number | null>;
+    readonly pressure_msl?: ReadonlyArray<number | null>;
+    readonly wind_speed_10m?: ReadonlyArray<number | null>;
+    readonly wind_direction_10m?: ReadonlyArray<number | null>;
+    readonly wind_gusts_10m?: ReadonlyArray<number | null>;
+    readonly visibility?: ReadonlyArray<number | null>;
+    readonly uv_index?: ReadonlyArray<number | null>;
+  };
+  readonly daily?: {
+    readonly time?: ReadonlyArray<string>;
+    readonly temperature_2m_max?: ReadonlyArray<number | null>;
+    readonly temperature_2m_min?: ReadonlyArray<number | null>;
+    readonly precipitation_sum?: ReadonlyArray<number | null>;
+    readonly weather_code?: ReadonlyArray<number | null>;
+    readonly wind_speed_10m_max?: ReadonlyArray<number | null>;
+    readonly wind_direction_10m_dominant?: ReadonlyArray<number | null>;
+    readonly wind_gusts_10m_max?: ReadonlyArray<number | null>;
+    readonly uv_index_max?: ReadonlyArray<number | null>;
+    readonly sunrise?: ReadonlyArray<string>;
+    readonly sunset?: ReadonlyArray<string>;
+  };
+}
