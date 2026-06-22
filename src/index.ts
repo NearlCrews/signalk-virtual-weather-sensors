@@ -32,6 +32,7 @@ import { NMEA2000PathMapper } from './mappers/NMEA2000PathMapper.js';
 import { isMarineDataEmpty } from './mappers/OpenMeteoMarineMapper.js';
 import { WeatherNotifier } from './notifications/WeatherNotifier.js';
 import { createCurrentWeatherProvider } from './providers/createCurrentWeatherProvider.js';
+import { supportsForecasts } from './providers/WeatherProvider.js';
 import { AccuWeatherService } from './services/AccuWeatherService.js';
 import { OpenMeteoMarineService } from './services/OpenMeteoMarineService.js';
 import { WarningsService } from './services/WarningsService.js';
@@ -439,16 +440,16 @@ async function startServices(
   instance.notifier = new WeatherNotifier(config.notifications, instance.logger);
   await instance.weatherService.start();
 
-  // Register the Signal K v2 Weather API provider. Only AccuWeather implements
-  // forecasts today, so the provider is advertised only when AccuWeather is
-  // active; under Open-Meteo the emission path still works and forecasts are a
-  // later addition. The typeof guard tolerates a server older than the 2.24
-  // peer floor that lacks the registry method.
+  // Register the Signal K v2 Weather API provider. Only forecast-capable
+  // providers advertise it; under Open-Meteo (not yet forecast-capable)
+  // the emission path still works and forecasts are a later addition. The
+  // typeof guard tolerates a server older than the 2.24 peer floor that
+  // lacks the registry method.
   if (typeof app.registerWeatherProvider !== 'function') {
     instance.logger('warn', 'Server lacks registerWeatherProvider; weather API not exposed');
-  } else if (provider instanceof AccuWeatherService) {
+  } else if (supportsForecasts(provider)) {
     // Warnings are keyless and region-aware (NWS for US waters), served through
-    // the v2 provider alongside the AccuWeather forecasts and observations.
+    // the v2 provider alongside forecasts and observations.
     const adapter = new WeatherProviderAdapter(
       provider,
       new WarningsService(instance.logger),

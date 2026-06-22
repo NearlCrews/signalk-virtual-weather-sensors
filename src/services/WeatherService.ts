@@ -8,6 +8,7 @@
 import type { ServerAPI } from '@signalk/server-api';
 import { WindCalculator } from '../calculators/WindCalculator.js';
 import { API_QUOTA, ERROR_CODES, PERFORMANCE, PLUGIN } from '../constants/index.js';
+import { createCurrentWeatherProvider } from '../providers/createCurrentWeatherProvider.js';
 import type { CurrentWeatherProvider } from '../providers/WeatherProvider.js';
 import {
   isCompleteNavigationData,
@@ -24,7 +25,6 @@ import {
   msToWholeMinutes,
   toErrorMessage,
 } from '../utils/conversions.js';
-import { AccuWeatherService } from './AccuWeatherService.js';
 import type { OpenMeteoMarineService } from './OpenMeteoMarineService.js';
 import { SignalKService } from './SignalKService.js';
 
@@ -145,14 +145,12 @@ export class WeatherService {
       useVesselPosition: true,
     });
 
-    // The fallback must carry dailyApiQuota: without it the injected-service
-    // path (production, index.ts) and this direct-construction path (tests)
-    // would disagree on quota gating for forecast fetches.
+    // The fallback builds the provider from config (honoring weatherProvider
+    // config field) rather than hardcoding AccuWeather. The factory carries
+    // dailyApiQuota via config, so the injected and default-constructed paths
+    // agree on quota gating for forecast fetches.
     this.weatherProvider =
-      weatherProvider ??
-      new AccuWeatherService(this.config.accuWeatherApiKey, this.logger, {
-        dailyApiQuota: this.config.dailyApiQuota,
-      });
+      weatherProvider ?? createCurrentWeatherProvider(this.config, this.logger);
     this.signalKService = signalKService ?? new SignalKService(this.app, this.logger);
     this.windCalculator = windCalculator ?? new WindCalculator(this.logger);
     this.marineService = marineService ?? null;

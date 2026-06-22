@@ -24,6 +24,7 @@ const createMockLogger = () => vi.fn();
 // Default test configuration
 const createTestConfig = (overrides?: Partial<PluginConfiguration>): PluginConfiguration => ({
   accuWeatherApiKey: 'test-api-key-12345678',
+  weatherProvider: 'open-meteo',
   updateFrequency: 5,
   emissionInterval: 5,
   dailyApiQuota: 50,
