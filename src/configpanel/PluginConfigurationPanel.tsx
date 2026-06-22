@@ -192,7 +192,7 @@ export default function PluginConfigurationPanel({
               clearKeyError();
             }}
           />
-        ) : (
+        ) : form.weatherProvider === 'open-meteo' ? (
           <>
             <div style={S.fieldRow}>
               <label style={S.label} htmlFor="svws-ombase">
@@ -214,6 +214,11 @@ export default function PluginConfigurationPanel({
               public service.
             </p>
           </>
+        ) : (
+          <p style={S.help}>
+            Weather data from the Norwegian Meteorological Institute (api.met.no, CC BY 4.0), no API
+            key required. Global coverage, with Nordic and European weather alerts.
+          </p>
         )}
 
         <div style={S.checkboxRow}>
