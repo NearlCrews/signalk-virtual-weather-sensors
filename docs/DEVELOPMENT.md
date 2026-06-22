@@ -348,7 +348,7 @@ process, coding standards, and commit conventions.
 ## Testing Strategy
 
 The suite covers unit behavior, service integration, calculation accuracy,
-edge and boundary conditions, and error handling. **Total: 404 tests** across
+edge and boundary conditions, and error handling. **Total: 418 tests** across
 23 test files.
 
 - [`index.test.ts`](../src/__tests__/index.test.ts): plugin entry point, meta-delta one-shot invariant, banner dedupe regression, stale-data and quota-exhausted emission-tick branches, panel REST endpoint registration + status + test-key (short-key + long-key-rejected paths) (14 tests)

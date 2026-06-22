@@ -18,27 +18,27 @@ service; AccuWeather is an optional source for users who have an API key.
 > for safety-of-life decisions: always cross-check official forecasts and
 > warnings against your primary instruments.
 
-## What's new in 1.9.0
+## What's new in 1.9.1
 
-A keyless, global weather source so the plugin works out of the box.
-AccuWeather retired its permanent free tier, so the plugin no longer depends on it.
+A maintenance release that smooths first-run setup, corrects timestamps and
+alert ordering, and makes failures easier to see.
 
-- **Open-Meteo is the new default source**, free and keyless: a fresh install
-  fetches global weather with no API key and no signup.
-- **AccuWeather is now optional.** It stays available for its exclusive fields
-  (RealFeel, plain-language text, pressure tendency, precipitation type) when you
-  enter a key, and existing AccuWeather installs are preserved unchanged on upgrade.
-- **Pick the source in the config panel**, with a configurable Open-Meteo endpoint
-  so commercial users can self-host or use a paid plan.
-- **Per-provider `$source`** so consumers can set source priorities: Open-Meteo
-  data carries `$source: 'open-meteo'`, AccuWeather keeps `accuweather`.
-- **Optional sea state** (off by default): a keyless Open-Meteo Marine layer adds
-  waves, swell, sea surface temperature, and surface current on `environment.water.*`
-  and `environment.current`.
+- **Fresh keyless installs save cleanly.** The config panel no longer demands a
+  20-character AccuWeather key under the default Open-Meteo source, so a first-run
+  save just works.
+- **Failures surface in the status banner.** A sustained inability to publish
+  deltas now flips the banner to an error instead of showing a green "Running"
+  while no data reaches the bus.
+- **Correct times and ordering.** Open-Meteo observation timestamps carry a UTC
+  designator, and weather warnings sort chronologically across time zones.
+- **The marine layer is quieter and safer.** A late marine fetch can no longer
+  repopulate a stopped service, and a tolerated outage logs once instead of
+  double-reporting.
+- **Switching the weather source is documented.** Changing the provider re-stamps
+  every delta's `$source`, so downstream source locks, for example in
+  `signalk-nmea2000-emitter-cannon`, must be updated to match.
 
-Open-Meteo provides fewer fields than AccuWeather (no RealFeel or measured
-wet-bulb globe temperature, for example; the plugin estimates the heat-stress
-index instead). See the [v1.9.0 changelog entry](CHANGELOG.md#v190), or the
+See the [v1.9.1 changelog entry](CHANGELOG.md#v191), or the
 [changelog](CHANGELOG.md) for the full list.
 
 ## What it does

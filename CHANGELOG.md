@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+<a id="v191"></a>
+
+## [1.9.1] - 2026-06-21
+
+A maintenance release: cleaner first-run saves, correct timestamps and alert
+ordering, clearer failure reporting, and a quieter marine layer.
+
 ### Fixed
 
 - **Config panel could not save a fresh keyless install.** The federated panel
@@ -29,6 +36,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   resolves after the plugin has stopped no longer repopulates a torn-down
   service, and a tolerated marine outage logs once (at debug) instead of
   double-reporting as an error.
+
+### Changed
+
+- **Dev dependencies refreshed.** Updated the build and test tooling to current
+  versions and added a `qs` override that clears a dev-only `npm audit` advisory
+  pulled in through the mutation-test runner. No runtime dependency changed.
 
 ### Documentation
 
