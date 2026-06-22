@@ -23,13 +23,12 @@ import type { OpenMeteoCurrentResponse, OpenMeteoForecastResponse } from '../typ
 import {
   asOpenMeteoTimestamp,
   asOptionalNumber,
-  calculateAbsoluteHumidity,
   millibarsToPA,
   optionalCelsiusToKelvin,
   optionalPercentageToRatio,
 } from '../utils/conversions.js';
 import { WMO_DESCRIPTIONS } from './OpenMeteoMapper.js';
-import { buildWindFromMs, type SKOutside, type SKSun } from './skV2WindHelper.js';
+import { buildSkOutsideSI, buildWindFromMs, type SKOutside, type SKSun } from './skV2Envelope.js';
 
 /** Map the Open-Meteo hourly block to ascending-order `point` WeatherData entries. */
 export function mapOpenMeteoHourlyToForecasts(
@@ -49,23 +48,18 @@ export function mapOpenMeteoHourlyToForecasts(
     const weatherCode = asOptionalNumber(h?.weather_code?.[i]);
     const description = weatherCode !== undefined ? WMO_DESCRIPTIONS.get(weatherCode) : undefined;
 
-    const outside: SKOutside = {
-      ...(temperatureK !== undefined && { temperature: temperatureK }),
-      ...(dewPointK !== undefined && { dewPointTemperature: dewPointK }),
-      ...(feelsLikeK !== undefined && { feelsLikeTemperature: feelsLikeK }),
-      ...(rhRatio !== undefined && {
-        relativeHumidity: rhRatio,
-        ...(temperatureK !== undefined && {
-          absoluteHumidity: calculateAbsoluteHumidity(temperatureK, rhRatio),
-        }),
-      }),
-      ...(visibilityM !== undefined && { horizontalVisibility: visibilityM }),
-      ...(cloudCover !== undefined && { cloudCover }),
-      ...(uvIndex !== undefined && { uvIndex }),
-      ...(precipitationMm !== undefined && {
-        precipitationVolume: precipitationMm * UNITS.PRECIPITATION.MM_TO_M,
-      }),
-    };
+    const precipitationVolumeM =
+      precipitationMm !== undefined ? precipitationMm * UNITS.PRECIPITATION.MM_TO_M : undefined;
+    const outside = buildSkOutsideSI({
+      temperatureK,
+      dewPointK,
+      feelsLikeK,
+      rhRatio,
+      visibilityM,
+      cloudCover,
+      uvIndex,
+      precipitationVolumeM,
+    });
     const wind = buildWindFromMs(
       h?.wind_speed_10m?.[i],
       h?.wind_direction_10m?.[i],
@@ -155,24 +149,20 @@ export function mapOpenMeteoCurrentToObservation(
   const weatherCode = asOptionalNumber(c?.weather_code);
   const description = weatherCode !== undefined ? WMO_DESCRIPTIONS.get(weatherCode) : undefined;
 
-  const outside: SKOutside = {
-    ...(temperatureK !== undefined && { temperature: temperatureK }),
-    ...(dewPointK !== undefined && { dewPointTemperature: dewPointK }),
-    ...(feelsLikeK !== undefined && { feelsLikeTemperature: feelsLikeK }),
-    ...(rhRatio !== undefined && {
-      relativeHumidity: rhRatio,
-      ...(temperatureK !== undefined && {
-        absoluteHumidity: calculateAbsoluteHumidity(temperatureK, rhRatio),
-      }),
-    }),
-    ...(pressureMbar !== undefined && { pressure: millibarsToPA(pressureMbar) }),
-    ...(visibilityM !== undefined && { horizontalVisibility: visibilityM }),
-    ...(cloudCover !== undefined && { cloudCover }),
-    ...(uvIndex !== undefined && { uvIndex }),
-    ...(precipitationMm !== undefined && {
-      precipitationVolume: precipitationMm * UNITS.PRECIPITATION.MM_TO_M,
-    }),
-  };
+  const pressurePa = pressureMbar !== undefined ? millibarsToPA(pressureMbar) : undefined;
+  const precipitationVolumeM =
+    precipitationMm !== undefined ? precipitationMm * UNITS.PRECIPITATION.MM_TO_M : undefined;
+  const outside = buildSkOutsideSI({
+    temperatureK,
+    dewPointK,
+    feelsLikeK,
+    rhRatio,
+    pressurePa,
+    visibilityM,
+    cloudCover,
+    uvIndex,
+    precipitationVolumeM,
+  });
 
   const wind = buildWindFromMs(c?.wind_speed_10m, c?.wind_direction_10m, c?.wind_gusts_10m);
 

@@ -26,7 +26,7 @@ import {
   optionalCelsiusToKelvin,
   optionalPercentageToRatio,
 } from '../utils/conversions.js';
-import { buildWindFromMs, type SKOutside, type SKSun, type SKWind } from './skV2WindHelper.js';
+import { buildWindFromMs, type SKOutside, type SKSun, type SKWind } from './skV2Envelope.js';
 
 /** AccuWeather PrecipitationType (lowercased) to the SK PrecipitationKind enum. */
 const PRECIPITATION_KIND_BY_ACCUWEATHER: ReadonlyMap<string, PrecipitationKind> = new Map([
