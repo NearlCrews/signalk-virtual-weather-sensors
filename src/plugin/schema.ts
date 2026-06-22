@@ -14,21 +14,28 @@ import {
   NOTIFICATION_BAND_KEYS,
   NOTIFICATION_LABELS,
   NOTIFICATION_MASTER_LABEL,
+  type NotificationBandKey,
   WEATHER_PROVIDER_IDS,
   WEATHER_PROVIDER_LABELS,
 } from '../constants/notifications-shared.js';
 
 /** Per-band boolean toggles, generated from the shared band registry so the schema cannot drift from the panel. */
 function notificationBandProperties(): Record<
-  string,
+  NotificationBandKey,
   { type: 'boolean'; title: string; default: boolean }
 > {
-  return Object.fromEntries(
-    NOTIFICATION_BAND_KEYS.map((key) => [
-      key,
-      { type: 'boolean', title: NOTIFICATION_LABELS[key], default: DEFAULT_NOTIFICATIONS[key] },
-    ])
-  );
+  const acc = {} as Record<
+    NotificationBandKey,
+    { type: 'boolean'; title: string; default: boolean }
+  >;
+  for (const key of NOTIFICATION_BAND_KEYS) {
+    acc[key] = {
+      type: 'boolean',
+      title: NOTIFICATION_LABELS[key],
+      default: DEFAULT_NOTIFICATIONS[key],
+    };
+  }
+  return acc;
 }
 
 /**
