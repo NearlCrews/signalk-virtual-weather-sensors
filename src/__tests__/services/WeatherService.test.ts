@@ -840,7 +840,9 @@ describe('WeatherService - Fetch Skip and Error Escalation', () => {
     // An error banner carrying the quota wording is published via the sink.
     const errorBanners = bannerCalls.filter((b) => b.kind === 'error');
     expect(errorBanners).toHaveLength(1);
-    expect(errorBanners[0].message).toContain('AccuWeather daily quota reached (50/50 in last 24h)');
+    expect(errorBanners[0].message).toContain(
+      'AccuWeather daily quota reached (50/50 in last 24h)'
+    );
   });
 
   it('escalates a 401 to apiKeyRejected, clears the timer, and refuses subsequent fetches', async () => {
@@ -921,7 +923,9 @@ describe('WeatherService - Fetch Skip and Error Escalation', () => {
 
     // Second consecutive failure: suffix appears.
     await expect(service.forceUpdate()).rejects.toThrow();
-    expect(bannerCalls.at(-1)?.message).toBe('Weather update failed (2 consecutive): network timeout');
+    expect(bannerCalls.at(-1)?.message).toBe(
+      'Weather update failed (2 consecutive): network timeout'
+    );
 
     // A success resets the streak.
     mode = 'succeed';

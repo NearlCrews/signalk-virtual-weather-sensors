@@ -634,7 +634,11 @@ function emitWeatherTick(instance: PluginInstance, app: ServerAPI): void {
     return;
   }
 
-  app.handleMessage(PLUGIN.NAME, withEmissionTimestamp(instance, instance.cachedDelta), SKVersion.v1);
+  app.handleMessage(
+    PLUGIN.NAME,
+    withEmissionTimestamp(instance, instance.cachedDelta),
+    SKVersion.v1
+  );
 
   // Notifications ride a separate delta so consumers walking the values delta
   // do not see a `notifications.*` leaf interleaved with measurements. The
