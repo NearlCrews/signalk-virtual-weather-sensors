@@ -1,17 +1,30 @@
 /**
  * Open-Meteo current-conditions provider.
  *
- * Implements `CurrentWeatherProvider` against the keyless, global Open-Meteo
- * forecast API. No API key, no location-key lookup (Open-Meteo takes lat/lon
- * directly), and no per-key daily cap, so the quota accessors report zero. The
- * base URL is configurable so a commercial user can point at a self-hosted or
- * paid Open-Meteo instance (the free hosted service is non-commercial).
+ * Implements `CurrentWeatherProvider` and `ForecastCapableProvider` against the
+ * keyless, global Open-Meteo forecast API. No API key, no location-key lookup
+ * (Open-Meteo takes lat/lon directly), and no per-key daily cap, so the quota
+ * accessors report zero. The base URL is configurable so a commercial user can
+ * point at a self-hosted or paid Open-Meteo instance (the free hosted service is
+ * non-commercial).
  */
 
+import type { WeatherData as SKWeatherData } from '@signalk/server-api';
 import { PLUGIN } from '../constants/index.js';
+import {
+  mapOpenMeteoCurrentToObservation,
+  mapOpenMeteoDailyToForecasts,
+  mapOpenMeteoHourlyToForecasts,
+} from '../mappers/OpenMeteoForecastMapper.js';
 import { mapOpenMeteoCurrentToWeatherData } from '../mappers/OpenMeteoMapper.js';
-import type { CurrentWeatherProvider } from '../providers/WeatherProvider.js';
-import type { GeoLocation, Logger, OpenMeteoCurrentResponse, WeatherData } from '../types/index.js';
+import type { ForecastCapableProvider } from '../providers/WeatherProvider.js';
+import type {
+  GeoLocation,
+  Logger,
+  OpenMeteoCurrentResponse,
+  OpenMeteoForecastResponse,
+  WeatherData,
+} from '../types/index.js';
 import { toErrorMessage } from '../utils/conversions.js';
 import { DEFAULT_REQUEST_TIMEOUT_MS, fetchJson, normalizeBaseUrl } from '../utils/http.js';
 import { assertValidCoordinates } from '../utils/validation.js';
@@ -36,6 +49,39 @@ const CURRENT_PARAMS = [
   'visibility',
   'uv_index',
 ].join(',');
+/** Hourly-block variables for the 48-hour point-forecast endpoint. */
+const HOURLY_PARAMS = [
+  'temperature_2m',
+  'relative_humidity_2m',
+  'dew_point_2m',
+  'apparent_temperature',
+  'precipitation',
+  'weather_code',
+  'cloud_cover',
+  'pressure_msl',
+  'wind_speed_10m',
+  'wind_direction_10m',
+  'wind_gusts_10m',
+  'visibility',
+  'uv_index',
+].join(',');
+/** Daily-block variables for the 7-day daily-forecast endpoint. */
+const DAILY_PARAMS = [
+  'temperature_2m_max',
+  'temperature_2m_min',
+  'precipitation_sum',
+  'weather_code',
+  'wind_speed_10m_max',
+  'wind_direction_10m_dominant',
+  'wind_gusts_10m_max',
+  'uv_index_max',
+  'sunrise',
+  'sunset',
+].join(',');
+/** Days fetched for the hourly forecast: 2 days == 48 hours, matching forecastCapabilities.hourlyHours. */
+const HOURLY_FORECAST_DAYS = 2;
+/** Days fetched for the daily forecast, matching forecastCapabilities.dailyDays. */
+const DAILY_FORECAST_DAYS = 7;
 
 export interface OpenMeteoOptions {
   /** Override the Open-Meteo host (self-hosted or paid instance). */
@@ -44,11 +90,13 @@ export interface OpenMeteoOptions {
   readonly requestTimeoutMs?: number;
 }
 
-export class OpenMeteoService implements CurrentWeatherProvider {
+export class OpenMeteoService implements ForecastCapableProvider {
   /** Provider name for the v2 registration and logs. */
   public readonly name = 'Open-Meteo';
   /** `$source` stamped on Open-Meteo-sourced deltas, distinct from AccuWeather. */
   public readonly sourceRef = 'open-meteo';
+  /** Forecast horizon this provider declares; read by the v2 adapter to size its result arrays. */
+  public readonly forecastCapabilities = { hourlyHours: 48, dailyDays: 7 } as const;
 
   private readonly logger: Logger;
   private readonly baseUrl: string;
@@ -92,12 +140,76 @@ export class OpenMeteoService implements CurrentWeatherProvider {
     }
   }
 
-  /** Build the forecast request URL with the current-block params and m/s wind units. */
+  /** Fetch a single current observation at `location` in the SK v2 WeatherData shape. */
+  public async getObservation(location: GeoLocation): Promise<SKWeatherData> {
+    assertValidCoordinates(location, 'Open-Meteo observation');
+    this.requestCount++;
+    const response = await fetchJson<OpenMeteoCurrentResponse>(this.buildUrl(location), {
+      timeoutMs: this.requestTimeoutMs,
+      headers: { 'User-Agent': `${PLUGIN.NAME}/${PLUGIN.VERSION}` },
+    });
+    return mapOpenMeteoCurrentToObservation(response);
+  }
+
+  /** Fetch hourly (point) forecasts for the next 48 hours in ascending order. */
+  public async getHourlyForecast(location: GeoLocation): Promise<SKWeatherData[]> {
+    assertValidCoordinates(location, 'Open-Meteo hourly forecast');
+    this.requestCount++;
+    const url = this.buildForecastUrl(location, {
+      hourly: HOURLY_PARAMS,
+      forecastDays: HOURLY_FORECAST_DAYS,
+    });
+    const response = await fetchJson<OpenMeteoForecastResponse>(url, {
+      timeoutMs: this.requestTimeoutMs,
+      headers: { 'User-Agent': `${PLUGIN.NAME}/${PLUGIN.VERSION}` },
+    });
+    return mapOpenMeteoHourlyToForecasts(response);
+  }
+
+  /** Fetch daily forecasts for the next 7 days in ascending order. */
+  public async getDailyForecast(location: GeoLocation): Promise<SKWeatherData[]> {
+    assertValidCoordinates(location, 'Open-Meteo daily forecast');
+    this.requestCount++;
+    const url = this.buildForecastUrl(location, {
+      daily: DAILY_PARAMS,
+      forecastDays: DAILY_FORECAST_DAYS,
+    });
+    const response = await fetchJson<OpenMeteoForecastResponse>(url, {
+      timeoutMs: this.requestTimeoutMs,
+      headers: { 'User-Agent': `${PLUGIN.NAME}/${PLUGIN.VERSION}` },
+    });
+    return mapOpenMeteoDailyToForecasts(response);
+  }
+
+  /** Build the current-block request URL with m/s wind units. */
   private buildUrl(location: GeoLocation): URL {
     const url = new URL(`${this.baseUrl}${FORECAST_ENDPOINT}`);
     url.searchParams.set('latitude', String(location.latitude));
     url.searchParams.set('longitude', String(location.longitude));
     url.searchParams.set('current', CURRENT_PARAMS);
+    url.searchParams.set('wind_speed_unit', 'ms');
+    url.searchParams.set('timezone', 'GMT');
+    return url;
+  }
+
+  /**
+   * Build a forecast request URL (hourly or daily block) sharing the same base
+   * params as `buildUrl`: lat/lon, m/s wind units, and GMT timezone.
+   */
+  private buildForecastUrl(
+    location: GeoLocation,
+    params: { hourly?: string; daily?: string; forecastDays: number }
+  ): URL {
+    const url = new URL(`${this.baseUrl}${FORECAST_ENDPOINT}`);
+    url.searchParams.set('latitude', String(location.latitude));
+    url.searchParams.set('longitude', String(location.longitude));
+    if (params.hourly !== undefined) {
+      url.searchParams.set('hourly', params.hourly);
+    }
+    if (params.daily !== undefined) {
+      url.searchParams.set('daily', params.daily);
+    }
+    url.searchParams.set('forecast_days', String(params.forecastDays));
     url.searchParams.set('wind_speed_unit', 'ms');
     url.searchParams.set('timezone', 'GMT');
     return url;
