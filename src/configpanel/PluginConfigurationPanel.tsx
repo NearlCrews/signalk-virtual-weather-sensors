@@ -20,6 +20,7 @@ import { useEffect, useRef, useState } from 'react';
 import {
   CONFIG_DEFAULTS,
   NOTIFICATION_BAND_KEYS,
+  providerRequiresApiKey,
   QUOTA_WARN_RATIO,
   WEATHER_PROVIDER_IDS,
   WEATHER_PROVIDER_LABELS,
@@ -85,14 +86,13 @@ export default function PluginConfigurationPanel({
     return () => window.removeEventListener('beforeunload', onBeforeUnload);
   }, [dirty]);
 
-  // First run: AccuWeather selected, not running, and no saved key means the
-  // next step is always "add a key", so surface the callout and open the source
-  // section once. Keyless Open-Meteo runs without a key, so it never triggers.
+  // First run: a keyed provider selected, not running, and no saved key means
+  // the next step is always "add a key", so surface the callout and open the
+  // source section once. Keyless providers run without a key, so they never
+  // trigger.
+  const requiresKey = providerRequiresApiKey(savedForm.weatherProvider);
   const firstRun =
-    status !== null &&
-    !status.running &&
-    savedForm.weatherProvider === 'accuweather' &&
-    savedForm.accuWeatherApiKey.trim() === '';
+    status !== null && !status.running && requiresKey && savedForm.accuWeatherApiKey.trim() === '';
   const autoOpened = useRef(false);
   useEffect(() => {
     if (firstRun && !autoOpened.current) {
@@ -111,8 +111,8 @@ export default function PluginConfigurationPanel({
   };
 
   const enabledBands = NOTIFICATION_BAND_KEYS.filter((key) => form.notifications[key]).length;
-  const isAccuWeather = form.weatherProvider === 'accuweather';
-  const quotaSummary = !isAccuWeather
+  const needsKey = providerRequiresApiKey(form.weatherProvider);
+  const quotaSummary = !needsKey
     ? 'keyless'
     : form.dailyApiQuota === 0
       ? 'no cap'
@@ -160,11 +160,9 @@ export default function PluginConfigurationPanel({
         open={openSections.apiKey}
         onToggle={() => toggleSection('apiKey')}
         summary={
-          isAccuWeather
-            ? form.accuWeatherApiKey.trim()
-              ? 'AccuWeather (key set)'
-              : 'AccuWeather (no key)'
-            : 'Open-Meteo (keyless)'
+          needsKey
+            ? `${WEATHER_PROVIDER_LABELS[form.weatherProvider]}${form.accuWeatherApiKey.trim() ? ' (key set)' : ' (no key)'}`
+            : WEATHER_PROVIDER_LABELS[form.weatherProvider]
         }
       >
         <div style={S.fieldRow}>
@@ -185,7 +183,7 @@ export default function PluginConfigurationPanel({
           </select>
         </div>
 
-        {isAccuWeather ? (
+        {needsKey ? (
           <ApiKeyField
             value={form.accuWeatherApiKey}
             keyError={keyError}
@@ -257,7 +255,7 @@ export default function PluginConfigurationPanel({
           />
         </div>
         <p style={S.help}>
-          {isAccuWeather
+          {needsKey
             ? `Each fetch costs one AccuWeather API call. 30 min uses 48 calls/day, within the default ${CONFIG_DEFAULTS.DAILY_API_QUOTA}/day quota.`
             : 'How often new weather data is fetched from Open-Meteo. Open-Meteo is keyless with generous limits, so a shorter interval is fine.'}
         </p>
@@ -280,7 +278,7 @@ export default function PluginConfigurationPanel({
           weather fetch cadence.
         </p>
 
-        {isAccuWeather ? (
+        {needsKey ? (
           <>
             <div style={S.fieldRow}>
               <label style={S.label} htmlFor="svws-quota">

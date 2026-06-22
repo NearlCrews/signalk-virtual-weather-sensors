@@ -7,6 +7,7 @@ import {
   DEFAULT_NOTIFICATIONS,
   DEFAULT_WEATHER_MODE,
   DEFAULT_WEATHER_PROVIDER,
+  providerRequiresApiKey,
   validateKeyLength,
   type WeatherMode,
   type WeatherProviderId,
@@ -190,12 +191,12 @@ export function usePanelConfig(
 
   const doSave = useCallback(async (): Promise<boolean> => {
     const trimmedKey = form.accuWeatherApiKey.trim();
-    // The key is only required (and only validated) when AccuWeather is the
-    // active provider. Under the keyless Open-Meteo default the field is hidden
+    // The key is only required (and only validated) when the active provider
+    // requires one. Under the keyless Open-Meteo default the field is hidden
     // and usually empty, so gating Save on key length there would block every
     // fresh install. This matches the rjsf schema, which no longer declares a
     // minLength on the now-optional key.
-    if (form.weatherProvider === 'accuweather') {
+    if (providerRequiresApiKey(form.weatherProvider)) {
       const keyLengthError = validateKeyLength(trimmedKey);
       if (keyLengthError) {
         setKeyError(keyLengthError);
