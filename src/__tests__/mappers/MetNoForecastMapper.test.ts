@@ -96,6 +96,30 @@ describe('MetNoForecastMapper', () => {
     expect(out[0]?.outside?.precipitationVolume).toBeCloseTo(0.003, 6); // (1+0+2+0) mm to m, off-grid excluded
     expect(out[0]?.description).toBe('Rain'); // from the 12:00 window symbol
   });
+  it('uses the earliest window description when the day has no 12:00 window', () => {
+    const six = (time: string, symbol: string) => ({
+      time,
+      data: {
+        instant: { details: { air_temperature: 15 } },
+        next_6_hours: {
+          summary: { symbol_code: symbol },
+          details: { air_temperature_max: 20, air_temperature_min: 10, precipitation_amount: 0 },
+        },
+      },
+    });
+    const out = mapMetNoToDailyForecasts({
+      properties: {
+        timeseries: [
+          six('2026-06-26T00:00:00Z', 'snow'), // earliest -> 'Snow'
+          six('2026-06-26T06:00:00Z', 'rain'), // should NOT overwrite
+          six('2026-06-26T18:00:00Z', 'cloudy'), // should NOT overwrite
+        ],
+      },
+    });
+    expect(out).toHaveLength(1);
+    // The 00:00 window is the earliest and must win, not the last (18:00) window.
+    expect(out[0]?.description).toBe('Snow');
+  });
   it('emits precipitationVolume of 0 when all 6-hour windows report 0 mm', () => {
     const dryDay = (time: string) => ({
       time,

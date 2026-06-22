@@ -106,7 +106,7 @@ function accumulateWindow(
   if (hour === 12) {
     acc.description = desc;
     acc.has12 = true;
-  } else if (!acc.has12 && desc !== undefined) {
+  } else if (!acc.has12 && acc.description === undefined && desc !== undefined) {
     acc.description = desc;
   }
 }
