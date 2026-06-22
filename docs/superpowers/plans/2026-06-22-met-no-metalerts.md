@@ -205,7 +205,7 @@ it('fetches MetAlerts for a Norwegian-waters position and maps the result', asyn
     ],
   };
   (global.fetch as Mock).mockResolvedValueOnce(createMockFetchResponse(metAlerts));
-  const svc = new WarningsService(() => {});
+  const svc = new WarningsService();
   const warnings = await svc.getWarnings({ latitude: 62.5, longitude: 6.0 }); // Norwegian coast
   expect(warnings).toHaveLength(1);
   expect(warnings[0]?.type).toBe('Gale');
@@ -221,13 +221,15 @@ it('fetches MetAlerts for a Norwegian-waters position and maps the result', asyn
 
 it('returns an empty list when the MetAlerts fetch fails', async () => {
   (global.fetch as Mock).mockRejectedValueOnce(new Error('network'));
-  const svc = new WarningsService(() => {});
+  const svc = new WarningsService();
   const warnings = await svc.getWarnings({ latitude: 62.5, longitude: 6.0 });
   expect(warnings).toEqual([]);
 });
 ```
 
-Confirm the file already has a US-position test that asserts the NWS URL; if not, add one asserting a US point (for example latitude 40, longitude -70) still hits `api.weather.gov`. Match the file's existing fetch-mock idiom (`vi.stubGlobal('fetch', vi.fn())` or the equivalent already used, and `createMockFetchResponse` from `../setup.js`, with `import type { Mock } from 'vitest'`).
+The file already mocks `fetch` via `vi.stubGlobal('fetch', vi.fn())` in a `beforeEach`, and already imports `type Mock` from vitest and `createMockFetchResponse` from `../setup.js`, so add NO new imports; reuse that setup and the `new WarningsService()` (no-arg) idiom the existing tests use.
+
+REQUIRED existing-test update (or the gate goes red): the file currently has a constant `NORWAY = { latitude: 60.0, longitude: 10.0 }` (line 12) and a test `'returns empty without a network call outside US coverage'` (lines 45-50) that calls `getWarnings(NORWAY)` and asserts `fetch` was NOT called. After this task, `NORWAY` (60, 10) is inside `NORDIC_BOX`, so it now dispatches to MetAlerts and DOES fetch, which breaks that test. Update it: replace the `NORWAY` constant with an out-of-all-coverage point, for example `const OPEN_OCEAN = { latitude: -33.9, longitude: 18.4 };` (off Cape Town, outside both the US and the Nordic boxes), rename the test to `'returns empty without a network call outside all covered regions'`, point it at `OPEN_OCEAN`, and keep the two assertions (`toEqual([])` and `fetch` not called). The existing US (MIAMI) test and the best-effort failure test are unchanged. The new MetAlerts tests use their own Norwegian-waters coordinates (62.5, 6.0).
 
 - [ ] **Step 2: Run the test to verify it fails**
 
