@@ -40,7 +40,7 @@ const sharedWindCalculator = new WindCalculator();
  * analog of AccuWeather's `WeatherText`. Populates `environment.weather.description`
  * and the severe-condition notification lead.
  */
-const WMO_DESCRIPTIONS: ReadonlyMap<number, string> = new Map([
+export const WMO_DESCRIPTIONS: ReadonlyMap<number, string> = new Map([
   [0, 'Clear sky'],
   [1, 'Mainly clear'],
   [2, 'Partly cloudy'],
