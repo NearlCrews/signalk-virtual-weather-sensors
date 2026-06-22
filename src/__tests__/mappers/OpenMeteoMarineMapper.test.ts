@@ -42,7 +42,8 @@ describe('mapOpenMeteoMarineToMarineData', () => {
     expect(data.seaSurfaceTemperature).toBeCloseTo(287.05, 2);
     // Current: 3.6 km/h -> 1.0 m/s.
     expect(data.surfaceCurrentSpeed).toBeCloseTo(1.0, 6);
-    expect(data.timestamp).toBe('2026-06-16T23:45');
+    // GMT wall-clock string normalized to an RFC 3339 UTC instant (Z appended).
+    expect(data.timestamp).toBe('2026-06-16T23:45Z');
   });
 
   it('converts directions from degrees to radians in [0, 2pi)', () => {

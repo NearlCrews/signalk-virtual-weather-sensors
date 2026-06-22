@@ -92,10 +92,13 @@ function buildCloudAndPrecip(source: CloudPrecipSource | undefined): Partial<SKO
 }
 
 /** Build the wind block from a speed/direction/gust source, omitting absent fields. */
+// Params accept null because callers pass raw upstream values (e.g.
+// `hour.Wind?.Speed?.Value`) that can be JSON null, not just undefined; the
+// `typeof === 'number'` guards below correctly exclude both.
 function buildWind(
-  speedKmh: number | undefined,
-  directionDegrees: number | undefined,
-  gustKmh: number | undefined
+  speedKmh: number | null | undefined,
+  directionDegrees: number | null | undefined,
+  gustKmh: number | null | undefined
 ): SKWind | undefined {
   const wind: SKWind = {
     ...(typeof speedKmh === 'number' && { speedTrue: kmhToMS(speedKmh) }),

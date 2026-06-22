@@ -1,6 +1,7 @@
 /**
  * Signal K Virtual Weather Sensors plugin entry point.
- * Polls AccuWeather, calculates apparent wind, and emits NMEA2000-compatible
+ * Polls the configured weather provider (Open-Meteo or AccuWeather), optionally
+ * fetches sea state, calculates apparent wind, and emits NMEA2000-compatible
  * Signal K deltas on a fixed interval.
  */
 
@@ -182,10 +183,11 @@ export default function createPlugin(app: ServerAPI): Plugin {
      *  - Outer `title` is discarded: the SK admin UI wraps the schema and
      *    forces the wrapper title to a single space. The displayed name
      *    comes from `plugin.name` (PLUGIN.DISPLAY_NAME).
-     *  - Outer `required` is also discarded by the wrapper. The API key
-     *    field is enforced at submit via `minLength` here, and at runtime
-     *    via `ConfigurationValidator.validateConfiguration`. We therefore
-     *    do not declare an outer `required` array (it would be dead UI).
+     *  - Outer `required` is also discarded by the wrapper. The API key is
+     *    optional (it is only needed for AccuWeather), so it is enforced at
+     *    runtime via `ConfigurationValidator.validateConfiguration` when
+     *    AccuWeather is the active provider, not by a schema `minLength`. We
+     *    therefore do not declare an outer `required` array (it would be dead UI).
      */
     schema: () => ({
       type: 'object',
@@ -226,7 +228,7 @@ export default function createPlugin(app: ServerAPI): Plugin {
           type: 'integer',
           title: 'Weather Update Frequency (minutes)',
           description:
-            'How often to fetch new weather data from AccuWeather. Each tick costs one API call (location lookups are cached).',
+            'How often to fetch new weather data. Under AccuWeather each fetch costs one API call (location lookups are cached); Open-Meteo is keyless and unmetered.',
           default: CONFIG_DEFAULTS.UPDATE_FREQUENCY,
           minimum: CONFIG_DEFAULTS.UPDATE_FREQUENCY_MIN,
           maximum: CONFIG_DEFAULTS.UPDATE_FREQUENCY_MAX,
@@ -571,9 +573,13 @@ function setupEnhancedEmissionSystem(
     try {
       emitWeatherTick(instance, app);
     } catch (error) {
-      instance.logger('error', 'Error in emission timer', {
-        error: toErrorMessage(error),
-      });
+      // Surface to the operator-facing banner, not just the log: a sustained
+      // emission failure would otherwise leave a green "Running" status while no
+      // data reaches the bus. setBanner dedupes, so a steady failure is one
+      // banner write, and the next successful tick overwrites it with live status.
+      const errorMessage = toErrorMessage(error);
+      instance.logger('error', 'Error in emission timer', { error: errorMessage });
+      setBanner(instance, app, 'error', `Emission failed: ${errorMessage}`);
     }
   }, emissionInterval);
 
@@ -628,7 +634,7 @@ function emitWeatherTick(instance: PluginInstance, app: ServerAPI): void {
     return;
   }
 
-  app.handleMessage(PLUGIN.NAME, withEmissionTimestamp(instance.cachedDelta), SKVersion.v1);
+  app.handleMessage(PLUGIN.NAME, withEmissionTimestamp(instance, instance.cachedDelta), SKVersion.v1);
 
   // Notifications ride a separate delta so consumers walking the values delta
   // do not see a `notifications.*` leaf interleaved with measurements. The
@@ -683,7 +689,11 @@ function emitMarineTick(instance: PluginInstance, app: ServerAPI): void {
   }
   if (!instance.cachedMarineDelta) return;
 
-  app.handleMessage(PLUGIN.NAME, withEmissionTimestamp(instance.cachedMarineDelta), SKVersion.v1);
+  app.handleMessage(
+    PLUGIN.NAME,
+    withEmissionTimestamp(instance, instance.cachedMarineDelta),
+    SKVersion.v1
+  );
 
   if (!instance.marineMetaEmitted) {
     app.handleMessage(PLUGIN.NAME, mapper.buildMetaDelta(), SKVersion.v1);
@@ -731,14 +741,21 @@ function refreshCachedDelta(
  * so handleMessage callers can safely retain references.
  * @private
  */
-function withEmissionTimestamp(cached: Delta): Delta {
+function withEmissionTimestamp(instance: PluginInstance, cached: Delta): Delta {
   // The cached delta is always a single-update values delta built by
   // `buildValuesDelta`, so restamping is a rebuild through the same helper,
   // which stamps the current wall-clock time when no timestamp is passed. The
   // original `$source` (the active provider's) is preserved so re-broadcasts do
   // not silently revert to the default source ref.
   const update = cached.updates[0];
-  if (update === undefined || !('values' in update)) return cached;
+  if (update === undefined || !('values' in update)) {
+    // Defensive: every cached delta is a single values update built by
+    // buildValuesDelta, so this shape should be unreachable. Returning the
+    // original un-restamped would re-broadcast a stale timestamp silently, so
+    // log if it ever happens rather than passing it through unnoticed.
+    instance.logger('warn', 'withEmissionTimestamp: cached delta is not a values update', {});
+    return cached;
+  }
   return buildValuesDelta(update.values, undefined, update.$source);
 }
 

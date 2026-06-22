@@ -72,7 +72,9 @@ export default function StatusDashboard({
   const { stateLabel, dotStyle, meta } = headerState(status, loading);
   // stale implies a successful poll happened and a later attempt failed, so
   // the difference is the age of the on-screen snapshot as of that attempt.
-  const staleAgeMs = lastUpdatedMs === null ? 0 : lastAttemptMs - lastUpdatedMs;
+  // Clamp at zero so a success newer than the last recorded attempt can never
+  // render a negative age.
+  const staleAgeMs = lastUpdatedMs === null ? 0 : Math.max(0, lastAttemptMs - lastUpdatedMs);
 
   return (
     <div role="status">

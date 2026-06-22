@@ -1,7 +1,8 @@
 /**
  * Weather Service - Main Orchestration Layer
  * Modern TypeScript implementation coordinating weather data collection and processing
- * Integrates AccuWeather API, vessel navigation data, and wind calculations
+ * Integrates the configured weather provider (Open-Meteo or AccuWeather), the
+ * optional marine layer, vessel navigation data, and wind calculations
  */
 
 import type { ServerAPI } from '@signalk/server-api';
@@ -65,14 +66,15 @@ export type BannerSink = (kind: 'status' | 'error', message: string) => void;
 
 /**
  * Main Weather Service orchestrating all weather data operations
- * Coordinates AccuWeather API, vessel navigation, and wind calculations
+ * Coordinates the configured weather provider, the optional marine layer,
+ * vessel navigation, and wind calculations
  */
 export class WeatherService {
   private readonly app: ServerAPI;
   private readonly config: PluginConfiguration;
   private readonly logger: Logger;
 
-  private readonly accuWeatherService: CurrentWeatherProvider;
+  private readonly weatherProvider: CurrentWeatherProvider;
   /** Optional sea-state fetcher; present only when the marine layer is enabled. */
   private readonly marineService: OpenMeteoMarineService | null;
   private readonly signalKService: SignalKService;
@@ -120,7 +122,7 @@ export class WeatherService {
     config: PluginConfiguration,
     logger: Logger = () => {},
     windCalculator?: WindCalculator,
-    accuWeatherService?: CurrentWeatherProvider,
+    weatherProvider?: CurrentWeatherProvider,
     signalKService?: SignalKService,
     setBanner?: BannerSink,
     marineService?: OpenMeteoMarineService
@@ -146,8 +148,8 @@ export class WeatherService {
     // The fallback must carry dailyApiQuota: without it the injected-service
     // path (production, index.ts) and this direct-construction path (tests)
     // would disagree on quota gating for forecast fetches.
-    this.accuWeatherService =
-      accuWeatherService ??
+    this.weatherProvider =
+      weatherProvider ??
       new AccuWeatherService(this.config.accuWeatherApiKey, this.logger, {
         dailyApiQuota: this.config.dailyApiQuota,
       });
@@ -286,7 +288,12 @@ export class WeatherService {
   }): Promise<void> {
     if (!this.marineService) return;
     try {
-      this.currentMarineData = await this.marineService.fetchMarine(position);
+      const marine = await this.marineService.fetchMarine(position);
+      // Drop the result if stop() ran during the fetch: stop() clears
+      // currentMarineData, and writing here would resurrect a stale snapshot on
+      // a torn-down service (mirrors the weather-update guard above).
+      if (this.state !== 'running' && this.state !== 'starting') return;
+      this.currentMarineData = marine;
     } catch (error) {
       this.logger('warn', 'Marine data fetch failed; keeping last marine snapshot', {
         error: toErrorMessage(error),
@@ -355,7 +362,7 @@ export class WeatherService {
    * Delegates to the AccuWeather service's hourly-bucket accessor.
    */
   public getRequestCountLast24h(): number {
-    return this.accuWeatherService.getRequestCountLast24h();
+    return this.weatherProvider.getRequestCountLast24h();
   }
 
   /**
@@ -394,7 +401,7 @@ export class WeatherService {
 
     const ageMin = msToWholeMinutes(ageMs);
     const ageLabel = ageMin <= 0 ? 'just now' : `${ageMin}m ago`;
-    const requestCount = this.accuWeatherService.getRequestCount();
+    const requestCount = this.weatherProvider.getRequestCount();
 
     const counters: string[] = [
       `${this.updateCount} ${this.updateCount === 1 ? 'update' : 'updates'}`,
@@ -449,6 +456,11 @@ export class WeatherService {
    * Operator-facing message used when fetches are paused at the daily quota.
    * Public so the emission tick can re-push the same wording instead of
    * letting a periodic setPluginStatus call silently overwrite the error.
+   *
+   * The AccuWeather-specific wording is safe: this path is reachable only when
+   * `isQuotaExhausted()` is true, which requires a non-zero rolling-24h request
+   * count, and AccuWeather is the only provider that reports one (Open-Meteo's
+   * `getRequestCountLast24h()` is hardcoded to 0).
    */
   public formatQuotaExhaustedMessage(): string {
     const used = this.getRequestCountLast24h();
@@ -467,8 +479,8 @@ export class WeatherService {
       errorCount: this.errorCount,
       hasWeatherData: !!this.currentWeatherData,
       signalKHealth: this.signalKService.getHealthStatus(),
-      cacheStats: this.accuWeatherService.getCacheStats(),
-      apiRequestCount: this.accuWeatherService.getRequestCount(),
+      cacheStats: this.weatherProvider.getCacheStats(),
+      apiRequestCount: this.weatherProvider.getRequestCount(),
     };
   }
 
@@ -586,7 +598,7 @@ export class WeatherService {
         throw new Error('No position available for weather data');
       }
 
-      const weatherData = await this.accuWeatherService.fetchCurrentWeather(position);
+      const weatherData = await this.weatherProvider.fetchCurrentWeather(position);
 
       const enhancedWeatherData = this.enhanceWeatherData(weatherData, vesselData);
 
@@ -629,9 +641,11 @@ export class WeatherService {
         temperature: enhancedWeatherData.temperature,
         windSpeed: enhancedWeatherData.windSpeed,
         pressure: enhancedWeatherData.pressure,
-        hasApparentWind: !!(
-          enhancedWeatherData.apparentWindSpeed && enhancedWeatherData.apparentWindAngle
-        ),
+        // Presence, not truthiness: an apparent wind angle of exactly 0 rad
+        // (wind dead ahead) is a real reading, not "absent".
+        hasApparentWind:
+          enhancedWeatherData.apparentWindSpeed !== undefined &&
+          enhancedWeatherData.apparentWindAngle !== undefined,
         vesselDataComplete: vesselData.isComplete,
       });
 

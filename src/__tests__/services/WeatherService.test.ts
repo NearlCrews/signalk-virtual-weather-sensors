@@ -771,6 +771,293 @@ describe('WeatherService - Banner Pluralization', () => {
   });
 });
 
+describe('WeatherService - Fetch Skip and Error Escalation', () => {
+  let mockApp: ReturnType<typeof createMockApp>;
+  let mockLogger: ReturnType<typeof createMockLogger>;
+  let bannerCalls: Array<{ kind: 'status' | 'error'; message: string }>;
+  let setBanner: (kind: 'status' | 'error', message: string) => void;
+
+  // Steady cold weather payload reused across the failure/recovery cases.
+  const weatherData = {
+    temperature: 293.15,
+    pressure: 101325,
+    humidity: 0.6,
+    windSpeed: 5,
+    windDirection: Math.PI,
+    dewPoint: 285.15,
+    windChill: 293.15,
+    heatIndex: 293.15,
+    timestamp: new Date().toISOString(),
+  };
+
+  const inlandVessel = { position: { latitude: 60, longitude: 5 }, isComplete: false };
+
+  const makeSignalK = (vesselData: unknown = inlandVessel) => ({
+    getVesselNavigationData: vi.fn(() => vesselData),
+    getHealthStatus: vi.fn(() => ({ status: 'ok', isStale: false })),
+    clearCache: vi.fn(),
+  });
+
+  beforeEach(() => {
+    mockApp = createMockApp();
+    mockLogger = createMockLogger();
+    bannerCalls = [];
+    setBanner = (kind, message) => {
+      bannerCalls.push({ kind, message });
+    };
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+  });
+
+  it('skips the fetch entirely when the daily quota is exhausted', async () => {
+    // Provider reports last24h === dailyApiQuota, so isQuotaExhausted() is true.
+    const config = createTestConfig({ dailyApiQuota: 50 });
+    const mockProvider = {
+      fetchCurrentWeather: vi.fn().mockResolvedValue(weatherData),
+      getRequestCount: vi.fn(() => 50),
+      getRequestCountLast24h: vi.fn(() => 50),
+      getCacheStats: vi.fn(() => ({ size: 0 })),
+    };
+
+    const service = new WeatherService(
+      mockApp as never,
+      config,
+      mockLogger,
+      undefined,
+      mockProvider as never,
+      makeSignalK() as never,
+      setBanner
+    );
+
+    await service.forceUpdate();
+
+    // The fetch is short-circuited before any provider call.
+    expect(mockProvider.fetchCurrentWeather).not.toHaveBeenCalled();
+    // An error banner carrying the quota wording is published via the sink.
+    const errorBanners = bannerCalls.filter((b) => b.kind === 'error');
+    expect(errorBanners).toHaveLength(1);
+    expect(errorBanners[0].message).toContain('AccuWeather daily quota reached (50/50 in last 24h)');
+  });
+
+  it('escalates a 401 to apiKeyRejected, clears the timer, and refuses subsequent fetches', async () => {
+    const config = createTestConfig({ dailyApiQuota: 0 });
+    const mockProvider = {
+      // Error message carries the API_UNAUTHORIZED tag isAuthError() looks for.
+      fetchCurrentWeather: vi
+        .fn()
+        .mockRejectedValue(new Error('AccuWeather request failed: API_UNAUTHORIZED (401)')),
+      getRequestCount: vi.fn(() => 1),
+      getRequestCountLast24h: vi.fn(() => 1),
+      getCacheStats: vi.fn(() => ({ size: 0 })),
+    };
+
+    const service = new WeatherService(
+      mockApp as never,
+      config,
+      mockLogger,
+      undefined,
+      mockProvider as never,
+      makeSignalK() as never,
+      setBanner
+    );
+
+    await service.start();
+    // The update timer is live after start(); the 401 escalation must clear it.
+    expect((service as unknown as { updateTimer: unknown }).updateTimer).not.toBeNull();
+
+    await expect(service.forceUpdate()).rejects.toThrow();
+
+    expect(service.isApiKeyRejected()).toBe(true);
+    expect(service.formatStatusBanner()).toBe('API key rejected: update key in plugin settings');
+    expect((service as unknown as { updateTimer: unknown }).updateTimer).toBeNull();
+
+    const authBanner = bannerCalls.find((b) =>
+      b.message.includes('AccuWeather rejected the configured API key')
+    );
+    expect(authBanner?.kind).toBe('error');
+
+    // A second forceUpdate must early-return without touching the provider again.
+    expect(mockProvider.fetchCurrentWeather).toHaveBeenCalledTimes(1);
+    await service.forceUpdate();
+    expect(mockProvider.fetchCurrentWeather).toHaveBeenCalledTimes(1);
+
+    await service.stop();
+  });
+
+  it('appends "(2 consecutive)" on the second non-auth failure and resets the streak on success', async () => {
+    const config = createTestConfig({ dailyApiQuota: 0 });
+    let mode: 'fail' | 'succeed' = 'fail';
+    const mockProvider = {
+      fetchCurrentWeather: vi.fn(() =>
+        mode === 'fail'
+          ? Promise.reject(new Error('network timeout'))
+          : Promise.resolve(weatherData)
+      ),
+      getRequestCount: vi.fn(() => 1),
+      getRequestCountLast24h: vi.fn(() => 1),
+      getCacheStats: vi.fn(() => ({ size: 0 })),
+    };
+
+    const service = new WeatherService(
+      mockApp as never,
+      config,
+      mockLogger,
+      undefined,
+      mockProvider as never,
+      makeSignalK() as never,
+      setBanner
+    );
+
+    await service.start();
+
+    // First failure: no "(N consecutive)" suffix (streak is 1).
+    await expect(service.forceUpdate()).rejects.toThrow();
+    expect(bannerCalls.at(-1)?.message).toBe('Weather update failed: network timeout');
+    expect(bannerCalls.at(-1)?.message).not.toContain('consecutive');
+
+    // Second consecutive failure: suffix appears.
+    await expect(service.forceUpdate()).rejects.toThrow();
+    expect(bannerCalls.at(-1)?.message).toBe('Weather update failed (2 consecutive): network timeout');
+
+    // A success resets the streak.
+    mode = 'succeed';
+    await service.forceUpdate();
+
+    // The next failure shows no suffix again (streak back to 1).
+    mode = 'fail';
+    await expect(service.forceUpdate()).rejects.toThrow();
+    expect(bannerCalls.at(-1)?.message).toBe('Weather update failed: network timeout');
+    expect(bannerCalls.at(-1)?.message).not.toContain('consecutive');
+
+    await service.stop();
+  });
+
+  it('discards a weather result that resolves after stop() (torn-down service guard)', async () => {
+    const config = createTestConfig({ dailyApiQuota: 0 });
+    let resolveFetch: ((data: typeof weatherData) => void) | undefined;
+    const mockProvider = {
+      fetchCurrentWeather: vi.fn(
+        () =>
+          new Promise<typeof weatherData>((resolve) => {
+            resolveFetch = resolve;
+          })
+      ),
+      getRequestCount: vi.fn(() => 1),
+      getRequestCountLast24h: vi.fn(() => 1),
+      getCacheStats: vi.fn(() => ({ size: 0 })),
+    };
+
+    const service = new WeatherService(
+      mockApp as never,
+      config,
+      mockLogger,
+      undefined,
+      mockProvider as never,
+      makeSignalK() as never,
+      setBanner
+    );
+
+    await service.start();
+    const updatePromise = service.forceUpdate();
+    // Stop BEFORE the in-flight fetch resolves.
+    await service.stop();
+
+    resolveFetch?.(weatherData);
+    await updatePromise;
+
+    // The post-fetch writes are discarded: no data, no update increment.
+    expect(service.getCurrentWeatherData()).toBeNull();
+    expect(service.getServiceStatus().updateCount).toBe(0);
+  });
+
+  it('omits apparentWindAngle and falls back to true wind speed when SOG/COG/heading are absent', async () => {
+    const config = createTestConfig({ dailyApiQuota: 0 });
+    // Position only: no speedOverGround, courseOverGroundTrue, or headingTrue.
+    const positionOnlyVessel = {
+      position: { latitude: 60, longitude: 5 },
+      isComplete: false,
+    };
+    const mockProvider = {
+      fetchCurrentWeather: vi.fn().mockResolvedValue(weatherData),
+      getRequestCount: vi.fn(() => 1),
+      getRequestCountLast24h: vi.fn(() => 1),
+      getCacheStats: vi.fn(() => ({ size: 0 })),
+    };
+
+    const service = new WeatherService(
+      mockApp as never,
+      config,
+      mockLogger,
+      undefined,
+      mockProvider as never,
+      makeSignalK(positionOnlyVessel) as never,
+      setBanner
+    );
+
+    await service.start();
+    await service.forceUpdate();
+
+    const data = service.getCurrentWeatherData();
+    // With no heading/course, the angle path is omitted entirely...
+    expect(data?.apparentWindAngle).toBeUndefined();
+    // ...while the speed falls back to the true wind speed.
+    expect(data?.apparentWindSpeed).toBe(weatherData.windSpeed);
+
+    await service.stop();
+  });
+
+  it('routes through the fallback when calculateWindAnalysis returns isValid: false', async () => {
+    const config = createTestConfig({ dailyApiQuota: 0 });
+    // Complete vessel data so the complete-data branch runs, but the injected
+    // calculator flags the analysis invalid, forcing the heading fallback.
+    const completeVessel = {
+      position: { latitude: 60, longitude: 5 },
+      speedOverGround: 5,
+      courseOverGroundTrue: 0,
+      headingTrue: 0,
+      isComplete: true,
+    };
+    const mockWindCalculator = {
+      calculateWindAnalysis: vi.fn().mockReturnValue({ isValid: false, validationErrors: ['bad'] }),
+      // Fallback path uses normalizeAngle on (windDirection - heading).
+      normalizeAngle: vi.fn((a: number) => a),
+      calculateWindChill: vi.fn(() => weatherData.temperature),
+    };
+    const mockProvider = {
+      fetchCurrentWeather: vi.fn().mockResolvedValue(weatherData),
+      getRequestCount: vi.fn(() => 1),
+      getRequestCountLast24h: vi.fn(() => 1),
+      getCacheStats: vi.fn(() => ({ size: 0 })),
+    };
+
+    const service = new WeatherService(
+      mockApp as never,
+      config,
+      mockLogger,
+      mockWindCalculator as never,
+      mockProvider as never,
+      makeSignalK(completeVessel) as never,
+      setBanner
+    );
+
+    await service.start();
+    await service.forceUpdate();
+
+    expect(mockWindCalculator.calculateWindAnalysis).toHaveBeenCalledTimes(1);
+    const data = service.getCurrentWeatherData();
+    // Fallback: speed is the true wind speed, angle is the heading-derived value
+    // (normalizeAngle stub passes windDirection - heading = PI - 0 = PI through).
+    expect(data?.apparentWindSpeed).toBe(weatherData.windSpeed);
+    expect(data?.apparentWindAngle).toBe(weatherData.windDirection);
+
+    await service.stop();
+  });
+});
+
 describe('WeatherService - Configuration Validation', () => {
   let mockApp: ReturnType<typeof createMockApp>;
   let mockLogger: ReturnType<typeof createMockLogger>;

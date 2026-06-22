@@ -23,8 +23,9 @@ The key is valid but not authorized for the *Current Conditions* endpoint, or
 the request came from a blocked IP.
 
 Fix: confirm the key's plan includes *Current Conditions* in the AccuWeather
-portal. Trial keys expire 30 days after creation. If you proxy outbound
-traffic, confirm the egress IP is not on AccuWeather's block list.
+portal, or the trial key has expired. Trial keys expire 14 days after creation.
+If you proxy outbound traffic, confirm the egress IP is not on AccuWeather's
+block list.
 
 ## `API_RATE_LIMIT: Rate limit exceeded` (HTTP 429)
 

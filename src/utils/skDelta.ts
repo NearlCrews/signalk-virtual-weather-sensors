@@ -43,11 +43,14 @@ const nowIso = () => asTimestamp(new Date().toISOString());
 /**
  * Build a Signal K Delta carrying a single values update with the plugin's
  * standard self-context and a provider `$source`. When `timestamp` is omitted
- * the current wall-clock time is stamped (notifier transitions, transient
- * deltas); pass an explicit ISO timestamp for cached deltas that should keep
- * the original observation time. `sourceRef` defaults to AccuWeather for
- * backward compatibility; the active provider passes its own ref so consumers'
- * source-priority rules can distinguish weather sources.
+ * OR empty (a provider that returned no observation time) the current
+ * wall-clock time is stamped (notifier transitions, transient deltas); pass a
+ * non-empty ISO timestamp for cached deltas that should keep the original
+ * observation time. Defaulting empty here is the single chokepoint so every
+ * caller is covered and an empty string can never reach the wire as a
+ * timestamp. `sourceRef` defaults to AccuWeather for backward compatibility;
+ * the active provider passes its own ref so consumers' source-priority rules
+ * can distinguish weather sources.
  */
 export function buildValuesDelta(
   values: PathValue[],
@@ -59,7 +62,7 @@ export function buildValuesDelta(
     updates: [
       {
         $source: sourceRef,
-        timestamp: timestamp !== undefined ? asTimestamp(timestamp) : nowIso(),
+        timestamp: timestamp ? asTimestamp(timestamp) : nowIso(),
         values,
       },
     ],

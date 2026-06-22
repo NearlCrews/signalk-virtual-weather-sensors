@@ -28,9 +28,19 @@ function str(value: unknown): string {
   return typeof value === 'string' ? value.trim() : '';
 }
 
-/** Sort warnings by ascending start time (ISO timestamps sort lexically). */
+/**
+ * Sort warnings by ascending start time. Compares parsed epoch milliseconds
+ * rather than the raw strings: NWS CAP timestamps carry a local UTC offset
+ * (e.g. `2026-06-17T05:00:00-05:00`), and lexical comparison of offset-bearing
+ * ISO strings does not match chronological order across offsets. An unparseable
+ * timestamp sorts to the end (NaN-guarded) so it cannot jump ahead of real ones.
+ */
 function byStartAscending(a: WeatherWarning, b: WeatherWarning): number {
-  return a.startTime < b.startTime ? -1 : a.startTime > b.startTime ? 1 : 0;
+  const aMs = Date.parse(a.startTime);
+  const bMs = Date.parse(b.startTime);
+  if (Number.isNaN(aMs)) return Number.isNaN(bMs) ? 0 : 1;
+  if (Number.isNaN(bMs)) return -1;
+  return aMs - bMs;
 }
 
 /**

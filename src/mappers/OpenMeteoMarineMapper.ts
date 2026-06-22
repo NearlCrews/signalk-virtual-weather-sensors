@@ -11,8 +11,8 @@
 
 import type { MarineData, OpenMeteoMarineResponse } from '../types/index.js';
 import {
+  asOpenMeteoTimestamp,
   asOptionalNumber,
-  asStringOrEmpty,
   celsiusToKelvin,
   degreesToRadians,
   kmhToMS,
@@ -45,7 +45,7 @@ export function mapOpenMeteoMarineToMarineData(response: OpenMeteoMarineResponse
   const surfaceCurrentDirection = toRadians(current.ocean_current_direction);
 
   return {
-    timestamp: asStringOrEmpty(current.time),
+    timestamp: asOpenMeteoTimestamp(current.time),
     ...(significantWaveHeight !== undefined && { significantWaveHeight }),
     ...(waveDirection !== undefined && { waveDirection }),
     ...(wavePeriod !== undefined && { wavePeriod }),
@@ -59,7 +59,13 @@ export function mapOpenMeteoMarineToMarineData(response: OpenMeteoMarineResponse
   };
 }
 
-/** True when a marine reading carries no usable sea-state fields (e.g. an inland point). */
+/**
+ * True when a marine reading carries no usable sea-state fields (e.g. an inland
+ * point). Emptiness is decided on the scalar magnitudes/temperature only: a lone
+ * period or direction without a height (or a current direction without a speed)
+ * is not actionable sea-state, and this gate is what decides whether the marine
+ * delta and its meta ever ship, so it must stay magnitude-driven.
+ */
 export function isMarineDataEmpty(data: MarineData): boolean {
   return (
     data.significantWaveHeight === undefined &&

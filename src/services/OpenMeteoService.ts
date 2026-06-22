@@ -53,7 +53,7 @@ export class OpenMeteoService implements CurrentWeatherProvider {
   private readonly logger: Logger;
   private readonly baseUrl: string;
   private readonly requestTimeoutMs: number;
-  /** Cumulative successful-or-attempted fetch count, for the status banner. */
+  /** Cumulative attempted-fetch count (incremented before each request), for the status banner. */
   private requestCount = 0;
 
   constructor(logger: Logger = () => {}, options?: OpenMeteoOptions) {

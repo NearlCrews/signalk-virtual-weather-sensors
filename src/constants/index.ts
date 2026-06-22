@@ -42,7 +42,7 @@ export const PLUGIN = {
   NAME: PLUGIN_NAME,
   DISPLAY_NAME: PLUGIN_DISPLAY_NAME,
   DESCRIPTION:
-    'Signal K plugin providing comprehensive weather data from AccuWeather API with NMEA2000-compatible environmental measurements',
+    'Signal K plugin providing comprehensive weather data with NMEA2000-compatible environmental measurements',
   VERSION: process.env.PKG_VERSION || '1.0.0',
   /**
    * Stable Signal K $source ref for every delta this plugin emits, so users

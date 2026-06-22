@@ -185,12 +185,17 @@ export function usePanelConfig(
 
   const doSave = useCallback(async (): Promise<boolean> => {
     const trimmedKey = form.accuWeatherApiKey.trim();
-    // Mirror the rjsf schema's minLength gate: the fallback form blocks a
-    // too-short key at submit, so the federated panel must too.
-    const keyLengthError = validateKeyLength(trimmedKey);
-    if (keyLengthError) {
-      setKeyError(keyLengthError);
-      return false;
+    // The key is only required (and only validated) when AccuWeather is the
+    // active provider. Under the keyless Open-Meteo default the field is hidden
+    // and usually empty, so gating Save on key length there would block every
+    // fresh install. This matches the rjsf schema, which no longer declares a
+    // minLength on the now-optional key.
+    if (form.weatherProvider === 'accuweather') {
+      const keyLengthError = validateKeyLength(trimmedKey);
+      if (keyLengthError) {
+        setKeyError(keyLengthError);
+        return false;
+      }
     }
     setKeyError(null);
     setSaving(true);

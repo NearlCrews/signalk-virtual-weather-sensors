@@ -6,8 +6,8 @@ We actively support the following versions with security updates:
 
 | Version | Supported |
 | ------- | --------- |
-| 1.8.x   | Yes       |
-| < 1.8   | No        |
+| 1.9.x   | Yes       |
+| < 1.9   | No        |
 
 ## Reporting a Vulnerability
 
@@ -71,12 +71,22 @@ npm audit
 
 ## Data Handling
 
-This plugin talks to one external service: the AccuWeather API, over HTTPS.
-Requests carry the configured API key and the vessel's GPS coordinates (to
-resolve the AccuWeather location for the current position); the plugin sends
-no other personal data and no account credentials. It does not store
-historical weather data, and all external responses are validated and bounded
-before use.
+This plugin talks to a small set of external weather services over HTTPS, and
+the only personal data any of them receives is the vessel's GPS coordinates:
+
+- **Open-Meteo** (default, keyless): receives only the vessel's coordinates to
+  fetch current conditions; no API key is sent.
+- **Open-Meteo Marine** (optional, keyless): when the marine layer is enabled,
+  receives only the vessel's coordinates for sea-state data; no API key is sent.
+- **NWS CAP warnings** (keyless): for US waters, receives only the vessel's
+  coordinates to look up active alerts; no API key is sent.
+- **AccuWeather** (optional, key-gated): when AccuWeather is the selected
+  source, requests carry the configured API key and the vessel's GPS
+  coordinates (to resolve the AccuWeather location for the current position).
+
+The plugin sends no other personal data and no account credentials. It does not
+store historical weather data, and all external responses are validated and
+bounded before use.
 
 ## Signal K Security
 

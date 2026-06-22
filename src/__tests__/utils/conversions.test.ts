@@ -6,6 +6,8 @@
 
 import { describe, expect, it } from 'vitest';
 import {
+  asOpenMeteoTimestamp,
+  asOptionalNumber,
   calculateAbsoluteHumidity,
   calculateAirDensity,
   calculateBeaufortScale,
@@ -320,5 +322,43 @@ describe('isApiQuotaReached', () => {
 
   it('returns false for an undefined quota (cap disabled)', () => {
     expect(isApiQuotaReached(50, undefined)).toBe(false);
+  });
+});
+
+describe('asOptionalNumber', () => {
+  it('passes through finite numbers including zero and negatives', () => {
+    expect(asOptionalNumber(0)).toBe(0);
+    expect(asOptionalNumber(-3.5)).toBe(-3.5);
+    expect(asOptionalNumber(42)).toBe(42);
+  });
+
+  it('returns undefined for non-numeric values', () => {
+    expect(asOptionalNumber(null)).toBeUndefined();
+    expect(asOptionalNumber(undefined)).toBeUndefined();
+    expect(asOptionalNumber('5')).toBeUndefined();
+  });
+
+  it('rejects NaN and infinities so a malformed wire value cannot pose as a reading', () => {
+    expect(asOptionalNumber(Number.NaN)).toBeUndefined();
+    expect(asOptionalNumber(Number.POSITIVE_INFINITY)).toBeUndefined();
+    expect(asOptionalNumber(Number.NEGATIVE_INFINITY)).toBeUndefined();
+  });
+});
+
+describe('asOpenMeteoTimestamp', () => {
+  it('appends Z to a bare GMT wall-clock string', () => {
+    expect(asOpenMeteoTimestamp('2026-06-16T19:00')).toBe('2026-06-16T19:00Z');
+    expect(asOpenMeteoTimestamp('2026-06-16T19:00:30')).toBe('2026-06-16T19:00:30Z');
+  });
+
+  it('leaves an already-zoned timestamp untouched', () => {
+    expect(asOpenMeteoTimestamp('2026-06-16T19:00Z')).toBe('2026-06-16T19:00Z');
+    expect(asOpenMeteoTimestamp('2026-06-16T19:00+02:00')).toBe('2026-06-16T19:00+02:00');
+    expect(asOpenMeteoTimestamp('2026-06-16T19:00-0500')).toBe('2026-06-16T19:00-0500');
+  });
+
+  it('returns an empty string when the time is absent', () => {
+    expect(asOpenMeteoTimestamp(undefined)).toBe('');
+    expect(asOpenMeteoTimestamp(null)).toBe('');
   });
 });

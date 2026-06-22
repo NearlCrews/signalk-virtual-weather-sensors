@@ -65,7 +65,7 @@ const NON_CANONICAL_META: ReadonlyArray<Meta> = [
   me(SIGNALK_PATHS.ENVIRONMENT.WEATHER.VISIBILITY, {
     units: 'm',
     displayName: 'Visibility',
-    description: 'Horizontal visibility distance reported by AccuWeather.',
+    description: 'Horizontal visibility distance reported by the weather provider.',
     // Marine operators expect nautical miles for visibility, not the SK unit
     // category default of statute miles. Pin a custom conversion so the data
     // browser renders nm regardless of the `distance` preference setting.
@@ -159,17 +159,18 @@ const NON_CANONICAL_META: ReadonlyArray<Meta> = [
     units: 'm/s',
     displayName: 'Apparent wind speed',
     description:
-      'Apparent wind speed calculated from AccuWeather ground-referenced wind and vessel motion. Plugin-derived; published off the canonical environment.wind leaves so it cannot displace a real anemometer feed.',
+      "Apparent wind speed calculated from the provider's ground-referenced wind and vessel motion. Plugin-derived; published off the canonical environment.wind leaves so it cannot displace a real anemometer feed.",
   }),
   me(SIGNALK_PATHS.ENVIRONMENT.WEATHER.WIND_ANGLE_APPARENT, {
     units: 'rad',
     displayName: 'Apparent wind angle',
     description:
-      'Apparent wind angle relative to the bow (-pi..pi, negative to port), calculated from AccuWeather wind and vessel motion. Plugin-derived; published off the canonical environment.wind leaves.',
+      "Apparent wind angle relative to the bow (-pi..pi, negative to port), calculated from the provider's wind and vessel motion. Plugin-derived; published off the canonical environment.wind leaves.",
   }),
   me(SIGNALK_PATHS.ENVIRONMENT.WEATHER.DESCRIPTION, {
     displayName: 'Weather description',
-    description: 'Plain-language summary of current conditions from AccuWeather (WeatherText).',
+    description:
+      'Plain-language summary of current conditions from the weather provider (AccuWeather WeatherText or Open-Meteo WMO weather code).',
   }),
   me(SIGNALK_PATHS.ENVIRONMENT.WEATHER.PRESSURE_TENDENCY, {
     // No `units`: the value is a discrete signum (-1, 0, +1), not a measurement.
@@ -256,7 +257,7 @@ const NOTIFICATION_META: ReadonlyArray<Meta> = [
   me(NOTIFICATION_PATHS.WEATHER_SEVERE, {
     displayName: 'Severe weather',
     description:
-      'Active when the current AccuWeather icon code maps to a hazard category (thunderstorm, ice, freezing rain, etc.).',
+      "Active when the provider's current condition maps to a hazard category (thunderstorm, ice, freezing rain, etc.); AccuWeather icon code or Open-Meteo WMO weather code.",
   }),
 ];
 

@@ -1,5 +1,7 @@
 # WeatherProvider Migration Spike
 
+> Historical design snapshot from the pre-1.7.0 spike; not maintained against shipped behavior.
+
 ## Why this exists
 
 `@signalk/server-api` 2.24 ships a typed `WeatherProvider` interface (`registerWeatherProvider` plus `WeatherDataModel`). This spike evaluates migrating off delta-push onto WeatherProvider.

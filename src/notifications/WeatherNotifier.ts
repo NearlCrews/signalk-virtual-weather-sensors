@@ -90,13 +90,13 @@ function capForChartplotter(message: string): string {
  * Narrow `number | undefined` to `number` for optional WeatherData fields.
  * Required fields (`temperature`, `windSpeed`, etc.) are already `number` per
  * the type; this guard is only for the spread fields like `windGustSpeed`,
- * `cloudCeiling`, `precipitationLastHour` that AccuWeather may omit.
+ * `cloudCeiling`, `precipitationLastHour` that the weather provider may omit.
  */
 function isFiniteNumber(value: number | undefined): value is number {
   return value !== undefined && Number.isFinite(value);
 }
 
-/** 16-point compass rose, indexed by floor((deg + 11.25) / 22.5). */
+/** 16-point compass rose, indexed by floor((deg + 11.25) / 22.5) % 16 (the wrap maps [348.75, 360) back to N). */
 const CARDINAL_16 = [
   'N',
   'NNE',
@@ -232,9 +232,9 @@ function formatColdSuffix(data: WeatherData): string {
 }
 
 /**
- * AccuWeather's WeatherText drives the lead phrase; pressure is appended
- * because a falling barometer alongside a thunderstorm icon is a useful
- * operational signal beyond what the icon alone conveys.
+ * The provider's weather description drives the lead phrase; pressure is
+ * appended because a falling barometer alongside a thunderstorm condition is a
+ * useful operational signal beyond what the condition alone conveys.
  */
 function formatSevereSuffix(data: WeatherData, label: string): string {
   const description = data.description?.trim() ?? '';
@@ -372,9 +372,9 @@ export class WeatherNotifier {
   }
 
   /**
-   * Severe-condition messages include AccuWeather's `WeatherText` phrase
+   * Severe-condition messages include the provider's weather description
    * (e.g. `Thunderstorms: Severe thunderstorms approaching`) so the operator
-   * sees the underlying condition rather than just the icon-derived label.
+   * sees the underlying condition rather than just the code-derived label.
    * Empty array is the common case: no enabled band transitioned this tick.
    *
    * Timestamps and per-band message strings are computed lazily inside
@@ -455,9 +455,10 @@ export class WeatherNotifier {
 
   /**
    * Heat stress: caution (HSI 2, warn), high (HSI 3, alarm), extreme
-   * (HSI 4, emergency). Driven by AccuWeather wet-bulb globe temperature;
-   * the suffix surfaces WBGT, RH, and RealFeel-in-shade so the operator
-   * sees both the index and the underlying physiology drivers.
+   * (HSI 4, emergency). Driven by the provider's wet-bulb globe temperature
+   * (measured by AccuWeather, estimated for Open-Meteo); the suffix surfaces
+   * WBGT, RH, and RealFeel-in-shade (when present) so the operator sees both
+   * the index and the underlying physiology drivers.
    */
   private evaluateHeat(data: WeatherData, out: PathValue[]): void {
     const hsi = data.heatStressIndex;
@@ -500,7 +501,7 @@ export class WeatherNotifier {
 
   /**
    * Drive every band in a set to `normal`. Used when the band's numeric driver
-   * is missing from a partial AccuWeather response: without this the bands
+   * is missing from a partial provider response: without this the bands
    * would latch in their last active state with no exit edge, leaving a stale
    * alarm on the bus until a later response happens to carry the driver again.
    * Mirrors the clear-to-normal path in {@link evaluateSevereCondition}.
@@ -530,8 +531,8 @@ export class WeatherNotifier {
    * Severe weather condition: single path whose state varies by the
    * provider-agnostic `severeCondition` each provider's transform supplies.
    * Returns to `normal` whenever the current condition is benign (no
-   * `severeCondition`). Description comes from the response's `WeatherText`
-   * so consumers see the operator-friendly phrase; on exit the message is
+   * `severeCondition`). Description comes from the provider's weather
+   * description so consumers see the operator-friendly phrase; on exit the message is
    * empty so consumers see `state: 'normal'` without a fake "No severe
    * weather" phrase being parsed as a real condition. Barometric pressure is
    * appended when finite: a thunderstorm paired with a falling barometer is a

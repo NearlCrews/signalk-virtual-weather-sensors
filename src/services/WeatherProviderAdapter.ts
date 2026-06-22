@@ -56,12 +56,17 @@ export class WeatherProviderAdapter {
         ? mapDailyToForecasts(await this.accuWeather.getDailyForecast(location))
         : mapHourlyToForecasts(await this.accuWeather.getHourlyForecast(location));
 
+    // Only `maxCount` is honored: the AccuWeather 12-hour/5-day endpoints expose
+    // no start-date or custom-window knob, so `options.startDate`/`custom` are
+    // intentionally unsupported here rather than silently approximated.
     const maxCount = options?.maxCount;
     return typeof maxCount === 'number' && maxCount > 0 ? forecasts.slice(0, maxCount) : forecasts;
   }
 
   private async getObservations(
     position: Position,
+    // `maxCount` is moot: this returns exactly one current observation, so there
+    // is nothing to cap.
     _options?: WeatherReqParams
   ): Promise<SKWeatherData[]> {
     this.logger('debug', 'Weather provider observation request');

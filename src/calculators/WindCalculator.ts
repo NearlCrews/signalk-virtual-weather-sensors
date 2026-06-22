@@ -48,6 +48,13 @@ export class WindCalculator {
    * Calculate comprehensive wind analysis including validation. Computes the
    * shared trig terms once and derives both apparent speed and angle from them
    * to avoid duplicating four sin/cos calls every emission tick.
+   *
+   * `trueWindDirection` is the meteorological direction the wind blows FROM (the
+   * WMO/provider convention), and `vesselCourse` is the direction the vessel
+   * travels TOWARD. These compose directly: a vessel making way toward `course`
+   * feels a motion headwind coming FROM `course`, so summing the true-wind
+   * from-vector with the motion from-vector yields the apparent-wind from-vector
+   * (no `+ pi` flip needed). The returned angle is bow-relative (-pi..pi).
    */
   public calculateWindAnalysis(
     trueWindSpeed: number,

@@ -111,6 +111,8 @@ export class MarinePathMapper {
     }
 
     this.logger('debug', 'Marine path mapping completed', { totalPaths: values.length });
+    // buildValuesDelta stamps the emit wall-clock when the timestamp is empty
+    // (the model omitted `time`), so no guard is needed here.
     return buildValuesDelta(values, marine.timestamp, this.sourceRef);
   }
 

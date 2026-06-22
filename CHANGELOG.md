@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Config panel could not save a fresh keyless install.** The federated panel
+  still required a 20-character AccuWeather key at save time even under the
+  default keyless Open-Meteo source, blocking a clean first-run save (and
+  force-opening a hidden AccuWeather section). The key is now validated only when
+  AccuWeather is the active provider, matching the JSON schema.
+- **Open-Meteo observation timestamps now carry a UTC designator.** Open-Meteo
+  returns a GMT wall-clock string with no zone; the plugin now normalizes it to
+  an RFC 3339 instant (appends `Z`) so a strict consumer cannot misread it as
+  local time. Affects both the atmospheric and marine observation times.
+- **Weather warnings sort chronologically across time zones.** Active alerts are
+  ordered by parsed instant rather than by raw string, so NWS timestamps that
+  carry a local UTC offset are no longer ordered incorrectly.
+- **Sustained emission failures surface to the status banner.** A persistent
+  failure to publish deltas now sets a plugin error banner instead of only
+  logging, so an operator is not shown a green "Running" status while no data
+  reaches the bus.
+- **Best-effort marine layer is quieter and safer.** A marine fetch that
+  resolves after the plugin has stopped no longer repopulates a torn-down
+  service, and a tolerated marine outage logs once (at debug) instead of
+  double-reporting as an error.
+
 <a id="v190"></a>
 
 ## [1.9.0] - 2026-06-17

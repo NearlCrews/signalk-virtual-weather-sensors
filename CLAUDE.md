@@ -57,7 +57,7 @@ src/
 │   ├── open-meteo-severity.ts      # WMO weather code to severe-condition classification
 │   └── accuweather-severity.ts     # AccuWeather icon code to severe-condition classification
 ├── calculators/
-│   └── WindCalculator.ts           # Vector math for apparent wind, Beaufort scale
+│   └── WindCalculator.ts           # Vector math for apparent wind; NWS wind chill and heat index (Beaufort lives in utils/conversions.ts)
 ├── mappers/
 │   ├── NMEA2000PathMapper.ts       # Weather data → Signal K delta messages
 │   ├── OpenMeteoMapper.ts          # Open-Meteo current block → internal SI WeatherData (parallels AccuWeather transform)

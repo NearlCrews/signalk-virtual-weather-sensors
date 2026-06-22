@@ -28,18 +28,35 @@ export function elapsedSinceMs(sinceMs: number | null): number | null {
 }
 
 /**
- * Narrow an arbitrary value to `number`, returning `undefined` for anything
- * non-numeric (missing, null, string). API response fields typed `number` are
- * known to arrive null on the free tier and partial responses, so callers use
- * this before spreading an optional field onto an output object.
+ * Narrow an arbitrary value to a finite `number`, returning `undefined` for
+ * anything non-numeric (missing, null, string) or non-finite (NaN, ±Infinity).
+ * API response fields typed `number` are known to arrive null on the free tier
+ * and partial responses, so callers use this before spreading an optional field
+ * onto an output object; rejecting NaN here keeps a malformed wire value from
+ * masquerading as a present reading downstream.
  */
 export function asOptionalNumber(value: unknown): number | undefined {
-  return typeof value === 'number' ? value : undefined;
+  return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
 }
 
 /** Return the value when it is a string, otherwise an empty string. */
 export function asStringOrEmpty(value: unknown): string {
   return typeof value === 'string' ? value : '';
+}
+
+/**
+ * Normalize an Open-Meteo `current.time` value to an RFC 3339 UTC instant.
+ * Open-Meteo with `timezone=GMT` returns a bare wall-clock string like
+ * `2024-01-01T12:00` with no zone designator, which a strict consumer would
+ * read as local time and so misreport observation age. Append `Z` when no
+ * `Z`/`±hh:mm` offset is already present. Returns '' when the value is absent so
+ * callers fall back to the emission wall-clock time.
+ */
+export function asOpenMeteoTimestamp(value: unknown): string {
+  const time = asStringOrEmpty(value);
+  if (time === '') return '';
+  // Already carries a zone designator at the end (Z, or a ±hh:mm / ±hhmm offset)?
+  return /([Zz]|[+-]\d{2}:?\d{2})$/.test(time) ? time : `${time}Z`;
 }
 
 /**
