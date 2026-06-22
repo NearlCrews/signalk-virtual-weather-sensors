@@ -35,6 +35,7 @@ import {
   calculateAbsoluteHumidity,
   calculateAirDensity,
   calculateBeaufortScale,
+  calculateGustFactor,
   calculateHeatStressIndex,
   celsiusToKelvin,
   degreesToRadians,
@@ -47,6 +48,8 @@ import {
   kmhToMS,
   millibarsToPA,
   normalizeAngle0To2Pi,
+  optionalCelsiusToKelvin,
+  optionalPercentageToRatio,
   percentageToRatio,
   toErrorMessage,
   truncateToCodePoints,
@@ -132,17 +135,15 @@ const HOUR_MS = 60 * 60 * 1000;
 function extractEnhancedTemperatures(
   conditions: AccuWeatherCurrentConditions
 ): Partial<WeatherData> {
-  // Routed through asOptionalNumber (like extractEnhancedConditions) so both
-  // extractors apply the same numeric narrowing at the API boundary.
-  const toKelvin = (celsius: unknown): number | undefined => {
-    const value = asOptionalNumber(celsius);
-    return value !== undefined ? celsiusToKelvin(value) : undefined;
-  };
-  const realFeel = toKelvin(conditions.RealFeelTemperature?.Metric?.Value);
-  const realFeelShade = toKelvin(conditions.RealFeelTemperatureShade?.Metric?.Value);
-  const wetBulbTemperature = toKelvin(conditions.WetBulbTemperature?.Metric?.Value);
-  const wetBulbGlobeTemperature = toKelvin(conditions.WetBulbGlobeTemperature?.Metric?.Value);
-  const apparentTemperature = toKelvin(conditions.ApparentTemperature?.Metric?.Value);
+  const realFeel = optionalCelsiusToKelvin(conditions.RealFeelTemperature?.Metric?.Value);
+  const realFeelShade = optionalCelsiusToKelvin(conditions.RealFeelTemperatureShade?.Metric?.Value);
+  const wetBulbTemperature = optionalCelsiusToKelvin(conditions.WetBulbTemperature?.Metric?.Value);
+  const wetBulbGlobeTemperature = optionalCelsiusToKelvin(
+    conditions.WetBulbGlobeTemperature?.Metric?.Value
+  );
+  const apparentTemperature = optionalCelsiusToKelvin(
+    conditions.ApparentTemperature?.Metric?.Value
+  );
   return {
     ...(realFeel !== undefined && { realFeel }),
     ...(realFeelShade !== undefined && { realFeelShade }),
@@ -163,12 +164,7 @@ function extractEnhancedConditions(
 ): Partial<WeatherData> {
   const rawWindGustKmh = asOptionalNumber(conditions.WindGust?.Speed?.Metric?.Value);
   const windGustSpeed = rawWindGustKmh !== undefined ? kmhToMS(rawWindGustKmh) : undefined;
-  // Omitted unless the gust reading is at least the sustained speed: a factor
-  // below 1 is not a gust factor, it is stale or inconsistent upstream data.
-  const windGustFactor =
-    windGustSpeed !== undefined && windSpeed > 0 && windGustSpeed >= windSpeed
-      ? windGustSpeed / windSpeed
-      : undefined;
+  const windGustFactor = calculateGustFactor(windGustSpeed, windSpeed);
   const rawVisibilityKm = asOptionalNumber(conditions.Visibility?.Metric?.Value);
   const visibility =
     rawVisibilityKm !== undefined ? rawVisibilityKm * UNITS.LENGTH.KM_TO_M : undefined;
@@ -177,10 +173,7 @@ function extractEnhancedConditions(
   const temperatureDeparture24h = asOptionalNumber(
     conditions.Past24HourTemperatureDeparture?.Metric?.Value
   );
-  // Missing CloudCover must stay absent: percentageToRatio(undefined) would
-  // read as a real "clear sky" 0.
-  const rawCloudCover = asOptionalNumber(conditions.CloudCover);
-  const cloudCover = rawCloudCover !== undefined ? percentageToRatio(rawCloudCover) : undefined;
+  const cloudCover = optionalPercentageToRatio(conditions.CloudCover);
   const uvIndex = asOptionalNumber(conditions.UVIndexFloat);
   const weatherIcon = asOptionalNumber(conditions.WeatherIcon);
   return {

@@ -25,6 +25,8 @@ import {
   kmhToMS,
   millibarsToPA,
   normalizeAngle0To2Pi,
+  optionalCelsiusToKelvin,
+  optionalPercentageToRatio,
   percentageToRatio,
 } from '../utils/conversions.js';
 
@@ -56,17 +58,6 @@ function mapTendencyKind(code: string | undefined): TendencyKind | undefined {
 type SKOutside = NonNullable<SKWeatherData['outside']>;
 type SKWind = NonNullable<SKWeatherData['wind']>;
 
-/**
- * Convert an optional Celsius reading to Kelvin, returning undefined for a
- * missing or non-numeric value. Guards against a partial forecast where a
- * temperature block is absent: `celsiusToKelvin` floors non-finite input to
- * 0 K, so an unguarded null would otherwise emit absolute zero.
- */
-function optionalCelsiusToKelvin(value: unknown): number | undefined {
-  const celsius = asOptionalNumber(value);
-  return celsius !== undefined ? celsiusToKelvin(celsius) : undefined;
-}
-
 /** Cloud-cover and precipitation fields shared by the hourly forecast and daily-half shapes. */
 interface CloudPrecipSource {
   readonly HasPrecipitation?: boolean;
@@ -77,13 +68,13 @@ interface CloudPrecipSource {
 
 /** Build the cloud-cover and precipitation portion of an SKOutside, shared by the hourly and daily mappers. */
 function buildCloudAndPrecip(source: CloudPrecipSource | undefined): Partial<SKOutside> {
-  const cloudCoverPct = asOptionalNumber(source?.CloudCover);
+  const cloudCover = optionalPercentageToRatio(source?.CloudCover);
   const precipitationMm = asOptionalNumber(source?.TotalLiquid?.Value);
   const precipitationType = source?.HasPrecipitation
     ? mapPrecipitationKind(source.PrecipitationType)
     : undefined;
   return {
-    ...(cloudCoverPct !== undefined && { cloudCover: percentageToRatio(cloudCoverPct) }),
+    ...(cloudCover !== undefined && { cloudCover }),
     ...(precipitationMm !== undefined && {
       precipitationVolume: precipitationMm * UNITS.PRECIPITATION.MM_TO_M,
     }),
@@ -221,7 +212,7 @@ export function mapCurrentToObservation(c: AccuWeatherCurrentConditions): SKWeat
   const pressureMbar = asOptionalNumber(c.Pressure?.Metric?.Value);
   const visibilityKm = asOptionalNumber(c.Visibility?.Metric?.Value);
   const uvIndex = asOptionalNumber(c.UVIndexFloat);
-  const cloudCoverPct = asOptionalNumber(c.CloudCover);
+  const cloudCover = optionalPercentageToRatio(c.CloudCover);
   const precipitationMm = asOptionalNumber(c.Precip1hr?.Metric?.Value);
   const precipitationType = mapPrecipitationKind(c.PrecipitationType);
   const pressureTendency = mapTendencyKind(c.PressureTendency?.Code);
@@ -242,7 +233,7 @@ export function mapCurrentToObservation(c: AccuWeatherCurrentConditions): SKWeat
       horizontalVisibility: visibilityKm * UNITS.LENGTH.KM_TO_M,
     }),
     ...(uvIndex !== undefined && { uvIndex }),
-    ...(cloudCoverPct !== undefined && { cloudCover: percentageToRatio(cloudCoverPct) }),
+    ...(cloudCover !== undefined && { cloudCover }),
     ...(precipitationMm !== undefined && {
       precipitationVolume: precipitationMm * UNITS.PRECIPITATION.MM_TO_M,
     }),

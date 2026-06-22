@@ -21,12 +21,14 @@ import {
   calculateAbsoluteHumidity,
   calculateAirDensity,
   calculateBeaufortScale,
+  calculateGustFactor,
   calculateHeatStressIndex,
   celsiusToKelvin,
   degreesToRadians,
   estimateWetBulbGlobeTemperature,
   millibarsToPA,
   normalizeAngle0To2Pi,
+  optionalPercentageToRatio,
   percentageToRatio,
 } from '../utils/conversions.js';
 
@@ -92,14 +94,9 @@ function extractOptionalFields(
 ): Partial<WeatherData> {
   const uvIndex = asOptionalNumber(current.uv_index);
   const visibility = asOptionalNumber(current.visibility);
-  const rawCloudCover = asOptionalNumber(current.cloud_cover);
-  const cloudCover = rawCloudCover !== undefined ? percentageToRatio(rawCloudCover) : undefined;
+  const cloudCover = optionalPercentageToRatio(current.cloud_cover);
   const windGustSpeed = asOptionalNumber(current.wind_gusts_10m);
-  // A gust factor below 1 is not a gust: drop it (matches the AccuWeather path).
-  const windGustFactor =
-    windGustSpeed !== undefined && windSpeed > 0 && windGustSpeed >= windSpeed
-      ? windGustSpeed / windSpeed
-      : undefined;
+  const windGustFactor = calculateGustFactor(windGustSpeed, windSpeed);
   const rawApparent = asOptionalNumber(current.apparent_temperature);
   const apparentTemperature = rawApparent !== undefined ? celsiusToKelvin(rawApparent) : undefined;
   const precipitationLastHour = asOptionalNumber(current.precipitation);

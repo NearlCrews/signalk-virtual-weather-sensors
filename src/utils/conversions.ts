@@ -171,6 +171,32 @@ export function ratioToPercentage(ratio: number): number {
   return clamp(ratio * 100, 0, 100);
 }
 
+/** Convert an optional Celsius value to Kelvin; undefined when missing or non-numeric. */
+export function optionalCelsiusToKelvin(value: unknown): number | undefined {
+  const celsius = asOptionalNumber(value);
+  return celsius !== undefined ? celsiusToKelvin(celsius) : undefined;
+}
+
+/** Convert an optional percentage to a 0..1 ratio; undefined when missing or non-numeric. */
+export function optionalPercentageToRatio(value: unknown): number | undefined {
+  const pct = asOptionalNumber(value);
+  return pct !== undefined ? percentageToRatio(pct) : undefined;
+}
+
+/**
+ * Gust factor (gust over sustained), or undefined when the gust is missing, the
+ * sustained wind is zero, or the gust is below the sustained speed. A factor
+ * below 1 is not a gust, it is stale or inconsistent upstream data.
+ */
+export function calculateGustFactor(
+  windGustSpeed: number | undefined,
+  windSpeed: number
+): number | undefined {
+  return windGustSpeed !== undefined && windSpeed > 0 && windGustSpeed >= windSpeed
+    ? windGustSpeed / windSpeed
+    : undefined;
+}
+
 /**
  * Inclusive numeric range check that also rejects non-finite inputs. Building
  * block for the `isValid*` wrappers below.

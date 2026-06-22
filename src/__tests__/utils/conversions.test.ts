@@ -11,6 +11,7 @@ import {
   calculateAbsoluteHumidity,
   calculateAirDensity,
   calculateBeaufortScale,
+  calculateGustFactor,
   calculateHeatStressIndex,
   calculateSaturationVaporPressure,
   celsiusToKelvin,
@@ -33,6 +34,8 @@ import {
   msToKnots,
   normalizeAngle0To2Pi,
   normalizeAnglePiToPi,
+  optionalCelsiusToKelvin,
+  optionalPercentageToRatio,
   percentageToRatio,
   radiansToDegrees,
   ratioToPercentage,
@@ -360,5 +363,23 @@ describe('asOpenMeteoTimestamp', () => {
   it('returns an empty string when the time is absent', () => {
     expect(asOpenMeteoTimestamp(undefined)).toBe('');
     expect(asOpenMeteoTimestamp(null)).toBe('');
+  });
+});
+
+describe('optional conversion helpers', () => {
+  it('optionalCelsiusToKelvin returns undefined for non-numeric, Kelvin for numeric', () => {
+    expect(optionalCelsiusToKelvin(undefined)).toBeUndefined();
+    expect(optionalCelsiusToKelvin(null)).toBeUndefined();
+    expect(optionalCelsiusToKelvin(0)).toBeCloseTo(273.15, 2);
+  });
+  it('optionalPercentageToRatio returns undefined for missing, ratio for present', () => {
+    expect(optionalPercentageToRatio(undefined)).toBeUndefined();
+    expect(optionalPercentageToRatio(50)).toBeCloseTo(0.5, 5);
+  });
+  it('calculateGustFactor guards sub-sustained and zero-wind', () => {
+    expect(calculateGustFactor(10, 5)).toBeCloseTo(2, 5);
+    expect(calculateGustFactor(4, 5)).toBeUndefined(); // gust below sustained
+    expect(calculateGustFactor(10, 0)).toBeUndefined(); // zero sustained
+    expect(calculateGustFactor(undefined, 5)).toBeUndefined();
   });
 });
