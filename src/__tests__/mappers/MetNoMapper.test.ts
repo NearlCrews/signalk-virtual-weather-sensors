@@ -76,6 +76,33 @@ describe('mapMetNoCurrentToWeatherData', () => {
     expect(wd.uvIndex).toBeUndefined();
   });
   it('throws when the timeseries is empty', () => {
-    expect(() => mapMetNoCurrentToWeatherData({ properties: { timeseries: [] } })).toThrow();
+    expect(() => mapMetNoCurrentToWeatherData({ properties: { timeseries: [] } })).toThrow(
+      /empty timeseries/
+    );
+  });
+
+  it('throws when a required field is missing', () => {
+    const missingTemp = {
+      properties: {
+        timeseries: [
+          {
+            time: '2026-06-22T12:00:00Z',
+            data: {
+              instant: {
+                details: {
+                  // air_temperature omitted
+                  air_pressure_at_sea_level: 1013,
+                  relative_humidity: 50,
+                  dew_point_temperature: 10,
+                  wind_speed: 5,
+                  wind_from_direction: 90,
+                },
+              },
+            },
+          },
+        ],
+      },
+    };
+    expect(() => mapMetNoCurrentToWeatherData(missingTemp)).toThrow(/missing air_temperature/);
   });
 });
