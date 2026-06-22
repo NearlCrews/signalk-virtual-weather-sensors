@@ -8,6 +8,7 @@
 import type { WeatherProviderId } from '../constants/notifications-shared.js';
 import { providerRequiresApiKey } from '../constants/notifications-shared.js';
 import { AccuWeatherService } from '../services/AccuWeatherService.js';
+import { MetNoService } from '../services/MetNoService.js';
 import { OpenMeteoService } from '../services/OpenMeteoService.js';
 import type { Logger, PluginConfiguration } from '../types/index.js';
 import type { CurrentWeatherProvider } from './WeatherProvider.js';
@@ -35,5 +36,9 @@ export const PROVIDER_CATALOG: Readonly<Record<WeatherProviderId, ProviderCatalo
         new AccuWeatherService(config.accuWeatherApiKey, logger, {
           dailyApiQuota: config.dailyApiQuota,
         }),
+    },
+    'met-no': {
+      keyless: !providerRequiresApiKey('met-no'),
+      construct: (_config, logger) => new MetNoService(logger),
     },
   });

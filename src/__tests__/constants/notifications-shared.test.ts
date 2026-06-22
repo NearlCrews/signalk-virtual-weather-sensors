@@ -10,6 +10,7 @@ import {
   resolveWeatherProvider,
   WEATHER_MODE_IDS,
   WEATHER_PROVIDER_IDS,
+  WEATHER_PROVIDER_LABELS,
 } from '../../constants/notifications-shared.js';
 
 describe('resolveWeatherProvider honors the id list', () => {
@@ -28,6 +29,21 @@ describe('providerRequiresApiKey', () => {
   it('marks accuweather keyed and open-meteo keyless', () => {
     expect(providerRequiresApiKey('accuweather')).toBe(true);
     expect(providerRequiresApiKey('open-meteo')).toBe(false);
+  });
+});
+
+describe('met-no provider registration', () => {
+  it('is present in WEATHER_PROVIDER_IDS', () => {
+    expect([...WEATHER_PROVIDER_IDS]).toContain('met-no');
+  });
+  it('has a truthy label in WEATHER_PROVIDER_LABELS', () => {
+    expect(WEATHER_PROVIDER_LABELS['met-no']).toBeTruthy();
+  });
+  it('is keyless', () => {
+    expect(providerRequiresApiKey('met-no')).toBe(false);
+  });
+  it('is resolved as met-no when explicitly set', () => {
+    expect(resolveWeatherProvider('met-no', false)).toBe('met-no');
   });
 });
 

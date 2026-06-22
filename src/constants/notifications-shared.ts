@@ -82,14 +82,16 @@ export const QUOTA_WARN_RATIO = 0.9;
 /**
  * Selectable weather source. `open-meteo` is keyless, global, and the default
  * for new installs; `accuweather` requires an API key and supplies exclusive
- * fields (RealFeel, plain-language text, pressure tendency, precipitation type).
+ * fields (RealFeel, plain-language text, pressure tendency, precipitation type);
+ * `met-no` is keyless, global, and provides Nordic and European alerts.
  */
-export type WeatherProviderId = 'open-meteo' | 'accuweather';
+export type WeatherProviderId = 'open-meteo' | 'accuweather' | 'met-no';
 
 /** Valid provider ids, in panel display order (keyless default first). */
 export const WEATHER_PROVIDER_IDS: ReadonlyArray<WeatherProviderId> = Object.freeze([
   'open-meteo',
   'accuweather',
+  'met-no',
 ]);
 
 /** Default provider for a fresh install: keyless so the plugin works out of the box. */
@@ -99,6 +101,7 @@ export const DEFAULT_WEATHER_PROVIDER: WeatherProviderId = 'open-meteo';
 export const WEATHER_PROVIDER_LABELS: Readonly<Record<WeatherProviderId, string>> = Object.freeze({
   'open-meteo': 'Open-Meteo (free, no API key, global)',
   accuweather: 'AccuWeather (requires an API key)',
+  'met-no': 'Met.no (free, no API key, global; Nordic and European alerts)',
 });
 
 /**
@@ -130,6 +133,7 @@ export const WEATHER_PROVIDER_REQUIRES_KEY: Readonly<Record<WeatherProviderId, b
   Object.freeze({
     'open-meteo': false,
     accuweather: true,
+    'met-no': false,
   });
 
 /** True when the provider needs an API key. */
