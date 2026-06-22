@@ -21,13 +21,12 @@ import {
   asOptionalNumber,
   calculateAbsoluteHumidity,
   celsiusToKelvin,
-  degreesToRadians,
   kmhToMS,
   millibarsToPA,
-  normalizeAngle0To2Pi,
   optionalCelsiusToKelvin,
   optionalPercentageToRatio,
 } from '../utils/conversions.js';
+import { buildWindFromMs, type SKOutside, type SKSun, type SKWind } from './skV2WindHelper.js';
 
 /** AccuWeather PrecipitationType (lowercased) to the SK PrecipitationKind enum. */
 const PRECIPITATION_KIND_BY_ACCUWEATHER: ReadonlyMap<string, PrecipitationKind> = new Map([
@@ -54,9 +53,6 @@ function mapTendencyKind(code: string | undefined): TendencyKind | undefined {
   return TENDENCY_KIND_BY_CODE.get(code.trim().toUpperCase());
 }
 
-type SKOutside = NonNullable<SKWeatherData['outside']>;
-type SKWind = NonNullable<SKWeatherData['wind']>;
-
 /** Cloud-cover and precipitation fields shared by the hourly forecast and daily-half shapes. */
 interface CloudPrecipSource {
   readonly HasPrecipitation?: boolean;
@@ -81,23 +77,20 @@ function buildCloudAndPrecip(source: CloudPrecipSource | undefined): Partial<SKO
   };
 }
 
-/** Build the wind block from a speed/direction/gust source, omitting absent fields. */
+/** Build the wind block from a km/h speed/direction/gust source, omitting absent fields. */
 // Params accept null because callers pass raw upstream values (e.g.
 // `hour.Wind?.Speed?.Value`) that can be JSON null, not just undefined; the
-// `typeof === 'number'` guards below correctly exclude both.
+// `typeof === 'number'` guards inside buildWindFromMs correctly exclude both.
 function buildWind(
   speedKmh: number | null | undefined,
   directionDegrees: number | null | undefined,
   gustKmh: number | null | undefined
 ): SKWind | undefined {
-  const wind: SKWind = {
-    ...(typeof speedKmh === 'number' && { speedTrue: kmhToMS(speedKmh) }),
-    ...(typeof directionDegrees === 'number' && {
-      directionTrue: normalizeAngle0To2Pi(degreesToRadians(directionDegrees)),
-    }),
-    ...(typeof gustKmh === 'number' && { gust: kmhToMS(gustKmh) }),
-  };
-  return Object.keys(wind).length > 0 ? wind : undefined;
+  return buildWindFromMs(
+    typeof speedKmh === 'number' ? kmhToMS(speedKmh) : speedKmh,
+    directionDegrees,
+    typeof gustKmh === 'number' ? kmhToMS(gustKmh) : gustKmh
+  );
 }
 
 /** Map the AccuWeather 12-hour hourly forecast to ascending-order point WeatherData. */
@@ -144,8 +137,6 @@ export function mapHourlyToForecasts(
     };
   });
 }
-
-type SKSun = NonNullable<SKWeatherData['sun']>;
 
 /** Find the UV index value in a daily entry's AirAndPollen array, if present. */
 function dailyUvIndex(
