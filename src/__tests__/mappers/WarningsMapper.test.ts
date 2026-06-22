@@ -4,7 +4,11 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import { mapNwsAlertsToWarnings } from '../../mappers/WarningsMapper.js';
+import {
+  type MetAlertsResponse,
+  mapMetAlertsToWarnings,
+  mapNwsAlertsToWarnings,
+} from '../../mappers/WarningsMapper.js';
 
 describe('mapNwsAlertsToWarnings', () => {
   it('maps alerts, prefers onset/ends/headline, and sorts ascending by start', () => {
@@ -59,5 +63,76 @@ describe('mapNwsAlertsToWarnings', () => {
       ],
     });
     expect(warnings.map((w) => w.type)).toEqual(['Earlier', 'Later']);
+  });
+});
+
+describe('mapMetAlertsToWarnings', () => {
+  const sample: MetAlertsResponse = {
+    features: [
+      {
+        when: { interval: ['2026-06-20T22:00:00+00:00', '2026-06-21T18:00:00+00:00'] },
+        properties: {
+          event: 'gale',
+          eventAwarenessName: 'Gale',
+          severity: 'Moderate',
+          title: 'Gale, yellow level, Ona - Froeya',
+          description: 'Southwest occasionally gale force 8.',
+          instruction: 'Do not go out in a small boat.',
+          area: 'Ona - Froeya',
+        },
+      },
+      {
+        when: { interval: ['2026-06-20T12:00:00+00:00', '2026-06-20T20:00:00+00:00'] },
+        properties: {
+          event: 'polarLow',
+          eventAwarenessName: 'Polar low',
+          description: 'Polar low approaching.',
+        },
+      },
+    ],
+  };
+
+  it('maps MetAlerts features to WeatherWarning, ascending by start time', () => {
+    const out = mapMetAlertsToWarnings(sample);
+    expect(out).toHaveLength(2);
+    // The 12:00 polar low sorts before the 22:00 gale.
+    expect(out[0]?.type).toBe('Polar low');
+    expect(out[0]?.startTime).toBe('2026-06-20T12:00:00+00:00');
+    expect(out[1]?.type).toBe('Gale');
+    expect(out[1]?.startTime).toBe('2026-06-20T22:00:00+00:00');
+    expect(out[1]?.endTime).toBe('2026-06-21T18:00:00+00:00');
+    expect(out[1]?.source).toBe('MET Norway');
+    // Details prefer the description and append the instruction when present.
+    expect(out[1]?.details).toBe(
+      'Southwest occasionally gale force 8. Do not go out in a small boat.'
+    );
+  });
+
+  it('falls back to the title for details and to the event for the type', () => {
+    const out = mapMetAlertsToWarnings({
+      features: [
+        {
+          when: { interval: ['2026-06-20T00:00:00+00:00', '2026-06-20T06:00:00+00:00'] },
+          properties: { event: 'wind', title: 'Wind warning' },
+        },
+      ],
+    });
+    expect(out[0]?.type).toBe('wind'); // no eventAwarenessName, falls back to event
+    expect(out[0]?.details).toBe('Wind warning'); // no description, falls back to title
+  });
+
+  it('drops features with no event type or no start time, and returns [] for an empty feed', () => {
+    expect(mapMetAlertsToWarnings({ features: [] })).toEqual([]);
+    expect(mapMetAlertsToWarnings({})).toEqual([]);
+    const out = mapMetAlertsToWarnings({
+      features: [
+        {
+          when: { interval: ['2026-06-20T00:00:00+00:00', ''] },
+          properties: { description: 'no type' },
+        },
+        { when: { interval: [] }, properties: { event: 'gale' } }, // no start time
+      ],
+    });
+    expect(out).toEqual([]);
   });
 });

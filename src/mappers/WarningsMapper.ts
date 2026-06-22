@@ -23,6 +23,22 @@ export interface NwsAlertsResponse {
   }>;
 }
 
+/** Minimal shape of the Met.no MetAlerts `/current.json` GeoJSON response (only mapped fields). */
+export interface MetAlertsResponse {
+  readonly features?: ReadonlyArray<{
+    readonly when?: { readonly interval?: ReadonlyArray<string> };
+    readonly properties?: {
+      readonly event?: string | null;
+      readonly eventAwarenessName?: string | null;
+      readonly severity?: string | null;
+      readonly title?: string | null;
+      readonly description?: string | null;
+      readonly instruction?: string | null;
+      readonly area?: string | null;
+    };
+  }>;
+}
+
 /** Coerce an optional string-ish value to a trimmed string, or '' when absent. */
 function str(value: unknown): string {
   return typeof value === 'string' ? value.trim() : '';
@@ -63,6 +79,37 @@ export function mapNwsAlertsToWarnings(response: NwsAlertsResponse): WeatherWarn
         details,
         source: str(p.senderName) || 'NWS',
         type: str(p.event),
+      };
+    })
+    .filter((warning) => warning.type.length > 0 && warning.startTime.length > 0);
+  return warnings.sort(byStartAscending);
+}
+
+/**
+ * Map a Met.no MetAlerts response to WeatherWarning[]. The start and end times
+ * come from `when.interval` (onset at index 0, expiry at index 1). The type
+ * prefers the localized `eventAwarenessName` (for example `Gale`), falling back
+ * to the camelCase `event` (for example `gale`). Details prefer the narrative
+ * `description`, falling back to the `title`, and append the `instruction` when
+ * present, since the marine instruction (for example "Do not go out in a small
+ * boat") is the actionable part. Features with no type or no start time are
+ * dropped, the same contract as the NWS mapper. The source is MET Norway.
+ */
+export function mapMetAlertsToWarnings(response: MetAlertsResponse): WeatherWarning[] {
+  const features = response.features ?? [];
+  const warnings = features
+    .map((feature) => {
+      const p = feature.properties ?? {};
+      const interval = feature.when?.interval ?? [];
+      const base = str(p.description) || str(p.title);
+      const instruction = str(p.instruction);
+      const details = instruction.length > 0 ? `${base} ${instruction}`.trim() : base;
+      return {
+        startTime: str(interval[0]),
+        endTime: str(interval[1]),
+        details,
+        source: 'MET Norway',
+        type: str(p.eventAwarenessName) || str(p.event),
       };
     })
     .filter((warning) => warning.type.length > 0 && warning.startTime.length > 0);
