@@ -231,10 +231,10 @@ async function startServices(
   instance.notifier = new WeatherNotifier(config.notifications, instance.logger);
   await instance.weatherService.start();
 
-  // Register the Signal K v2 Weather API provider. Only forecast-capable
-  // providers advertise it; under Open-Meteo (not yet forecast-capable)
-  // the emission path still works and forecasts are a later addition. The
-  // typeof guard tolerates a server older than the 2.24 peer floor that
+  // Register the Signal K v2 Weather API provider. All forecast-capable
+  // providers advertise it: Open-Meteo, Met.no, AccuWeather, and merged mode
+  // all support forecasts. A default keyless install advertises the v2 Weather
+  // API. The typeof guard tolerates a server older than the 2.24 peer floor that
   // lacks the registry method.
   if (typeof app.registerWeatherProvider !== 'function') {
     instance.logger('warn', 'Server lacks registerWeatherProvider; weather API not exposed');

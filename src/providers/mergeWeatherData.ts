@@ -126,6 +126,12 @@ function mean(values: number[]): number {
  * Note: atan2 can return a tiny negative value (floating-point noise near zero)
  * which normalizeAngle0To2Pi converts to a value just below 2π. We snap that
  * back to 0 since 2π and 0 are equivalent in circular arithmetic.
+ *
+ * Alignment invariant: windDirection and windSpeed are both REQUIRED WeatherData
+ * fields, so the collected dirs and speeds arrays are index-aligned and
+ * equal-length. The defensive ?? 0 and ?? 1 fallbacks never fire today; if
+ * windDirection ever becomes optional, collect the pairs in a single pass so a
+ * speed cannot misalign with the wrong direction.
  */
 function circularMean(dirs: number[], speeds: number[], fallback: number): number {
   let sinSum = 0;
