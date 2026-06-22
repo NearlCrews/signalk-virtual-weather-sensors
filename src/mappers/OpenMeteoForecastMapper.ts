@@ -11,7 +11,7 @@
  *   wind speeds   m/s        (do NOT km/h-convert; AccuWeather conversion must not bleed here)
  *   visibility    meters     (do NOT multiply by KM_TO_M)
  *   pressure_msl  hPa        (millibarsToPA converts to Pa)
- *   temperatures  Celsius    (celsiusToKelvin / optionalCelsiusToKelvin)
+ *   temperatures  Celsius    (optionalCelsiusToKelvin)
  *   cloud_cover   percent    (optionalPercentageToRatio)
  *   precipitation mm         (* UNITS.PRECIPITATION.MM_TO_M)
  *   wind dir      degrees    (handled inside buildWindFromMs via degreesToRadians)
