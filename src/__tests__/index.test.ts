@@ -528,4 +528,48 @@ describe('Weather provider registration', () => {
     await expect(plugin.start({ accuWeatherApiKey: validKey }, () => {})).resolves.not.toThrow();
     await plugin.stop();
   });
+
+  it('registers the v2 weather provider on a default Open-Meteo install', async () => {
+    // Open-Meteo is forecast-capable (implements ForecastCapableProvider), so
+    // startServices must call registerWeatherProvider even without an AccuWeather
+    // key. WeatherService is mocked at the module level, so no network call fires.
+    const registerWeatherProvider = vi.fn();
+    const unRegister = vi.fn();
+    const app = buildMockApp({ registerWeatherProvider, weatherApi: { unRegister } });
+
+    const plugin = createPlugin(app as never);
+    await plugin.start({ weatherProvider: 'open-meteo' }, () => {});
+
+    expect(registerWeatherProvider).toHaveBeenCalledTimes(1);
+    const provider = registerWeatherProvider.mock.calls[0]?.[0];
+    expect(provider.name).toBe('Open-Meteo');
+    expect(provider.methods.pluginId).toBe('signalk-virtual-weather-sensors');
+
+    // The /api/status endpoint must report weatherProviderRegistered: true.
+    const routes = new Map<string, (req: unknown, res: unknown) => void>();
+    const router = {
+      get: vi.fn((path: string, handler: (req: unknown, res: unknown) => void) => {
+        routes.set(`GET ${path}`, handler);
+      }),
+      post: vi.fn((_path: string, _handler: (req: unknown, res: unknown) => void) => {}),
+    };
+    plugin.registerWithRouter?.(router as never);
+
+    const body: { json?: unknown } = {};
+    const res = {
+      json: vi.fn((payload: unknown) => {
+        body.json = payload;
+        return res;
+      }),
+    };
+    const handler = routes.get('GET /api/status');
+    if (!handler) throw new Error('status route not registered');
+    handler({}, res);
+
+    const payload = body.json as Record<string, unknown>;
+    expect(payload.weatherProviderRegistered).toBe(true);
+
+    await plugin.stop();
+    expect(unRegister).toHaveBeenCalledWith('signalk-virtual-weather-sensors');
+  });
 });
