@@ -12,6 +12,7 @@
  * has no per-key daily cap, so there is no rolling window to surface.
  */
 
+import type { WeatherData as SKWeatherData } from '@signalk/server-api';
 import type { GeoLocation, WeatherData } from '../types/index.js';
 
 export interface CurrentWeatherProvider {
@@ -44,4 +45,52 @@ export interface CurrentWeatherProvider {
 
   /** Location-cache size, for the status panel. Zero-sized for cacheless providers. */
   getCacheStats(): { size: number };
+}
+
+/** Forecast window a provider declares about itself, read by the v2 adapter. */
+export interface ForecastCapabilities {
+  /** Hours of hourly (point) forecast the provider serves. */
+  readonly hourlyHours: number;
+  /** Days of daily forecast the provider serves. */
+  readonly dailyDays: number;
+}
+
+/**
+ * A provider that can serve a single current observation in the Signal K v2
+ * envelope, in addition to the live emission path. Open-Meteo and AccuWeather
+ * both implement this; a minimal source might implement only the base tier.
+ */
+export interface ObservationCapableProvider extends CurrentWeatherProvider {
+  /** Current conditions at an arbitrary position, in the SK v2 WeatherData shape. */
+  getObservation(location: GeoLocation): Promise<SKWeatherData>;
+}
+
+/**
+ * A provider that additionally serves point (hourly) and daily forecasts in the
+ * SK v2 envelope, and declares its own forecast horizon. Forecast arrays are
+ * ascending by date, per the v2 contract.
+ */
+export interface ForecastCapableProvider extends ObservationCapableProvider {
+  readonly forecastCapabilities: ForecastCapabilities;
+  getHourlyForecast(location: GeoLocation): Promise<SKWeatherData[]>;
+  getDailyForecast(location: GeoLocation): Promise<SKWeatherData[]>;
+}
+
+/** Narrow a base provider to one that can serve a v2 observation. */
+export function supportsObservations(
+  provider: CurrentWeatherProvider
+): provider is ObservationCapableProvider {
+  return typeof (provider as ObservationCapableProvider).getObservation === 'function';
+}
+
+/** Narrow a base provider to one that can serve v2 forecasts. */
+export function supportsForecasts(
+  provider: CurrentWeatherProvider
+): provider is ForecastCapableProvider {
+  const p = provider as ForecastCapableProvider;
+  return (
+    typeof p.getHourlyForecast === 'function' &&
+    typeof p.getDailyForecast === 'function' &&
+    typeof p.getObservation === 'function'
+  );
 }
