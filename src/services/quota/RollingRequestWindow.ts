@@ -45,10 +45,9 @@ export class RollingRequestWindow {
   }
 
   /**
-   * Record one request. Increments the cumulative count first, then rotates the
-   * window to the current hour, then increments the current-hour bucket. This
-   * order matches the original AccuWeatherService sequence where `requestCount++`
-   * preceded `recordRequestInWindow()` (which itself rotated before bucketing).
+   * Record one request. Increments the cumulative count first so it reflects
+   * the request before any rotation side-effects, then rotates the window to
+   * the current hour, then increments the current-hour bucket.
    */
   public record(now = Date.now()): void {
     this.cumulative++;

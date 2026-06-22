@@ -211,9 +211,10 @@ export function createMockAccuWeatherResponse(
 // ===============================
 
 /**
- * Build a Fetch-API-shaped Response stub. AccuWeatherService.readBoundedJson
- * needs `headers`, `text()`, and the `ok`/`status`/`statusText` triple, so we
- * supply a real `Headers` instance with `content-length` set from the body.
+ * Build a Fetch-API-shaped Response stub. The shared `readBoundedJson` in
+ * `utils/http.ts` needs `headers`, `text()`, and the `ok`/`status`/`statusText`
+ * triple, so we supply a real `Headers` instance with `content-length` set from
+ * the body.
  */
 export function createMockFetchResponse(
   data: unknown,

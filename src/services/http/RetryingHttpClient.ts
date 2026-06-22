@@ -52,8 +52,10 @@ export interface RetryingHttpClientOptions {
 }
 
 /**
- * Generic retrying HTTP client. Provides a type-safe GET with location and
- * forecast caching left to callers, retry and backoff, and Retry-After honoring.
+ * Generic retrying HTTP client. Provides a type-safe GET with retry,
+ * exponential backoff, Retry-After honoring, an abort-based timeout, a
+ * response-size cap, and an optional per-request counting hook. Caching is
+ * left entirely to callers.
  */
 export class RetryingHttpClient {
   private readonly requestTimeoutMs: number;
@@ -77,7 +79,8 @@ export class RetryingHttpClient {
   }
 
   /**
-   * Make API request with retry logic and error handling
+   * Issue a GET with retry and backoff; recurses on a retryable status or a
+   * timeout until the attempt budget is spent.
    */
   public async request<T>(url: URL, attempt = 1): Promise<T> {
     const controller = new AbortController();
