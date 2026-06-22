@@ -13,9 +13,18 @@
  */
 import type { SevereCondition } from '../types/index.js';
 
+/**
+ * Strip the daylight suffix (_day, _night, or _polartwilight) from a Met.no
+ * symbol_code, returning the base code, or undefined when no code is given.
+ */
+export function metNoSymbolBase(symbolCode: string | undefined): string | undefined {
+  if (typeof symbolCode !== 'string') return undefined;
+  return symbolCode.replace(/_(day|night|polartwilight)$/, '');
+}
+
 export function metNoSevereCondition(symbolCode: string | undefined): SevereCondition | undefined {
   if (typeof symbolCode !== 'string') return undefined;
-  const base = symbolCode.replace(/_(day|night|polartwilight)$/, '');
+  const base = metNoSymbolBase(symbolCode) as string;
   if (base.includes('andthunder')) return { state: 'warn', label: 'Thunderstorms' };
   if (base.includes('snow')) return { state: 'warn', label: 'Snow' };
   if (base.includes('sleet')) return { state: 'warn', label: 'Sleet' };

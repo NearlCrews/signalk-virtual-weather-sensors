@@ -49,5 +49,6 @@ describe('MetNoService', () => {
     expect(svc.sourceRef).toBe('met-no');
     expect(svc.getRequestCount()).toBe(1);
     expect(svc.getRequestCountLast24h()).toBe(0);
+    expect(svc.getCacheStats().size).toBe(0);
   });
 });

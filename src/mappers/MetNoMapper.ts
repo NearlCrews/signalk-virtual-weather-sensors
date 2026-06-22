@@ -13,7 +13,7 @@
 
 import { WindCalculator } from '../calculators/WindCalculator.js';
 import { ERROR_CODES } from '../constants/index.js';
-import { metNoSevereCondition } from '../providers/met-no-severity.js';
+import { metNoSevereCondition, metNoSymbolBase } from '../providers/met-no-severity.js';
 import type {
   MetNoLocationforecastResponse,
   MetNoTimeseriesEntry,
@@ -121,10 +121,7 @@ function extractOptionalFields(
   const precipitationLastHour = asOptionalNumber(next1h?.details?.precipitation_amount);
 
   const symbolCode = next1h?.summary?.symbol_code;
-  const base =
-    typeof symbolCode === 'string'
-      ? symbolCode.replace(/_(day|night|polartwilight)$/, '')
-      : undefined;
+  const base = metNoSymbolBase(symbolCode);
   const description = base !== undefined ? MET_NO_DESCRIPTIONS.get(base) : undefined;
   const severeCondition = metNoSevereCondition(symbolCode);
 
