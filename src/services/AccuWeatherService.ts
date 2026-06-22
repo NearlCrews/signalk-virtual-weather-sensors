@@ -38,7 +38,7 @@ import {
   toErrorMessage,
 } from '../utils/conversions.js';
 import { validateAccuWeatherResponse } from '../utils/validation.js';
-import { evictOldestOverCap } from './cache/cacheUtils.js';
+import { CoalescingTtlCache } from './cache/CoalescingTtlCache.js';
 import { ForecastCache } from './cache/ForecastCache.js';
 import { RollingRequestWindow } from './quota/RollingRequestWindow.js';
 
@@ -80,8 +80,13 @@ export class AccuWeatherService implements CurrentWeatherProvider {
 
   private readonly config: AccuWeatherConfig;
   private readonly logger: Logger;
-  private locationCache = new Map<string, { location: AccuWeatherLocation; timestamp: number }>();
-  private lastCachePrune = Date.now();
+  /**
+   * Coalescing TTL cache for AccuWeather location keys. Concurrent cold lookups
+   * for the same coordinates share one upstream call instead of each spending a
+   * request. The fetcher and key derivation stay in the service; the cache owns
+   * the entry map, in-flight map, and prune throttle.
+   */
+  private readonly locationCache: CoalescingTtlCache<AccuWeatherLocation>;
   /**
    * Rolling 24-hour request window. Tracks the cumulative count and 24 hourly
    * buckets for quota checks. See `RollingRequestWindow` for the rotation and
@@ -94,12 +99,6 @@ export class AccuWeatherService implements CurrentWeatherProvider {
    * by external Weather API consumers rather than the plugin's own fetch timer.
    */
   private readonly forecastCache: ForecastCache;
-  /**
-   * In-flight location searches keyed by location-cache key, so concurrent cold
-   * lookups for the same coordinates share one upstream call instead of each
-   * spending a request. Entries clear when the search settles.
-   */
-  private inFlightLocationSearch = new Map<string, Promise<AccuWeatherLocation>>();
 
   constructor(apiKey: string, logger: Logger = () => {}, config?: Partial<AccuWeatherConfig>) {
     // Validate before any field assignment so a throw cannot leave the instance
@@ -121,6 +120,11 @@ export class AccuWeatherService implements CurrentWeatherProvider {
     };
 
     this.logger = logger;
+    this.locationCache = new CoalescingTtlCache<AccuWeatherLocation>(
+      this.config.locationCacheTimeout * 1000,
+      CACHE_PRUNE_INTERVAL_MS,
+      this.logger
+    );
     this.forecastCache = new ForecastCache(() => this.quotaReachedError(), this.logger);
 
     this.logger('info', 'AccuWeatherService initialized', {
@@ -316,7 +320,7 @@ export class AccuWeatherService implements CurrentWeatherProvider {
    * @private
    */
   private getCachedLocationKey(location: GeoLocation): string | undefined {
-    return this.locationCache.get(this.locationCacheKey(location))?.location.Key;
+    return this.locationCache.peekStale(this.locationCacheKey(location))?.Key;
   }
 
   /** True when the configured rolling-24h quota has been reached. @private */
@@ -400,94 +404,17 @@ export class AccuWeatherService implements CurrentWeatherProvider {
   }
 
   /**
-   * Prune expired and excess entries from location cache
-   * @private
-   */
-  private pruneLocationCache(): void {
-    const now = Date.now();
-
-    if (now - this.lastCachePrune < CACHE_PRUNE_INTERVAL_MS) {
-      return;
-    }
-
-    this.lastCachePrune = now;
-    let pruned = 0;
-
-    // Remove expired entries. Same TTL as the read-path freshness check in
-    // getLocationKey so an entry is never pruned while still served as fresh,
-    // nor served stale while still in the map.
-    const maxAgeMs = this.config.locationCacheTimeout * 1000;
-    for (const [key, entry] of this.locationCache.entries()) {
-      if (now - entry.timestamp > maxAgeMs) {
-        this.locationCache.delete(key);
-        pruned++;
-      }
-    }
-
-    // If still over max size, remove oldest entries.
-    pruned += evictOldestOverCap(this.locationCache, (entry) => entry.timestamp);
-
-    if (pruned > 0) {
-      this.logger('debug', 'Location cache pruned', {
-        prunedEntries: pruned,
-        remainingEntries: this.locationCache.size,
-      });
-    }
-  }
-
-  /**
-   * Get location key for coordinates with caching
+   * Get location key for coordinates with caching and single-flight coalescing.
+   * Delegates to the CoalescingTtlCache, which handles the prune sweep, the
+   * freshness check, and the in-flight deduplication.
    * @private
    */
   private async getLocationKey(location: GeoLocation): Promise<string> {
-    // Prune cache periodically to prevent memory leak
-    this.pruneLocationCache();
-
-    const cacheKey = this.locationCacheKey(location);
-    const now = Date.now();
-
-    const cached = this.locationCache.get(cacheKey);
-    if (cached && now - cached.timestamp < this.config.locationCacheTimeout * 1000) {
-      this.logger('debug', 'Using cached location key', { cacheKey });
-      return cached.location.Key;
-    }
-
-    const locationData = await this.searchLocationCoalesced(cacheKey, location);
-
-    this.locationCache.set(cacheKey, {
-      location: locationData,
-      timestamp: now,
-    });
-
-    this.logger('debug', 'Location key retrieved and cached', {
-      cacheKey,
-      locationKey: locationData.Key,
-      locationName: locationData.LocalizedName,
-      cacheSize: this.locationCache.size,
-    });
-
-    return locationData.Key;
-  }
-
-  /**
-   * Coalesce concurrent cold location searches for the same coordinates onto a
-   * single upstream call. Without this a dashboard hitting getHourlyForecast and
-   * getDailyForecast at once on an empty cache would fire two identical location
-   * searches, spending two requests against the free 50/day key for one lookup.
-   * The in-flight entry clears when the search settles (success or failure).
-   * @private
-   */
-  private searchLocationCoalesced(
-    cacheKey: string,
-    location: GeoLocation
-  ): Promise<AccuWeatherLocation> {
-    const existing = this.inFlightLocationSearch.get(cacheKey);
-    if (existing) return existing;
-    const promise = this.searchLocation(location).finally(() => {
-      this.inFlightLocationSearch.delete(cacheKey);
-    });
-    this.inFlightLocationSearch.set(cacheKey, promise);
-    return promise;
+    return (
+      await this.locationCache.get(this.locationCacheKey(location), () =>
+        this.searchLocation(location)
+      )
+    ).Key;
   }
 
   /**
@@ -857,7 +784,7 @@ export class AccuWeatherService implements CurrentWeatherProvider {
 
   /** Location-cache size, for monitoring. */
   public getCacheStats(): { size: number } {
-    return { size: this.locationCache.size };
+    return { size: this.locationCache.size() };
   }
 
   /** Cumulative HTTP fetch attempts (initial + retries) since construction. */
