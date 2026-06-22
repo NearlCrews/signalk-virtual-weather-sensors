@@ -3,6 +3,7 @@
  * Modern TypeScript implementation with comprehensive error handling and enhanced field extraction
  */
 
+import type { WeatherData as SKWeatherData } from '@signalk/server-api';
 import { WindCalculator } from '../calculators/WindCalculator.js';
 import {
   ACCUWEATHER,
@@ -12,6 +13,11 @@ import {
   PLUGIN,
   UNITS,
 } from '../constants/index.js';
+import {
+  mapCurrentToObservation,
+  mapDailyToForecasts,
+  mapHourlyToForecasts,
+} from '../mappers/WeatherProviderMapper.js';
 import { accuWeatherSevereCondition } from '../providers/accuweather-severity.js';
 import type { CurrentWeatherProvider } from '../providers/WeatherProvider.js';
 import type {
@@ -360,7 +366,7 @@ export class AccuWeatherService implements CurrentWeatherProvider {
    * location key, the rolling request window, and the on-demand forecast cache.
    * On a warm forecast cache this costs zero upstream calls.
    */
-  public async getHourlyForecast(location: GeoLocation): Promise<AccuWeatherHourlyForecast[]> {
+  public async fetchHourlyForecastRaw(location: GeoLocation): Promise<AccuWeatherHourlyForecast[]> {
     this.validateLocation(location);
     // Snapshot the quota verdict once, before this call's own location lookup
     // spends a request. A cold call below the cap is then not gated by the
@@ -378,9 +384,11 @@ export class AccuWeatherService implements CurrentWeatherProvider {
 
   /**
    * Fetch the 5-day daily forecast for a position. Same caching and quota
-   * behaviour as getHourlyForecast.
+   * behaviour as fetchHourlyForecastRaw.
    */
-  public async getDailyForecast(location: GeoLocation): Promise<AccuWeatherDailyForecastResponse> {
+  public async fetchDailyForecastRaw(
+    location: GeoLocation
+  ): Promise<AccuWeatherDailyForecastResponse> {
     this.validateLocation(location);
     const quotaExhausted = this.isQuotaExhausted();
     const locationKey = await this.resolveLocationKeyForForecast(location, quotaExhausted);
@@ -400,7 +408,7 @@ export class AccuWeatherService implements CurrentWeatherProvider {
    * polling observations consumer does not exhaust the key. Returns the first
    * (current) conditions record.
    */
-  public async getCurrentConditionsForLocation(
+  public async fetchCurrentConditionsRaw(
     location: GeoLocation
   ): Promise<AccuWeatherCurrentConditions> {
     this.validateLocation(location);
@@ -419,6 +427,24 @@ export class AccuWeatherService implements CurrentWeatherProvider {
       );
     }
     return first;
+  }
+
+  /** AccuWeather free endpoints cap at a 12-hour hourly and 5-day daily window. */
+  public readonly forecastCapabilities = { hourlyHours: 12, dailyDays: 5 } as const;
+
+  /** Current observation at an arbitrary position, in the SK v2 envelope. */
+  public async getObservation(location: GeoLocation): Promise<SKWeatherData> {
+    return mapCurrentToObservation(await this.fetchCurrentConditionsRaw(location));
+  }
+
+  /** 12-hour hourly forecast in the SK v2 envelope, ascending by date. */
+  public async getHourlyForecast(location: GeoLocation): Promise<SKWeatherData[]> {
+    return mapHourlyToForecasts(await this.fetchHourlyForecastRaw(location));
+  }
+
+  /** 5-day daily forecast in the SK v2 envelope, ascending by date. */
+  public async getDailyForecast(location: GeoLocation): Promise<SKWeatherData[]> {
+    return mapDailyToForecasts(await this.fetchDailyForecastRaw(location));
   }
 
   /**

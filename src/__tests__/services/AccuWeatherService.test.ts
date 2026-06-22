@@ -5,6 +5,7 @@
 
 import type { Mock } from 'vitest';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { supportsForecasts } from '../../providers/WeatherProvider.js';
 import { AccuWeatherService } from '../../services/AccuWeatherService.js';
 import type { GeoLocation } from '../../types/index.js';
 import { createMockAccuWeatherResponse, createMockFetchResponse } from '../setup.js';
@@ -686,7 +687,7 @@ describe('AccuWeatherService', () => {
         .mockResolvedValueOnce(mockResponse(locationPayload))
         .mockResolvedValueOnce(mockResponse(hourlyPayload));
 
-      const result = await service.getHourlyForecast(location);
+      const result = await service.fetchHourlyForecastRaw(location);
 
       expect(result).toHaveLength(2);
       const forecastUrl = fetchMock.mock.calls[1]?.[0] as string;
@@ -701,9 +702,9 @@ describe('AccuWeatherService', () => {
         .mockResolvedValueOnce(mockResponse(locationPayload))
         .mockResolvedValueOnce(mockResponse(hourlyPayload));
 
-      await service.getHourlyForecast(location);
+      await service.fetchHourlyForecastRaw(location);
       const callsAfterFirst = fetchMock.mock.calls.length;
-      await service.getHourlyForecast(location);
+      await service.fetchHourlyForecastRaw(location);
 
       expect(fetchMock.mock.calls.length).toBe(callsAfterFirst);
     });
@@ -714,9 +715,9 @@ describe('AccuWeatherService', () => {
       fetchMock
         .mockResolvedValueOnce(mockResponse(locationPayload))
         .mockResolvedValueOnce(mockResponse(hourlyPayload));
-      await gated.getHourlyForecast(location);
+      await gated.fetchHourlyForecastRaw(location);
 
-      await expect(gated.getHourlyForecast({ latitude: 40, longitude: -70 })).rejects.toThrow(
+      await expect(gated.fetchHourlyForecastRaw({ latitude: 40, longitude: -70 })).rejects.toThrow(
         'API_RATE_LIMIT'
       );
     });
@@ -735,12 +736,20 @@ describe('AccuWeatherService', () => {
         .mockResolvedValueOnce(mockResponse(locationPayload))
         .mockResolvedValueOnce(mockResponse(dailyPayload));
 
-      const result = await service.getDailyForecast(location);
+      const result = await service.fetchDailyForecastRaw(location);
 
       expect(result.DailyForecasts).toHaveLength(1);
       const forecastUrl = fetchMock.mock.calls[1]?.[0] as string;
       expect(forecastUrl).toContain('/forecasts/v1/daily/5day/328328');
       expect(forecastUrl).toContain('metric=true');
     });
+  });
+});
+
+describe('AccuWeatherService forecast capability', () => {
+  it('declares the AccuWeather 12h/5d horizon and is forecast-capable', () => {
+    const svc = new AccuWeatherService('test-key-1234567890ab', () => {});
+    expect(svc.forecastCapabilities).toEqual({ hourlyHours: 12, dailyDays: 5 });
+    expect(supportsForecasts(svc)).toBe(true);
   });
 });
