@@ -77,7 +77,7 @@ git commit -m "refactor: move shared plugin instance state and the banner helper
 
 - [ ] **Step 1: Create `src/plugin/logging.ts`**
 
-Move `createLogger` and its five private helpers/constants verbatim. Add the imports they use: `ServerAPI` from `@signalk/server-api`, and `LogLevel`/`Logger` from `../types/index.js`. Keep all doc comments. Export only `createLogger`.
+Move `createLogger` and its five private helpers/constants verbatim. Add the imports they use: `ServerAPI` from `@signalk/server-api`, `LogLevel`/`Logger` from `../types/index.js`, and `PLUGIN` from `../constants/index.js` (`createLogger` formats the log prefix with `PLUGIN.NAME`). Keep all doc comments. Export only `createLogger`.
 
 - [ ] **Step 2: Rewire `src/index.ts`**
 
@@ -194,11 +194,11 @@ In `pluginSchema()`, the `notifications.properties` becomes:
         },
 ```
 
-In `pluginUiSchema()`, the `notifications['ui:order']` becomes `['enabled', ...NOTIFICATION_BAND_KEYS]`. Everything else (the `weatherProvider` enum block, the numeric fields with their `CONFIG_DEFAULTS` bounds, the descriptions, the widgets, and the top-level `ui:order`) is copied verbatim. The old schema used `DEFAULT_CONFIG.NOTIFICATIONS.WIND` (uppercase) from `constants/index.ts`; `DEFAULT_NOTIFICATIONS` (lowercase, from `notifications-shared.ts`) carries the same values, so the defaults are unchanged.
+In `pluginUiSchema()`, the `notifications['ui:order']` becomes `['enabled', ...NOTIFICATION_BAND_KEYS]`. Everything else (the `weatherProvider` enum block, the numeric fields with their `CONFIG_DEFAULTS` bounds, the descriptions, the widgets, and the top-level `ui:order`) is copied verbatim. The old schema used `DEFAULT_CONFIG.NOTIFICATIONS.WIND` (uppercase) from `constants/index.ts`; those uppercase keys are literally assigned from `DEFAULT_NOTIFICATIONS` (lowercase) at `constants/index.ts:92-98` (`ENABLED: DEFAULT_NOTIFICATIONS.enabled`, `WIND: DEFAULT_NOTIFICATIONS.wind`, and so on for all six), so generating from `DEFAULT_NOTIFICATIONS` produces byte-identical defaults, not merely equivalent ones.
 
 - [ ] **Step 4: Rewire `src/index.ts`**
 
-In the plugin object, replace the inline `schema: () => ({...})` with `schema: pluginSchema` and `uiSchema: () => ({...})` with `uiSchema: pluginUiSchema`. Add `import { pluginSchema, pluginUiSchema } from './plugin/schema.js';`. Drop the now-unused schema-only imports from index.ts (`WEATHER_PROVIDER_IDS`, `WEATHER_PROVIDER_LABELS`, `DEFAULT_WEATHER_PROVIDER`, `CONFIG_DEFAULTS`, `NOTIFICATION_LABELS`, `NOTIFICATION_MASTER_LABEL`, and the `DEFAULT_CONFIG` reference if only the schema used it) wherever the gate reports them unused.
+In the plugin object, replace the inline `schema: () => ({...})` with `schema: pluginSchema` and `uiSchema: () => ({...})` with `uiSchema: pluginUiSchema`. Add `import { pluginSchema, pluginUiSchema } from './plugin/schema.js';`. Drop the now schema-only imports from index.ts: `WEATHER_PROVIDER_IDS`, `WEATHER_PROVIDER_LABELS`, `DEFAULT_WEATHER_PROVIDER`, `CONFIG_DEFAULTS`, `NOTIFICATION_LABELS`, and `NOTIFICATION_MASTER_LABEL`. KEEP `DEFAULT_CONFIG`: it is NOT schema-only, `validateAndNormalizeSettings` (index.ts:835-843) still reads `DEFAULT_CONFIG.UPDATE_FREQUENCY`, `DEFAULT_CONFIG.EMISSION_INTERVAL`, and `DEFAULT_CONFIG.DAILY_API_QUOTA` for fallback defaults. (`CONFIG_DEFAULTS`, the numeric bounds, IS schema-only and drops; do not confuse the two.) Biome flags a genuinely unused import and errors on a wrongly-dropped one, so the gate confirms both directions.
 
 - [ ] **Step 5: Run the gate**
 
@@ -231,7 +231,7 @@ Move the five functions verbatim. Add the imports they use: `PluginInstance` and
 
 - [ ] **Step 2: Rewire `src/index.ts`**
 
-Remove the five moved functions. Add `import { setupEnhancedEmissionSystem } from './plugin/emission.js';`. The one call site is in `startServices` (`index.ts:466`, `setupEnhancedEmissionSystem(instance, config, app)`), now resolved by the import. Drop imports that only the moved emission code used (`isMarineDataEmpty`, `SKVersion`, `PathValue`, and `buildValuesDelta` if index.ts has no other user; note `buildValuesDelta` is also used elsewhere in index.ts, so keep it if still referenced) wherever the gate reports them unused.
+Remove the five moved functions. Add `import { setupEnhancedEmissionSystem } from './plugin/emission.js';`. The one call site is in `startServices` (`index.ts:467`, `setupEnhancedEmissionSystem(instance, config, app)`), now resolved by the import. Drop the imports only the moved emission code used: `isMarineDataEmpty`, `SKVersion`, and `PathValue`. `buildValuesDelta` also drops: both its call sites (the notification delta and `withEmissionTimestamp`) move into emission.ts, so after Task 4 index.ts has no `buildValuesDelta` user. It shares the `./utils/skDelta.js` import line with `toSourceRef`, so NARROW that line to `{ toSourceRef }` (do not delete it): `toSourceRef` stays because `startServices` (line 413) and the instance seed still use it.
 
 - [ ] **Step 3: Run the gate**
 
@@ -260,11 +260,11 @@ git commit -m "refactor: extract the emission tick system into a plugin module"
 
 - [ ] **Step 1: Create `src/plugin/panelRoutes.ts`**
 
-Move `registerPanelRoutes` (with its closure-local rate-limiter state), `sanitizeClientErrorMessage`, and `testApiKey`. Add the imports the moved code uses: `IRouter`, `Request`, `Response` from `express`; `PluginInstance` from `./instance.js`; `AccuWeatherService` from `../services/AccuWeatherService.js` (the test-key probe constructs one directly); `PanelStatusResponse` from `../types/index.js`; `TEST_KEY_LOCATION` from `../constants/index.js`; `validateKeyLength` from `../constants/notifications-shared.js`; `toErrorMessage` from `../utils/conversions.js`; and `msToWholeMinutes` from its current source (find the module index.ts imports it from). `PLUGIN` is NOT referenced by the routes, so do not import it here. Keep all doc comments, including the `biome-ignore` line on `sanitizeClientErrorMessage`'s control-character regex. Export only `registerPanelRoutes`.
+Move `registerPanelRoutes` (with its closure-local rate-limiter state), `sanitizeClientErrorMessage`, and `testApiKey`. Add the imports the moved code uses: `IRouter`, `Request`, `Response` from `express`; `PluginInstance` from `./instance.js`; `AccuWeatherService` from `../services/AccuWeatherService.js` (the test-key probe constructs one directly); `PanelStatusResponse` from `../types/index.js`; `TEST_KEY_LOCATION` from `../constants/index.js`; `validateKeyLength` from `../constants/notifications-shared.js`; `toErrorMessage` and `msToWholeMinutes` from `../utils/conversions.js`. `PLUGIN` is NOT referenced by the routes, so do not import it here. Keep all doc comments, including the `biome-ignore` line on `sanitizeClientErrorMessage`'s control-character regex. Export only `registerPanelRoutes`.
 
 - [ ] **Step 2: Rewire `src/index.ts`**
 
-Remove the moved functions. Add `import { registerPanelRoutes } from './plugin/panelRoutes.js';`. The one call site is `registerWithRouter` (`index.ts:346`, `registerPanelRoutes(router, instance)`), now resolved by the import. Drop imports that only the moved route code used (for example the `IRouter` type, `AccuWeatherService`, `TEST_KEY_LOCATION`, `PanelStatusResponse`, the panel validation helpers) wherever the gate reports them unused.
+Remove the moved functions. Add `import { registerPanelRoutes } from './plugin/panelRoutes.js';`. The one call site is `registerWithRouter` (`index.ts:346`, `registerPanelRoutes(router, instance)`), now resolved by the import. Drop the imports only the moved route code used: `IRouter`, `AccuWeatherService`, `TEST_KEY_LOCATION`, `PanelStatusResponse`, and `validateKeyLength`. For the shared conversions import `{ msToWholeMinutes, toErrorMessage }`, NARROW it to `{ toErrorMessage }` (do not delete the line): `msToWholeMinutes` was routes-only and moves out, but `toErrorMessage` stays because `stop()`, `handleStartupError()`, `unregisterWeatherProvider()`, and `cleanup()` still use it.
 
 - [ ] **Step 3: Run the gate**
 
@@ -287,6 +287,7 @@ Run after all tasks:
 - [ ] `npm run validate` green: type-check (including panel), Biome, full Vitest (>= 443 plus the new schema tests).
 - [ ] `wc -l src/index.ts` is roughly 350 or fewer; `ls src/plugin/` shows `instance.ts`, `logging.ts`, `schema.ts`, `emission.ts`, `panelRoutes.ts`.
 - [ ] `git grep -n "from '\.\./index" src/plugin` returns nothing (no back-edge from an extracted module into the entry file).
+- [ ] `git grep -nE "function (validateAndNormalizeSettings|cleanup|unregisterWeatherProvider|startServices|handleStartupError)" src/plugin` returns nothing (the lifecycle and orchestration glue stayed in index.ts).
 - [ ] `git grep -n "'accuweather'" src/index.ts` does not show the `sourceRef` seed (it now seeds the neutral default).
 - [ ] The schema the admin UI receives is unchanged: the new schema test asserts the generated notifications block equals the shared-registry-derived shape, and `index.test.ts`'s schema assertions still pass.
 - [ ] No runtime behavior changed: emitted deltas, REST responses, and log output are identical; only the code's location moved.
