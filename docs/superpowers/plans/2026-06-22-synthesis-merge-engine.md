@@ -37,7 +37,7 @@ Every `WeatherData` field has exactly one declared merge kind. `dataList` is the
 | timestamp | `primary` | the primary's (`dataList[0].timestamp`) |
 | windChill, heatIndex, beaufortScale, absoluteHumidity, airDensityEnhanced | `derived` | recompute from the merged base through `deriveBaseWeatherFields` (Task 1) |
 | heatStressIndex | `derived` | recompute via `calculateHeatStressIndex` from the merged `wetBulbGlobeTemperature` selected above; omit when that is absent |
-| windGustFactor | `derived` | recompute from the merged gust and sustained: `max(1, gust / sustained)` when both present and sustained > 0; omit otherwise |
+| windGustFactor | `derived` | recompute via the existing `calculateGustFactor(mergedWindGustSpeed, mergedWindSpeed)` helper (`conversions.ts`), the same one the mappers use; it returns the ratio only when sustained > 0 and gust >= sustained, else the field is omitted. Do NOT re-derive `max(1, gust/sustained)`: that would fabricate a 1.0 when the merged gust (hazard-max) falls below the merged sustained (mean) |
 | apparentWindSpeed, apparentWindAngle, apparentWindChill | `excluded` | omitted (added downstream in `WeatherService.enhanceWeatherData`) |
 
 `FIELD_MERGE_KINDS` is a `Readonly<Record<keyof WeatherData, MergeKind>>` exported for documentation and a coverage test (a test asserts every `WeatherData` key has a declared kind, so a future field cannot be added without a merge decision).
@@ -164,7 +164,7 @@ git commit -m "refactor: hoist the base-derived weather recompute into a shared 
 - Test: `src/__tests__/providers/mergeWeatherData.test.ts` (create)
 
 **Interfaces:**
-- Consumes: `WeatherData`, `SevereCondition`, `NotificationState` (types); `deriveBaseWeatherFields` (Task 1); `calculateHeatStressIndex`, `normalizeAngle0To2Pi` (conversions).
+- Consumes: `WeatherData`, `SevereCondition`, `NotificationState` (types); `deriveBaseWeatherFields` (Task 1); `calculateHeatStressIndex`, `calculateGustFactor`, `normalizeAngle0To2Pi` (conversions).
 - Produces: `mergeWeatherData(dataList: ReadonlyArray<WeatherData>): WeatherData` (pure, no I/O; `dataList` is priority-ordered, primary first, length >= 1) and `FIELD_MERGE_KINDS: Readonly<Record<keyof WeatherData, MergeKind>>` plus the `MergeKind` union.
 
 - [ ] **Step 1: Write the failing tests**
@@ -175,6 +175,7 @@ Cover the full policy (the spec's test list). Minimum cases:
 // src/__tests__/providers/mergeWeatherData.test.ts
 import { describe, expect, it } from 'vitest';
 import { FIELD_MERGE_KINDS, mergeWeatherData } from '../../providers/mergeWeatherData.js';
+import { calculateHeatStressIndex } from '../../utils/conversions.js';
 import type { WeatherData } from '../../types/index.js';
 
 const base = (over: Partial<WeatherData>): WeatherData => ({
@@ -239,6 +240,12 @@ describe('mergeWeatherData', () => {
     expect(m.description).toBe('Clear');
     expect(m.precipitationType).toBe('Rain');
   });
+  it('recomputes heatStressIndex from the SELECTED WBGT, not a re-estimate of the merged base', () => {
+    // The primary WBGT (305) is chosen; heatStressIndex must come from it via
+    // calculateHeatStressIndex, NOT from estimateWetBulbGlobeTemperature(mergedTemp, mergedHumidity).
+    const m = mergeWeatherData([base({ wetBulbGlobeTemperature: 305 }), base({ wetBulbGlobeTemperature: 305 })]);
+    expect(m.heatStressIndex).toBe(calculateHeatStressIndex(305));
+  });
   it('recomputes derived fields from the merged base, never averaging them', () => {
     const m = mergeWeatherData([
       base({ temperature: 290, windSpeed: 5, windChill: 999, beaufortScale: 0 }),
@@ -248,9 +255,14 @@ describe('mergeWeatherData', () => {
     expect(m.windChill).not.toBe(999);
     expect(m.beaufortScale).toBeGreaterThan(0);
   });
-  it('recomputes the gust factor with a >= 1 guard and from the merged gust and sustained', () => {
-    const m = mergeWeatherData([base({ windSpeed: 5, windGustSpeed: 5 }), base({ windSpeed: 5, windGustSpeed: 5 })]);
-    expect(m.windGustFactor).toBe(1); // gust equals sustained, guarded to 1
+  it('recomputes the gust factor via calculateGustFactor from the merged gust and sustained', () => {
+    const m = mergeWeatherData([base({ windSpeed: 5, windGustSpeed: 10 }), base({ windSpeed: 5, windGustSpeed: 10 })]);
+    expect(m.windGustFactor).toBeCloseTo(2, 5); // merged gust 10 over merged sustained 5
+  });
+  it('omits the gust factor when the merged gust falls below the merged sustained', () => {
+    // gust is hazard-max (8) but sustained is the mean (10), so calculateGustFactor omits it.
+    const m = mergeWeatherData([base({ windSpeed: 5, windGustSpeed: 8 }), base({ windSpeed: 15, windGustSpeed: 8 })]);
+    expect(m.windGustFactor).toBeUndefined();
   });
   it('excludes the apparent-wind fields from its output', () => {
     const m = mergeWeatherData([base({}), base({})]);
@@ -262,16 +274,27 @@ describe('mergeWeatherData', () => {
     const m = mergeWeatherData([base({ timestamp: 'A' }), base({ timestamp: 'B' })]);
     expect(m.timestamp).toBe('A');
   });
-  it('declares a merge kind for every WeatherData field', () => {
-    // A representative sample of keys must be present; the real assertion checks the full set.
-    for (const key of ['temperature', 'windDirection', 'severeCondition', 'visibility', 'apparentWindSpeed', 'heatStressIndex'] as const) {
-      expect(FIELD_MERGE_KINDS[key]).toBeDefined();
-    }
+  it('declares a merge kind for EVERY WeatherData field', () => {
+    // A fully-populated sample: every required and optional field set. The keys of
+    // this sample must exactly match the keys of FIELD_MERGE_KINDS, so a field added
+    // to WeatherData later without a declared merge kind fails this test.
+    const full: Required<WeatherData> = {
+      temperature: 290, pressure: 101000, humidity: 0.5, windSpeed: 5, windDirection: 0,
+      dewPoint: 283, windChill: 290, heatIndex: 290, realFeel: 300, realFeelShade: 298,
+      wetBulbTemperature: 285, wetBulbGlobeTemperature: 305, apparentTemperature: 295,
+      windGustSpeed: 10, windGustFactor: 2, uvIndex: 5, visibility: 8000, cloudCover: 0.4,
+      cloudCeiling: 1000, precipitationLastHour: 0, temperatureDeparture24h: 2,
+      apparentWindSpeed: 7, apparentWindAngle: 0.5, apparentWindChill: 288,
+      description: 'Clear', weatherIcon: 1, severeCondition: { state: 'normal', label: '' },
+      timestamp: 'T', beaufortScale: 3, airDensityEnhanced: 1.22, absoluteHumidity: 0.01,
+      heatStressIndex: 1, pressureTendency: 0, precipitationType: 'Rain', visibilityObstruction: 'Fog',
+    };
+    expect(Object.keys(FIELD_MERGE_KINDS).sort()).toEqual(Object.keys(full).sort());
   });
 });
 ```
 
-(For the full-coverage test of `FIELD_MERGE_KINDS`, assert that the set of its keys equals the set of keys on a fully-populated `WeatherData` sample, so a new field added later without a merge kind fails the test.)
+(If a `WeatherData` field is added or removed later, both the `Required<WeatherData>` literal above and `FIELD_MERGE_KINDS` must change, and the `Readonly<Record<keyof WeatherData, MergeKind>>` type on `FIELD_MERGE_KINDS` makes a missing key a compile error as well, so the policy can never silently skip a field.)
 
 - [ ] **Step 2: Run the tests to verify they fail**
 
@@ -280,7 +303,11 @@ Expected: FAIL, module not found.
 
 - [ ] **Step 3: Create `mergeWeatherData.ts`**
 
-Implement the policy from the table. Structure: small pure local helpers (`mean(values)`, `circularMean(dirs, speeds)`, `hazardMax(values)`, `hazardMin(values)`, `firstPresent(dataList, key)`, `maxSeverity(conditions)`), each operating on the present values across `dataList`, then assemble the output with conditional spreads (omit absent optionals). Recompute the five base-derived fields via `deriveBaseWeatherFields(mergedTemp, mergedPressure, mergedHumidity, mergedWindSpeed)`. Compute `heatStressIndex` from the selected `wetBulbGlobeTemperature` via `calculateHeatStressIndex` when present. Compute `windGustFactor` from the merged gust and sustained with the `max(1, ...)` guard. Set `timestamp` from `dataList[0]`. Omit the three apparent-wind fields. Define the severity ladder as an ordered array; if the notifier already exports a `NotificationState` ordering, import and reuse it rather than redefining (check `src/notifications/` and `src/types/plugin.ts`); otherwise define `const STATE_LADDER: NotificationState[] = ['normal', 'alert', 'warn', 'alarm', 'emergency']` with a comment. Keep `mergeWeatherData` under Biome's cognitive-complexity limit by extracting the per-kind helpers (the same decomposition pattern the daily forecast mapper used).
+Implement the policy from the table. Structure: small pure local helpers (`mean(values)`, `circularMean(dirs, speeds)`, `hazardMax(values)`, `hazardMin(values)`, `firstPresent(dataList, key)`, `maxSeverity(conditions)`), each operating on the present values across `dataList`, then assemble the output with conditional spreads (omit absent optionals). Recompute the five base-derived fields via `deriveBaseWeatherFields(mergedTemp, mergedPressure, mergedHumidity, mergedWindSpeed)`. Compute `heatStressIndex` from the SELECTED merged `wetBulbGlobeTemperature` via `calculateHeatStressIndex` when present (do NOT re-estimate WBGT from the merged temperature and humidity; the merge already chose the priority-present WBGT, which may be AccuWeather's measured value). Compute `windGustFactor` via `calculateGustFactor(mergedWindGustSpeed, mergedWindSpeed)` and spread it only when the helper returns a value (do not re-derive). Set `timestamp` from `dataList[0]`. Omit the three apparent-wind fields (they are added downstream in `WeatherService.enhanceWeatherData`; this intentionally follows the spec's prose over its policy-table row, which loosely groups them under "derived"). The `circular` fallback when the resultant magnitude is below epsilon (1e-9) uses `firstPresent(dataList, 'windDirection')`, NOT `dataList[0].windDirection` (a primary could omit the direction). Add an inline comment that WBGT prefer-measured currently depends on provider priority: set AccuWeather as the primary to prefer its measured globe temperature.
+
+For the severity ladder, no notifier constant exports an ordering (confirmed: `NotificationState` is a union in `src/types/plugin.ts` and `WeatherNotifier` consumes states without ranking them), so define a compile-exhaustive rank map rather than a loose array: `const STATE_RANK: Readonly<Record<NotificationState, number>> = { normal: 0, alert: 1, warn: 2, alarm: 3, emergency: 4 };`. The `Record<NotificationState, ...>` type forces every state to be ranked, so adding a state to the union without ranking it fails to type-check (the same exhaustiveness guarantee `FIELD_MERGE_KINDS` uses). `maxSeverity` compares present `severeCondition` values by `STATE_RANK[c.state]`, tie-breaking by priority order (the earlier list element wins), and omits when none are present.
+
+Keep `mergeWeatherData` under Biome's cognitive-complexity limit by extracting the per-kind helpers (the same decomposition pattern the daily forecast mapper used).
 
 `FIELD_MERGE_KINDS` is the `Record<keyof WeatherData, MergeKind>` literal matching the table, with `MergeKind = 'mean' | 'circular' | 'hazard-max' | 'hazard-min' | 'priority-present' | 'conservative-tendency' | 'categorical' | 'primary' | 'derived' | 'excluded'`.
 
@@ -376,6 +403,7 @@ describe('MergingWeatherProvider', () => {
     const svc = new MergingWeatherProvider([fc, stubProvider({})], fc, () => {});
     expect(svc.getRequestCount()).toBe(2); // 1 + 1
     expect(svc.getRequestCountLast24h()).toBe(4); // 2 + 2
+    expect(svc.getCacheStats()).toEqual({ size: 6 }); // 3 + 3
     expect(svc.forecastCapabilities).toEqual({ hourlyHours: 48, dailyDays: 9 });
     await svc.getHourlyForecast({ latitude: 0, longitude: 0 });
     expect(fc.getHourlyForecast).toHaveBeenCalled();
@@ -437,6 +465,7 @@ git commit -m "feat: add the merging weather provider that blends available sour
 // src/__tests__/providers/createWeatherProvider.test.ts
 import { describe, expect, it } from 'vitest';
 import { createWeatherProvider } from '../../providers/createWeatherProvider.js';
+import { supportsForecasts } from '../../providers/WeatherProvider.js';
 import { sanitizeConfiguration } from '../../utils/validation.js';
 
 describe('createWeatherProvider', () => {
@@ -444,11 +473,14 @@ describe('createWeatherProvider', () => {
     const p = createWeatherProvider(sanitizeConfiguration({ weatherProvider: 'open-meteo', weatherMode: 'single' }), () => {});
     expect(p.sourceRef).toBe('open-meteo');
   });
-  it('returns a merged provider in merged mode with at least two keyless providers available', () => {
+  it('returns a forecast-capable merged provider in merged mode with two keyless providers available', () => {
     // Open-Meteo and Met.no are always available, so merged mode always has two.
     const p = createWeatherProvider(sanitizeConfiguration({ weatherProvider: 'open-meteo', weatherMode: 'merged' }), () => {});
     expect(p.sourceRef).toBe('merged');
     expect(p.name).toContain('merged');
+    // The merged provider must be forecast-capable (delegating to a child) so the
+    // v2 adapter registers in merged mode; a regression that loses this fails here.
+    expect(supportsForecasts(p)).toBe(true);
   });
   it('uses the configured provider as the merged primary (priority first)', () => {
     const p = createWeatherProvider(sanitizeConfiguration({ weatherProvider: 'met-no', weatherMode: 'merged' }), () => {});
@@ -498,25 +530,40 @@ export function createWeatherProvider(
   if (resolveWeatherMode(config.weatherMode) === 'single') {
     return createCurrentWeatherProvider(config, logger);
   }
-  // Priority order: the configured provider is the primary, then the rest in catalog order.
+  // Priority order: the configured provider is the primary ONLY when it is
+  // actually available (a keyed provider needs its key). Guard against prepending
+  // a primary that was filtered out of `available`: an explicit `weatherProvider`
+  // wins in `resolveWeatherProvider` even without a key (for example AccuWeather
+  // via a hand-edited config), and constructing that keyless child would fail
+  // every fetch and log noise on every tick. When the primary is unavailable,
+  // merge over the available set in catalog order instead.
   const available = availableProviderIds(config);
-  const ordered = [config.weatherProvider, ...available.filter((id) => id !== config.weatherProvider)];
+  const primary = config.weatherProvider;
+  const ordered: WeatherProviderId[] = available.includes(primary)
+    ? [primary, ...available.filter((id) => id !== primary)]
+    : [...available];
   if (ordered.length <= 1) {
+    // Only one provider available (not reachable while Open-Meteo and Met.no are
+    // both keyless and always present). Degrade to single rather than a one-child
+    // "merge", and log it so a future single-keyless config is visible.
+    logger('warn', 'Merged mode: only one provider available, using it single-source');
     return createCurrentWeatherProvider(config, logger);
   }
   const children = ordered.map((id) => PROVIDER_CATALOG[id].construct(config, logger));
   const forecastChild = children.find(supportsForecasts);
   if (!forecastChild) {
-    // No forecast-capable child (not reachable while Open-Meteo is always available
-    // and forecast-capable); fall back to the single primary rather than a merge
-    // that cannot serve the v2 forecast surface.
+    // No forecast-capable child. Not reachable today: Open-Meteo is always
+    // available and forecast-capable (and Met.no is too since phase 2), so a
+    // forecast child always exists. Degrade to single rather than a merge that
+    // cannot serve the v2 forecast surface, and log it.
+    logger('warn', 'Merged mode: no forecast-capable provider, using single-source');
     return createCurrentWeatherProvider(config, logger);
   }
   return new MergingWeatherProvider(children, forecastChild, logger);
 }
 ```
 
-(Note: `config.weatherProvider` is always in `available` because the operator cannot select a keyed provider without a key, so it is never dropped from `ordered`; if a future state allowed that, the `ordered` head would still be valid since the catalog can construct it. Confirm `availableProviderIds` includes `config.weatherProvider` for the supported configs, and that the head-of-list is the primary.)
+(`availableProviderIds` includes `config.weatherProvider` for any panel-saved config, since the panel blocks selecting a keyed provider without a key. The guard above handles the hand-edited-config case where the primary was selected without its key: the merge then covers the available keyless providers rather than constructing a doomed child. Open-Meteo and Met.no are both keyless and forecast-capable, so a forecast child always exists.)
 
 - [ ] **Step 4: Wire `index.ts`**
 
@@ -549,20 +596,60 @@ git commit -m "feat: build a merging provider when weather mode is merged"
 
 Model on the existing registration tests in `index.test.ts`. Start the plugin with `{ weatherProvider: 'open-meteo', weatherMode: 'merged' }`, assert `registerWeatherProvider` was called, that the registered provider's `name` is the merged display name (contains `merged`), and that `/api/status` reports `weatherProviderRegistered: true`. Because `WeatherService` is mocked at the module level, no real fetch fires; the registration gate runs against the real merged provider built by `createWeatherProvider`.
 
+It is the existing Open-Meteo registration test copied with `weatherMode: 'merged'` added to the config and the name assertion changed to expect the merged display name. The full body (do NOT leave it a comment-only stub: an assertion-free test passes trivially):
+
 ```ts
 it('registers the v2 weather provider with the merged name in merged mode', async () => {
-  // Same setup as the Open-Meteo registration test, with weatherMode 'merged'.
-  // Assert registerWeatherProvider was invoked, the provider name contains 'merged', and the status flag is true.
+  // In merged mode the injected provider is the MergingWeatherProvider, which is
+  // forecast-capable by delegation, so startServices registers it. WeatherService
+  // is mocked at the module level, so no network call fires.
+  const registerWeatherProvider = vi.fn();
+  const unRegister = vi.fn();
+  const app = buildMockApp({ registerWeatherProvider, weatherApi: { unRegister } });
+
+  const plugin = createPlugin(app as never);
+  await plugin.start({ weatherProvider: 'open-meteo', weatherMode: 'merged' }, () => {});
+
+  expect(registerWeatherProvider).toHaveBeenCalledTimes(1);
+  const provider = registerWeatherProvider.mock.calls[0]?.[0];
+  expect(provider.name).toContain('merged');
+  expect(provider.methods.pluginId).toBe('signalk-virtual-weather-sensors');
+
+  const routes = new Map<string, (req: unknown, res: unknown) => void>();
+  const router = {
+    get: vi.fn((path: string, handler: (req: unknown, res: unknown) => void) => {
+      routes.set(`GET ${path}`, handler);
+    }),
+    post: vi.fn((_path: string, _handler: (req: unknown, res: unknown) => void) => {}),
+  };
+  plugin.registerWithRouter?.(router as never);
+
+  const body: { json?: unknown } = {};
+  const res = {
+    json: vi.fn((payload: unknown) => {
+      body.json = payload;
+      return res;
+    }),
+  };
+  const handler = routes.get('GET /api/status');
+  if (!handler) throw new Error('status route not registered');
+  handler({}, res);
+
+  const payload = body.json as Record<string, unknown>;
+  expect(payload.weatherProviderRegistered).toBe(true);
+
+  await plugin.stop();
+  expect(unRegister).toHaveBeenCalledWith('signalk-virtual-weather-sensors');
 });
 ```
 
-(Write the full body modeled on the existing registration test, not a stub.)
+(If `buildMockApp` or `createPlugin` is imported under a different local name in this file, match the file's existing usage, as the Met.no phase-3 registration test did.)
 
 - [ ] **Step 2: Document the merge**
 
 - `CHANGELOG.md`: add an Unreleased entry (or the next version's section) describing merge mode: selecting "Merge available providers" blends Open-Meteo, Met.no, and AccuWeather (when keyed) into synthetic current-conditions values on a new `merged` `$source`, with hazard-bearing fields (severe condition, precipitation, gust, and a falling barometer) escalating to the most conservative value and a low-visibility floor. Note that switching to merged changes the `$source` on the canonical leaves from a provider ref to `merged`, which yields to a real sensor under source priorities exactly as the single-provider sources do, and silently breaks any source-priority rule previously set against a specific provider. Follow the writing rules (no AI or process language, no em dashes).
 - The provider-migration decision memo: add a short note that merge mode introduces the `merged` `$source` and the same `$source`-change caveat.
-- `CLAUDE.md`: add a short architecture note under the multi-provider section that `weatherMode = 'merged'` builds a `MergingWeatherProvider` (`src/providers/MergingWeatherProvider.ts`) over the available providers, blending current conditions per the `FIELD_MERGE_KINDS` policy in `src/providers/mergeWeatherData.ts`, recomputing derived fields from the merged base through `deriveBaseWeatherFields`, delegating forecasts and observations to the highest-priority forecast-capable child, and stamping `$source: 'merged'`. Note that `apparent*` fields are added downstream in `WeatherService`, the marine layer and warnings are never merged, and forecasts stay single-source for model coherence.
+- `CLAUDE.md`: add a short architecture note under the multi-provider section that `weatherMode = 'merged'` builds a `MergingWeatherProvider` (`src/providers/MergingWeatherProvider.ts`) over the available providers, blending current conditions per the `FIELD_MERGE_KINDS` policy in `src/providers/mergeWeatherData.ts`, recomputing derived fields from the merged base through `deriveBaseWeatherFields`, delegating forecasts and observations to the highest-priority forecast-capable child, and stamping `$source: 'merged'`. Record the two deliberate decisions so a later reader does not "fix" them: WBGT is NOT averaged but taken priority first-present (set AccuWeather as the primary to prefer its measured globe temperature; a `measured` flag for true prefer-measured is a deferred enhancement), and the merged v2 observation is served by the designated forecast child for coherence with its forecast series (multi-child pressure blending is a deferred enhancement). Note that `apparent*` fields are added downstream in `WeatherService`, the marine layer and warnings are never merged, and forecasts stay single-source for model coherence.
 
 - [ ] **Step 3: Run the gate and commit**
 
