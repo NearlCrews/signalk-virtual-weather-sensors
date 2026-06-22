@@ -154,7 +154,10 @@ export const WEATHER_MODE_LABELS: Readonly<Record<WeatherMode, string>> = Object
 
 /** Resolve the effective mode; anything but a known value falls back to single. */
 export function resolveWeatherMode(explicit: unknown): WeatherMode {
-  return explicit === 'merged' ? 'merged' : 'single';
+  return typeof explicit === 'string' &&
+    (WEATHER_MODE_IDS as ReadonlyArray<string>).includes(explicit)
+    ? (explicit as WeatherMode)
+    : 'single';
 }
 
 /** Minimum length for any plausible AccuWeather API key. */

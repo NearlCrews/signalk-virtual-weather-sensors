@@ -27,7 +27,6 @@ import {
   normalizeAngle0To2Pi,
   optionalCelsiusToKelvin,
   optionalPercentageToRatio,
-  percentageToRatio,
 } from '../utils/conversions.js';
 
 /** AccuWeather PrecipitationType (lowercased) to the SK PrecipitationKind enum. */
@@ -109,8 +108,7 @@ export function mapHourlyToForecasts(
     const temperatureK = optionalCelsiusToKelvin(hour.Temperature?.Value);
     const dewPointC = asOptionalNumber(hour.DewPoint?.Value);
     const realFeelC = asOptionalNumber(hour.RealFeelTemperature?.Value);
-    const humidityPct = asOptionalNumber(hour.RelativeHumidity);
-    const rhRatio = humidityPct !== undefined ? percentageToRatio(humidityPct) : undefined;
+    const rhRatio = optionalPercentageToRatio(hour.RelativeHumidity);
     const visibilityKm = asOptionalNumber(hour.Visibility?.Value);
     const uvIndex = asOptionalNumber(hour.UVIndex);
 
@@ -207,8 +205,7 @@ export function mapCurrentToObservation(c: AccuWeatherCurrentConditions): SKWeat
   const temperatureK = optionalCelsiusToKelvin(c.Temperature?.Metric?.Value);
   const dewPointK = optionalCelsiusToKelvin(c.DewPoint?.Metric?.Value);
   const feelsLikeK = optionalCelsiusToKelvin(c.RealFeelTemperature?.Metric?.Value);
-  const humidityPct = asOptionalNumber(c.RelativeHumidity);
-  const rhRatio = humidityPct !== undefined ? percentageToRatio(humidityPct) : undefined;
+  const rhRatio = optionalPercentageToRatio(c.RelativeHumidity);
   const pressureMbar = asOptionalNumber(c.Pressure?.Metric?.Value);
   const visibilityKm = asOptionalNumber(c.Visibility?.Metric?.Value);
   const uvIndex = asOptionalNumber(c.UVIndexFloat);

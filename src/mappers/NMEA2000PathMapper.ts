@@ -338,7 +338,7 @@ export class NMEA2000PathMapper {
    * Condition-detail leaves decoded from AccuWeather: barometric tendency, the
    * plain-language description, precipitation type, and any visibility
    * obstruction. All producer-namespaced under environment.weather.*. Mirrors
-   * `AccuWeatherService.extractConditionDetails` so the decode and emit sides
+   * `AccuWeatherMapper.extractConditionDetails` so the decode and emit sides
    * group the same fields.
    */
   private addConditionDetailPaths(values: PathValue[], data: WeatherData): void {
