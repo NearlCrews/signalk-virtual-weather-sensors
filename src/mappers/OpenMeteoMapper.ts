@@ -11,16 +11,13 @@
  * estimated so the heat-stress band still functions.
  */
 
-import { WindCalculator } from '../calculators/WindCalculator.js';
+import { deriveBaseWeatherFields } from '../calculators/deriveWeatherFields.js';
 import { ERROR_CODES } from '../constants/index.js';
 import { openMeteoSevereCondition } from '../providers/open-meteo-severity.js';
 import type { OpenMeteoCurrentResponse, WeatherData } from '../types/index.js';
 import {
   asOpenMeteoTimestamp,
   asOptionalNumber,
-  calculateAbsoluteHumidity,
-  calculateAirDensity,
-  calculateBeaufortScale,
   calculateGustFactor,
   calculateHeatStressIndex,
   celsiusToKelvin,
@@ -31,9 +28,6 @@ import {
   optionalPercentageToRatio,
   percentageToRatio,
 } from '../utils/conversions.js';
-
-/** Stateless apart from its logger; reused so the mapper allocates no calculator per call. */
-const sharedWindCalculator = new WindCalculator();
 
 /**
  * WMO weather-code (table 4677) to plain-language description, the Open-Meteo
@@ -144,11 +138,8 @@ export function mapOpenMeteoCurrentToWeatherData(response: OpenMeteoCurrentRespo
   // Open-Meteo carries no wind chill: recompute from the true wind (as the
   // AccuWeather path does when WindChillTemperature is absent). Heat index is
   // always computed (NWS Rothfusz), matching the AccuWeather path.
-  const windChill = sharedWindCalculator.calculateWindChill(temperature, windSpeed);
-  const heatIndex = sharedWindCalculator.calculateHeatIndex(temperature, humidity);
-  const beaufortScale = calculateBeaufortScale(windSpeed);
-  const absoluteHumidity = calculateAbsoluteHumidity(temperature, humidity);
-  const airDensityEnhanced = calculateAirDensity(temperature, pressure, humidity);
+  const { windChill, heatIndex, beaufortScale, absoluteHumidity, airDensityEnhanced } =
+    deriveBaseWeatherFields(temperature, pressure, humidity, windSpeed);
 
   // Open-Meteo provides no measured wet-bulb globe temperature: estimate it so
   // the heat-stress band still works. This is a shade estimate (see

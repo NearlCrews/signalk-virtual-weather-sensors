@@ -11,7 +11,7 @@
  * still functions.
  */
 
-import { WindCalculator } from '../calculators/WindCalculator.js';
+import { deriveBaseWeatherFields } from '../calculators/deriveWeatherFields.js';
 import { ERROR_CODES } from '../constants/index.js';
 import { metNoSevereCondition, metNoSymbolBase } from '../providers/met-no-severity.js';
 import type {
@@ -22,9 +22,6 @@ import type {
 import {
   asOpenMeteoTimestamp,
   asOptionalNumber,
-  calculateAbsoluteHumidity,
-  calculateAirDensity,
-  calculateBeaufortScale,
   calculateGustFactor,
   calculateHeatStressIndex,
   celsiusToKelvin,
@@ -35,9 +32,6 @@ import {
   optionalPercentageToRatio,
   percentageToRatio,
 } from '../utils/conversions.js';
-
-/** Stateless apart from its logger; reused so the mapper allocates no calculator per call. */
-const sharedWindCalculator = new WindCalculator();
 
 /**
  * Met.no `symbol_code` base (suffix stripped) to plain-language description.
@@ -174,11 +168,8 @@ export function mapMetNoCurrentToWeatherData(response: MetNoLocationforecastResp
   // Met.no carries no wind chill: recompute from the true wind (as the
   // AccuWeather path does when WindChillTemperature is absent). Heat index is
   // always computed (NWS Rothfusz), matching the AccuWeather path.
-  const windChill = sharedWindCalculator.calculateWindChill(temperature, windSpeed);
-  const heatIndex = sharedWindCalculator.calculateHeatIndex(temperature, humidity);
-  const beaufortScale = calculateBeaufortScale(windSpeed);
-  const absoluteHumidity = calculateAbsoluteHumidity(temperature, humidity);
-  const airDensityEnhanced = calculateAirDensity(temperature, pressure, humidity);
+  const { windChill, heatIndex, beaufortScale, absoluteHumidity, airDensityEnhanced } =
+    deriveBaseWeatherFields(temperature, pressure, humidity, windSpeed);
 
   // Met.no provides no measured wet-bulb globe temperature: estimate it so
   // the heat-stress band still works. This is a shade estimate (see
