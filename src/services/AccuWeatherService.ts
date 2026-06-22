@@ -230,9 +230,9 @@ function extractConditionDetails(conditions: AccuWeatherCurrentConditions): Part
  */
 export class AccuWeatherService implements CurrentWeatherProvider {
   /** Provider name for the v2 registration and logs. */
-  public readonly name = PLUGIN.PROVIDER_NAME;
+  public readonly name = 'AccuWeather';
   /** `$source` stamped on AccuWeather-sourced deltas. */
-  public readonly sourceRef = PLUGIN.SOURCE_REF;
+  public readonly sourceRef = 'accuweather';
 
   private readonly config: AccuWeatherConfig;
   private readonly logger: Logger;

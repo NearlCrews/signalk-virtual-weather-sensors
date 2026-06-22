@@ -16,14 +16,13 @@ import type {
   PathValue,
   SourceRef,
 } from '@signalk/server-api';
-import { PLUGIN } from '../constants/index.js';
 import { asTimestamp } from './conversions.js';
 
 /** Signal K self-context literal used for every delta this plugin emits. */
 export const SELF_CONTEXT = 'vessels.self' as Context;
 
-/** Stable `$source` ref for AccuWeather-sourced deltas. Matches `PLUGIN.SOURCE_REF`. */
-export const ACCUWEATHER_SOURCE = PLUGIN.SOURCE_REF as SourceRef;
+/** Default `$source` ref for deltas built without an explicit source (fallback only; live callers pass the active provider's ref). */
+export const ACCUWEATHER_SOURCE = 'accuweather' as SourceRef;
 
 /** Brand a provider's plain `sourceRef` string as the Signal K `SourceRef` type. */
 export const toSourceRef = (source: string): SourceRef => source as SourceRef;

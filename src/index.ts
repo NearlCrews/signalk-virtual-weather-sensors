@@ -112,7 +112,7 @@ export default function createPlugin(app: ServerAPI): Plugin {
     cachedWeatherDataRef: null,
     metaEmitted: false,
     weatherProviderRegistered: false,
-    sourceRef: toSourceRef(PLUGIN.SOURCE_REF),
+    sourceRef: toSourceRef('accuweather'),
     lastBanner: null,
   };
 

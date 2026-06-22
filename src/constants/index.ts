@@ -44,18 +44,6 @@ export const PLUGIN = {
   DESCRIPTION:
     'Signal K plugin providing comprehensive weather data with NMEA2000-compatible environmental measurements',
   VERSION: process.env.PKG_VERSION || '1.0.0',
-  /**
-   * Stable Signal K $source ref for every delta this plugin emits, so users
-   * can configure source priorities to prefer real onboard sensors over the
-   * AccuWeather feed.
-   */
-  SOURCE_REF: 'accuweather',
-  /**
-   * Human-readable name of the upstream weather source, surfaced as the Signal
-   * K v2 Weather API provider `name` and in the registration log. Single-
-   * sourced here so the provider identity and the log line cannot drift.
-   */
-  PROVIDER_NAME: 'AccuWeather',
   STATUS: {
     RUNNING: 'Running',
     /** Banner prefix once 24h API usage crosses `API_QUOTA.WARN_RATIO`. */
