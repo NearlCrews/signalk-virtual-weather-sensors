@@ -10,7 +10,7 @@ import { ERROR_CODES } from '../constants/index.js';
 import { toErrorMessage } from './conversions.js';
 
 /** Default response-body cap (1 MiB), matching the AccuWeather fetch path. */
-const DEFAULT_MAX_RESPONSE_BYTES = 1_048_576;
+export const DEFAULT_MAX_RESPONSE_BYTES = 1_048_576;
 
 /** Default per-request timeout for the keyless JSON clients, in milliseconds. */
 export const DEFAULT_REQUEST_TIMEOUT_MS = 10_000;
