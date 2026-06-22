@@ -49,11 +49,15 @@ In `skV2Envelope.test.ts`, update the import to `'../../mappers/skV2Envelope.js'
 
 - [ ] **Step 2: Write the failing test for the new builder**
 
-Append to `skV2Envelope.test.ts`:
+In `skV2Envelope.test.ts`, add `buildSkOutsideSI` to the EXISTING import line (do NOT add a second `import` from the same module: Biome merges duplicate imports, so a separate second import fails the format check and the gate). The single import becomes:
 
 ```ts
-import { buildSkOutsideSI } from '../../mappers/skV2Envelope.js';
+import { buildSkOutsideSI, buildWindFromMs } from '../../mappers/skV2Envelope.js';
+```
 
+Then add the test block:
+
+```ts
 describe('buildSkOutsideSI', () => {
   it('spreads present SI fields and derives absoluteHumidity from temperature and humidity', () => {
     const out = buildSkOutsideSI({ temperatureK: 293.15, rhRatio: 0.5, pressurePa: 101300, cloudCover: 0.25 });
@@ -160,7 +164,7 @@ const outside = buildSkOutsideSI({
 });
 ```
 
-Update the import from `skV2Envelope.js` to add `buildSkOutsideSI` (alongside `buildWindFromMs`, `type SKOutside`, `type SKSun`). After delegating, `calculateAbsoluteHumidity` is no longer used directly in `OpenMeteoForecastMapper.ts` (the helper owns it now), so REMOVE it from the conversions import or Biome `noUnusedVariables: error` fails the gate. `millibarsToPA`, `UNITS`, and the `SKOutside`/`SKSun` aliases are still used (the daily mapper builds its own `outside: SKOutside` inline, unchanged), so keep them.
+Update the `skV2Envelope.js` import so the single line reads `import { buildSkOutsideSI, buildWindFromMs, type SKOutside, type SKSun } from './skV2Envelope.js';` (add `buildSkOutsideSI`, keep `SKOutside` and `SKSun`: the daily mapper still annotates its own `const outside: SKOutside` at line 101 and its `const sun: SKSun` at line 118). After delegating, `calculateAbsoluteHumidity` is no longer used directly in `OpenMeteoForecastMapper.ts` (the helper owns it now), so REMOVE it from the conversions import or Biome `noUnusedVariables: error` fails the gate. `millibarsToPA` and `UNITS` are still used (the observation pressure local and the daily precipitation), so keep them.
 
 The daily mapper (`mapOpenMeteoDailyToForecasts`) is NOT changed: its `outside` carries `minTemperature`/`maxTemperature`, a different field set from the point/observation block, so it stays inline.
 
@@ -344,9 +348,9 @@ function mapEntry(entry: MetNoTimeseriesEntry, type: 'point' | 'observation'): S
 }
 ```
 
-`mapMetNoToHourlyForecasts` filters the timeseries to entries that carry `next_1_hours` and maps each via `mapEntry(e, 'point')`. `mapMetNoToObservation` maps the first entry via `mapEntry(first, 'observation')`, returning `{ date: '', type: 'observation', outside: {} }` when the timeseries is empty (the v2 `date` must be a string; do not throw, the v2 surface degrades gracefully).
+`mapMetNoToHourlyForecasts` filters the timeseries to entries that carry `next_1_hours` and maps each via `mapEntry(e, 'point')`. `mapMetNoToObservation` maps the first entry via `mapEntry(first, 'observation')`. When the timeseries is empty it returns the literal `{ date: '', type: 'observation', outside: {} }` directly (NOT through `mapEntry`, which would dereference an absent entry): the v2 `date` must be a string, so do not throw, the v2 surface degrades gracefully.
 
-`mapMetNoToDailyForecasts` implements the daily derivation from Global Constraints: iterate the timeseries, keep entries whose UTC hour (from `time.slice(11, 13)`) is one of `0`, `6`, `12`, or `18` AND that carry `next_6_hours.details`, group by the UTC day `time.slice(0, 10)`, and for each day fold the windows into `maxTemperature` (max of `air_temperature_max`), `minTemperature` (min of `air_temperature_min`), `precipitationVolume` (summed `precipitation_amount` times `MM_TO_M`), and a description from the 12:00 window's `next_6_hours.summary.symbol_code` (falling back to the earliest window of the day). Build the daily `outside` inline (it carries `minTemperature`/`maxTemperature`/`precipitationVolume`, the same shape as the Open-Meteo daily mapper, so it does not use `buildSkOutsideSI`). Return the days sorted ascending by date. Parse the hour and day from the ISO 8601 string with `slice` (the `time` is UTC, so string slicing is timezone-safe and avoids `new Date`).
+`mapMetNoToDailyForecasts` implements the daily derivation from Global Constraints. Iterate the timeseries and keep only the canonical-grid windows: an entry qualifies when it carries `next_6_hours.details` AND its UTC hour is one of 0, 6, 12, or 18. Compare with `Number(time.slice(11, 13))` against the numeric set, for example `[0, 6, 12, 18].includes(Number(time.slice(11, 13)))`, so the string hour `'06'` matches `6` (a bare string compare of `'06'` to `6` would never match, an easy off-by-type bug). Group by the UTC day `time.slice(0, 10)`, and for each day fold the windows into `maxTemperature` (max of `next_6_hours.details.air_temperature_max`), `minTemperature` (min of `next_6_hours.details.air_temperature_min`), and `precipitationVolume` (summed `next_6_hours.details.precipitation_amount` times `MM_TO_M`). Note `air_temperature_max`/`air_temperature_min` live ONLY on `next_6_hours.details`, not on `next_1_hours.details`, even though the phase-1 `MetNoPeriod` type declares them on the shared shape; add a short comment to that effect. The day's description comes from the 12:00 UTC window's `next_6_hours.summary.symbol_code`, and when no 12:00 window is present, from the earliest window of the day in ascending time order (the windows are processed in timeseries order, so "earliest" is the first one seen). Run the symbol through `metNoSymbolBase` then `MET_NO_DESCRIPTIONS.get(...)`, the same as `mapEntry`. Build the daily `outside` inline (it carries `minTemperature`/`maxTemperature`/`precipitationVolume`, the same shape as the Open-Meteo daily mapper, so it does NOT use `buildSkOutsideSI`). Return the days sorted ascending by date. Parse the hour and day from the ISO 8601 string with `slice` (the `time` is UTC, so string slicing is timezone-safe and avoids `new Date`). Add a one-line comment that near-term entries at non-grid hours (01:00, 02:00, and so on) also carry an overlapping `next_6_hours` and are deliberately excluded, since summing overlapping windows would double-count precipitation.
 
 - [ ] **Step 4: Run the test to verify it passes**
 
@@ -376,7 +380,37 @@ git commit -m "feat: map the Met.no timeseries to v2 observations, hourly foreca
 
 - [ ] **Step 1: Write the failing test**
 
-Add to `MetNoService.test.ts` (reuse the existing fetch-mock idiom: `vi.stubGlobal('fetch', vi.fn())` and `createMockFetchResponse`). Build a timeseries sample with at least the first entry carrying `next_1_hours` and the 00/06/12/18 windows carrying `next_6_hours.details`, then:
+Add to `MetNoService.test.ts` (reuse the existing fetch-mock idiom: `vi.stubGlobal('fetch', vi.fn())` and `createMockFetchResponse`, and `import type { Mock } from 'vitest'` if not already imported). Define `FORECAST_SAMPLE` near the top of the test file. It MUST carry both an entry with `next_1_hours` (so `getObservation` and `getHourlyForecast` return non-empty) AND a full set of 00/06/12/18 UTC entries with `next_6_hours.details` (so `getDailyForecast` returns a non-empty day); otherwise `daily[0]?.type` is undefined and the gate goes red even though the service is correct:
+
+```ts
+const instant = (t: number, p = 1013) => ({
+  details: {
+    air_temperature: t,
+    air_pressure_at_sea_level: p,
+    relative_humidity: 50,
+    dew_point_temperature: 10,
+    wind_speed: 5,
+    wind_from_direction: 90,
+  },
+});
+const sixHour = (max: number, min: number, precip: number, symbol = 'cloudy') => ({
+  summary: { symbol_code: symbol },
+  details: { air_temperature_max: max, air_temperature_min: min, precipitation_amount: precip },
+});
+const FORECAST_SAMPLE = {
+  properties: {
+    timeseries: [
+      // First entry: the nowcast, carries next_1_hours (drives observation and hourly).
+      { time: '2026-06-23T00:00:00Z', data: { instant: instant(14), next_1_hours: { summary: { symbol_code: 'cloudy' }, details: { precipitation_amount: 0.2 } }, next_6_hours: sixHour(14, 8, 1) } },
+      { time: '2026-06-23T06:00:00Z', data: { instant: instant(18), next_6_hours: sixHour(20, 12, 0) } },
+      { time: '2026-06-23T12:00:00Z', data: { instant: instant(22), next_6_hours: sixHour(24, 15, 2, 'rain') } },
+      { time: '2026-06-23T18:00:00Z', data: { instant: instant(16), next_6_hours: sixHour(18, 11, 0) } },
+    ],
+  },
+};
+```
+
+Then the tests:
 
 ```ts
 import { supportsForecasts } from '../../providers/WeatherProvider.js';
@@ -403,7 +437,7 @@ describe('MetNoService v2 capability', () => {
 });
 ```
 
-(The memo test runs well within the memo TTL, so no timer mocking is needed. Define `FORECAST_SAMPLE` near the top of the test file.)
+(The memo test runs well within the memo TTL, so no timer mocking is needed. `FORECAST_SAMPLE` is the fixture defined above.)
 
 - [ ] **Step 2: Run the test to verify it fails**
 
@@ -418,7 +452,12 @@ Add the imports (the three Task 2 mappers, `SKWeatherData`). Add the horizon con
 /** Declared v2 forecast horizon. Hourly steps run to about +53 h, the daily horizon to about 10 days. */
 const HOURLY_FORECAST_HOURS = 48;
 const DAILY_FORECAST_DAYS = 9;
-/** Met.no refreshes the model on a multi-hour cadence, so a 10-minute memo avoids refetching the identical document. */
+/**
+ * Met.no refreshes the model on a multi-hour cadence, so a 10-minute memo avoids
+ * refetching the identical document across the three v2 methods. This fixed TTL
+ * approximates the response `Expires` header; a later phase should replace it with
+ * the parsed `Expires` value and `If-Modified-Since` conditional requests.
+ */
 const DOCUMENT_MEMO_TTL_MS = 10 * 60 * 1000;
 ```
 
@@ -508,14 +547,55 @@ This task adds NO production code: it proves the seam delivers the feature. With
 
 - [ ] **Step 1: Write the test**
 
-Model it on the existing Open-Meteo registration test (added in Plan 2, "registers the v2 weather provider on a default Open-Meteo install"). Find that test in `index.test.ts`, copy its setup, and change the configured provider to `weatherProvider: 'met-no'`. It mocks `WeatherService` at the module level (so no real fetch fires), gives the mock app `registerWeatherProvider: vi.fn()` and `weatherApi: { unRegister: vi.fn() }`, starts the plugin, and asserts `registerWeatherProvider` was invoked and `GET /api/status` returns `weatherProviderRegistered: true`. The registration gate runs against the REAL `MetNoService` instance constructed in `startServices`, so after Task 3 it passes the `supportsForecasts` gate.
+Add this test inside the existing `describe('Weather provider registration', ...)` block, directly after the Open-Meteo registration test ("registers the v2 weather provider on a default Open-Meteo install", currently `index.test.ts:532-574`). It is that test copied verbatim, with the provider changed to `met-no` and the expected provider name changed to `Met.no`. The full body (do NOT leave it a comment-only stub: an assertion-free test passes trivially and proves nothing):
 
 ```ts
 it('registers the v2 weather provider on a Met.no install', async () => {
-  // Same setup as the Open-Meteo registration test, with weatherProvider 'met-no'.
-  // Assert registerWeatherProvider was invoked and the status flag is true.
+  // Met.no is forecast-capable after phase 2, so startServices must call
+  // registerWeatherProvider. WeatherService is mocked at the module level, so no
+  // network call fires; the registration gate runs against the real MetNoService.
+  const registerWeatherProvider = vi.fn();
+  const unRegister = vi.fn();
+  const app = buildMockApp({ registerWeatherProvider, weatherApi: { unRegister } });
+
+  const plugin = createPlugin(app as never);
+  await plugin.start({ weatherProvider: 'met-no' }, () => {});
+
+  expect(registerWeatherProvider).toHaveBeenCalledTimes(1);
+  const provider = registerWeatherProvider.mock.calls[0]?.[0];
+  expect(provider.name).toBe('Met.no');
+  expect(provider.methods.pluginId).toBe('signalk-virtual-weather-sensors');
+
+  // The /api/status endpoint must report weatherProviderRegistered: true.
+  const routes = new Map<string, (req: unknown, res: unknown) => void>();
+  const router = {
+    get: vi.fn((path: string, handler: (req: unknown, res: unknown) => void) => {
+      routes.set(`GET ${path}`, handler);
+    }),
+    post: vi.fn((_path: string, _handler: (req: unknown, res: unknown) => void) => {}),
+  };
+  plugin.registerWithRouter?.(router as never);
+
+  const body: { json?: unknown } = {};
+  const res = {
+    json: vi.fn((payload: unknown) => {
+      body.json = payload;
+      return res;
+    }),
+  };
+  const handler = routes.get('GET /api/status');
+  if (!handler) throw new Error('status route not registered');
+  handler({}, res);
+
+  const payload = body.json as Record<string, unknown>;
+  expect(payload.weatherProviderRegistered).toBe(true);
+
+  await plugin.stop();
+  expect(unRegister).toHaveBeenCalledWith('signalk-virtual-weather-sensors');
 });
 ```
+
+The registration gate runs against the REAL `MetNoService` instance constructed in `startServices`, so after Task 3 makes it forecast-capable, this passes the `supportsForecasts` gate. If `buildMockApp` or `createPlugin` is imported under a different local name in this file, match the file's existing usage.
 
 - [ ] **Step 2: Run the gate**
 
