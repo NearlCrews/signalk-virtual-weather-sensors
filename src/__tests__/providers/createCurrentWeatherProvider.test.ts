@@ -30,4 +30,10 @@ describe('createCurrentWeatherProvider', () => {
     const provider = createCurrentWeatherProvider(sanitizeConfiguration({}));
     expect(provider.name).toBe('Open-Meteo');
   });
+
+  it('returns the Met.no provider when Met.no is selected', () => {
+    const config = sanitizeConfiguration({ weatherProvider: 'met-no' });
+    const provider = createCurrentWeatherProvider(config);
+    expect(provider.sourceRef).toBe('met-no');
+  });
 });

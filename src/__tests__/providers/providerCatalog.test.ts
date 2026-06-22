@@ -23,9 +23,13 @@ describe('PROVIDER_CATALOG', () => {
     expect(PROVIDER_CATALOG.accuweather.construct(baseConfig, () => {}).sourceRef).toBe(
       'accuweather'
     );
+    expect(PROVIDER_CATALOG['met-no'].construct(baseConfig, () => {}).sourceRef).toBe('met-no');
   });
   it('marks open-meteo keyless and accuweather keyed', () => {
     expect(PROVIDER_CATALOG['open-meteo'].keyless).toBe(true);
     expect(PROVIDER_CATALOG.accuweather.keyless).toBe(false);
+  });
+  it('marks met-no as keyless', () => {
+    expect(PROVIDER_CATALOG['met-no'].keyless).toBe(true);
   });
 });
