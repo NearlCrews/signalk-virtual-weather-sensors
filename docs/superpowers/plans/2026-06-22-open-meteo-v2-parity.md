@@ -183,7 +183,7 @@ function buildWind(
 }
 ```
 
-Keep `kmhToMS` imported in `WeatherProviderMapper.ts` (still used here). `degreesToRadians`/`normalizeAngle0To2Pi` may become unused in `WeatherProviderMapper.ts` if `buildWind` was their only user; drop them if the gate flags them.
+Keep `kmhToMS` imported in `WeatherProviderMapper.ts` (the thin wrapper still uses it). DROP `degreesToRadians` and `normalizeAngle0To2Pi` from the `WeatherProviderMapper.ts` conversions import: `buildWind` was their only user, so after delegating they are unused and Biome `noUnusedVariables: error` will fail the gate if they remain. The three SK type aliases are not co-located in the file: `SKOutside` and `SKWind` are near the top and `SKSun` is declared lower down (around line 148); delete all three local aliases and import them from `./skV2WindHelper.js`.
 
 - [ ] **Step 5: Run the gate**
 
@@ -206,7 +206,7 @@ git commit -m "refactor: share the SK v2 wind-block helper across provider mappe
 - Test: `src/__tests__/mappers/OpenMeteoForecastMapper.test.ts` (create)
 
 **Interfaces:**
-- Consumes: `OpenMeteoForecastResponse`, `OpenMeteoCurrentResponse` (types); `buildWindFromMs`/`SKOutside`/`SKSun` (Task 2); the `conversions.ts` helpers; the WMO description map (export `WMO_DESCRIPTIONS` from `OpenMeteoMapper.ts` and import it here, OR move it into a small shared `mappers/wmoDescriptions.ts` that both import, to avoid a second copy).
+- Consumes: `OpenMeteoForecastResponse`, `OpenMeteoCurrentResponse` (types); `buildWindFromMs`/`SKOutside`/`SKSun` from `./skV2WindHelper.js` (Task 2); the `conversions.ts` helpers imported explicitly with `.js` specifiers (`asOpenMeteoTimestamp`, `optionalCelsiusToKelvin`, `optionalPercentageToRatio`, `asOptionalNumber`, `millibarsToPA`, `celsiusToKelvin`, `calculateAbsoluteHumidity`); `UNITS` from `../constants/index.js`; and the WMO description map. For the WMO map, add `export` to the existing `WMO_DESCRIPTIONS` const in `OpenMeteoMapper.ts:43` (it is currently a module-local `const` with no `export`) and import it here, so neither mapper holds a second copy. Do not create a new file for it.
 - Produces three pure functions returning the SK v2 envelope (`WeatherData` from `@signalk/server-api`, aliased `SKWeatherData`):
   - `mapOpenMeteoCurrentToObservation(response: OpenMeteoCurrentResponse): SKWeatherData` (`type: 'observation'`, with `pressure` and `cloudCover` the current block carries)
   - `mapOpenMeteoHourlyToForecasts(response: OpenMeteoForecastResponse): SKWeatherData[]` (`type: 'point'`, ascending)
@@ -326,7 +326,7 @@ export function mapOpenMeteoHourlyToForecasts(response: OpenMeteoForecastRespons
 
 The daily mapper follows the same columnar pattern over `response.daily.time`, building `minTemperature`/`maxTemperature` from `temperature_2m_min`/`max`, `precipitationVolume` from `precipitation_sum`, `uvIndex` from `uv_index_max`, the wind from `wind_speed_10m_max`/`wind_direction_10m_dominant`/`wind_gusts_10m_max`, a description from `weather_code`, and an `SKSun` from `sunrise[i]`/`sunset[i]` (omit `sun` when both absent), with `type: 'daily'`.
 
-The observation mapper reads `response.current` (the same `OpenMeteoCurrentResponse` shape the service already fetches), building the same `outside` as the hourly point PLUS `pressure` (`millibarsToPA(pressure_msl)`), with `type: 'observation'` and the current `time` as `date`. It does not throw on a missing field (every leaf is conditionally spread); an empty `current` yields `{ date: undefined-or-empty, type: 'observation', outside: {} }`, which is acceptable for the v2 endpoint. Reuse `asOpenMeteoTimestamp` for the `date` if `current.time` may be absent.
+The observation mapper reads `response.current` (the same `OpenMeteoCurrentResponse` shape the service already fetches), building the same `outside` as the hourly point PLUS `pressure` (`millibarsToPA(pressure_msl)`), with `type: 'observation'`. It does not throw on a missing field (every leaf is conditionally spread). The v2 `date` field is a REQUIRED string, so set it from `asOpenMeteoTimestamp(response.current?.time)`, which returns `''` for an absent time (a valid string, never `undefined`). An empty `current` therefore yields `{ date: '', type: 'observation', outside: {} }`, acceptable for the v2 endpoint. Do NOT use the raw `current.time` directly for the observation `date` (it could be `undefined`, which violates the required-string type).
 
 Note: Open-Meteo carries no plain-language precipitation type, so `precipitationType` is omitted from the v2 envelope here (a WMO-code to `PrecipitationKind` map is a later enhancement). The wind direction goes through `buildWindFromMs` (degrees to radians, normalized).
 
@@ -344,7 +344,7 @@ git add src/mappers/OpenMeteoForecastMapper.ts src/mappers/OpenMeteoMapper.ts sr
 git commit -m "feat: map the Open-Meteo forecast and observation blocks to the v2 envelope"
 ```
 
-(Include `OpenMeteoMapper.ts` in the add if you exported `WMO_DESCRIPTIONS` from it; if you instead moved the map to a new `mappers/wmoDescriptions.ts`, add that file and adjust both importers.)
+(The `git add` includes `OpenMeteoMapper.ts` for the one-keyword `export` added to `WMO_DESCRIPTIONS`.)
 
 ---
 
@@ -465,7 +465,7 @@ This task adds NO production code: it proves the seam delivers the feature. With
 
 - [ ] **Step 1: Write the test**
 
-Add to `index.test.ts` (model on its existing plugin start/registration coverage): start the plugin with a default Open-Meteo config (no AccuWeather key), assert `app.registerWeatherProvider` was called, and that `GET /api/status` returns `weatherProviderRegistered: true`. If the existing test harness already starts the plugin and inspects registration for AccuWeather, mirror it for the Open-Meteo default.
+Add to `index.test.ts`, modeled on the existing registration test (around `index.test.ts:508`, "registers a weather provider on start and unregisters on stop"). That test mocks `WeatherService` at the module level so the service's `start` is a no-op and NO real fetch fires; the registration gate (`index.ts:241`, `supportsForecasts(provider)`) still runs against the REAL provider instance constructed in `startServices`, so after Task 4 makes `OpenMeteoService` forecast-capable, a default Open-Meteo start passes the gate. Start the plugin with `weatherProvider: 'open-meteo'` (the default, no AccuWeather key), give the mock app `registerWeatherProvider: vi.fn()` and `weatherApi: { unRegister: vi.fn() }`, and assert `registerWeatherProvider` was called and that `GET /api/status` returns `weatherProviderRegistered: true`. Because `WeatherService` is mocked, this test makes no network call.
 
 ```ts
 it('registers the v2 weather provider on a default Open-Meteo install', async () => {
