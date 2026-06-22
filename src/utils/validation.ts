@@ -16,7 +16,7 @@ import {
   WEATHER_PROVIDER_IDS,
   type WeatherProviderId,
 } from '../constants/index.js';
-import { resolveWeatherMode } from '../constants/notifications-shared.js';
+import { providerRequiresApiKey, resolveWeatherMode } from '../constants/notifications-shared.js';
 import type {
   GeoLocation,
   NotificationsConfig,
@@ -99,9 +99,9 @@ function validateApiKey(
   errors: string[],
   warnings: string[]
 ): void {
-  // A keyless provider needs no AccuWeather key. If one is present anyway it is
-  // simply unused, so do not validate or block on it.
-  if (provider !== 'accuweather') return;
+  // A keyless provider needs no API key. If one is present anyway it is simply
+  // unused, so do not validate or block on it.
+  if (!providerRequiresApiKey(provider)) return;
 
   if (!config.accuWeatherApiKey || typeof config.accuWeatherApiKey !== 'string') {
     errors.push('AccuWeather API key is required');

@@ -380,3 +380,14 @@ describe('sanitizeConfiguration weatherMode', () => {
     expect(sanitizeConfiguration({ weatherMode: 'merged' }).weatherMode).toBe('merged');
   });
 });
+
+describe('validateApiKey is capability-driven', () => {
+  it('requires a key for accuweather', () => {
+    const r = validateConfiguration({ weatherProvider: 'accuweather', accuWeatherApiKey: '' });
+    expect(r.errors).toContain('AccuWeather API key is required');
+  });
+  it('does not require a key for a keyless provider', () => {
+    const r = validateConfiguration({ weatherProvider: 'open-meteo', accuWeatherApiKey: '' });
+    expect(r.errors).not.toContain('AccuWeather API key is required');
+  });
+});

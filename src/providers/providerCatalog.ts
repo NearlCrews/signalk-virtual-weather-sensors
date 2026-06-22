@@ -6,6 +6,7 @@
  * notifications-shared.ts, plus the service and its mappers.
  */
 import type { WeatherProviderId } from '../constants/notifications-shared.js';
+import { providerRequiresApiKey } from '../constants/notifications-shared.js';
 import { AccuWeatherService } from '../services/AccuWeatherService.js';
 import { OpenMeteoService } from '../services/OpenMeteoService.js';
 import type { Logger, PluginConfiguration } from '../types/index.js';
@@ -21,7 +22,7 @@ export interface ProviderCatalogEntry {
 export const PROVIDER_CATALOG: Readonly<Record<WeatherProviderId, ProviderCatalogEntry>> =
   Object.freeze({
     'open-meteo': {
-      keyless: true,
+      keyless: !providerRequiresApiKey('open-meteo'),
       construct: (config, logger) =>
         new OpenMeteoService(
           logger,
@@ -29,7 +30,7 @@ export const PROVIDER_CATALOG: Readonly<Record<WeatherProviderId, ProviderCatalo
         ),
     },
     accuweather: {
-      keyless: false,
+      keyless: !providerRequiresApiKey('accuweather'),
       construct: (config, logger) =>
         new AccuWeatherService(config.accuWeatherApiKey, logger, {
           dailyApiQuota: config.dailyApiQuota,
