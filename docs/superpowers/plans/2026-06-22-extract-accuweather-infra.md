@@ -86,7 +86,7 @@ Move `requestCount`, `requestWindow`, `requestWindowCurrentHour`, `rotateRequest
 
 - [ ] **Step 4: Rewire `AccuWeatherService.ts`**
 
-Add a `private readonly requestWindow = new RollingRequestWindow();` field (replacing the `requestCount`/`requestWindow`/`requestWindowCurrentHour` fields and the `rotateRequestWindow`/`recordRequestInWindow` methods). In `makeApiRequest`, replace the two lines `this.requestCount++; this.recordRequestInWindow();` with `this.requestWindow.record();`. Make `getRequestCount()` return `this.requestWindow.cumulativeCount()` and `getRequestCountLast24h()` return `this.requestWindow.countLast24h()`. Add the import. Remove the moved constants from the service if they have no other user.
+Add a `private readonly requestWindow = new RollingRequestWindow();` field (replacing the `requestCount`/`requestWindow`/`requestWindowCurrentHour` fields and the `rotateRequestWindow`/`recordRequestInWindow` methods). In `makeApiRequest`, replace the two lines `this.requestCount++; this.recordRequestInWindow();` with `this.requestWindow.record();`. Make `getRequestCount()` return `this.requestWindow.cumulativeCount()` and `getRequestCountLast24h()` return `this.requestWindow.countLast24h()`. Add the import. Remove the moved `REQUEST_WINDOW_HOURS` and `HOUR_MS` constants from the service. After the move, any surviving service comment that referenced those names by text (the bucket-index explanation) is a dangling reference, so update those comments to read against the value (24) or to point at `RollingRequestWindow`. Biome does not lint comments, so this is for accuracy, not the gate.
 
 - [ ] **Step 5: Run the gate**
 
@@ -113,7 +113,7 @@ git commit -m "refactor: extract the rolling request window into a reusable unit
 - Produces: a generic `CoalescingTtlCache<V>` class owning the entry map, the in-flight map, and the prune throttle. It uses the shared `evictOldestOverCap` from `./cacheUtils.js` (Plan 1.5).
   - `constructor(ttlMs: number, pruneIntervalMs: number, logger: Logger = () => {}, now = Date.now())`
   - `get(key: string, fetch: () => Promise<V>, now = Date.now()): Promise<V>` (throttled prune, fresh-hit return, else coalesced fetch + store with timestamp; reproduces `getLocationKey` plus `searchLocationCoalesced` plus the read-path freshness check)
-  - `peek(key: string): V | undefined` (returns the stored value ignoring expiry; reproduces `getCachedLocationKey`'s expiry-agnostic read)
+  - `peekStale(key: string): V | undefined` (returns the stored value ignoring expiry AND without pruning; the explicit name makes the TTL-bypass visible at the call site so a future consumer cannot read stale data by accident. Reproduces `getCachedLocationKey`'s expiry-agnostic, prune-free read. It must NOT call `prune`.)
   - `size(): number`, `clear(): void`
   - private `coalesced(key, fetch)` (single-flight via the in-flight map, clearing on settle) and `prune(now)` (throttle on `pruneIntervalMs`, evict entries older than `ttlMs`, then `evictOldestOverCap`)
 
@@ -152,11 +152,12 @@ describe('CoalescingTtlCache', () => {
     expect(r2).toBe('a');
     expect(calls).toBe(1);
   });
-  it('peek returns a stored value ignoring expiry, undefined when absent', async () => {
+  it('peekStale returns a stored value ignoring expiry, undefined when absent', async () => {
     const c = new CoalescingTtlCache<string>(1000, 5000, () => {}, 0);
-    expect(c.peek('k')).toBeUndefined();
+    expect(c.peekStale('k')).toBeUndefined();
     await c.get('k', async () => 'a', 0);
-    expect(c.peek('k')).toBe('a');
+    // Well past the ttl: peekStale still returns the value (the bypass it is named for).
+    expect(c.peekStale('k')).toBe('a');
   });
 });
 ```
@@ -174,10 +175,10 @@ Move the entry map, the in-flight map, the prune throttle, `searchLocationCoales
 
 Replace the `locationCache`, `lastCachePrune`, and `inFlightLocationSearch` fields with `private readonly locationCache = new CoalescingTtlCache<AccuWeatherLocation>(this.config.locationCacheTimeout * 1000, CACHE_PRUNE_INTERVAL_MS, this.logger);` (construct it in the constructor since it reads `this.config`). Rewrite:
 - `getLocationKey(location)` to `return (await this.locationCache.get(this.locationCacheKey(location), () => this.searchLocation(location))).Key;`
-- `getCachedLocationKey(location)` to `return this.locationCache.peek(this.locationCacheKey(location))?.Key;`
+- `getCachedLocationKey(location)` to `return this.locationCache.peekStale(this.locationCacheKey(location))?.Key;` (note `?.Key` directly on the returned `AccuWeatherLocation`: the cache stores the value directly, so do NOT carry the old `?.location.Key` double-deref)
 - `clearLocationCache()` to call `this.locationCache.clear()` (plus `this.forecastCache.clear()` as today)
 - `getCacheStats()` to `return { size: this.locationCache.size() };`
-Remove the moved methods (`pruneLocationCache`, `searchLocationCoalesced`) and the `CACHE_PRUNE_INTERVAL_MS` constant if unused elsewhere. Keep `locationCacheKey` and `searchLocation` in the service (AccuWeather-specific). Add the import. The `evictOldestOverCap` import in the service drops if the location prune was its only remaining user (check: the forecast cache uses its own copy inside `ForecastCache`, so the service likely no longer imports `evictOldestOverCap`; let the gate confirm).
+Remove the moved methods (`pruneLocationCache`, `searchLocationCoalesced`) and the `CACHE_PRUNE_INTERVAL_MS` constant (it moves into `CoalescingTtlCache`'s caller, so the service passes it as the `pruneIntervalMs` argument; keep the constant only if the service still references it, otherwise move it). Keep `locationCacheKey` and `searchLocation` in the service (AccuWeather-specific). Add the `CoalescingTtlCache` import, and REMOVE the `evictOldestOverCap` import line (`AccuWeatherService.ts:41`): after this task `evictOldestOverCap` is used only inside `CoalescingTtlCache` and `ForecastCache`, not the service, so the service's import is now unused and Biome `noUnusedVariables: error` would fail if it is left.
 
 - [ ] **Step 5: Run the gate**
 
@@ -188,7 +189,7 @@ Expected: green. The existing AccuWeatherService location-cache and coalescing t
 
 ```bash
 git add src/services/cache/CoalescingTtlCache.ts src/services/AccuWeatherService.ts src/__tests__/services/cache/CoalescingTtlCache.test.ts
-git commit -m "refactor: extract the coalescing TTL cache into a reusable unit"
+git commit -m "refactor: extract the coalescing TTL cache into a reusable unit" -m "CoalescingTtlCache and ForecastCache stay separate on purpose: the forecast cache serves stale data on quota exhaustion and takes a rate-limit error factory, which the single-flight coalescing cache does not, so they are not duplicates to merge. The location cache debug log wording becomes generic (cache hit, cache store, cache pruned)."
 ```
 
 ---
@@ -243,7 +244,9 @@ export async function readBoundedJson<T>(
 
 - [ ] **Step 2: Use it in `AccuWeatherService.ts`**
 
-Delete the private `readBoundedJson` method. Import `readBoundedJson` from `../utils/http.js`. Replace the two call sites (`makeApiRequest`'s success read at `AccuWeatherService.ts:609` and `handleApiError`'s error-body read at `:725`) with `readBoundedJson<T>(response, MAX_RESPONSE_BYTES, 'AccuWeather response')` (and the `{ message?: string }` type in handleApiError). If `MAX_RESPONSE_BYTES` in the service equals the util default and has no other user, you may drop it and pass the util default, but keeping the explicit `MAX_RESPONSE_BYTES` argument preserves the exact "(max 1048576)" text without depending on the default; keep it explicit.
+Delete the private `readBoundedJson` method. Import `readBoundedJson` from `../utils/http.js`. Replace the two call sites (`makeApiRequest`'s success read at `AccuWeatherService.ts:609` and `handleApiError`'s error-body read at `:725`) with `readBoundedJson<T>(response, MAX_RESPONSE_BYTES, 'AccuWeather response')` (and the `{ message?: string }` type in handleApiError). Keep the explicit `MAX_RESPONSE_BYTES` argument: it preserves the exact "(max 1048576)" text without depending on the util default.
+
+Pin the label so the regression net actually covers it. The existing AccuWeather over-size test (in `src/__tests__/services/AccuWeatherService.test.ts`, the one asserting `/RESPONSE_TOO_LARGE/`) checks only the error-code prefix, so the label is currently unprotected. Strengthen that test by adding `/AccuWeather response/` to its thrown-message matcher (add the assertion, do not replace the existing one). Include `src/__tests__/services/AccuWeatherService.test.ts` in this task's git add.
 
 - [ ] **Step 3: Run the gate**
 
@@ -253,11 +256,11 @@ Expected: green. Any existing test asserting the AccuWeather over-size or parse-
 - [ ] **Step 4: Commit**
 
 ```bash
-git add src/utils/http.ts src/services/AccuWeatherService.ts src/__tests__/utils/http.test.ts
+git add src/utils/http.ts src/services/AccuWeatherService.ts src/__tests__/services/AccuWeatherService.test.ts
 git commit -m "refactor: fold the AccuWeather bounded-JSON read into the shared http util"
 ```
 
-(If `src/__tests__/utils/http.test.ts` does not exist, omit it from the `git add`; the AccuWeatherService suite covers the AccuWeather-label path.)
+(There is no `src/__tests__/utils/http.test.ts` today; the strengthened AccuWeatherService over-size test pins the AccuWeather-label path.)
 
 ---
 
@@ -271,52 +274,74 @@ git commit -m "refactor: fold the AccuWeather bounded-JSON read into the shared 
 **Interfaces:**
 - Consumes: `readBoundedJson` from `../../utils/http.js` (Task 3); `RollingRequestWindow.record` indirectly via the `onRequestCounted` hook (Task 1).
 - Produces: a generic `RetryingHttpClient` class.
-  - `constructor(options: { requestTimeoutMs: number; retryAttempts: number; retryDelayMs: number; userAgent: string; onRequestCounted?: () => void; logger?: Logger; maxResponseBytes?: number; responseLabel?: string })`
-  - `request<T>(url: URL): Promise<T>` (the old `makeApiRequest` body, including the retry recursion, the abort-timeout, the Retry-After honoring, and calling `onRequestCounted` after the response lands and before `handleApiError`, matching `AccuWeatherService.ts:598-603`)
+  - `constructor(options: { requestTimeoutMs: number; retryAttempts: number; retryDelayMs: number; userAgent: string; onRequestCounted?: () => void; logger?: Logger; maxResponseBytes?: number; responseLabel?: string })`. The client supplies its own defaults: `maxResponseBytes` defaults to the shared `DEFAULT_MAX_RESPONSE_BYTES` (1 MiB), `responseLabel` to `'response'`, `logger` to a no-op, `onRequestCounted` to a no-op.
+  - `request<T>(url: URL, attempt = 1): Promise<T>` (the old `makeApiRequest` body VERBATIM, KEEPING the `attempt` recursion parameter: the body recurses with `this.request<T>(url, attempt + 1)` and passes `attempt` to `handleApiError(response, attempt)` and `throwRetryableStatus(attempt, ...)`. Public callers pass `request(url)`; the `attempt = 1` default seeds the recursion. Includes the retry recursion, the abort-timeout armed across the body read, the Retry-After honoring, and calling `onRequestCounted` after the response lands and before the `!response.ok` check, matching `AccuWeatherService.ts:598-603`.)
   - private `parseRetryAfter`, `handleApiError`, `throwRetryableStatus`, `sanitizeUrlForLogging`, `isRetryableError`, `delay`, all moved verbatim. The constants `RETRYABLE_ERROR_SUBSTRINGS`, `MAX_RETRY_AFTER_MS`, and the response-bytes cap move into this module (or are passed via options).
 
-This is the highest-risk task: the retry/backoff/Retry-After/abort semantics must be byte-identical. Move the methods verbatim, changing only `this.config.requestTimeout` to `this.requestTimeoutMs`, `this.config.retryAttempts` to `this.retryAttempts`, `this.config.retryDelay` to `this.retryDelayMs`, the User-Agent literal to `this.userAgent`, and inserting `this.onRequestCounted?.()` where the old code did `this.requestCount++; this.recordRequestInWindow();` (line 598-599). `handleApiError`'s error-body read uses `readBoundedJson(response, this.maxResponseBytes, this.responseLabel)`.
+This is the highest-risk task: the retry/backoff/Retry-After/abort semantics must be byte-identical. Move the methods verbatim, changing only `this.config.requestTimeout` to `this.requestTimeoutMs`, `this.config.retryAttempts` to `this.retryAttempts`, `this.config.retryDelay` to `this.retryDelayMs`, the User-Agent literal to `this.userAgent`, and inserting `this.onRequestCounted?.()` where the old code did `this.requestCount++; this.recordRequestInWindow();` (line 598-599, after `fetch` resolves and before the `!response.ok` check).
+
+BOTH `readBoundedJson` call sites must pass the cap and the label, not just the error-body one: the success read (old line 609, was `this.readBoundedJson<T>(response)`) becomes `readBoundedJson<T>(response, this.maxResponseBytes, this.responseLabel)`, and `handleApiError`'s error-body read (old line 725) becomes `readBoundedJson<{ message?: string }>(response, this.maxResponseBytes, this.responseLabel)`. Do not leave the success read argument-less, or it silently falls back to the util's default `'response'` label on a success-path over-size error.
+
+Relative-import note: the new module lives at `src/services/http/`, one level deeper than the service, so its imports to `utils`/`constants` use `../../`, not `../`: `readBoundedJson` from `../../utils/http.js`, `toErrorMessage` from `../../utils/conversions.js`, `ERROR_CODES` from `../../constants/index.js`, and `Logger` from `../../types/index.js`. (`PLUGIN` is NOT imported here: the User-Agent string is built by the service and passed in as `userAgent`, so `PLUGIN` stays in the service.)
 
 - [ ] **Step 1: Write the failing test**
 
 ```ts
 // src/__tests__/services/http/RetryingHttpClient.test.ts
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { RetryingHttpClient } from '../../../services/http/RetryingHttpClient.js';
 
-afterEach(() => vi.restoreAllMocks());
+// Match the suite's fetch-mock idiom (AccuWeatherService.test.ts:26-34): stub the
+// global fetch in beforeEach, unstub in afterEach. Do NOT use vi.spyOn here.
+beforeEach(() => vi.stubGlobal('fetch', vi.fn()));
+afterEach(() => vi.unstubAllGlobals());
 
-function jsonResponse(body: unknown): Response {
-  return new Response(JSON.stringify(body), { status: 200, headers: { 'content-type': 'application/json' } });
+// Minimal Response stand-in covering what readBoundedJson reads: headers.get and text().
+// Model on the existing AccuWeatherService.test.ts mockResponse helper if it differs.
+function mockResponse(body: unknown, init?: { status?: number; statusText?: string }): Response {
+  const status = init?.status ?? 200;
+  return {
+    ok: status < 400,
+    status,
+    statusText: init?.statusText ?? 'OK',
+    headers: new Headers({ 'content-type': 'application/json' }),
+    text: async () => JSON.stringify(body),
+  } as unknown as Response;
+}
+
+function makeClient(onRequestCounted?: () => void): RetryingHttpClient {
+  return new RetryingHttpClient({
+    requestTimeoutMs: 1000,
+    retryAttempts: 3,
+    retryDelayMs: 1,
+    userAgent: 'test/1.0',
+    onRequestCounted,
+  });
 }
 
 describe('RetryingHttpClient', () => {
   it('returns parsed JSON and fires onRequestCounted once per landed response', async () => {
     const onRequestCounted = vi.fn();
-    vi.spyOn(globalThis, 'fetch').mockResolvedValue(jsonResponse({ ok: 1 }));
-    const client = new RetryingHttpClient({
-      requestTimeoutMs: 1000,
-      retryAttempts: 3,
-      retryDelayMs: 1,
-      userAgent: 'test/1.0',
-      onRequestCounted,
-    });
-    expect(await client.request<{ ok: number }>(new URL('https://example.test/x'))).toEqual({ ok: 1 });
+    vi.mocked(globalThis.fetch).mockResolvedValue(mockResponse({ ok: 1 }));
+    const result = await makeClient(onRequestCounted).request<{ ok: number }>(
+      new URL('https://example.test/x')
+    );
+    expect(result).toEqual({ ok: 1 });
     expect(onRequestCounted).toHaveBeenCalledTimes(1);
   });
-  it('retries a 503 then succeeds', async () => {
-    const fetchMock = vi
-      .spyOn(globalThis, 'fetch')
-      .mockResolvedValueOnce(new Response('{}', { status: 503, statusText: 'unavailable' }))
-      .mockResolvedValueOnce(jsonResponse({ ok: 2 }));
-    const client = new RetryingHttpClient({
-      requestTimeoutMs: 1000,
-      retryAttempts: 3,
-      retryDelayMs: 1,
-      userAgent: 'test/1.0',
-    });
-    expect(await client.request<{ ok: number }>(new URL('https://example.test/x'))).toEqual({ ok: 2 });
-    expect(fetchMock).toHaveBeenCalledTimes(2);
+  it('counts a 503 error response too, then retries and succeeds', async () => {
+    const onRequestCounted = vi.fn();
+    vi.mocked(globalThis.fetch)
+      .mockResolvedValueOnce(mockResponse({}, { status: 503, statusText: 'unavailable' }))
+      .mockResolvedValueOnce(mockResponse({ ok: 2 }));
+    const result = await makeClient(onRequestCounted).request<{ ok: number }>(
+      new URL('https://example.test/x')
+    );
+    expect(result).toEqual({ ok: 2 });
+    // Both landed responses are counted: an error response from the upstream still
+    // consumed quota, so onRequestCounted fires on the 503 AND the 200.
+    expect(onRequestCounted).toHaveBeenCalledTimes(2);
+    expect(globalThis.fetch).toHaveBeenCalledTimes(2);
   });
 });
 ```
