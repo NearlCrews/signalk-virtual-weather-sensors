@@ -6,6 +6,7 @@
 
 export type * from './accuweather-api.js';
 export type * from './config.js';
+export type * from './met-no-api.js';
 export * from './navigation.js';
 export type * from './open-meteo-api.js';
 export type * from './plugin.js';
