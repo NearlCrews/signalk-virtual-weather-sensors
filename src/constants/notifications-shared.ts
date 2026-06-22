@@ -112,8 +112,29 @@ export function resolveWeatherProvider(
   explicit: unknown,
   hasAccuWeatherKey: boolean
 ): WeatherProviderId {
-  if (explicit === 'open-meteo' || explicit === 'accuweather') return explicit;
+  if (
+    typeof explicit === 'string' &&
+    (WEATHER_PROVIDER_IDS as ReadonlyArray<string>).includes(explicit)
+  ) {
+    return explicit as WeatherProviderId;
+  }
   return hasAccuWeatherKey ? 'accuweather' : 'open-meteo';
+}
+
+/**
+ * Whether a provider needs an API key. Panel-safe single source consumed by the
+ * runtime validator, the rjsf schema, and the federated panel, so the keyed and
+ * keyless distinction cannot drift. A new keyed provider adds one entry here.
+ */
+export const WEATHER_PROVIDER_REQUIRES_KEY: Readonly<Record<WeatherProviderId, boolean>> =
+  Object.freeze({
+    'open-meteo': false,
+    accuweather: true,
+  });
+
+/** True when the provider needs an API key. */
+export function providerRequiresApiKey(id: WeatherProviderId): boolean {
+  return WEATHER_PROVIDER_REQUIRES_KEY[id];
 }
 
 /** How configured providers are combined: one source, or a synthetic blend. */
