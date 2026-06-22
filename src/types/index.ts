@@ -3,7 +3,7 @@
  * Provides comprehensive type safety for AccuWeather API integration and NMEA2000 data
  */
 
-import type { WeatherProviderId } from '../constants/notifications-shared.js';
+import type { WeatherMode, WeatherProviderId } from '../constants/notifications-shared.js';
 
 // ===============================
 // Weather Data Types
@@ -208,6 +208,13 @@ export interface PluginConfiguration {
    * `resolveWeatherProvider`.
    */
   readonly weatherProvider: WeatherProviderId;
+
+  /**
+   * How configured providers are combined. `single` (default) uses one source;
+   * `merged` blends every available provider into synthetic values. See
+   * `resolveWeatherMode`.
+   */
+  readonly weatherMode: WeatherMode;
 
   /**
    * AccuWeather API key. Empty string when using a keyless provider

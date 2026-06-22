@@ -116,6 +116,26 @@ export function resolveWeatherProvider(
   return hasAccuWeatherKey ? 'accuweather' : 'open-meteo';
 }
 
+/** How configured providers are combined: one source, or a synthetic blend. */
+export type WeatherMode = 'single' | 'merged';
+
+/** Valid modes, single first. */
+export const WEATHER_MODE_IDS: ReadonlyArray<WeatherMode> = Object.freeze(['single', 'merged']);
+
+/** Default mode for a fresh or legacy install: a single source, today's behavior. */
+export const DEFAULT_WEATHER_MODE: WeatherMode = 'single';
+
+/** Panel and schema labels for the mode picker. */
+export const WEATHER_MODE_LABELS: Readonly<Record<WeatherMode, string>> = Object.freeze({
+  single: 'Single provider',
+  merged: 'Merge available providers (synthetic blend)',
+});
+
+/** Resolve the effective mode; anything but a known value falls back to single. */
+export function resolveWeatherMode(explicit: unknown): WeatherMode {
+  return explicit === 'merged' ? 'merged' : 'single';
+}
+
 /** Minimum length for any plausible AccuWeather API key. */
 export const API_KEY_MIN_LENGTH = 20;
 

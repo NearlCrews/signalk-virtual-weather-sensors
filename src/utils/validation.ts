@@ -16,6 +16,7 @@ import {
   WEATHER_PROVIDER_IDS,
   type WeatherProviderId,
 } from '../constants/index.js';
+import { resolveWeatherMode } from '../constants/notifications-shared.js';
 import type {
   GeoLocation,
   NotificationsConfig,
@@ -287,6 +288,7 @@ export function sanitizeConfiguration(config: Partial<PluginConfiguration>): Plu
   const accuWeatherApiKey = config.accuWeatherApiKey?.trim() || '';
   return {
     weatherProvider: resolveWeatherProvider(config.weatherProvider, accuWeatherApiKey.length > 0),
+    weatherMode: resolveWeatherMode(config.weatherMode),
     accuWeatherApiKey,
     openMeteoBaseUrl: config.openMeteoBaseUrl?.trim() || '',
     marineData: typeof config.marineData === 'boolean' ? config.marineData : false,

@@ -5,8 +5,10 @@ import { useCallback, useState } from 'react';
 import {
   CONFIG_DEFAULTS,
   DEFAULT_NOTIFICATIONS,
+  DEFAULT_WEATHER_MODE,
   DEFAULT_WEATHER_PROVIDER,
   validateKeyLength,
+  type WeatherMode,
   type WeatherProviderId,
 } from '../../constants/notifications-shared.js';
 import type {
@@ -40,6 +42,7 @@ export interface SaveAction {
 function formStateFromConfig(c: unknown): PanelFormState {
   const cfg = (c ?? {}) as {
     weatherProvider?: WeatherProviderId;
+    weatherMode?: WeatherMode;
     accuWeatherApiKey?: string;
     openMeteoBaseUrl?: string;
     marineData?: boolean;
@@ -50,6 +53,7 @@ function formStateFromConfig(c: unknown): PanelFormState {
   };
   return {
     weatherProvider: cfg.weatherProvider ?? DEFAULT_WEATHER_PROVIDER,
+    weatherMode: cfg.weatherMode ?? DEFAULT_WEATHER_MODE,
     accuWeatherApiKey: cfg.accuWeatherApiKey || '',
     openMeteoBaseUrl: cfg.openMeteoBaseUrl ?? '',
     marineData: cfg.marineData ?? false,
@@ -66,6 +70,7 @@ function formStateFromConfig(c: unknown): PanelFormState {
 function formsEqual(a: PanelFormState, b: PanelFormState): boolean {
   return (
     a.weatherProvider === b.weatherProvider &&
+    a.weatherMode === b.weatherMode &&
     a.accuWeatherApiKey === b.accuWeatherApiKey &&
     a.openMeteoBaseUrl === b.openMeteoBaseUrl &&
     a.marineData === b.marineData &&

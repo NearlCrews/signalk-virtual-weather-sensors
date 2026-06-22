@@ -371,3 +371,12 @@ describe('NMEA2000 helpers', () => {
     });
   });
 });
+
+describe('sanitizeConfiguration weatherMode', () => {
+  it('defaults weatherMode to single when absent', () => {
+    expect(sanitizeConfiguration({}).weatherMode).toBe('single');
+  });
+  it('passes an explicit merged mode through', () => {
+    expect(sanitizeConfiguration({ weatherMode: 'merged' }).weatherMode).toBe('merged');
+  });
+});

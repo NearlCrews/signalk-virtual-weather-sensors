@@ -819,6 +819,9 @@ function validateAndNormalizeSettings(settings: unknown, logger: Logger): Plugin
     ...(typeof rawSettings.weatherProvider === 'string' && {
       weatherProvider: rawSettings.weatherProvider as PluginConfiguration['weatherProvider'],
     }),
+    ...(typeof rawSettings.weatherMode === 'string' && {
+      weatherMode: rawSettings.weatherMode as PluginConfiguration['weatherMode'],
+    }),
     ...(typeof rawSettings.openMeteoBaseUrl === 'string' && {
       openMeteoBaseUrl: rawSettings.openMeteoBaseUrl,
     }),
