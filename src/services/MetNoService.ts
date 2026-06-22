@@ -47,6 +47,7 @@ const USER_AGENT = `${PLUGIN.NAME}/${PLUGIN.VERSION} (+https://github.com/NearlC
 /** Declared v2 forecast horizon. Hourly steps run to about +53 h, the daily horizon to about 10 days. */
 const HOURLY_FORECAST_HOURS = 48;
 const DAILY_FORECAST_DAYS = 9;
+
 /**
  * Met.no refreshes the model on a multi-hour cadence, so a 10-minute memo avoids
  * refetching the identical document across the three v2 methods. This fixed TTL
