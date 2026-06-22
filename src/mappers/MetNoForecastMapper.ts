@@ -39,11 +39,17 @@ interface DayAcc {
   maxC: number;
   minC: number;
   precipMm: number;
+  hasPrecip: boolean;
   description: string | undefined;
   has12: boolean;
 }
 
-/** Build one SK v2 entry (point or observation) from a timeseries entry's instant block plus next_1_hours. */
+/**
+ * Build one SK v2 entry (point or observation) from a timeseries entry's instant block plus next_1_hours.
+ * The first timeseries entry usually carries next_1_hours, but may not when a fresh model run starts
+ * on a 6-hour boundary. In that case the next_1_hours-derived fields (precipitation, description) are
+ * simply omitted via the optional chaining below.
+ */
 function mapEntry(entry: MetNoTimeseriesEntry, type: 'point' | 'observation'): SKWeatherData {
   const instant = entry.data?.instant?.details;
   const next1 = entry.data?.next_1_hours;
@@ -90,11 +96,13 @@ function accumulateWindow(
   maxC: number | undefined,
   minC: number | undefined,
   precipMm: number,
+  precipPresent: boolean,
   desc: string | undefined
 ): void {
   if (maxC !== undefined && maxC > acc.maxC) acc.maxC = maxC;
   if (minC !== undefined && minC < acc.minC) acc.minC = minC;
   acc.precipMm += precipMm;
+  if (precipPresent) acc.hasPrecip = true;
   if (hour === 12) {
     acc.description = desc;
     acc.has12 = true;
@@ -114,7 +122,7 @@ function buildDailyEntry(day: string, acc: DayAcc): SKWeatherData {
     outside: {
       ...(maxTemperatureK !== undefined && { maxTemperature: maxTemperatureK }),
       ...(minTemperatureK !== undefined && { minTemperature: minTemperatureK }),
-      ...(acc.precipMm > 0 && { precipitationVolume: acc.precipMm * UNITS.PRECIPITATION.MM_TO_M }),
+      ...(acc.hasPrecip && { precipitationVolume: acc.precipMm * UNITS.PRECIPITATION.MM_TO_M }),
     },
   };
 }
@@ -139,7 +147,9 @@ function processGridWindow(entry: MetNoTimeseriesEntry, byDay: Map<string, DayAc
   const day = time.slice(0, 10);
   const maxC = asOptionalNumber(next6.details.air_temperature_max);
   const minC = asOptionalNumber(next6.details.air_temperature_min);
-  const precipMm = asOptionalNumber(next6.details.precipitation_amount) ?? 0;
+  const rawPrecip = asOptionalNumber(next6.details.precipitation_amount);
+  const precipMm = rawPrecip ?? 0;
+  const precipPresent = rawPrecip !== undefined;
   const base = metNoSymbolBase(next6.summary?.symbol_code);
   const desc = base !== undefined ? MET_NO_DESCRIPTIONS.get(base) : undefined;
 
@@ -149,11 +159,12 @@ function processGridWindow(entry: MetNoTimeseriesEntry, byDay: Map<string, DayAc
       maxC: maxC ?? -Infinity,
       minC: minC ?? Infinity,
       precipMm,
+      hasPrecip: precipPresent,
       description: desc,
       has12: hour === 12,
     });
   } else {
-    accumulateWindow(existing, hour, maxC, minC, precipMm, desc);
+    accumulateWindow(existing, hour, maxC, minC, precipMm, precipPresent, desc);
   }
 }
 

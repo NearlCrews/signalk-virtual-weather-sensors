@@ -47,6 +47,7 @@ describe('MetNoForecastMapper', () => {
     expect(out[0]?.outside?.horizontalVisibility).toBeUndefined(); // Met.no has none
     expect(out[0]?.wind?.speedTrue).toBeCloseTo(5, 5);
     expect(out[0]?.wind?.directionTrue).toBeCloseTo(Math.PI / 2, 5);
+    expect(out[0]?.description).toBe('Cloudy'); // symbol_code 'cloudy' maps to 'Cloudy'
     expect(out[1]?.date).toBe('2026-06-22T13:00:00Z');
   });
   it('maps the first entry to a single observation', () => {
@@ -54,6 +55,12 @@ describe('MetNoForecastMapper', () => {
     expect(obs.type).toBe('observation');
     expect(obs.date).toBe('2026-06-22T12:00:00Z');
     expect(obs.outside?.temperature).toBeCloseTo(293.15, 2);
+  });
+  it('returns a degenerate envelope when the timeseries is empty', () => {
+    const obs = mapMetNoToObservation({ properties: { timeseries: [] } });
+    expect(obs.type).toBe('observation');
+    expect(obs.date).toBe('');
+    expect(obs.outside).toEqual({});
   });
   it('derives per-UTC-day min and max temperature from the 6-hour windows', () => {
     const six = (time: string, max: number, min: number, precip: number) => ({
@@ -88,5 +95,48 @@ describe('MetNoForecastMapper', () => {
     expect(out[0]?.outside?.minTemperature).toBeCloseTo(281.15, 2); // 8 C, the off-grid -99 ignored
     expect(out[0]?.outside?.precipitationVolume).toBeCloseTo(0.003, 6); // (1+0+2+0) mm to m, off-grid excluded
     expect(out[0]?.description).toBe('Rain'); // from the 12:00 window symbol
+  });
+  it('emits precipitationVolume of 0 when all 6-hour windows report 0 mm', () => {
+    const dryDay = (time: string) => ({
+      time,
+      data: {
+        instant: { details: { air_temperature: 15 } },
+        next_6_hours: {
+          summary: { symbol_code: 'clearsky' },
+          details: { air_temperature_max: 20, air_temperature_min: 10, precipitation_amount: 0 },
+        },
+      },
+    });
+    const out = mapMetNoToDailyForecasts({
+      properties: {
+        timeseries: [
+          dryDay('2026-06-24T00:00:00Z'),
+          dryDay('2026-06-24T06:00:00Z'),
+          dryDay('2026-06-24T12:00:00Z'),
+          dryDay('2026-06-24T18:00:00Z'),
+        ],
+      },
+    });
+    expect(out).toHaveLength(1);
+    expect(out[0]?.outside?.precipitationVolume).toBe(0);
+  });
+  it('omits precipitationVolume when no 6-hour window supplies the field', () => {
+    const noField = (time: string) => ({
+      time,
+      data: {
+        instant: { details: { air_temperature: 15 } },
+        next_6_hours: {
+          summary: { symbol_code: 'clearsky' },
+          details: { air_temperature_max: 20, air_temperature_min: 10 },
+        },
+      },
+    });
+    const out = mapMetNoToDailyForecasts({
+      properties: {
+        timeseries: [noField('2026-06-25T00:00:00Z'), noField('2026-06-25T12:00:00Z')],
+      },
+    });
+    expect(out).toHaveLength(1);
+    expect(out[0]?.outside?.precipitationVolume).toBeUndefined();
   });
 });
