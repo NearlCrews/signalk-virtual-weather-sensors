@@ -1,7 +1,7 @@
 /** Number of hourly buckets in the rolling 24h request window. */
-export const REQUEST_WINDOW_HOURS = 24;
+const REQUEST_WINDOW_HOURS = 24;
 /** Hour expressed in milliseconds, used by the rolling window rotation. */
-export const HOUR_MS = 60 * 60 * 1000;
+const HOUR_MS = 60 * 60 * 1000;
 
 /**
  * Generic rolling 24-hour request counter backed by 24 hourly buckets.
