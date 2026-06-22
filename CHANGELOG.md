@@ -7,6 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Merge mode blends all available providers into a single synthetic source.**
+  Selecting "Merge available providers" (`weatherMode: 'merged'`) builds a
+  `MergingWeatherProvider` that polls Open-Meteo, Met.no, and AccuWeather (when a
+  key is configured) in parallel and blends the results into unified current
+  conditions stamped `$source: 'merged'`. Hazard-bearing fields escalate to the
+  most conservative value: severe condition, precipitation, and gust take the
+  maximum; visibility takes the minimum; a falling barometer wins. Categorical
+  and single-valued fields (WBGT, precipitation type, condition text) are taken
+  from the highest-priority provider that reports them, not averaged. Wind
+  direction uses a speed-weighted circular mean with an opposing-wind fallback to
+  avoid the 0/360-degree wrap artifact. Derived quantities (wind chill, heat
+  index, Beaufort scale, absolute humidity, air density, heat-stress index, gust
+  factor) are recomputed from the blended base values so they stay internally
+  consistent. The marine layer, warnings, and forecasts are not merged: forecasts
+  and observations delegate to one designated forecast-capable child for model
+  coherence, and the marine layer continues on its own independent fetch.
+
+### Migration note
+
+  Switching to merged mode changes the `$source` on every weather delta from a
+  provider-specific ref (such as `open-meteo`, `met-no`, or `accuweather`) to
+  `merged`. The merged source yields to a real onboard sensor under server source
+  priorities exactly as the single-provider sources do. However, any
+  source-priority rule or subscription filter previously set against a specific
+  provider ref will silently stop receiving data until it is updated to `merged`.
+
 <a id="v191"></a>
 
 ## [1.9.1] - 2026-06-21
