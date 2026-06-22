@@ -15,7 +15,7 @@ import { type PluginInstance, setBanner } from './plugin/instance.js';
 import { createLogger } from './plugin/logging.js';
 import { registerPanelRoutes } from './plugin/panelRoutes.js';
 import { pluginSchema, pluginUiSchema } from './plugin/schema.js';
-import { createCurrentWeatherProvider } from './providers/createCurrentWeatherProvider.js';
+import { createWeatherProvider } from './providers/createWeatherProvider.js';
 import { supportsForecasts } from './providers/WeatherProvider.js';
 import { OpenMeteoMarineService } from './services/OpenMeteoMarineService.js';
 import { WarningsService } from './services/WarningsService.js';
@@ -200,7 +200,7 @@ async function startServices(
   // AccuWeather when chosen with a key). For AccuWeather this is one shared
   // instance so the current-conditions loop and the on-demand forecast adapter
   // draw from a single rolling-24h quota window.
-  const provider = createCurrentWeatherProvider(config, instance.logger);
+  const provider = createWeatherProvider(config, instance.logger);
   instance.sourceRef = toSourceRef(provider.sourceRef);
   // Optional sea-state layer (keyless Open-Meteo Marine), independent of the
   // atmospheric provider. A self-hosted Open-Meteo instance serves /v1/marine on
