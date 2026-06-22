@@ -30,6 +30,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   service, and a tolerated marine outage logs once (at debug) instead of
   double-reporting as an error.
 
+### Documentation
+
+- **Switching the weather source changes the delta `$source`.** Troubleshooting
+  now documents that changing `weatherProvider` re-stamps every weather delta
+  from `accuweather` to `open-meteo` (or back), so a downstream consumer pinned
+  to the old source, such as a `signalk-nmea2000-emitter-cannon` source lock or a
+  server source-priority rule, silently stops receiving the data until its lock
+  is updated to match.
+
 <a id="v190"></a>
 
 ## [1.9.0] - 2026-06-17

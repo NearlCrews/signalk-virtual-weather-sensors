@@ -94,3 +94,25 @@ Fix: confirm a GPS source is publishing `navigation.position` in the Signal K
 Data Browser. Any source whose label contains `node-red` is deliberately
 ignored to avoid feedback loops, so a Node-RED-published position will not be
 picked up; use a different source label or a real GPS/AIS feed.
+
+## Weather paths vanish from a downstream consumer after switching the weather source
+
+This is not a fault banner. The plugin stamps every weather delta with a
+`$source` that identifies the active provider: `open-meteo` by default and
+`accuweather` when AccuWeather is selected (the optional marine layer uses
+`open-meteo-marine`). Changing `weatherProvider` therefore changes the `$source`
+on every path the plugin emits. Any downstream consumer pinned to a specific
+source keeps listening for the old one and silently receives nothing, even
+though the Data Browser shows the new values arriving.
+
+The most common case is the `signalk-nmea2000-emitter-cannon` companion, whose
+per-path source locks, and the server's own source-priority rules, match on the
+exact `$source` string. After a switch from AccuWeather to Open-Meteo, a lock
+left on `accuweather` filters out every `open-meteo` delta, so the bridged
+NMEA 2000 instrument shows no air temperature, pressure, humidity, or wind.
+
+Fix: update every downstream source lock and source-priority rule that names the
+old provider to the new `$source` (`open-meteo`), or clear the lock so it accepts
+whichever source publishes the path, then restart the consuming plugin. Confirm
+the new `$source` in the Signal K Data Browser under the affected `environment.*`
+path.
