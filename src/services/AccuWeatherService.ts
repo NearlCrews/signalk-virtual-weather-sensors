@@ -38,6 +38,8 @@ import {
   toErrorMessage,
 } from '../utils/conversions.js';
 import { validateAccuWeatherResponse } from '../utils/validation.js';
+import { evictOldestOverCap } from './cache/cacheUtils.js';
+import { ForecastCache } from './cache/ForecastCache.js';
 
 /** Maximum allowed response body size in bytes (1 MiB) */
 const MAX_RESPONSE_BYTES = 1_048_576;
@@ -57,24 +59,6 @@ const RETRYABLE_ERROR_SUBSTRINGS: ReadonlyArray<string> = [
   'econnreset',
   'enotfound',
 ];
-
-/** Maximum number of entries in location cache before pruning */
-const MAX_CACHE_SIZE = 100;
-
-/**
- * Evict the lowest-`ageValue` entries from `map` until it holds at most
- * MAX_CACHE_SIZE. Returns the number removed. Shared by the location and
- * forecast cache prunes so the sort-and-slice-oldest eviction lives in one place.
- */
-function evictOldestOverCap<K, V>(map: Map<K, V>, ageValue: (entry: V) => number): number {
-  if (map.size <= MAX_CACHE_SIZE) return 0;
-  const entries = Array.from(map.entries()).sort((a, b) => ageValue(a[1]) - ageValue(b[1]));
-  const toRemove = entries.slice(0, entries.length - MAX_CACHE_SIZE);
-  for (const [key] of toRemove) {
-    map.delete(key);
-  }
-  return toRemove.length;
-}
 
 /** How often the location cache prune sweep runs (5 minutes). */
 const CACHE_PRUNE_INTERVAL_MS = 5 * 60 * 1000;
@@ -127,12 +111,11 @@ export class AccuWeatherService implements CurrentWeatherProvider {
    */
   private requestWindowCurrentHour = Math.floor(Date.now() / HOUR_MS);
   /**
-   * On-demand forecast cache, keyed by `${kind}:${locationKey}`. Holds the raw
-   * forecast response and an absolute expiry. Separate from locationCache
-   * because forecasts have their own per-kind TTLs and are pulled by external
-   * Weather API consumers rather than the plugin's own fetch timer.
+   * On-demand forecast cache, keyed by `${kind}:${locationKey}`. Separate from
+   * locationCache because forecasts have their own per-kind TTLs and are pulled
+   * by external Weather API consumers rather than the plugin's own fetch timer.
    */
-  private forecastCache = new Map<string, { data: unknown; expiresAt: number }>();
+  private readonly forecastCache: ForecastCache;
   /**
    * In-flight location searches keyed by location-cache key, so concurrent cold
    * lookups for the same coordinates share one upstream call instead of each
@@ -160,6 +143,7 @@ export class AccuWeatherService implements CurrentWeatherProvider {
     };
 
     this.logger = logger;
+    this.forecastCache = new ForecastCache(() => this.quotaReachedError(), this.logger);
 
     this.logger('info', 'AccuWeatherService initialized', {
       hasApiKey: !!apiKey,
@@ -232,7 +216,7 @@ export class AccuWeatherService implements CurrentWeatherProvider {
     // before it can trigger a fresh (request-spending) location search.
     const quotaExhausted = this.isQuotaExhausted();
     const locationKey = await this.resolveLocationKeyForForecast(location, quotaExhausted);
-    return this.cachedForecastFetch(
+    return this.forecastCache.fetchCached(
       `hourly:${locationKey}`,
       FORECAST_CACHE.HOURLY_TTL_MS,
       quotaExhausted,
@@ -250,7 +234,7 @@ export class AccuWeatherService implements CurrentWeatherProvider {
     this.validateLocation(location);
     const quotaExhausted = this.isQuotaExhausted();
     const locationKey = await this.resolveLocationKeyForForecast(location, quotaExhausted);
-    return this.cachedForecastFetch(
+    return this.forecastCache.fetchCached(
       `daily:${locationKey}`,
       FORECAST_CACHE.DAILY_TTL_MS,
       quotaExhausted,
@@ -272,7 +256,7 @@ export class AccuWeatherService implements CurrentWeatherProvider {
     this.validateLocation(location);
     const quotaExhausted = this.isQuotaExhausted();
     const locationKey = await this.resolveLocationKeyForForecast(location, quotaExhausted);
-    const conditions = await this.cachedForecastFetch(
+    const conditions = await this.forecastCache.fetchCached(
       `observation:${locationKey}`,
       FORECAST_CACHE.OBSERVATION_TTL_MS,
       quotaExhausted,
@@ -357,62 +341,9 @@ export class AccuWeatherService implements CurrentWeatherProvider {
     return this.locationCache.get(this.locationCacheKey(location))?.location.Key;
   }
 
-  /**
-   * Cache wrapper for forecast fetches. Returns a fresh cache hit with zero
-   * upstream calls. On a miss it gates on the daily quota: if the quota was
-   * reached at call entry and a stale entry exists it serves the stale entry
-   * (so a dashboard still shows data), otherwise it throws a tagged rate-limit
-   * error. Below the quota it fetches, stores with an absolute expiry, and
-   * prunes. The quota verdict is the one snapshotted at method entry so a cold
-   * call below the cap is not gated by its own location-lookup request.
-   * @private
-   */
-  private async cachedForecastFetch<T>(
-    cacheKey: string,
-    ttlMs: number,
-    quotaExhausted: boolean,
-    fetcher: () => Promise<T>
-  ): Promise<T> {
-    const now = Date.now();
-    const cached = this.forecastCache.get(cacheKey);
-    if (cached && now < cached.expiresAt) {
-      this.logger('debug', 'Using cached forecast', { cacheKey });
-      return cached.data as T;
-    }
-
-    if (quotaExhausted) {
-      if (cached) {
-        this.logger('warn', 'Quota reached, serving stale forecast', { cacheKey });
-        return cached.data as T;
-      }
-      throw this.quotaReachedError();
-    }
-
-    const data = await fetcher();
-    this.forecastCache.set(cacheKey, { data, expiresAt: now + ttlMs });
-    this.pruneForecastCache(now);
-    return data;
-  }
-
   /** True when the configured rolling-24h quota has been reached. @private */
   private isQuotaExhausted(): boolean {
     return isApiQuotaReached(this.getRequestCountLast24h(), this.config.dailyApiQuota);
-  }
-
-  /**
-   * Drop expired forecast entries, and if still over MAX_CACHE_SIZE drop the
-   * soonest-to-expire ones. Forecast entries number at most a few per location,
-   * so this is cheap and runs on the fetch path, not the emission tick.
-   * @private
-   */
-  private pruneForecastCache(now: number): void {
-    for (const [key, entry] of this.forecastCache.entries()) {
-      if (now >= entry.expiresAt) {
-        this.forecastCache.delete(key);
-      }
-    }
-    // If still over the cap, drop the soonest-to-expire entries.
-    evictOldestOverCap(this.forecastCache, (entry) => entry.expiresAt);
   }
 
   /**
