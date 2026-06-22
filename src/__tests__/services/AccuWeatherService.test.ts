@@ -661,9 +661,11 @@ describe('AccuWeatherService', () => {
       };
       vi.mocked(global.fetch).mockResolvedValueOnce(oversized as never);
 
-      await expect(
+      const rejection = expect(
         service.fetchCurrentWeather({ latitude: 37.7749, longitude: -122.4194 })
-      ).rejects.toThrow(/RESPONSE_TOO_LARGE/);
+      ).rejects;
+      await rejection.toThrow(/RESPONSE_TOO_LARGE/);
+      await rejection.toThrow(/AccuWeather response/);
     });
   });
 

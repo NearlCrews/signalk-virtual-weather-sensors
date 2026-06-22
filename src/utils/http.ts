@@ -47,17 +47,20 @@ function classifyStatus(status: number): string {
  * Read a Response body as JSON with a size cap. The Content-Length check
  * rejects an oversized declared body before buffering; the post-read length
  * check is the fallback for a missing (chunked) or lying Content-Length.
+ * The `label` appears in error messages so callers can identify which service
+ * produced the oversized or unparseable body (defaults to `'response'`).
  */
 export async function readBoundedJson<T>(
   response: Response,
-  maxBytes: number = DEFAULT_MAX_RESPONSE_BYTES
+  maxBytes: number = DEFAULT_MAX_RESPONSE_BYTES,
+  label = 'response'
 ): Promise<T> {
   const contentLength = response.headers.get('content-length');
   if (contentLength !== null) {
     const declared = Number.parseInt(contentLength, 10);
     if (Number.isFinite(declared) && declared > maxBytes) {
       throw new Error(
-        `${ERROR_CODES.NETWORK.RESPONSE_TOO_LARGE}: response is ${declared} bytes (max ${maxBytes})`
+        `${ERROR_CODES.NETWORK.RESPONSE_TOO_LARGE}: ${label} is ${declared} bytes (max ${maxBytes})`
       );
     }
   }
@@ -65,7 +68,7 @@ export async function readBoundedJson<T>(
   const text = await response.text();
   if (text.length > maxBytes) {
     throw new Error(
-      `${ERROR_CODES.NETWORK.RESPONSE_TOO_LARGE}: response is ${text.length} characters (max ${maxBytes})`
+      `${ERROR_CODES.NETWORK.RESPONSE_TOO_LARGE}: ${label} is ${text.length} characters (max ${maxBytes})`
     );
   }
 
@@ -73,7 +76,7 @@ export async function readBoundedJson<T>(
     return JSON.parse(text) as T;
   } catch (error) {
     throw new Error(
-      `${ERROR_CODES.NETWORK.API_INVALID_RESPONSE}: failed to parse response as JSON - ${toErrorMessage(error)}`
+      `${ERROR_CODES.NETWORK.API_INVALID_RESPONSE}: failed to parse ${label} as JSON - ${toErrorMessage(error)}`
     );
   }
 }

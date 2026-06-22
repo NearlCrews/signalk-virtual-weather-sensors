@@ -37,6 +37,7 @@ import {
   isValidWindSpeed,
   toErrorMessage,
 } from '../utils/conversions.js';
+import { readBoundedJson } from '../utils/http.js';
 import { validateAccuWeatherResponse } from '../utils/validation.js';
 import { CoalescingTtlCache } from './cache/CoalescingTtlCache.js';
 import { ForecastCache } from './cache/ForecastCache.js';
@@ -510,7 +511,7 @@ export class AccuWeatherService implements CurrentWeatherProvider {
       // headers-received, and without the signal the body read would be
       // bounded only by undici's 300 s inactivity default instead of the
       // configured requestTimeout.
-      return await this.readBoundedJson<T>(response);
+      return await readBoundedJson<T>(response, MAX_RESPONSE_BYTES, 'AccuWeather response');
     } catch (error) {
       if (error instanceof Error && error.name === 'AbortError') {
         if (attempt < this.config.retryAttempts) {
@@ -542,46 +543,6 @@ export class AccuWeatherService implements CurrentWeatherProvider {
       throw error;
     } finally {
       clearTimeout(timeout);
-    }
-  }
-
-  /**
-   * Read a Response body as JSON with a size cap. The Content-Length check
-   * rejects an oversized declared body before `response.text()` buffers it; the
-   * post-read length check is a fallback for a missing (chunked) or lying
-   * Content-Length, bounding what reaches `JSON.parse` (the body is already
-   * buffered by then, so it caps the parse step, not the buffering).
-   * @private
-   */
-  private async readBoundedJson<T>(response: Response): Promise<T> {
-    const contentLength = response.headers.get('content-length');
-    if (contentLength !== null) {
-      const declared = Number.parseInt(contentLength, 10);
-      if (Number.isFinite(declared) && declared > MAX_RESPONSE_BYTES) {
-        throw new Error(
-          `${ERROR_CODES.NETWORK.RESPONSE_TOO_LARGE}: AccuWeather response is ${declared} bytes (max ${MAX_RESPONSE_BYTES})`
-        );
-      }
-    }
-
-    // Read as text with a length check: Content-Length may be missing (chunked
-    // encoding) or lie about the body size. `text.length` is UTF-16 code units,
-    // not bytes, but as an upper-bound safety cap that distinction is immaterial.
-    const text = await response.text();
-    if (text.length > MAX_RESPONSE_BYTES) {
-      throw new Error(
-        `${ERROR_CODES.NETWORK.RESPONSE_TOO_LARGE}: AccuWeather response is ${text.length} characters (max ${MAX_RESPONSE_BYTES})`
-      );
-    }
-
-    try {
-      return JSON.parse(text) as T;
-    } catch (error) {
-      throw new Error(
-        `${ERROR_CODES.NETWORK.API_INVALID_RESPONSE}: failed to parse AccuWeather response as JSON - ${toErrorMessage(
-          error
-        )}`
-      );
     }
   }
 
@@ -626,7 +587,11 @@ export class AccuWeatherService implements CurrentWeatherProvider {
     try {
       // Bound the error body too: a malicious 429/503 with an oversized body
       // would otherwise bypass the 1 MiB cap that protects success paths.
-      const errorData = await this.readBoundedJson<{ message?: string }>(response);
+      const errorData = await readBoundedJson<{ message?: string }>(
+        response,
+        MAX_RESPONSE_BYTES,
+        'AccuWeather response'
+      );
       message = errorData.message || response.statusText;
     } catch (parseError) {
       // Surface malformed error bodies by default so operators see upstream
