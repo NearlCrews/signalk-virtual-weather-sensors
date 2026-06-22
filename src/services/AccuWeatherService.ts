@@ -40,6 +40,7 @@ import {
 import { validateAccuWeatherResponse } from '../utils/validation.js';
 import { evictOldestOverCap } from './cache/cacheUtils.js';
 import { ForecastCache } from './cache/ForecastCache.js';
+import { RollingRequestWindow } from './quota/RollingRequestWindow.js';
 
 /** Maximum allowed response body size in bytes (1 MiB) */
 const MAX_RESPONSE_BYTES = 1_048_576;
@@ -66,11 +67,6 @@ const CACHE_PRUNE_INTERVAL_MS = 5 * 60 * 1000;
 /** Upper bound on Retry-After delays we honor, regardless of header value. */
 const MAX_RETRY_AFTER_MS = 60_000;
 
-/** Number of hourly buckets in the rolling 24h request window. */
-const REQUEST_WINDOW_HOURS = 24;
-/** Hour expressed in milliseconds, used by the rolling window rotation. */
-const HOUR_MS = 60 * 60 * 1000;
-
 /**
  * AccuWeather API client for weather data operations.
  * Provides a type-safe interface to the AccuWeather REST API with location and
@@ -87,29 +83,11 @@ export class AccuWeatherService implements CurrentWeatherProvider {
   private locationCache = new Map<string, { location: AccuWeatherLocation; timestamp: number }>();
   private lastCachePrune = Date.now();
   /**
-   * Cumulative count of HTTP fetch attempts made by makeApiRequest, including
-   * retries. Surfaced via getRequestCount() / getCacheStats() so the status
-   * banner can show operators how chatty the plugin is being with the upstream
-   * API. Increments on the fetch path (every minute or two at most), not the
-   * 5-second emission tick, so this is not a hot-path concern.
+   * Rolling 24-hour request window. Tracks the cumulative count and 24 hourly
+   * buckets for quota checks. See `RollingRequestWindow` for the rotation and
+   * backward-jump rationale.
    */
-  private requestCount = 0;
-  /**
-   * Fixed-length array of 24 hourly request-count buckets spanning the last 24
-   * hours. The last slot (`requestWindow[REQUEST_WINDOW_HOURS - 1]`) is the
-   * current hour; earlier indices step into the past. `rotateRequestWindow`
-   * shifts the array left by the number of elapsed hours (dropping the oldest,
-   * pushing zeros at the current-hour end), so memory stays at exactly 24
-   * numbers regardless of uptime. The current-hour epoch index lives in
-   * `requestWindowCurrentHour`.
-   */
-  private requestWindow: number[] = new Array(REQUEST_WINDOW_HOURS).fill(0);
-  /**
-   * Epoch-hour index of the LAST bucket (`requestWindow[REQUEST_WINDOW_HOURS - 1]`),
-   * i.e. the current-hour slot. On rotation we shift the array left by the
-   * number of elapsed hours and update this index.
-   */
-  private requestWindowCurrentHour = Math.floor(Date.now() / HOUR_MS);
+  private readonly requestWindow = new RollingRequestWindow();
   /**
    * On-demand forecast cache, keyed by `${kind}:${locationKey}`. Separate from
    * locationCache because forecasts have their own per-kind TTLs and are pulled
@@ -595,8 +573,7 @@ export class AccuWeatherService implements CurrentWeatherProvider {
       // that reach their service). Error responses (401, 403, 429, 503)
       // still count because they came back from AccuWeather. Off the
       // emission hot path: at most once per fetch, default cadence 30 minutes.
-      this.requestCount++;
-      this.recordRequestInWindow();
+      this.requestWindow.record();
 
       if (!response.ok) {
         await this.handleApiError(response, attempt);
@@ -885,74 +862,17 @@ export class AccuWeatherService implements CurrentWeatherProvider {
 
   /** Cumulative HTTP fetch attempts (initial + retries) since construction. */
   public getRequestCount(): number {
-    return this.requestCount;
+    return this.requestWindow.cumulativeCount();
   }
 
   /**
    * HTTP fetch attempts in the rolling last 24 hours. Backed by 24 hourly
    * buckets that rotate as time advances, so memory stays constant regardless
-   * of uptime. Reads call `rotateRequestWindow` so a quota check made between
-   * fetches still reflects buckets that have aged out.
+   * of uptime. Delegates to `RollingRequestWindow.countLast24h`, which rotates
+   * before summing so a quota check made between fetches still reflects buckets
+   * that have aged out.
    */
   public getRequestCountLast24h(): number {
-    this.rotateRequestWindow();
-    let total = 0;
-    for (const count of this.requestWindow) {
-      total += count;
-    }
-    return total;
-  }
-
-  /**
-   * Advance the rolling window so `requestWindow[REQUEST_WINDOW_HOURS - 1]`
-   * tracks the current epoch hour, zeroing buckets for skipped hours. Called
-   * from both the read path (so quota checks see fresh state) and the write
-   * path (so the increment lands in the right bucket).
-   * @private
-   */
-  private rotateRequestWindow(): void {
-    const currentHour = Math.floor(Date.now() / HOUR_MS);
-    const elapsed = currentHour - this.requestWindowCurrentHour;
-    if (elapsed === 0) return;
-    if (elapsed < 0) {
-      // Backward wall-clock jump (NTP correction, manual clock change). The
-      // existing buckets are labelled against the old, now-future hour index
-      // so their counts no longer correspond to the previous 24 hours of
-      // real time. Zero the window: undercounting briefly is far safer than
-      // capping fetches against ghost requests for up to 24 hours.
-      this.requestWindow.fill(0);
-      this.requestWindowCurrentHour = currentHour;
-      return;
-    }
-    if (elapsed >= REQUEST_WINDOW_HOURS) {
-      // More than a full window has passed: every bucket is stale.
-      this.requestWindow.fill(0);
-    } else {
-      // Shift left by `elapsed`, dropping the oldest hours and pushing zeros
-      // for the freshly exposed (current-hour) slots. O(min(elapsed, 24)) per
-      // rotation; off the per-emission hot path (only fetches and quota
-      // checks rotate, both at minutes-or-longer cadence).
-      this.requestWindow.splice(0, elapsed);
-      for (let i = 0; i < elapsed; i++) {
-        this.requestWindow.push(0);
-      }
-    }
-    this.requestWindowCurrentHour = currentHour;
-  }
-
-  /**
-   * Increment the trailing (current-hour) bucket. Always rotates first so a
-   * burst of requests after a long idle period lands in the correct bucket
-   * rather than the last hour the service was active.
-   * @private
-   */
-  private recordRequestInWindow(): void {
-    this.rotateRequestWindow();
-    // The current hour is the last bucket: index REQUEST_WINDOW_HOURS - 1.
-    // The bucket is guaranteed to exist (constructor pre-fills the array and
-    // rotateRequestWindow preserves length); the `?? 0` keeps strict
-    // noUncheckedIndexedAccess happy without a non-null assertion.
-    const lastIdx = REQUEST_WINDOW_HOURS - 1;
-    this.requestWindow[lastIdx] = (this.requestWindow[lastIdx] ?? 0) + 1;
+    return this.requestWindow.countLast24h();
   }
 }
