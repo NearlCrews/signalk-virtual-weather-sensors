@@ -52,9 +52,9 @@ export class WeatherProviderAdapter {
         ? await this.provider.getDailyForecast(location)
         : await this.provider.getHourlyForecast(location);
 
-    // Only `maxCount` is honored: the AccuWeather 12-hour/5-day endpoints expose
-    // no start-date or custom-window knob, so `options.startDate`/`custom` are
-    // intentionally unsupported here rather than silently approximated.
+    // Only `maxCount` is honored: the provider interface exposes no offset or
+    // window parameter, so `options.startDate`/`custom` are not forwarded here
+    // rather than silently approximated.
     const maxCount = options?.maxCount;
     return typeof maxCount === 'number' && maxCount > 0 ? forecasts.slice(0, maxCount) : forecasts;
   }

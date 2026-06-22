@@ -1,26 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import { WEATHER_PROVIDER_IDS } from '../../constants/notifications-shared.js';
 import { PROVIDER_CATALOG } from '../../providers/providerCatalog.js';
-import type { PluginConfiguration } from '../../types/index.js';
+import { sanitizeConfiguration } from '../../utils/validation.js';
 
-const baseConfig = {
+const baseConfig = sanitizeConfiguration({
   weatherProvider: 'open-meteo',
-  weatherMode: 'single',
   accuWeatherApiKey: 'test-key-1234567890ab',
   openMeteoBaseUrl: '',
-  marineData: false,
-  updateFrequency: 30,
-  emissionInterval: 5,
   dailyApiQuota: 50,
-  notifications: {
-    enabled: false,
-    wind: true,
-    visibility: true,
-    heat: true,
-    cold: true,
-    weather: true,
-  },
-} as PluginConfiguration;
+});
 
 describe('PROVIDER_CATALOG', () => {
   it('has an entry for every provider id', () => {

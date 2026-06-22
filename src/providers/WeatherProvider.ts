@@ -91,6 +91,8 @@ export function supportsForecasts(
   return (
     typeof p.getHourlyForecast === 'function' &&
     typeof p.getDailyForecast === 'function' &&
-    typeof p.getObservation === 'function'
+    typeof p.getObservation === 'function' &&
+    typeof p.forecastCapabilities === 'object' &&
+    p.forecastCapabilities !== null
   );
 }

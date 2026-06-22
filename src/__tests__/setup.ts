@@ -101,6 +101,7 @@ export function createMockConfig(
     updateFrequency: 5,
     emissionInterval: 5,
     dailyApiQuota: 50,
+    weatherMode: 'single',
     // Mirror DEFAULT_CONFIG.NOTIFICATIONS so unit tests exercise the
     // off-by-default master toggle. Individual tests opt in via overrides.
     notifications: {
