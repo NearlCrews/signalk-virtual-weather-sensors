@@ -25,15 +25,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   consistent. The marine layer, warnings, and forecasts are not merged: forecasts
   and observations delegate to one designated forecast-capable child for model
   coherence, and the marine layer continues on its own independent fetch.
-
-### Migration note
-
-  Switching to merged mode changes the `$source` on every weather delta from a
-  provider-specific ref (such as `open-meteo`, `met-no`, or `accuweather`) to
-  `merged`. The merged source yields to a real onboard sensor under server source
-  priorities exactly as the single-provider sources do. However, any
-  source-priority rule or subscription filter previously set against a specific
-  provider ref will silently stop receiving data until it is updated to `merged`.
+  Note: switching to merged mode re-stamps every weather delta from the prior
+  provider-specific `$source` (such as `open-meteo`, `met-no`, or `accuweather`)
+  to `merged`, so any source-priority rule or subscription filter pinned to the
+  old ref will stop receiving data until updated.
 
 <a id="v191"></a>
 

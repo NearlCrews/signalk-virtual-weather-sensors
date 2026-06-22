@@ -35,4 +35,12 @@ describe('createWeatherProvider', () => {
     );
     expect(p.sourceRef).toBe('merged'); // primary is met-no but the merged ref is constant
   });
+  it('excludes an unavailable primary (accuweather without a key) from the merged order', () => {
+    const p = createWeatherProvider(
+      sanitizeConfiguration({ weatherProvider: 'accuweather', weatherMode: 'merged' }),
+      () => {}
+    );
+    expect(p.sourceRef).toBe('merged');
+    expect(supportsForecasts(p)).toBe(true);
+  });
 });

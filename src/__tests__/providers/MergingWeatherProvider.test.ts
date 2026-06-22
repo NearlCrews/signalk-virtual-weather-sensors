@@ -65,7 +65,7 @@ describe('MergingWeatherProvider', () => {
     const svc = new MergingWeatherProvider([fc, stubProvider({ fail: true })], fc, () => {});
     (fc.fetchCurrentWeather as ReturnType<typeof vi.fn>).mockResolvedValueOnce(only);
     const merged = await svc.fetchCurrentWeather({ latitude: 0, longitude: 0 });
-    expect(merged).toEqual(only); // passthrough, no synthesis
+    expect(merged).toBe(only); // passthrough: same object reference, no synthesis
   });
   it('throws when every child fails', async () => {
     const fc = forecastStub();

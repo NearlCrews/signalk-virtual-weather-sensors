@@ -11,7 +11,7 @@
  * single observation's pressure across providers is a noted deferred enhancement.
  */
 
-import type { WeatherData as SKWeatherData } from '@signalk/server-api';
+import type { WeatherData as SKWeatherData } from '@signalk/server-api'; // aliased to avoid collision with the internal WeatherData type
 import type { GeoLocation, Logger, WeatherData } from '../types/index.js';
 import { mergeWeatherData } from './mergeWeatherData.js';
 import type {

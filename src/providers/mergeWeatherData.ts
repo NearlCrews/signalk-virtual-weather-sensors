@@ -16,9 +16,8 @@
  *   excluded              - omitted (apparent-wind fields added downstream in WeatherService)
  */
 import { deriveBaseWeatherFields } from '../calculators/deriveWeatherFields.js';
-import type { SevereCondition } from '../types/index.js';
+import type { SevereCondition, WeatherData } from '../types/index.js';
 import type { NotificationState } from '../types/plugin.js';
-import type { WeatherData } from '../types/weather.js';
 import {
   calculateGustFactor,
   calculateHeatStressIndex,

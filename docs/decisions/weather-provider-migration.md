@@ -66,7 +66,7 @@ Wins:
 4. In 3.0.0 remove the delta-push path. Producer-namespace leaves with no slot stay dropped unless step 5 lands first.
 5. Optional: upstream a spec PR adding slots for RealFeel shade, wet-bulb, WBGT, and `gustFactor`.
 
-## Merge mode and the `merged` $source (added v2.0.0)
+## Merge mode and the `merged` $source
 
 Setting `weatherMode: 'merged'` builds a `MergingWeatherProvider` over the
 available atmospheric providers. Current conditions are blended per the
