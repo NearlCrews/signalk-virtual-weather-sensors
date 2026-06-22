@@ -74,9 +74,9 @@ export class WeatherProviderAdapter {
   }
 
   private async getWarnings(position: Position): Promise<WeatherWarning[]> {
-    // Warnings are keyless and region-aware (NWS for US waters), independent of
-    // the forecast/observation backing. Without a warnings service wired in,
-    // signal the SK-conventional "not served".
+    // Warnings are keyless and region-aware (NWS for US waters, MetAlerts for
+    // Norwegian waters), independent of the forecast/observation backing. Without
+    // a warnings service wired in, signal the SK-conventional "not served".
     if (!this.warningsService) {
       throw new Error('Not supported!');
     }

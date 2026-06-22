@@ -88,4 +88,13 @@ describe('WarningsService', () => {
     const warnings = await svc.getWarnings({ latitude: 62.5, longitude: 6.0 });
     expect(warnings).toEqual([]);
   });
+
+  it('dispatches to MetAlerts at the inclusive SW corner of NORDIC_BOX', async () => {
+    (global.fetch as Mock).mockResolvedValueOnce(createMockFetchResponse({ features: [] }));
+    const service = new WarningsService();
+    const warnings = await service.getWarnings({ latitude: 54, longitude: -12 });
+    expect(warnings).toEqual([]);
+    const url = String((global.fetch as Mock).mock.calls[0][0]);
+    expect(url).toContain('api.met.no/weatherapi/metalerts/2.0/current.json');
+  });
 });
