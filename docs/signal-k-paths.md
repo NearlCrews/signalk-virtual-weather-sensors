@@ -21,7 +21,7 @@ non-canonical path.
 Every delta carries a `$source` so consumers can set source priorities and
 prefer a real onboard sensor. The atmospheric deltas use the active provider's
 ref (`open-meteo` by default, `met-no` for Met.no, `accuweather` for
-AccuWeather, or `merged` in merge mode), and the optional sea-state deltas use a
+AccuWeather, or `vws-merged` in merge mode), and the optional sea-state deltas use a
 distinct `open-meteo-marine`. Because the provider is recorded in `$source`
 rather than in the path, swapping the weather source does not change any path
 and consumers do not re-subscribe. Some

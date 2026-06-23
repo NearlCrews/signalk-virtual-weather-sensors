@@ -33,9 +33,10 @@ default behavior is unchanged: a fresh install still runs on keyless Open-Meteo.
 - **Region-aware warnings in two regions.** The `warnings` endpoint serves NWS
   active alerts for US waters and Met.no MetAlerts for Norwegian waters, both
   keyless and best-effort.
-- **Merge mode blends every available provider.** A "Provider mode" toggle adds an
-  optional merged source (`$source: 'merged'`) that escalates hazard fields to the
-  most conservative value and recomputes derived quantities from the blend.
+- **Merge mode blends the providers you choose.** A "Provider mode" toggle adds an
+  optional merged source (`$source: 'vws-merged'`); a pick-and-order list selects which
+  providers blend and their priority (the first is the primary), hazard fields escalate
+  to the most conservative value, and derived quantities are recomputed from the blend.
 
 See the [v1.10.0 changelog entry](CHANGELOG.md#v1100), or the
 [changelog](CHANGELOG.md) for the full list.
@@ -52,7 +53,7 @@ standard Signal K deltas that instrument panels, dashboards, and NMEA2000
 bridges consume natively.
 
 Every delta carries a provider `$source` (`open-meteo`, `met-no`, `accuweather`,
-or `merged`), so a boat that later gains a real anemometer or barometer can
+or `vws-merged`), so a boat that later gains a real anemometer or barometer can
 prefer the physical sensor through Signal K source priorities. Any
 forecast-capable source registers the plugin as a Signal K v2 Weather API
 provider, serving hourly and daily forecasts over REST, and every source can
@@ -86,7 +87,7 @@ severe conditions.
 - **NMEA2000 path alignment** for bridging onto a physical bus via a
   companion emitter plugin.
 - **Per-provider `$source` on every delta** (`open-meteo`, `met-no`,
-  `accuweather`, `merged`, or `open-meteo-marine`), so real onboard sensors can
+  `accuweather`, `vws-merged`, or `open-meteo-marine`), so real onboard sensors can
   win on source priority.
 
 ## Screenshots
@@ -143,7 +144,7 @@ In the Signal K admin UI, open **Server, then Plugin Config**, find
 | Setting | Description | Default | Range |
 |---------|-------------|---------|-------|
 | Weather source | Open-Meteo (free, keyless, global), Met.no (free, keyless, global), or AccuWeather (needs a key, adds RealFeel, plain-language text, pressure tendency, and precipitation type). In merge mode this source is the primary that sets source priority and backs forecasts. | Open-Meteo | Open-Meteo, Met.no, or AccuWeather |
-| Provider mode | Single source, or merge available providers into a synthetic `merged` source that blends current conditions. | Single source | Single or Merge |
+| Provider mode | Single source, or merge available providers into a synthetic `vws-merged` source that blends current conditions. | Single source | Single or Merge |
 | AccuWeather API Key | Required only when the source is AccuWeather. Get a key from AccuWeather. | none | n/a |
 | Open-Meteo base URL | Optional. Leave blank for the free public service (non-commercial use). Self-hosted or paid users can enter a custom endpoint. | none | n/a |
 | Emit sea state | Adds a keyless Open-Meteo Marine layer (waves, swell, sea temperature, and current) on `environment.water.*` and `environment.current`. Coastal and offshore only. | off | boolean |

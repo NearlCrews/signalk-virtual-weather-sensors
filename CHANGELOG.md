@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 <a id="v1100"></a>
 
-## [1.10.0] - pending release
+## [1.10.0] - 2026-06-23
 
 Two new keyless providers, full v2 Weather API support across every provider,
 and an optional synthesis mode that blends the available providers into one
@@ -37,13 +37,16 @@ keyless Open-Meteo and emits the same paths.
   also backs the v2 Weather API: point and daily forecasts plus current
   observations from the Open-Meteo forecast endpoints, so a keyless install
   advertises `weather` under `/signalk/v2/features` without an AccuWeather key.
-- **Merge mode blends all available providers into a single synthetic source.**
+- **Merge mode blends a chosen set of providers into a single synthetic source.**
   A "Provider mode" toggle in the config panel and the JSON schema selects
   single-source (`weatherMode: 'single'`, the default) or merged
-  (`weatherMode: 'merged'`). Merged mode builds a `MergingWeatherProvider` that
-  polls Open-Meteo, Met.no, and AccuWeather (when a key is configured) in parallel
-  and blends the results into unified current conditions stamped
-  `$source: 'merged'`. Hazard-bearing fields escalate to the most conservative
+  (`weatherMode: 'merged'`). In merged mode a pick-and-order list (`mergeProviders`)
+  chooses which providers blend and in what priority order; the first is the primary.
+  The config panel edits that list with include checkboxes and up/down reorder
+  controls, AccuWeather available once a key is set. Merged mode builds a
+  `MergingWeatherProvider` that polls the selected providers in parallel and blends
+  the results into unified current conditions stamped
+  `$source: 'vws-merged'`. Hazard-bearing fields escalate to the most conservative
   value: severe condition, precipitation, and gust take the maximum; visibility
   takes the minimum; a falling barometer wins. Categorical and single-valued
   fields (WBGT, precipitation type, condition text) are taken from the
@@ -65,7 +68,7 @@ keyless Open-Meteo and emits the same paths.
   AccuWeather-only.
 - **Switching to merged mode re-stamps every weather delta** from the prior
   provider-specific `$source` (such as `open-meteo`, `met-no`, or `accuweather`)
-  to `merged`, so any source-priority rule or subscription filter pinned to the
+  to `vws-merged`, so any source-priority rule or subscription filter pinned to the
   old ref will stop receiving data until updated. The same caveat applies when
   switching between single sources.
 
@@ -82,6 +85,11 @@ keyless Open-Meteo and emits the same paths.
   preset-typescript options it removed dropped from the webpack config), Biome to
   2.5.1, and the GitHub Actions checkout to v7. `npm audit` is clean of
   moderate-and-above advisories.
+- Config panel modularized with no behavior change: the per-source visibility logic
+  is hoisted into a pure `deriveSourceState` helper, the source controls move into a
+  `WeatherSourceSection` component, and a shared `CheckboxRow` primitive backs the
+  notification toggles, the marine toggle, and the merge rows. The merge list is
+  keyboard-operable and announces its order and the primary to assistive tech.
 
 <a id="v191"></a>
 

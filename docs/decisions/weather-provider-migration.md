@@ -66,17 +66,17 @@ Wins:
 4. In 3.0.0 remove the delta-push path. Producer-namespace leaves with no slot stay dropped unless step 5 lands first.
 5. Optional: upstream a spec PR adding slots for RealFeel shade, wet-bulb, WBGT, and `gustFactor`.
 
-## Merge mode and the `merged` $source
+## Merge mode and the `vws-merged` $source
 
 Setting `weatherMode: 'merged'` builds a `MergingWeatherProvider` over the
 available atmospheric providers. Current conditions are blended per the
-`FIELD_MERGE_KINDS` policy and stamped `$source: 'merged'` on every delta.
+`FIELD_MERGE_KINDS` policy and stamped `$source: 'vws-merged'` on every delta.
 
 The same `$source`-change caveat from the single-provider migration applies here:
 switching to merge mode re-stamps every weather delta from the prior
-provider-specific source ref to `merged`. Any consumer (a source-priority rule,
+provider-specific source ref to `vws-merged`. Any consumer (a source-priority rule,
 a subscription filter, a `signalk-nmea2000-emitter-cannon` source lock) pinned to
-the old ref silently stops receiving data until it is updated to `merged`.
+the old ref silently stops receiving data until it is updated to `vws-merged`.
 
 Forecasts and observations delegate to one designated forecast-capable child; the
 marine layer and warnings are never merged (both run on their own independent
