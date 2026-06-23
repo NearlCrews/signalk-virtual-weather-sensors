@@ -49,8 +49,15 @@ module.exports = {
         exclude: /node_modules/,
         options: {
           presets: [
-            ['@babel/preset-typescript', { isTSX: true, allExtensions: true }],
-            ['@babel/preset-react', { runtime: 'automatic' }],
+            // Babel 8 removed the isTSX and allExtensions options: preset-typescript
+            // now detects JSX from the .tsx extension, which is what the panel uses.
+            '@babel/preset-typescript',
+            // development: false pins the production JSX runtime (jsx/jsxs from
+            // react/jsx-runtime), the one the federated React singleton provides.
+            // Babel 8's preset-react otherwise defaults to the dev runtime (jsxDEV)
+            // when NODE_ENV is unset at build time, which the host does not expose
+            // and which fails at runtime with "jsxDEV is not a function".
+            ['@babel/preset-react', { runtime: 'automatic', development: false }],
           ],
         },
       },

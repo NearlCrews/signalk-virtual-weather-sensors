@@ -78,6 +78,10 @@ keyless Open-Meteo and emits the same paths.
   AccuWeather location guard now uses the shared `assertValidCoordinates`. Dead code
   was removed and the test suite broadened to cover the new providers, the merge
   engine, the v2 registration paths, and the caching and quota helpers.
+- Dependencies brought current: the panel build toolchain moves to Babel 8 (with the
+  preset-typescript options it removed dropped from the webpack config), Biome to
+  2.5.1, and the GitHub Actions checkout to v7. `npm audit` is clean of
+  moderate-and-above advisories.
 
 <a id="v191"></a>
 
