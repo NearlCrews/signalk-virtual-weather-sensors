@@ -6,7 +6,6 @@
 
 import { describe, expect, it } from 'vitest';
 import {
-  asOpenMeteoTimestamp,
   asOptionalNumber,
   calculateAbsoluteHumidity,
   calculateAirDensity,
@@ -34,6 +33,7 @@ import {
   msToKnots,
   normalizeAngle0To2Pi,
   normalizeAnglePiToPi,
+  normalizeIsoTimestamp,
   optionalCelsiusToKelvin,
   optionalPercentageToRatio,
   percentageToRatio,
@@ -348,21 +348,21 @@ describe('asOptionalNumber', () => {
   });
 });
 
-describe('asOpenMeteoTimestamp', () => {
-  it('appends Z to a bare GMT wall-clock string', () => {
-    expect(asOpenMeteoTimestamp('2026-06-16T19:00')).toBe('2026-06-16T19:00Z');
-    expect(asOpenMeteoTimestamp('2026-06-16T19:00:30')).toBe('2026-06-16T19:00:30Z');
+describe('normalizeIsoTimestamp', () => {
+  it('appends Z to a bare wall-clock string', () => {
+    expect(normalizeIsoTimestamp('2026-06-16T19:00')).toBe('2026-06-16T19:00Z');
+    expect(normalizeIsoTimestamp('2026-06-16T19:00:30')).toBe('2026-06-16T19:00:30Z');
   });
 
   it('leaves an already-zoned timestamp untouched', () => {
-    expect(asOpenMeteoTimestamp('2026-06-16T19:00Z')).toBe('2026-06-16T19:00Z');
-    expect(asOpenMeteoTimestamp('2026-06-16T19:00+02:00')).toBe('2026-06-16T19:00+02:00');
-    expect(asOpenMeteoTimestamp('2026-06-16T19:00-0500')).toBe('2026-06-16T19:00-0500');
+    expect(normalizeIsoTimestamp('2026-06-16T19:00Z')).toBe('2026-06-16T19:00Z');
+    expect(normalizeIsoTimestamp('2026-06-16T19:00+02:00')).toBe('2026-06-16T19:00+02:00');
+    expect(normalizeIsoTimestamp('2026-06-16T19:00-0500')).toBe('2026-06-16T19:00-0500');
   });
 
   it('returns an empty string when the time is absent', () => {
-    expect(asOpenMeteoTimestamp(undefined)).toBe('');
-    expect(asOpenMeteoTimestamp(null)).toBe('');
+    expect(normalizeIsoTimestamp(undefined)).toBe('');
+    expect(normalizeIsoTimestamp(null)).toBe('');
   });
 });
 

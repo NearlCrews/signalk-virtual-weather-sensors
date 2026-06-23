@@ -22,8 +22,11 @@ import {
   NOTIFICATION_BAND_KEYS,
   providerRequiresApiKey,
   QUOTA_WARN_RATIO,
+  WEATHER_MODE_IDS,
+  WEATHER_MODE_LABELS,
   WEATHER_PROVIDER_IDS,
   WEATHER_PROVIDER_LABELS,
+  type WeatherMode,
   type WeatherProviderId,
 } from '../constants/notifications-shared.js';
 import ApiKeyField from './components/ApiKeyField.js';
@@ -146,7 +149,7 @@ export default function PluginConfigurationPanel({
           modal; the effect above also auto-opens the source section so the key
           input is one glance away. */}
       {firstRun ? (
-        <div style={S.callout}>
+        <div role="note" style={S.callout}>
           <span>
             Add your AccuWeather API key to begin. The plugin stays idle until a key is saved; the
             API key section below has a Test button to verify it first.
@@ -182,6 +185,30 @@ export default function PluginConfigurationPanel({
             ))}
           </select>
         </div>
+
+        <div style={S.fieldRow}>
+          <label style={S.label} htmlFor="svws-mode">
+            Provider mode
+          </label>
+          <select
+            id="svws-mode"
+            style={S.input}
+            value={form.weatherMode}
+            onChange={(e) => setField('weatherMode', e.target.value as WeatherMode)}
+          >
+            {WEATHER_MODE_IDS.map((id) => (
+              <option key={id} value={id}>
+                {WEATHER_MODE_LABELS[id]}
+              </option>
+            ))}
+          </select>
+        </div>
+        <p style={S.help}>
+          In merge mode the provider above acts as the primary: it sets the source priority order
+          and is the source for forecasts and observations, while merge blends the current
+          conditions of every available provider (Open-Meteo and Met.no always, AccuWeather when a
+          key is set) onto a merged source.
+        </p>
 
         {needsKey ? (
           <ApiKeyField

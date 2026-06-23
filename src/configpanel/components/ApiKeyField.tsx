@@ -81,8 +81,8 @@ export default function ApiKeyField({ value, keyError, onChange }: Props): React
             setTestKey({ state: null, message: '' });
           }}
           style={S.input}
-          aria-describedby="svws-apikey-result"
-          aria-invalid={keyError !== null}
+          aria-describedby="svws-apikey-help"
+          aria-invalid={resultIsError}
         />
         <button
           type="button"
@@ -93,7 +93,10 @@ export default function ApiKeyField({ value, keyError, onChange }: Props): React
           {testKey.state === 'pending' ? 'Testing...' : 'Test'}
         </button>
       </div>
-      <p style={S.help}>
+      {/* Static help, the input's aria-describedby target. It carries no live
+          region so the description is announced once on focus, not re-announced
+          on every key test. */}
+      <p id="svws-apikey-help" style={S.help}>
         Get a key at{' '}
         <a
           style={S.link}
@@ -105,13 +108,10 @@ export default function ApiKeyField({ value, keyError, onChange }: Props): React
         </a>
         . Minimum {API_KEY_MIN_LENGTH} characters.
       </p>
-      {/* Always mounted so the live region exists before the first result. */}
-      <p
-        id="svws-apikey-result"
-        role="status"
-        aria-live="polite"
-        style={resultIsError ? S.testResultErr : S.testResultOk}
-      >
+      {/* Separate polite live region for the test result only, always mounted
+          so it exists before the first result. Kept out of aria-describedby so
+          a key test announces once, not twice. */}
+      <p role="status" aria-live="polite" style={resultIsError ? S.testResultErr : S.testResultOk}>
         {resultMessage}
       </p>
     </>

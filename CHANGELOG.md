@@ -7,28 +7,77 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+<a id="v1100"></a>
+
+## [1.10.0] - pending release
+
+Two new keyless providers, full v2 Weather API support across every provider,
+and an optional synthesis mode that blends the available providers into one
+source. The default behavior is unchanged: a fresh install still runs on
+keyless Open-Meteo and emits the same paths.
+
 ### Added
 
+- **Met.no as a keyless current-conditions provider.** A third weather source
+  backed by the Norwegian Meteorological Institute's Locationforecast 2.0 API.
+  It is keyless, global, and selectable alongside Open-Meteo and AccuWeather,
+  with deltas stamped `$source: 'met-no'`. The plugin recomputes wind chill and
+  heat index and estimates the wet-bulb globe temperature from the Met.no base
+  values so the heat-stress notification band still works.
+- **Met.no v2 forecasts and observations.** When Met.no is the active source, the
+  Signal K v2 Weather API serves point and daily forecasts and current
+  observations from the Met.no timeseries, mapped to the SI `WeatherData`
+  envelope.
+- **Met.no MetAlerts warnings for Norwegian waters.** The v2 `warnings` endpoint
+  is now region-aware across two regions: NWS CAP active alerts for US waters and
+  Met.no MetAlerts for Norwegian waters (the mainland, the Norwegian Sea, the
+  North Sea Norwegian sector, the Barents Sea, Svalbard, and Jan Mayen). Both are
+  keyless and best-effort; a point outside a covered region returns an empty list.
+- **Open-Meteo v2 forecasts and observations.** The default keyless source now
+  also backs the v2 Weather API: point and daily forecasts plus current
+  observations from the Open-Meteo forecast endpoints, so a keyless install
+  advertises `weather` under `/signalk/v2/features` without an AccuWeather key.
 - **Merge mode blends all available providers into a single synthetic source.**
-  Selecting "Merge available providers" (`weatherMode: 'merged'`) builds a
-  `MergingWeatherProvider` that polls Open-Meteo, Met.no, and AccuWeather (when a
-  key is configured) in parallel and blends the results into unified current
-  conditions stamped `$source: 'merged'`. Hazard-bearing fields escalate to the
-  most conservative value: severe condition, precipitation, and gust take the
-  maximum; visibility takes the minimum; a falling barometer wins. Categorical
-  and single-valued fields (WBGT, precipitation type, condition text) are taken
-  from the highest-priority provider that reports them, not averaged. Wind
-  direction uses a speed-weighted circular mean with an opposing-wind fallback to
-  avoid the 0/360-degree wrap artifact. Derived quantities (wind chill, heat
-  index, Beaufort scale, absolute humidity, air density, heat-stress index, gust
-  factor) are recomputed from the blended base values so they stay internally
-  consistent. The marine layer, warnings, and forecasts are not merged: forecasts
-  and observations delegate to one designated forecast-capable child for model
-  coherence, and the marine layer continues on its own independent fetch.
-  Note: switching to merged mode re-stamps every weather delta from the prior
+  A "Provider mode" toggle in the config panel and the JSON schema selects
+  single-source (`weatherMode: 'single'`, the default) or merged
+  (`weatherMode: 'merged'`). Merged mode builds a `MergingWeatherProvider` that
+  polls Open-Meteo, Met.no, and AccuWeather (when a key is configured) in parallel
+  and blends the results into unified current conditions stamped
+  `$source: 'merged'`. Hazard-bearing fields escalate to the most conservative
+  value: severe condition, precipitation, and gust take the maximum; visibility
+  takes the minimum; a falling barometer wins. Categorical and single-valued
+  fields (WBGT, precipitation type, condition text) are taken from the
+  highest-priority provider that reports them, not averaged. Wind direction uses a
+  speed-weighted circular mean with an opposing-wind fallback to avoid the
+  0/360-degree wrap artifact. Derived quantities (wind chill, heat index, Beaufort
+  scale, absolute humidity, air density, heat-stress index, gust factor) are
+  recomputed from the blended base values so they stay internally consistent. The
+  marine layer, warnings, and forecasts are not merged: forecasts and observations
+  delegate to one designated forecast-capable child for model coherence, and the
+  marine layer continues on its own independent fetch.
+
+### Changed
+
+- **The v2 Weather API is advertised for any forecast-capable provider.**
+  Open-Meteo, Met.no, and AccuWeather all support forecasts and observations, so a
+  default keyless install now registers the v2 Weather API provider; merged mode
+  registers it through its designated forecast child. The endpoints are no longer
+  AccuWeather-only.
+- **Switching to merged mode re-stamps every weather delta** from the prior
   provider-specific `$source` (such as `open-meteo`, `met-no`, or `accuweather`)
   to `merged`, so any source-priority rule or subscription filter pinned to the
-  old ref will stop receiving data until updated.
+  old ref will stop receiving data until updated. The same caveat applies when
+  switching between single sources.
+
+### Maintenance
+
+- Shared helpers consolidated with no behavior change: the base-to-derived weather
+  recompute is hoisted into `deriveWeatherFields.ts` and shared by every current
+  provider mapper, a shared mapper number coercion lives in `mapperUtils.ts`, the
+  SK v2 outside, wind, and sun envelope builders live in `skV2Envelope.ts`, and the
+  AccuWeather location guard now uses the shared `assertValidCoordinates`. Dead code
+  was removed and the test suite broadened to cover the new providers, the merge
+  engine, the v2 registration paths, and the caching and quota helpers.
 
 <a id="v191"></a>
 

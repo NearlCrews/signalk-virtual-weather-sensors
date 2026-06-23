@@ -32,9 +32,6 @@ import {
   TWO_PI,
 } from './conversions.js';
 
-/** Re-export so callers outside this module don't need to know it lives in the shared JS module. */
-export { API_KEY_MIN_LENGTH };
-
 /**
  * Throw a tagged INVALID_COORDINATES error unless `location` carries finite,
  * in-range numeric latitude and longitude. Shared by the weather services so
@@ -258,6 +255,11 @@ export function validateConfiguration(config: Partial<PluginConfiguration>): Val
   };
 }
 
+/** Return `value` when it is a boolean, otherwise `fallback`. */
+function asBool(value: unknown, fallback: boolean): boolean {
+  return typeof value === 'boolean' ? value : fallback;
+}
+
 /**
  * Coerce a raw notifications subobject into the canonical `NotificationsConfig`
  * shape, falling back to `DEFAULT_CONFIG.NOTIFICATIONS` for any missing or
@@ -267,14 +269,13 @@ export function validateConfiguration(config: Partial<PluginConfiguration>): Val
 function sanitizeNotifications(input: unknown): NotificationsConfig {
   const defaults = DEFAULT_CONFIG.NOTIFICATIONS;
   const raw = (typeof input === 'object' && input !== null ? input : {}) as Record<string, unknown>;
-  const bool = (v: unknown, fallback: boolean): boolean => (typeof v === 'boolean' ? v : fallback);
   return {
-    enabled: bool(raw.enabled, defaults.ENABLED),
-    wind: bool(raw.wind, defaults.WIND),
-    visibility: bool(raw.visibility, defaults.VISIBILITY),
-    heat: bool(raw.heat, defaults.HEAT),
-    cold: bool(raw.cold, defaults.COLD),
-    weather: bool(raw.weather, defaults.WEATHER),
+    enabled: asBool(raw.enabled, defaults.ENABLED),
+    wind: asBool(raw.wind, defaults.WIND),
+    visibility: asBool(raw.visibility, defaults.VISIBILITY),
+    heat: asBool(raw.heat, defaults.HEAT),
+    cold: asBool(raw.cold, defaults.COLD),
+    weather: asBool(raw.weather, defaults.WEATHER),
   };
 }
 

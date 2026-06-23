@@ -30,14 +30,13 @@ import type {
 } from '../types/index.js';
 import {
   isApiQuotaReached,
-  isValidCoordinates,
   isValidHumidity,
   isValidPressure,
   isValidTemperature,
   isValidWindSpeed,
   toErrorMessage,
 } from '../utils/conversions.js';
-import { validateAccuWeatherResponse } from '../utils/validation.js';
+import { assertValidCoordinates, validateAccuWeatherResponse } from '../utils/validation.js';
 import { CoalescingTtlCache } from './cache/CoalescingTtlCache.js';
 import { ForecastCache } from './cache/ForecastCache.js';
 import { RetryingHttpClient } from './http/RetryingHttpClient.js';
@@ -50,7 +49,7 @@ const MAX_RESPONSE_BYTES = 1_048_576;
 const LOCATION_KEY_PATTERN = /^[a-zA-Z0-9_-]+$/;
 
 /** How often the location cache prune sweep runs (5 minutes). */
-const CACHE_PRUNE_INTERVAL_MS = 5 * 60 * 1000;
+const CACHE_PRUNE_INTERVAL_MS = 5 * 60_000;
 
 /**
  * AccuWeather API client for weather data operations.
@@ -143,7 +142,7 @@ export class AccuWeatherService implements CurrentWeatherProvider {
    * half what a full `fetchCurrentWeather` would (no currentconditions hop).
    */
   public async verifyApiKey(location: GeoLocation): Promise<AccuWeatherLocation> {
-    this.validateLocation(location);
+    assertValidCoordinates(location, 'AccuWeather request');
     return this.searchLocation(location);
   }
 
@@ -153,7 +152,7 @@ export class AccuWeatherService implements CurrentWeatherProvider {
    * @returns Promise resolving to processed weather data
    */
   public async fetchCurrentWeather(location: GeoLocation): Promise<WeatherData> {
-    this.validateLocation(location);
+    assertValidCoordinates(location, 'AccuWeather request');
 
     try {
       const locationKey = await this.getLocationKey(location);
@@ -193,7 +192,7 @@ export class AccuWeatherService implements CurrentWeatherProvider {
    * On a warm forecast cache this costs zero upstream calls.
    */
   public async fetchHourlyForecastRaw(location: GeoLocation): Promise<AccuWeatherHourlyForecast[]> {
-    this.validateLocation(location);
+    assertValidCoordinates(location, 'AccuWeather request');
     // Snapshot the quota verdict once, before this call's own location lookup
     // spends a request. A cold call below the cap is then not gated by the
     // request it is about to make, and a call already over the cap is gated
@@ -215,7 +214,7 @@ export class AccuWeatherService implements CurrentWeatherProvider {
   public async fetchDailyForecastRaw(
     location: GeoLocation
   ): Promise<AccuWeatherDailyForecastResponse> {
-    this.validateLocation(location);
+    assertValidCoordinates(location, 'AccuWeather request');
     const quotaExhausted = this.isQuotaExhausted();
     const locationKey = await this.resolveLocationKeyForForecast(location, quotaExhausted);
     return this.forecastCache.fetchCached(
@@ -237,7 +236,7 @@ export class AccuWeatherService implements CurrentWeatherProvider {
   public async fetchCurrentConditionsRaw(
     location: GeoLocation
   ): Promise<AccuWeatherCurrentConditions> {
-    this.validateLocation(location);
+    assertValidCoordinates(location, 'AccuWeather request');
     const quotaExhausted = this.isQuotaExhausted();
     const locationKey = await this.resolveLocationKeyForForecast(location, quotaExhausted);
     const conditions = await this.forecastCache.fetchCached(
@@ -471,26 +470,6 @@ export class AccuWeatherService implements CurrentWeatherProvider {
     }
 
     return data;
-  }
-
-  /**
-   * Validate location coordinates
-   * @private
-   */
-  private validateLocation(location: GeoLocation): void {
-    if (!location || typeof location !== 'object') {
-      throw new Error(`${ERROR_CODES.CONFIGURATION.INVALID_COORDINATES}: Invalid location object`);
-    }
-    if (typeof location.latitude !== 'number' || typeof location.longitude !== 'number') {
-      throw new Error(
-        `${ERROR_CODES.CONFIGURATION.INVALID_COORDINATES}: Coordinates must be numbers`
-      );
-    }
-    if (!isValidCoordinates(location.latitude, location.longitude)) {
-      throw new Error(
-        `${ERROR_CODES.CONFIGURATION.INVALID_COORDINATES}: Coordinates out of range (lat ${location.latitude}, lon ${location.longitude})`
-      );
-    }
   }
 
   /**

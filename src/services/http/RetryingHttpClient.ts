@@ -272,14 +272,17 @@ export class RetryingHttpClient {
   /**
    * Return URL string with the apikey query parameter stripped so it's safe to log.
    * Debug-level logs are not passed through sanitizeLogMetadata, so we must strip
-   * secrets here before they reach the logger.
+   * secrets here before they reach the logger. A cheap string check avoids the
+   * URL clone allocation on the common keyless path.
    * @private
    */
   private sanitizeUrlForLogging(url: URL): string {
-    const safe = new URL(url);
-    if (safe.searchParams.has('apikey')) {
-      safe.searchParams.set('apikey', '***');
+    const raw = url.toString();
+    if (!raw.includes('apikey')) {
+      return raw;
     }
+    const safe = new URL(url);
+    safe.searchParams.set('apikey', '***');
     return safe.toString();
   }
 

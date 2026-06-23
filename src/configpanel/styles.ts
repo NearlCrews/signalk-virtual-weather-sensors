@@ -19,7 +19,9 @@ import type { CSSProperties } from 'react';
 
 // Scale tokens: theme-independent, defined once on the root. Radii and font
 // sizes sit on Bootstrap 5.3 defaults so the panel reads native inside the
-// admin shell. Spacing runs an 8/12/16 scale so gutters keep one rhythm.
+// admin shell. The spacing tokens cover the common 8/12/16 gutters; a few
+// component-specific sizes (card padding, icon dimensions) stay as literal
+// pixels in the S map below where no shared step applies.
 const SCALE_TOKENS = `
   --svws-radius: 6px;
   --svws-radius-sm: 4px;
@@ -435,6 +437,15 @@ export const S = {
     ...checkboxLabelBase,
     color: 'var(--svws-text)',
     cursor: 'pointer',
+  },
+  // Emphasized checkbox label (the notifications master toggle): the base
+  // label plus a 600 weight, so the weight stays a token-defined value rather
+  // than a magic number inlined in a component.
+  checkboxLabelStrong: {
+    ...checkboxLabelBase,
+    color: 'var(--svws-text)',
+    cursor: 'pointer',
+    fontWeight: 600,
   },
   // Disabled sub-toggle labels keep the faint token (AA-compliant in every
   // palette) instead of stacking opacity on a muted color, so they stay

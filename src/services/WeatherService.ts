@@ -23,6 +23,7 @@ import {
   elapsedSinceMs,
   isApiQuotaReached,
   msToWholeMinutes,
+  normalizeAnglePiToPi,
   toErrorMessage,
 } from '../utils/conversions.js';
 import type { OpenMeteoMarineService } from './OpenMeteoMarineService.js';
@@ -301,7 +302,7 @@ export class WeatherService {
 
   /** Milliseconds since the last successful weather fetch, or null if none yet. */
   public getDataAgeMs(): number | null {
-    return elapsedSinceMs(this.lastUpdate ? this.lastUpdate.getTime() : null);
+    return elapsedSinceMs(this.lastUpdate?.getTime() ?? null);
   }
 
   /**
@@ -521,7 +522,7 @@ export class WeatherService {
    * @private
    */
   private setupWeatherUpdates(): void {
-    const baseInterval = this.config.updateFrequency * 60 * 1000; // Convert minutes to milliseconds
+    const baseInterval = this.config.updateFrequency * 60_000;
     const updateInterval = this.addJitter(baseInterval);
 
     this.updateTimer = setInterval(() => {
@@ -852,6 +853,6 @@ export class WeatherService {
     if (vesselHeading === undefined) {
       return null;
     }
-    return this.windCalculator.normalizeAngle(windDirection - vesselHeading);
+    return normalizeAnglePiToPi(windDirection - vesselHeading);
   }
 }

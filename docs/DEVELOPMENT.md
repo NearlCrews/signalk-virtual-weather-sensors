@@ -73,7 +73,7 @@ export default function createPlugin(app: ServerAPI): Plugin {
 #### esbuild 0.28+
 - **Purpose**: Fast, modern JavaScript bundler for the plugin runtime
 - **Configuration**: [`esbuild.config.js`](../esbuild.config.js)
-- **Performance**: ~125 KB bundle in tens of milliseconds (the build script logs the live size after every run)
+- **Performance**: ~150 KB bundle in tens of milliseconds (the build script logs the live size after every run)
 - **Features**:
   - ES2023 target compilation
   - Source map generation
@@ -82,7 +82,7 @@ export default function createPlugin(app: ServerAPI): Plugin {
   - Banner injection for plugin metadata
 
 **Build Outputs:**
-- `dist/index.js`: main plugin bundle (~125 KB)
+- `dist/index.js`: main plugin bundle (~150 KB)
 - `dist/index.js.map`: source map
 - `dist/index.d.ts` and per-source `*.d.ts`: TypeScript declarations
 - `public/remoteEntry.js` plus federated chunks (.mjs): the React config panel, bundled by webpack via `ModuleFederationPlugin` (see [`webpack.config.cjs`](../webpack.config.cjs)). Independent of the esbuild bundle above; both are produced by `npm run build`.
@@ -132,31 +132,52 @@ export default function createPlugin(app: ServerAPI): Plugin {
 ```
 src/__tests__/
 ├── setup.ts                          # Global test configuration + mock factories
-├── index.test.ts                     # Plugin entry / lifecycle / meta-once invariant / panel REST routes
+├── index.test.ts                     # Plugin entry / lifecycle / meta-once invariant / v2 registration
+├── plugin/
+│   ├── panelRoutes.test.ts           # Panel REST routes (status, test-key)
+│   └── schema.test.ts                # rjsf schema and uiSchema generation
 ├── calculators/
-│   └── WindCalculator.test.ts        # Vector wind / wind chill / heat index
+│   ├── WindCalculator.test.ts        # Vector wind / wind chill / heat index
+│   └── deriveWeatherFields.test.ts   # Base-to-derived recompute helper
+├── constants/
+│   └── notifications-shared.test.ts  # Provider/mode resolution and shared defaults
 ├── mappers/
 │   ├── NMEA2000PathMapper.test.ts    # Delta build + meta delta
 │   ├── OpenMeteoMapper.test.ts       # Open-Meteo current block -> internal SI WeatherData
+│   ├── OpenMeteoForecastMapper.test.ts  # Open-Meteo forecast / observation -> SK v2 envelope
+│   ├── MetNoMapper.test.ts           # Met.no current block -> internal SI WeatherData
+│   ├── MetNoForecastMapper.test.ts   # Met.no timeseries -> SK v2 observations / forecasts
+│   ├── AccuWeatherMapper.test.ts     # AccuWeather current block -> internal SI WeatherData
 │   ├── MarinePathMapper.test.ts      # MarineData -> environment.water.* / environment.current + meta
 │   ├── OpenMeteoMarineMapper.test.ts # Open-Meteo Marine current block -> MarineData
-│   ├── WarningsMapper.test.ts        # NWS CAP alerts -> SK v2 WeatherWarning
+│   ├── WarningsMapper.test.ts        # NWS CAP and Met.no MetAlerts -> SK v2 WeatherWarning
 │   ├── WeatherProviderMapper.test.ts # AccuWeather forecast / current -> SK Weather API envelope
+│   ├── skV2Envelope.test.ts          # Shared SK v2 outside / wind / sun block builders
 │   └── delta-schema.test.ts          # Ajv conformance against the SK 1.8.2 JSON schema
 ├── notifications/
 │   └── WeatherNotifier.test.ts       # Transition state machine across hazard bands
 ├── providers/
-│   ├── createCurrentWeatherProvider.test.ts  # Provider selection (Open-Meteo or AccuWeather)
+│   ├── createCurrentWeatherProvider.test.ts  # Single-provider selection from the catalog
+│   ├── createWeatherProvider.test.ts # Single vs merged top-level selection
+│   ├── providerCatalog.test.ts       # PROVIDER_CATALOG construction
+│   ├── WeatherProvider.test.ts       # supportsForecasts seam guard
+│   ├── MergingWeatherProvider.test.ts  # Merge orchestration and forecast delegation
+│   ├── mergeWeatherData.test.ts      # Field merge policy, circular-mean wind, derived recompute
 │   ├── accuweather-severity.test.ts  # AccuWeather icon code -> severe-condition classification
-│   └── open-meteo-severity.test.ts   # WMO weather code -> severe-condition classification
+│   ├── open-meteo-severity.test.ts   # WMO weather code -> severe-condition classification
+│   └── met-no-severity.test.ts       # Met.no symbol code -> severe-condition classification
 ├── services/
 │   ├── WeatherService.test.ts        # Orchestration / lifecycle / single-flight / tick banner / marine
 │   ├── SignalKService.test.ts        # Navigation data + caching
-│   ├── OpenMeteoService.test.ts      # Keyless Open-Meteo current-conditions client
+│   ├── OpenMeteoService.test.ts      # Keyless Open-Meteo current and forecast client
+│   ├── MetNoService.test.ts          # Keyless Met.no current and forecast client
 │   ├── AccuWeatherService.test.ts    # API integration + retry/error/timeout paths
 │   ├── OpenMeteoMarineService.test.ts # Keyless Open-Meteo Marine client (best-effort)
-│   ├── WarningsService.test.ts       # Region-aware getWarnings (NWS for US waters)
-│   └── WeatherProviderAdapter.test.ts # SK v2 Weather API provider surface
+│   ├── WarningsService.test.ts       # Region-aware getWarnings (NWS and Met.no MetAlerts)
+│   ├── WeatherProviderAdapter.test.ts # SK v2 Weather API provider surface
+│   ├── cache/                        # CoalescingTtlCache, ForecastCache
+│   ├── http/                         # RetryingHttpClient
+│   └── quota/                        # RollingRequestWindow
 ├── integration/
 │   └── weather-flow.integration.test.ts  # End-to-end smoke against stubbed global.fetch
 └── utils/
@@ -193,43 +214,64 @@ src/__tests__/
 ```
 signalk-virtual-weather-sensors/
 ├── src/
-│   ├── index.ts                       # Plugin entry: lifecycle, schema, emission timer, REST routes
+│   ├── index.ts                       # Plugin entry: lifecycle, v2 registration, emission timer, REST routes
+│   ├── plugin/
+│   │   ├── instance.ts                # Shared instance state + banner dedupe
+│   │   ├── emission.ts                # Keep-alive emission tick
+│   │   ├── logging.ts                 # Logger factory
+│   │   ├── panelRoutes.ts             # Panel REST routes (status, test-key)
+│   │   └── schema.ts                  # rjsf schema() and uiSchema()
 │   ├── calculators/
-│   │   └── WindCalculator.ts          # Vector wind, wind chill, heat index
+│   │   ├── WindCalculator.ts          # Vector wind, wind chill, heat index
+│   │   └── deriveWeatherFields.ts     # Base-to-derived recompute helper
 │   ├── configpanel/                   # Federated React config panel (TypeScript)
 │   │   ├── index.tsx                  # Module Federation entry
-│   │   ├── PluginConfigurationPanel.tsx  # Composition root
+│   │   ├── PluginConfigurationPanel.tsx  # Composition root (provider and mode pickers)
 │   │   ├── styles.ts                  # --svws-* design tokens, light/dark/night themes
 │   │   ├── api-base.ts                # API_BASE + panel-shared helpers
 │   │   ├── components/                # Section, NumberInput, StatusDashboard, ApiKeyField, ...
 │   │   └── hooks/                     # useStatus, usePanelConfig
 │   ├── constants/
-│   │   ├── index.ts                   # TS constants (PGNs, paths, validation limits)
-│   │   └── notifications-shared.ts    # Shared module: labels, defaults, bounds, provider resolution, key validation
+│   │   ├── index.ts                   # TS constants (PGNs, paths, validation limits, error codes)
+│   │   └── notifications-shared.ts    # Shared module: labels, defaults, bounds, provider/mode resolution, key validation
 │   ├── providers/
-│   │   ├── WeatherProvider.ts         # CurrentWeatherProvider seam (provider-agnostic)
-│   │   ├── createCurrentWeatherProvider.ts  # Constructs the resolved provider
+│   │   ├── WeatherProvider.ts         # CurrentWeatherProvider / ForecastCapableProvider seams
+│   │   ├── providerCatalog.ts         # PROVIDER_CATALOG: id -> service construction
+│   │   ├── createCurrentWeatherProvider.ts  # Constructs the single resolved provider
+│   │   ├── createWeatherProvider.ts   # Single source or a MergingWeatherProvider when merged
+│   │   ├── MergingWeatherProvider.ts  # Blends available providers; delegates forecasts to a child
+│   │   ├── mergeWeatherData.ts        # Pure merge engine + FIELD_MERGE_KINDS policy
 │   │   ├── open-meteo-severity.ts     # WMO weather code -> severe-condition classification
+│   │   ├── met-no-severity.ts         # Met.no symbol code -> severe-condition classification
 │   │   └── accuweather-severity.ts    # AccuWeather icon code -> severe-condition classification
 │   ├── mappers/
 │   │   ├── NMEA2000PathMapper.ts      # WeatherData -> SK delta + one-shot meta delta
 │   │   ├── OpenMeteoMapper.ts         # Open-Meteo current block -> internal SI WeatherData
+│   │   ├── OpenMeteoForecastMapper.ts # Open-Meteo forecast / observation -> SK v2 envelope
+│   │   ├── MetNoMapper.ts             # Met.no current block -> internal SI WeatherData
+│   │   ├── MetNoForecastMapper.ts     # Met.no timeseries -> SK v2 observations / forecasts
+│   │   ├── AccuWeatherMapper.ts       # AccuWeather current block -> internal SI WeatherData
 │   │   ├── MarinePathMapper.ts        # MarineData -> environment.water.* / environment.current + meta
 │   │   ├── OpenMeteoMarineMapper.ts   # Open-Meteo Marine current block -> MarineData
-│   │   ├── WarningsMapper.ts          # NWS CAP alerts -> SK v2 WeatherWarning
-│   │   └── WeatherProviderMapper.ts   # AccuWeather forecast / current responses -> SK v2 WeatherData envelope
+│   │   ├── WarningsMapper.ts          # NWS CAP and Met.no MetAlerts -> SK v2 WeatherWarning
+│   │   ├── WeatherProviderMapper.ts   # AccuWeather forecast / current responses -> SK v2 WeatherData envelope
+│   │   ├── skV2Envelope.ts            # Shared SK v2 outside / wind / sun block builders
+│   │   └── mapperUtils.ts             # requireNumber (shared mapper coercion)
 │   ├── notifications/
 │   │   └── WeatherNotifier.ts         # Severe-weather transition state machine
 │   ├── services/
 │   │   ├── WeatherService.ts          # Orchestration: fetch -> enhance -> emit (+ optional marine)
-│   │   ├── OpenMeteoService.ts        # Keyless Open-Meteo current-conditions provider (default)
+│   │   ├── OpenMeteoService.ts        # Keyless Open-Meteo current and forecast provider (default)
+│   │   ├── MetNoService.ts            # Keyless Met.no current and forecast provider
 │   │   ├── AccuWeatherService.ts      # AccuWeather API client + rolling 24h quota
 │   │   ├── OpenMeteoMarineService.ts  # Keyless Open-Meteo Marine sea-state fetch (optional)
-│   │   ├── WarningsService.ts         # Region-aware getWarnings (NWS for US waters)
+│   │   ├── WarningsService.ts         # Region-aware getWarnings (NWS and Met.no MetAlerts)
 │   │   ├── WeatherProviderAdapter.ts  # SK v2 Weather API provider: forecasts, observations, warnings
-│   │   └── SignalKService.ts          # Vessel navigation data accessors
-│   ├── types/
-│   │   └── index.ts                   # All public interfaces
+│   │   ├── SignalKService.ts          # Vessel navigation data accessors
+│   │   ├── cache/                     # CoalescingTtlCache, ForecastCache, cacheUtils
+│   │   ├── http/                      # RetryingHttpClient
+│   │   └── quota/                     # RollingRequestWindow
+│   ├── types/                         # Public interfaces, config, weather, navigation, and per-provider API types
 │   ├── utils/
 │   │   ├── conversions.ts             # Unit conversions + math helpers
 │   │   ├── validation.ts              # Validators, assertValidCoordinates, NMEA2000 sanitisation
@@ -267,8 +309,8 @@ signalk-virtual-weather-sensors/
 ## Data Flow
 
 ```
-Open-Meteo / AccuWeather API --> CurrentWeatherProvider (extract + convert to SI units)
-                         |
+Open-Meteo / Met.no / AccuWeather API --> CurrentWeatherProvider (extract + convert to SI units)
+            (or MergingWeatherProvider)  |
                     WeatherService (add apparent wind from vessel motion)
                          |
                     NMEA2000PathMapper (validate, sanitize, map to SK paths)
@@ -348,32 +390,39 @@ process, coding standards, and commit conventions.
 ## Testing Strategy
 
 The suite covers unit behavior, service integration, calculation accuracy,
-edge and boundary conditions, and error handling. **Total: 418 tests** across
-23 test files.
+edge and boundary conditions, and error handling. **Total: 547 tests** across
+43 test files. (`npm test` prints the current totals; the `vitest.config.ts`
+coverage gate holds at 80% for branches, functions, lines, and statements.)
 
-- [`index.test.ts`](../src/__tests__/index.test.ts): plugin entry point, meta-delta one-shot invariant, banner dedupe regression, stale-data and quota-exhausted emission-tick branches, panel REST endpoint registration + status + test-key (short-key + long-key-rejected paths) (14 tests)
-- [`WeatherService.test.ts`](../src/__tests__/services/WeatherService.test.ts): core orchestration, quota-aware status banner format and pluralization, single-flight update coalescing, tick-banner precedence (quota beats stale beats live status), and the best-effort marine fetch (37 tests)
-- [`SignalKService.test.ts`](../src/__tests__/services/SignalKService.test.ts): navigation data (36 tests)
-- [`OpenMeteoService.test.ts`](../src/__tests__/services/OpenMeteoService.test.ts): keyless Open-Meteo current-conditions fetch, base-URL override, and error paths (5 tests)
-- [`AccuWeatherService.test.ts`](../src/__tests__/services/AccuWeatherService.test.ts): API integration, retry/error paths, the stalled-body-read timeout abort, rolling 24h request window including a backward clock jump (37 tests)
-- [`OpenMeteoMarineService.test.ts`](../src/__tests__/services/OpenMeteoMarineService.test.ts): keyless Open-Meteo Marine fetch and best-effort failure handling (5 tests)
-- [`WarningsService.test.ts`](../src/__tests__/services/WarningsService.test.ts): region-aware `getWarnings`, NWS active alerts for US waters and an empty list elsewhere (3 tests)
-- [`services/WeatherProviderAdapter.test.ts`](../src/__tests__/services/WeatherProviderAdapter.test.ts): SK v2 Weather API provider surface across forecasts, observations, and warnings (7 tests)
-- [`providers/createCurrentWeatherProvider.test.ts`](../src/__tests__/providers/createCurrentWeatherProvider.test.ts): provider selection and construction (Open-Meteo or AccuWeather) (3 tests)
-- [`providers/accuweather-severity.test.ts`](../src/__tests__/providers/accuweather-severity.test.ts): AccuWeather WeatherIcon code to severe-condition classification (5 tests)
-- [`providers/open-meteo-severity.test.ts`](../src/__tests__/providers/open-meteo-severity.test.ts): WMO weather code to severe-condition classification (6 tests)
-- [`WindCalculator.test.ts`](../src/__tests__/calculators/WindCalculator.test.ts): vector mathematics plus mutation-test-driven boundary cases for wind chill, heat index, beam-wind apparent angle (40 tests)
-- [`NMEA2000PathMapper.test.ts`](../src/__tests__/mappers/NMEA2000PathMapper.test.ts): path mapping plus one-shot meta delta (22 tests)
-- [`OpenMeteoMapper.test.ts`](../src/__tests__/mappers/OpenMeteoMapper.test.ts): Open-Meteo current block to internal SI `WeatherData`, recomputed wind chill and heat index, estimated wet-bulb globe temperature, and unset AccuWeather-only fields (9 tests)
-- [`MarinePathMapper.test.ts`](../src/__tests__/mappers/MarinePathMapper.test.ts): `MarineData` to `environment.water.*` and `environment.current` deltas plus the one-shot marine meta (6 tests)
-- [`OpenMeteoMarineMapper.test.ts`](../src/__tests__/mappers/OpenMeteoMarineMapper.test.ts): Open-Meteo Marine current block to `MarineData` unit conversions and the inland empty-data guard (6 tests)
-- [`WarningsMapper.test.ts`](../src/__tests__/mappers/WarningsMapper.test.ts): NWS CAP alerts to the SK v2 `WeatherWarning` shape (2 tests)
-- [`mappers/delta-schema.test.ts`](../src/__tests__/mappers/delta-schema.test.ts): Ajv conformance against the `@signalk/signalk-schema@1.8.2` JSON Schema for both values and meta deltas, plus a vocabulary assertion that loads canonical leaves from the live `groups/environment.json` (8 tests)
-- [`mappers/WeatherProviderMapper.test.ts`](../src/__tests__/mappers/WeatherProviderMapper.test.ts): AccuWeather hourly and daily forecast mapping plus current-conditions-to-observation mapping for the SK Weather API envelope (9 tests)
-- [`notifications/WeatherNotifier.test.ts`](../src/__tests__/notifications/WeatherNotifier.test.ts): notification state machine, entry/exit edges across wind/visibility/heat/cold/severe-condition bands, master + per-category toggles, WeatherIcon severity mapping, SK 1.8.2 value-shape conformance, reset() semantics, enriched-message format per band, 16-point cardinal mapping, clear-to-normal when a band's driver field is absent, and the `MAX_MESSAGE_LENGTH` ceiling (52 tests)
-- [`integration/weather-flow.integration.test.ts`](../src/__tests__/integration/weather-flow.integration.test.ts): end-to-end smoke against a stubbed `global.fetch`: happy-path delta shape, 429 retry, 401 unauthorized (3 tests)
-- [`utils/conversions.test.ts`](../src/__tests__/utils/conversions.test.ts): unit conversions plus mutation-test-driven boundary cases for `normalizeAnglePiToPi`, air density, and Beaufort scale (43 tests)
-- [`utils/validation.test.ts`](../src/__tests__/utils/validation.test.ts): config validation, AccuWeather-response schema checks, `assertValidCoordinates`, and NMEA2000 sanitization (46 tests)
+Coverage spans these areas:
+
+- **Plugin lifecycle and REST**: plugin entry, the meta-delta one-shot invariant,
+  banner dedupe, stale-data and quota-exhausted emission-tick branches, v2
+  provider registration across every forecast-capable source, and the panel
+  status and test-key routes.
+- **Providers and selection**: single-provider construction from the catalog, the
+  single-versus-merged top-level selection, the `supportsForecasts` seam, the
+  merge orchestration with forecast delegation, the pure merge engine (field
+  policy, circular-mean wind, derived recompute), and each provider's severity
+  classifier (AccuWeather icon, Open-Meteo WMO, Met.no symbol code).
+- **Services**: orchestration and lifecycle (single-flight coalescing, quota-aware
+  banner, best-effort marine fetch), navigation data, the keyless Open-Meteo and
+  Met.no clients, the AccuWeather client (retry, timeout, rolling 24h window), the
+  Open-Meteo Marine client, the region-aware `WarningsService` (NWS and Met.no
+  MetAlerts), the SK v2 adapter surface, and the cache, HTTP, and quota helpers.
+- **Mappers**: NMEA2000 path mapping with the one-shot meta delta, each provider's
+  current-block and forecast mappers, the marine mappers, the warnings mappers,
+  the shared SK v2 envelope builders, and Ajv conformance against the
+  `@signalk/signalk-schema@1.8.2` JSON Schema (values and meta) with a vocabulary
+  assertion loaded from the live `groups/environment.json`.
+- **Calculators and utils**: vector wind, wind chill, heat index, the
+  base-to-derived recompute helper, unit conversions, and config and coordinate
+  validation, including mutation-test-driven boundary cases.
+- **Notifications**: the transition state machine across wind, visibility, heat,
+  cold, and severe-condition bands, master and per-category toggles, the enriched
+  per-band message format, and the `MAX_MESSAGE_LENGTH` ceiling.
+- **Integration**: an end-to-end smoke against a stubbed `global.fetch`
+  (happy-path delta shape, 429 retry, 401 unauthorized).
 
 ### Running Specific Tests
 
@@ -417,16 +466,16 @@ This plugin adheres to the [Signal K 1.8.2 specification](https://signalk.org/sp
 | Requirement | Status | Implementation |
 |-------------|--------|----------------|
 | Plugin Structure | Yes | Default export, async `start`/`stop` methods, schema/uiSchema |
-| Configuration Schema | Yes | JSON Schema with validation in `index.ts` `schema()`. Fields: `weatherProvider` (`open-meteo` default, or `accuweather`), `accuWeatherApiKey` (required only for AccuWeather, validated to at least 20 chars), `openMeteoBaseUrl` (optional self-host or paid endpoint), `marineData` (sea-state toggle, off by default), `updateFrequency` (1..60 min), `emissionInterval` (1..60 s), `dailyApiQuota` (0..1000 calls per rolling 24h, 0 disables), `notifications` (object: master `enabled` plus per-category `wind`/`visibility`/`heat`/`cold`/`weather` booleans, all opt-in, master off by default) |
+| Configuration Schema | Yes | JSON Schema with validation in `plugin/schema.ts` `pluginSchema()`. Fields: `weatherProvider` (`open-meteo` default, `met-no`, or `accuweather`), `weatherMode` (`single` default, or `merged`), `accuWeatherApiKey` (required only for AccuWeather, validated to at least 20 chars), `openMeteoBaseUrl` (optional self-host or paid endpoint), `marineData` (sea-state toggle, off by default), `updateFrequency` (1..60 min), `emissionInterval` (1..60 s), `dailyApiQuota` (0..1000 calls per rolling 24h, 0 disables), `notifications` (object: master `enabled` plus per-category `wind`/`visibility`/`heat`/`cold`/`weather` booleans, all opt-in, master off by default) |
 | Delta Message Format | Yes | `Delta` type from `@signalk/server-api`; `Update` is XOR `values \| meta`, so meta rides in a separate update entry |
 | Signal K Paths (canonical) | Yes | 1.8.2 vocabulary under `environment.outside.*` (`temperature`, `pressure`, `relativeHumidity`, `dewPointTemperature`, `apparentWindChillTemperature`, `theoreticalWindChillTemperature`, `heatIndexTemperature`, `airDensity`) and `environment.wind.*` (`speedOverGround`, `directionTrue`). With the optional sea-state layer on, also `environment.water.temperature` and the `environment.current` node. |
 | Signal K Paths (non-canonical) | Yes | Producer-namespaced under `environment.weather.*` (22 leaves: provider extensions like UV, visibility, cloud cover, plus AccuWeather-only pressure tendency, precipitation type, and visibility obstruction, plus plugin-derived Beaufort scale, gust factor, heat stress index). The optional sea-state layer adds wave and swell leaves under `environment.water.*`. Keeps canonical containers leaf-only as the spec requires. |
-| Source Metadata | Yes | Per-provider `$source` (`SourceRef` brand) on every update: `open-meteo` by default, `accuweather` when AccuWeather is active (constant `PLUGIN.SOURCE_REF`), and `open-meteo-marine` on the sea-state deltas |
+| Source Metadata | Yes | Per-provider `$source` (`SourceRef` brand) on every update: each provider declares its own `sourceRef` (`open-meteo` by default, `met-no`, `accuweather`, or `merged` in merge mode), with `open-meteo-marine` on the sea-state deltas |
 | Meta | Yes | One-shot meta delta on plugin start (`NMEA2000PathMapper.buildMetaDelta()`) describing units and labels for non-canonical paths |
 | Status Reporting | Yes | `app.setPluginStatus` / `app.setPluginError`. Live banner string from `WeatherService.formatStatusBanner()`: `Running, last update Nm ago (N updates, K API requests, K/Q today)`, with a `Running [quota 90% used]` warning prefix and a `setPluginError` quota-exhausted state. `emitWeatherTick` re-pushes the banner on every fresh tick so the age and quota counters stay current. A `setBanner()` dedupe layer coalesces consecutive identical `(kind, message)` pushes to a single SK call. |
 | Notifications | Yes | Opt-in `notifications.environment.*` deltas per SK 1.8.2 notifications.html. 11 distinct hazard paths (`wind.gale|storm|hurricane`, `visibility.low|veryLow`, `heat.caution|high|extreme`, `cold.caution|extreme`, `weather.severe`). Value shape `{ state, method, message, timestamp }`. Transition state machine in `WeatherNotifier`: a band is emitted only on entry / exit, so unchanged snapshots never write to the bus. N2K Alert PGN 126983 / 126985 bridging requires the separate `signalk-to-nmea2000` plugin. |
 | `handleMessage` versioning | Yes | `app.handleMessage(id, delta, SKVersion.v1)` |
-| Logging channel separation | Yes | `debug` and `info` go through `app.debug` (gated by the server's `DEBUG=signalk-virtual-weather-sensors` setting); `warn` and `error` go through `app.error` so they surface in production logs without enabling DEBUG (see `createLogger` in `src/index.ts`). `app.setPluginError` is reserved for the Admin UI status banner, separate from log output. |
+| Logging channel separation | Yes | `debug` and `info` go through `app.debug` (gated by the server's `DEBUG=signalk-virtual-weather-sensors` setting); `warn` and `error` go through `app.error` so they surface in production logs without enabling DEBUG (see `createLogger` in `src/plugin/logging.ts`). `app.setPluginError` is reserved for the Admin UI status banner, separate from log output. |
 
 ### Wind Semantics
 

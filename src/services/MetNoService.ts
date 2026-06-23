@@ -38,12 +38,6 @@ const DEFAULT_BASE_URL = 'https://api.met.no';
 /** Locationforecast 2.0 complete endpoint path. */
 const COMPLETE_ENDPOINT = '/weatherapi/locationforecast/2.0/complete';
 
-/**
- * Contact-form User-Agent required by Met.no terms of service.
- * See https://api.met.no/doc/TermsOfService
- */
-const USER_AGENT = `${PLUGIN.NAME}/${PLUGIN.VERSION} (+https://github.com/NearlCrews/signalk-virtual-weather-sensors)`;
-
 /** Declared v2 forecast horizon. Hourly steps run to about +53 h, the daily horizon to about 10 days. */
 const HOURLY_FORECAST_HOURS = 48;
 const DAILY_FORECAST_DAYS = 9;
@@ -97,7 +91,7 @@ export class MetNoService implements ForecastCapableProvider {
       this.requestCount++;
       const response = await fetchJson<MetNoLocationforecastResponse>(url, {
         timeoutMs: this.requestTimeoutMs,
-        headers: { 'User-Agent': USER_AGENT },
+        headers: { 'User-Agent': PLUGIN.CONTACT_USER_AGENT },
       });
       const weatherData = mapMetNoCurrentToWeatherData(response);
 
@@ -151,7 +145,7 @@ export class MetNoService implements ForecastCapableProvider {
       this.requestCount++;
       const doc = await fetchJson<MetNoLocationforecastResponse>(this.buildUrl(location), {
         timeoutMs: this.requestTimeoutMs,
-        headers: { 'User-Agent': USER_AGENT },
+        headers: { 'User-Agent': PLUGIN.CONTACT_USER_AGENT },
       });
       this.memo = { key, expiresAt: now + DOCUMENT_MEMO_TTL_MS, doc };
       return doc;

@@ -101,7 +101,7 @@ export class WindCalculator {
     // The bow-relative apparent angle references true heading, not course:
     // the two differ by leeway and current set. When no separate heading is
     // supplied it defaults to course (the prior behaviour).
-    const apparentAngle = this.normalizeAngle(
+    const apparentAngle = normalizeAnglePiToPi(
       Math.atan2(apparentWindY, apparentWindX) - vesselHeading
     );
 
@@ -200,22 +200,14 @@ export class WindCalculator {
     trueWindDirection: number
   ): boolean {
     return (
-      typeof trueWindSpeed === 'number' &&
       Number.isFinite(trueWindSpeed) &&
       trueWindSpeed >= 0 &&
       trueWindSpeed <= VALIDATION_LIMITS.WIND_SPEED.MAX &&
-      typeof vesselSpeed === 'number' &&
       Number.isFinite(vesselSpeed) &&
       vesselSpeed >= VALIDATION_LIMITS.VESSEL_SPEED.MIN &&
       vesselSpeed <= VALIDATION_LIMITS.VESSEL_SPEED.MAX &&
-      typeof vesselCourse === 'number' &&
       Number.isFinite(vesselCourse) &&
-      typeof trueWindDirection === 'number' &&
       Number.isFinite(trueWindDirection)
     );
-  }
-
-  public normalizeAngle(radians: number): number {
-    return normalizeAnglePiToPi(radians);
   }
 }

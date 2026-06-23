@@ -261,6 +261,9 @@ const NOTIFICATION_META: ReadonlyArray<Meta> = [
   }),
 ];
 
+/** Combined meta for the one-shot delta: non-canonical paths, canonical leaf overrides, and notification paths. */
+const ALL_META: Meta[] = [...NON_CANONICAL_META, ...CANONICAL_LEAF_META, ...NOTIFICATION_META];
+
 /**
  * NMEA2000 Path Mapper Service
  * Provides comprehensive mapping of weather data to NMEA2000-compatible Signal K paths
@@ -320,10 +323,7 @@ export class NMEA2000PathMapper {
    * responsible for sending it exactly once per mapper instance.
    */
   public buildMetaDelta(): Delta {
-    return buildSkMetaDelta(
-      [...NON_CANONICAL_META, ...CANONICAL_LEAF_META, ...NOTIFICATION_META],
-      this.sourceRef
-    );
+    return buildSkMetaDelta(ALL_META, this.sourceRef);
   }
 
   private addCoreEnvironmentalPaths(values: PathValue[], data: WeatherData): void {
@@ -335,11 +335,10 @@ export class NMEA2000PathMapper {
   }
 
   /**
-   * Condition-detail leaves decoded from AccuWeather: barometric tendency, the
-   * plain-language description, precipitation type, and any visibility
-   * obstruction. All producer-namespaced under environment.weather.*. Mirrors
-   * `AccuWeatherMapper.extractConditionDetails` so the decode and emit sides
-   * group the same fields.
+   * Condition-detail leaves under environment.weather.*: the plain-language
+   * description is populated by every provider. Pressure tendency, precipitation
+   * type, and visibility obstruction are AccuWeather-only; they are emitted only
+   * when the upstream field is present.
    */
   private addConditionDetailPaths(values: PathValue[], data: WeatherData): void {
     if (data.pressureTendency !== undefined) {

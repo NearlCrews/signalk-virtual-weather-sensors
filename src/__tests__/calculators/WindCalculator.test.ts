@@ -5,6 +5,7 @@
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { WindCalculator } from '../../calculators/WindCalculator.js';
+import { normalizeAnglePiToPi } from '../../utils/conversions.js';
 
 describe('WindCalculator', () => {
   let calculator: WindCalculator;
@@ -382,10 +383,11 @@ describe('WindCalculator', () => {
 
   describe('Angle Normalization', () => {
     it('should normalize angles correctly', () => {
-      // Both PI and -PI are equivalent endpoints
-      expect(Math.abs(calculator.normalizeAngle(Math.PI * 3))).toBeCloseTo(Math.PI, 2);
-      expect(Math.abs(calculator.normalizeAngle(-Math.PI * 3))).toBeCloseTo(Math.PI, 2);
-      expect(calculator.normalizeAngle(Math.PI / 2)).toBeCloseTo(Math.PI / 2, 2);
+      // Both PI and -PI are equivalent endpoints; calling the shared conversion
+      // directly since WindCalculator no longer wraps it as a public method.
+      expect(Math.abs(normalizeAnglePiToPi(Math.PI * 3))).toBeCloseTo(Math.PI, 2);
+      expect(Math.abs(normalizeAnglePiToPi(-Math.PI * 3))).toBeCloseTo(Math.PI, 2);
+      expect(normalizeAnglePiToPi(Math.PI / 2)).toBeCloseTo(Math.PI / 2, 2);
     });
   });
 

@@ -21,14 +21,24 @@ import type { WeatherData as SKWeatherData } from '@signalk/server-api';
 import { UNITS } from '../constants/index.js';
 import type { OpenMeteoCurrentResponse, OpenMeteoForecastResponse } from '../types/index.js';
 import {
-  asOpenMeteoTimestamp,
   asOptionalNumber,
   millibarsToPA,
+  normalizeIsoTimestamp,
   optionalCelsiusToKelvin,
   optionalPercentageToRatio,
 } from '../utils/conversions.js';
 import { WMO_DESCRIPTIONS } from './OpenMeteoMapper.js';
-import { buildSkOutsideSI, buildWindFromMs, type SKOutside, type SKSun } from './skV2Envelope.js';
+import {
+  buildSkOutsideSI,
+  buildSunBlock,
+  buildWindFromMs,
+  type SKOutside,
+} from './skV2Envelope.js';
+
+/** Resolve a WMO weather code to a plain-language description, returning undefined when the code is absent or unmapped. */
+function wmoDescription(code: number | undefined): string | undefined {
+  return code !== undefined ? WMO_DESCRIPTIONS.get(code) : undefined;
+}
 
 /** Map the Open-Meteo hourly block to ascending-order `point` WeatherData entries. */
 export function mapOpenMeteoHourlyToForecasts(
@@ -45,8 +55,7 @@ export function mapOpenMeteoHourlyToForecasts(
     const cloudCover = optionalPercentageToRatio(h?.cloud_cover?.[i]);
     const uvIndex = asOptionalNumber(h?.uv_index?.[i]);
     const precipitationMm = asOptionalNumber(h?.precipitation?.[i]);
-    const weatherCode = asOptionalNumber(h?.weather_code?.[i]);
-    const description = weatherCode !== undefined ? WMO_DESCRIPTIONS.get(weatherCode) : undefined;
+    const description = wmoDescription(asOptionalNumber(h?.weather_code?.[i]));
 
     const precipitationVolumeM =
       precipitationMm !== undefined ? precipitationMm * UNITS.PRECIPITATION.MM_TO_M : undefined;
@@ -89,8 +98,7 @@ export function mapOpenMeteoDailyToForecasts(response: OpenMeteoForecastResponse
     const maxTemperatureK = optionalCelsiusToKelvin(d?.temperature_2m_max?.[i]);
     const uvIndex = asOptionalNumber(d?.uv_index_max?.[i]);
     const precipitationMm = asOptionalNumber(d?.precipitation_sum?.[i]);
-    const weatherCode = asOptionalNumber(d?.weather_code?.[i]);
-    const description = weatherCode !== undefined ? WMO_DESCRIPTIONS.get(weatherCode) : undefined;
+    const description = wmoDescription(asOptionalNumber(d?.weather_code?.[i]));
 
     const outside: SKOutside = {
       ...(minTemperatureK !== undefined && { minTemperature: minTemperatureK }),
@@ -107,12 +115,7 @@ export function mapOpenMeteoDailyToForecasts(response: OpenMeteoForecastResponse
       d?.wind_gusts_10m_max?.[i]
     );
 
-    const sunriseStr = d?.sunrise?.[i];
-    const sunsetStr = d?.sunset?.[i];
-    const sun: SKSun = {
-      ...(typeof sunriseStr === 'string' && { sunrise: sunriseStr }),
-      ...(typeof sunsetStr === 'string' && { sunset: sunsetStr }),
-    };
+    const sun = buildSunBlock(d?.sunrise?.[i], d?.sunset?.[i]);
 
     return {
       date,
@@ -120,7 +123,7 @@ export function mapOpenMeteoDailyToForecasts(response: OpenMeteoForecastResponse
       ...(description !== undefined && { description }),
       outside,
       ...(wind !== undefined && { wind }),
-      ...(Object.keys(sun).length > 0 && { sun }),
+      ...(sun !== undefined && { sun }),
     };
   });
 }
@@ -130,7 +133,7 @@ export function mapOpenMeteoDailyToForecasts(response: OpenMeteoForecastResponse
  * The observation carries pressure (from `pressure_msl`) in addition to
  * the fields shared with the hourly mapper. Every field is conditionally spread
  * so a missing field is omitted rather than emitted as zero. The required `date`
- * field is set via `asOpenMeteoTimestamp` (returns '' when absent, never undefined).
+ * field is set via `normalizeIsoTimestamp` (returns '' when absent, never undefined).
  */
 export function mapOpenMeteoCurrentToObservation(
   response: OpenMeteoCurrentResponse
@@ -146,8 +149,7 @@ export function mapOpenMeteoCurrentToObservation(
   const cloudCover = optionalPercentageToRatio(c?.cloud_cover);
   const uvIndex = asOptionalNumber(c?.uv_index);
   const precipitationMm = asOptionalNumber(c?.precipitation);
-  const weatherCode = asOptionalNumber(c?.weather_code);
-  const description = weatherCode !== undefined ? WMO_DESCRIPTIONS.get(weatherCode) : undefined;
+  const description = wmoDescription(asOptionalNumber(c?.weather_code));
 
   const pressurePa = pressureMbar !== undefined ? millibarsToPA(pressureMbar) : undefined;
   const precipitationVolumeM =
@@ -166,7 +168,7 @@ export function mapOpenMeteoCurrentToObservation(
 
   const wind = buildWindFromMs(c?.wind_speed_10m, c?.wind_direction_10m, c?.wind_gusts_10m);
 
-  const date = asOpenMeteoTimestamp(c?.time);
+  const date = normalizeIsoTimestamp(c?.time);
   return {
     date,
     type: 'observation',

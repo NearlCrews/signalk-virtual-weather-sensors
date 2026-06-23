@@ -26,7 +26,7 @@ body:
       description: Detailed steps to reproduce the behavior
       placeholder: |
         1. Install plugin version X.X.X
-        2. Configure with AccuWeather API key
+        2. Select a weather source (Open-Meteo, Met.no, or AccuWeather)
         3. Start Signal K server
         4. Observe error in logs
     validations:
@@ -99,6 +99,19 @@ body:
       required: true
 
   - type: dropdown
+    id: weather-source
+    attributes:
+      label: Weather Source
+      description: Which weather source is selected in the plugin config?
+      options:
+        - Open-Meteo (default, keyless)
+        - Met.no (keyless)
+        - AccuWeather (API key)
+        - Merge available providers
+    validations:
+      required: true
+
+  - type: dropdown
     id: os
     attributes:
       label: Operating System
@@ -121,17 +134,17 @@ body:
       render: json
       placeholder: |
         {
-          "accuWeatherApiKey": "REDACTED",
+          "weatherProvider": "open-meteo",
+          "weatherMode": "single",
           "updateFrequency": 30,
-          "emissionInterval": 5,
-          "dailyApiQuota": 50
+          "emissionInterval": 5
         }
 
   - type: checkboxes
     id: accuweather
     attributes:
-      label: AccuWeather API Status
-      description: Please verify the following about your AccuWeather API setup
+      label: AccuWeather API Status (only if using AccuWeather)
+      description: Skip this if you are on a keyless source (Open-Meteo or Met.no)
       options:
         - label: I have a valid AccuWeather API key
         - label: The API key is not rate-limited or expired

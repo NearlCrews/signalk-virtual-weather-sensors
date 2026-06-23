@@ -34,7 +34,7 @@ export default function NotificationToggles({
           checked={notifications.enabled}
           onChange={(e) => onChange('enabled', e.target.checked)}
         />
-        <label htmlFor="svws-notif-enabled" style={{ ...S.checkboxLabel, fontWeight: 600 }}>
+        <label htmlFor="svws-notif-enabled" style={S.checkboxLabelStrong}>
           {NOTIFICATION_MASTER_LABEL}
         </label>
       </div>

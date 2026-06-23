@@ -25,12 +25,12 @@ import type {
   WeatherData,
 } from '../types/index.js';
 import {
+  asOptionalNumber,
   kelvinToCelsius,
   normalizeAngle0To2Pi,
   pascalsToMillibars,
   radiansToDegrees,
   ratioToPercentage,
-  truncateToCodePoints,
 } from '../utils/conversions.js';
 import { pv } from '../utils/skDelta.js';
 
@@ -74,26 +74,14 @@ function methodsFor(state: NotificationState): ReadonlyArray<NotificationMethod>
 export const MAX_MESSAGE_LENGTH = 80;
 
 function capForChartplotter(message: string): string {
-  // UTF-16 length is an upper bound on code-point count, so a string within the
-  // cap by UTF-16 units is within it by code points too: fast-return without
-  // the helper (which would return short strings unchanged, but applying the
-  // ellipsis branch unconditionally would suffix short messages too).
+  // UTF-16 length is an upper bound on code-point count: a string within the
+  // cap by UTF-16 units is within it by code points too.
   if (message.length <= MAX_MESSAGE_LENGTH) return message;
-  const truncated = truncateToCodePoints(message, MAX_MESSAGE_LENGTH - 1);
-  // The helper returns the input unchanged when it is already within the cap
-  // by code points (surrogate pairs inflate UTF-16 length); only a genuinely
-  // over-cap message gets the ellipsis.
-  return truncated === message ? message : `${truncated}…`;
-}
-
-/**
- * Narrow `number | undefined` to `number` for optional WeatherData fields.
- * Required fields (`temperature`, `windSpeed`, etc.) are already `number` per
- * the type; this guard is only for the spread fields like `windGustSpeed`,
- * `cloudCeiling`, `precipitationLastHour` that the weather provider may omit.
- */
-function isFiniteNumber(value: number | undefined): value is number {
-  return value !== undefined && Number.isFinite(value);
+  const points = Array.from(message);
+  if (points.length <= MAX_MESSAGE_LENGTH) return message;
+  // Trim to MAX_MESSAGE_LENGTH - 1 code points and append the ellipsis so the
+  // result is exactly MAX_MESSAGE_LENGTH code points (ellipsis replaces, not adds).
+  return `${points.slice(0, MAX_MESSAGE_LENGTH - 1).join('')}…`;
 }
 
 /** 16-point compass rose, indexed by floor((deg + 11.25) / 22.5) % 16 (the wrap maps [348.75, 360) back to N). */
@@ -122,7 +110,7 @@ function radiansToCardinal(radians: number): string {
   return CARDINAL_16[idx] ?? 'N';
 }
 
-function paToHpa(pressurePa: number): number {
+function paToHpaRounded(pressurePa: number): number {
   return Math.round(pascalsToMillibars(pressurePa));
 }
 
@@ -142,7 +130,7 @@ function msRounded(ms: number): number {
   return Math.round(ms * 10) / 10;
 }
 
-// Returns a number like the sibling unit helpers (paToHpa, kToCRounded,
+// Returns a number like the sibling unit helpers (paToHpaRounded, kToCRounded,
 // msRounded); the call site applies the one-decimal presentation.
 function metersToKm(meters: number): number {
   return meters / UNITS.LENGTH.KM_TO_M;
@@ -157,8 +145,8 @@ function metersToKm(meters: number): number {
  * Required `WeatherData` fields (temperature, pressure, windSpeed, etc.) are
  * still guarded with `Number.isFinite` because the sanitizer can in principle
  * clamp them but cannot guarantee finite outputs across all upstream-corrupted
- * inputs. Optional fields use `isFiniteNumber` to narrow `number | undefined`
- * in one step.
+ * inputs. Optional fields use `asOptionalNumber` to narrow `number | undefined`
+ * to a finite number.
  */
 function formatWindSuffix(data: WeatherData): string {
   const bft = data.beaufortScale;
@@ -172,14 +160,12 @@ function formatWindSuffix(data: WeatherData): string {
     parts.push(`${msRounded(windSpeed)} m/s`);
   }
   // Surface the gust even when sustained wind is missing.
-  if (
-    isFiniteNumber(data.windGustSpeed) &&
-    (windSpeed === undefined || data.windGustSpeed > windSpeed)
-  ) {
-    parts.push(`gusts ${msRounded(data.windGustSpeed)} m/s`);
+  const gustSpeed = asOptionalNumber(data.windGustSpeed);
+  if (gustSpeed !== undefined && (windSpeed === undefined || gustSpeed > windSpeed)) {
+    parts.push(`gusts ${msRounded(gustSpeed)} m/s`);
   }
   if (Number.isFinite(data.pressure)) {
-    parts.push(`${paToHpa(data.pressure)} hPa`);
+    parts.push(`${paToHpaRounded(data.pressure)} hPa`);
   }
   return parts.join(', ');
 }
@@ -188,13 +174,15 @@ function formatVisibilitySuffix(data: WeatherData): string {
   const vis = data.visibility;
   if (vis === undefined) return '';
   const parts: string[] = [`${metersToKm(vis).toFixed(1)} km`];
-  if (isFiniteNumber(data.cloudCeiling)) {
-    parts.push(`ceiling ${Math.round(data.cloudCeiling)} m`);
+  const ceilingVal = asOptionalNumber(data.cloudCeiling);
+  if (ceilingVal !== undefined) {
+    parts.push(`ceiling ${Math.round(ceilingVal)} m`);
   }
   // precipitationLastHour is a past-hour accumulation in mm; over a 1-hour
   // window that equals an average rate in mm/h.
-  if (isFiniteNumber(data.precipitationLastHour) && data.precipitationLastHour > 0) {
-    parts.push(`rain ${data.precipitationLastHour.toFixed(1)} mm/h`);
+  const precipVal = asOptionalNumber(data.precipitationLastHour);
+  if (precipVal !== undefined && precipVal > 0) {
+    parts.push(`rain ${precipVal.toFixed(1)} mm/h`);
   }
   return parts.join(', ');
 }
@@ -203,14 +191,16 @@ function formatHeatSuffix(data: WeatherData): string {
   const hsi = data.heatStressIndex;
   if (hsi === undefined) return '';
   const parts: string[] = [`HSI ${hsi}`];
-  if (isFiniteNumber(data.wetBulbGlobeTemperature)) {
-    parts.push(`WBGT ${kToCRounded(data.wetBulbGlobeTemperature)} C`);
+  const wbgtVal = asOptionalNumber(data.wetBulbGlobeTemperature);
+  if (wbgtVal !== undefined) {
+    parts.push(`WBGT ${kToCRounded(wbgtVal)} C`);
   }
   if (Number.isFinite(data.humidity)) {
     parts.push(`RH ${Math.round(ratioToPercentage(data.humidity))}%`);
   }
-  if (isFiniteNumber(data.realFeelShade)) {
-    parts.push(`RealFeel ${kToCRounded(data.realFeelShade)} C`);
+  const realFeelShadeVal = asOptionalNumber(data.realFeelShade);
+  if (realFeelShadeVal !== undefined) {
+    parts.push(`RealFeel ${kToCRounded(realFeelShadeVal)} C`);
   }
   return parts.join(', ');
 }
@@ -240,7 +230,7 @@ function formatSevereSuffix(data: WeatherData, label: string): string {
   const description = data.description?.trim() ?? '';
   const lead = description ? `${label}: ${description}` : label;
   if (Number.isFinite(data.pressure)) {
-    return `${lead}, ${paToHpa(data.pressure)} hPa`;
+    return `${lead}, ${paToHpaRounded(data.pressure)} hPa`;
   }
   return lead;
 }

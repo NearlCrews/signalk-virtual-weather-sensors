@@ -19,14 +19,8 @@ import {
   type NwsAlertsResponse,
 } from '../mappers/WarningsMapper.js';
 import type { GeoLocation, Logger } from '../types/index.js';
-import { toErrorMessage } from '../utils/conversions.js';
+import { isWithinBounds, toErrorMessage } from '../utils/conversions.js';
 import { DEFAULT_REQUEST_TIMEOUT_MS, fetchJson } from '../utils/http.js';
-
-/**
- * Both NWS and Met.no require an identifying User-Agent with contact info.
- * NWS returns 403 without it; Met.no policy requires it for all API clients.
- */
-const CONTACT_USER_AGENT = `${PLUGIN.NAME}/${PLUGIN.VERSION} (+https://github.com/NearlCrews/signalk-virtual-weather-sensors)`;
 
 /**
  * Loose bounding box for US NWS coverage (CONUS, Alaska, Hawaii, the
@@ -69,24 +63,22 @@ export class WarningsService {
     return [];
   }
 
-  private inUsCoverage(location: GeoLocation): boolean {
-    const { latitude, longitude } = location;
+  private inBox(
+    location: GeoLocation,
+    box: { latMin: number; latMax: number; lonMin: number; lonMax: number }
+  ): boolean {
     return (
-      latitude >= US_BOX.latMin &&
-      latitude <= US_BOX.latMax &&
-      longitude >= US_BOX.lonMin &&
-      longitude <= US_BOX.lonMax
+      isWithinBounds(location.latitude, box.latMin, box.latMax) &&
+      isWithinBounds(location.longitude, box.lonMin, box.lonMax)
     );
   }
 
+  private inUsCoverage(location: GeoLocation): boolean {
+    return this.inBox(location, US_BOX);
+  }
+
   private inNordicCoverage(location: GeoLocation): boolean {
-    const { latitude, longitude } = location;
-    return (
-      latitude >= NORDIC_BOX.latMin &&
-      latitude <= NORDIC_BOX.latMax &&
-      longitude >= NORDIC_BOX.lonMin &&
-      longitude <= NORDIC_BOX.lonMax
-    );
+    return this.inBox(location, NORDIC_BOX);
   }
 
   /** Fetch and map NWS active alerts, best-effort (empty on any failure). */
@@ -96,7 +88,7 @@ export class WarningsService {
     try {
       const response = await fetchJson<NwsAlertsResponse>(url, {
         timeoutMs: this.requestTimeoutMs,
-        headers: { 'User-Agent': CONTACT_USER_AGENT },
+        headers: { 'User-Agent': PLUGIN.CONTACT_USER_AGENT },
       });
       return mapNwsAlertsToWarnings(response);
     } catch (error) {
@@ -116,7 +108,7 @@ export class WarningsService {
     try {
       const response = await fetchJson<MetAlertsResponse>(url, {
         timeoutMs: this.requestTimeoutMs,
-        headers: { 'User-Agent': CONTACT_USER_AGENT },
+        headers: { 'User-Agent': PLUGIN.CONTACT_USER_AGENT },
       });
       return mapMetAlertsToWarnings(response);
     } catch (error) {

@@ -11,12 +11,12 @@
 
 import type { MarineData, OpenMeteoMarineResponse } from '../types/index.js';
 import {
-  asOpenMeteoTimestamp,
   asOptionalNumber,
   celsiusToKelvin,
   degreesToRadians,
   kmhToMS,
   normalizeAngle0To2Pi,
+  normalizeIsoTimestamp,
 } from '../utils/conversions.js';
 
 /** Convert an optional degree bearing to radians normalized to [0, 2pi). */
@@ -45,7 +45,7 @@ export function mapOpenMeteoMarineToMarineData(response: OpenMeteoMarineResponse
   const surfaceCurrentDirection = toRadians(current.ocean_current_direction);
 
   return {
-    timestamp: asOpenMeteoTimestamp(current.time),
+    timestamp: normalizeIsoTimestamp(current.time),
     ...(significantWaveHeight !== undefined && { significantWaveHeight }),
     ...(waveDirection !== undefined && { waveDirection }),
     ...(wavePeriod !== undefined && { wavePeriod }),

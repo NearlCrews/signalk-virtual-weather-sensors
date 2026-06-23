@@ -17,6 +17,17 @@ const LOG_PREFIX: Record<LogLevel, string> = {
 };
 
 /**
+ * Precomputed full line prefix per level: `${LOG_PREFIX[level]}[${PLUGIN.NAME}] `.
+ * Avoids rebuilding the string on every log call.
+ */
+const LOG_LINE_PREFIX: Record<LogLevel, string> = {
+  debug: `${LOG_PREFIX.debug}[${PLUGIN.NAME}] `,
+  info: `${LOG_PREFIX.info}[${PLUGIN.NAME}] `,
+  warn: `${LOG_PREFIX.warn}[${PLUGIN.NAME}] `,
+  error: `${LOG_PREFIX.error}[${PLUGIN.NAME}] `,
+};
+
+/**
  * Single regex matching any sensitive key substring. `accuweatherapikey` is
  * covered by the `apikey` alternation (substring match) so it does not need its
  * own branch.
@@ -88,7 +99,7 @@ export function createLogger(app: ServerAPI): Logger {
         ? sanitizeLogMetadata(metadata as Record<string, unknown>)
         : metadata;
     const logMetadata = hasMetadata ? ` | ${JSON.stringify(finalMetadata)}` : '';
-    const line = `${LOG_PREFIX[level]}[${PLUGIN.NAME}] ${message}${logMetadata}`;
+    const line = `${LOG_LINE_PREFIX[level]}${message}${logMetadata}`;
     if (level === 'warn' || level === 'error') {
       app.error(line);
     } else {

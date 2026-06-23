@@ -18,27 +18,26 @@ service; AccuWeather is an optional source for users who have an API key.
 > for safety-of-life decisions: always cross-check official forecasts and
 > warnings against your primary instruments.
 
-## What's new in 1.9.1
+## What's new in 1.10.0
 
-A maintenance release that smooths first-run setup, corrects timestamps and
-alert ordering, and makes failures easier to see.
+Two new keyless providers, full Signal K v2 Weather API support across every
+provider, and an optional synthesis mode that blends the available sources. The
+default behavior is unchanged: a fresh install still runs on keyless Open-Meteo.
 
-- **Fresh keyless installs save cleanly.** The config panel no longer demands a
-  20-character AccuWeather key under the default Open-Meteo source, so a first-run
-  save just works.
-- **Failures surface in the status banner.** A sustained inability to publish
-  deltas now flips the banner to an error instead of showing a green "Running"
-  while no data reaches the bus.
-- **Correct times and ordering.** Open-Meteo observation timestamps carry a UTC
-  designator, and weather warnings sort chronologically across time zones.
-- **The marine layer is quieter and safer.** A late marine fetch can no longer
-  repopulate a stopped service, and a tolerated outage logs once instead of
-  double-reporting.
-- **Switching the weather source is documented.** Changing the provider re-stamps
-  every delta's `$source`, so downstream source locks, for example in
-  `signalk-nmea2000-emitter-cannon`, must be updated to match.
+- **Met.no joins as a keyless provider.** A third weather source backed by the
+  Norwegian Meteorological Institute, selectable alongside Open-Meteo and
+  AccuWeather, with deltas stamped `$source: 'met-no'`.
+- **The v2 Weather API works on any source.** Open-Meteo, Met.no, and AccuWeather
+  all serve forecasts and observations, so a default keyless install advertises
+  `weather` under `/signalk/v2/features` without an API key.
+- **Region-aware warnings in two regions.** The `warnings` endpoint serves NWS
+  active alerts for US waters and Met.no MetAlerts for Norwegian waters, both
+  keyless and best-effort.
+- **Merge mode blends every available provider.** A "Provider mode" toggle adds an
+  optional merged source (`$source: 'merged'`) that escalates hazard fields to the
+  most conservative value and recomputes derived quantities from the blend.
 
-See the [v1.9.1 changelog entry](CHANGELOG.md#v191), or the
+See the [v1.10.0 changelog entry](CHANGELOG.md#v1100), or the
 [changelog](CHANGELOG.md) for the full list.
 
 ## What it does
@@ -47,16 +46,18 @@ Signal K is an open marine data standard that streams a boat's navigation,
 environment, and AIS data over a single API. Virtual Weather Sensors is a
 Signal K server plugin that fills the environment branch on boats without a
 masthead weather station: it polls a weather API (keyless Open-Meteo by
-default, or AccuWeather with a key) for conditions at the vessel's GPS
-position and emits them as standard Signal K deltas that instrument panels,
-dashboards, and NMEA2000 bridges consume natively.
+default, keyless Met.no, or AccuWeather with a key, or all of them blended in
+merge mode) for conditions at the vessel's GPS position and emits them as
+standard Signal K deltas that instrument panels, dashboards, and NMEA2000
+bridges consume natively.
 
-Every delta carries a provider `$source` (`open-meteo` or `accuweather`), so a
-boat that later gains a real anemometer or barometer can prefer the physical
-sensor through Signal K source priorities. With an AccuWeather key the plugin
-also registers as a Signal K v2 Weather API provider, serving hourly and daily
-forecasts over REST, and either source can raise opt-in severe-weather
-notifications for wind, visibility, heat, cold, and severe conditions.
+Every delta carries a provider `$source` (`open-meteo`, `met-no`, `accuweather`,
+or `merged`), so a boat that later gains a real anemometer or barometer can
+prefer the physical sensor through Signal K source priorities. Any
+forecast-capable source registers the plugin as a Signal K v2 Weather API
+provider, serving hourly and daily forecasts over REST, and every source can
+raise opt-in severe-weather notifications for wind, visibility, heat, cold, and
+severe conditions.
 
 ## Features
 
@@ -67,9 +68,9 @@ notifications for wind, visibility, heat, cold, and severe conditions.
   `environment.outside.*` and `environment.wind.*`, with AccuWeather
   extensions and derived values on a producer-namespaced
   `environment.weather.*` branch.
-- **Signal K v2 Weather API provider.** With an AccuWeather key, serves
-  forecasts, current observations, and region-aware severe-weather warnings
-  over REST, so dashboards such as
+- **Signal K v2 Weather API provider.** Any forecast-capable source (Open-Meteo,
+  Met.no, or AccuWeather) serves forecasts, current observations, and
+  region-aware severe-weather warnings over REST, so dashboards such as
   [Binnacle](https://github.com/NearlCrews/signalk-binnacle) can show forecast
   data.
 - **Apparent wind calculated** from the true wind and the vessel's own
@@ -84,8 +85,9 @@ notifications for wind, visibility, heat, cold, and severe conditions.
   admin UIs.
 - **NMEA2000 path alignment** for bridging onto a physical bus via a
   companion emitter plugin.
-- **Per-provider `$source` on every delta** (`open-meteo`, `accuweather`, or
-  `open-meteo-marine`), so real onboard sensors can win on source priority.
+- **Per-provider `$source` on every delta** (`open-meteo`, `met-no`,
+  `accuweather`, `merged`, or `open-meteo-marine`), so real onboard sensors can
+  win on source priority.
 
 ## Screenshots
 
@@ -140,7 +142,8 @@ In the Signal K admin UI, open **Server, then Plugin Config**, find
 
 | Setting | Description | Default | Range |
 |---------|-------------|---------|-------|
-| Weather source | Open-Meteo (free, keyless, global) or AccuWeather (needs a key, adds RealFeel, plain-language text, pressure tendency, and precipitation type). | Open-Meteo | Open-Meteo or AccuWeather |
+| Weather source | Open-Meteo (free, keyless, global), Met.no (free, keyless, global), or AccuWeather (needs a key, adds RealFeel, plain-language text, pressure tendency, and precipitation type). In merge mode this source is the primary that sets source priority and backs forecasts. | Open-Meteo | Open-Meteo, Met.no, or AccuWeather |
+| Provider mode | Single source, or merge available providers into a synthetic `merged` source that blends current conditions. | Single source | Single or Merge |
 | AccuWeather API Key | Required only when the source is AccuWeather. Get a key from AccuWeather. | none | n/a |
 | Open-Meteo base URL | Optional. Leave blank for the free public service (non-commercial use). Self-hosted or paid users can enter a custom endpoint. | none | n/a |
 | Emit sea state | Adds a keyless Open-Meteo Marine layer (waves, swell, sea temperature, and current) on `environment.water.*` and `environment.current`. Coastal and offshore only. | off | boolean |
@@ -178,29 +181,29 @@ the per-PGN path mapping.
 
 ## Weather API provider
 
-With an AccuWeather key, the plugin registers as a Signal K v2 Weather API
-provider, so consumers can pull forecasts over REST instead of subscribing to
-the delta stream (the forecast and observation endpoints are AccuWeather-backed;
-Open-Meteo forecast support is planned):
+Any forecast-capable source (Open-Meteo, Met.no, or AccuWeather) registers the
+plugin as a Signal K v2 Weather API provider, so consumers can pull forecasts
+over REST instead of subscribing to the delta stream. In merged mode the
+designated forecast child backs the endpoints:
 
 - `GET /signalk/v2/api/weather/forecasts/point` returns hourly point
-  forecasts (from the AccuWeather 12-hour hourly source).
-- `GET /signalk/v2/api/weather/forecasts/daily` returns daily forecasts
-  (from the AccuWeather 5-day source).
+  forecasts.
+- `GET /signalk/v2/api/weather/forecasts/daily` returns daily forecasts.
 - `GET /signalk/v2/api/weather/observations` returns current conditions for
   the requested position (with pressure and pressure tendency the forecasts
   omit).
 - `GET /signalk/v2/api/weather/warnings` returns region-aware severe-weather
-  alerts: NWS active alerts for US waters (keyless, best-effort), and an empty
-  list elsewhere.
+  alerts: NWS active alerts for US waters, Met.no MetAlerts for Norwegian
+  waters (both keyless and best-effort), and an empty list elsewhere.
 
 Registering the provider is what makes the server list `weather` under
 `/signalk/v2/features`, which is how dashboards such as
 [Binnacle](https://github.com/NearlCrews/signalk-binnacle) detect that
 forecast support is available. Forecasts and observations are mapped to SI
-units, cached on demand, and share the plugin's rolling 24-hour API quota so a
-polling client cannot exhaust a key. Warnings are keyless and served
-independently of that quota. See
+units and cached on demand. Under AccuWeather they share the plugin's rolling
+24-hour API quota so a polling client cannot exhaust a key; Open-Meteo and
+Met.no are keyless and uncapped. Warnings are keyless and served independently
+of that quota. See
 [docs/signal-k-paths.md](docs/signal-k-paths.md#weather-api-provider) for
 the populated field reference.
 
@@ -276,6 +279,8 @@ Virtual Weather Sensors is written and maintained by
   standard
 - [Open-Meteo](https://open-meteo.com/) for the free, keyless weather and
   marine APIs that back the default source
+- [Met.no](https://api.met.no/) (the Norwegian Meteorological Institute) for the
+  free, keyless Locationforecast and MetAlerts APIs
 - [AccuWeather](https://developer.accuweather.com/) for the optional weather
   API this plugin can poll with a key
 

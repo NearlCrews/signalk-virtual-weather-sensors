@@ -22,7 +22,7 @@ import { WarningsService } from './services/WarningsService.js';
 import { WeatherProviderAdapter } from './services/WeatherProviderAdapter.js';
 import { WeatherService } from './services/WeatherService.js';
 import type { Logger, PluginConfiguration } from './types/index.js';
-import { toErrorMessage } from './utils/conversions.js';
+import { elapsedSinceMs, toErrorMessage } from './utils/conversions.js';
 import { toSourceRef } from './utils/skDelta.js';
 import { ConfigurationValidator } from './utils/validation.js';
 
@@ -93,7 +93,7 @@ export default function createPlugin(app: ServerAPI): Plugin {
 
         await cleanup(instance);
 
-        const uptime = instance.startTime ? Date.now() - instance.startTime.getTime() : 0;
+        const uptime = elapsedSinceMs(instance.startTime?.getTime() ?? null) ?? 0;
 
         instance.state = 'stopped';
         instance.startTime = null;
@@ -371,7 +371,9 @@ async function cleanup(instance: PluginInstance): Promise<void> {
  */
 function validateAndNormalizeSettings(settings: unknown, logger: Logger): PluginConfiguration {
   if (!settings || typeof settings !== 'object') {
-    throw new Error(`${ERROR_CODES.CONFIGURATION.INVALID_API_KEY}: Invalid plugin configuration`);
+    throw new Error(
+      `${ERROR_CODES.CONFIGURATION.INVALID_CONFIGURATION}: Invalid plugin configuration`
+    );
   }
 
   const rawSettings = settings as Record<string, unknown>;
@@ -420,7 +422,7 @@ function validateAndNormalizeSettings(settings: unknown, logger: Logger): Plugin
       errors: validation.errors,
       warnings: validation.warnings,
     });
-    throw new Error(`${ERROR_CODES.CONFIGURATION.INVALID_API_KEY}: ${errorMessage}`);
+    throw new Error(`${ERROR_CODES.CONFIGURATION.INVALID_CONFIGURATION}: ${errorMessage}`);
   }
 
   if (validation.warnings.length > 0) {

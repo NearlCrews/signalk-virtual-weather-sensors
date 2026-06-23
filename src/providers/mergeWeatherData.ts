@@ -191,7 +191,13 @@ function maxSeverity(dataList: ReadonlyArray<WeatherData>): SevereCondition | un
   return best;
 }
 
-/** Collect all present numeric values for a WeatherData field across the list. */
+/**
+ * Collect all present numeric values for a WeatherData field across the list.
+ * The intermediate `as unknown` cast is needed because TypeScript's strict index
+ * access types `WeatherData[keyof WeatherData]` as a union that includes
+ * non-numeric members; casting through `unknown` before filtering to `number`
+ * is the narrowest safe route.
+ */
 function collectNums(dataList: ReadonlyArray<WeatherData>, key: keyof WeatherData): number[] {
   return dataList.map((d) => d[key] as unknown).filter((v): v is number => typeof v === 'number');
 }
@@ -203,6 +209,8 @@ function collectNums(dataList: ReadonlyArray<WeatherData>, key: keyof WeatherDat
 function mergeTendency(dataList: ReadonlyArray<WeatherData>, vals: number[]): number | undefined {
   if (vals.length === 0) return undefined;
   if (vals.includes(-1)) return -1;
+  // The empty-guard above ensures at least one element supplies pressureTendency,
+  // so firstPresent returns a number here, not undefined.
   return firstPresent(dataList, 'pressureTendency') as number;
 }
 
@@ -300,14 +308,15 @@ export function mergeWeatherData(dataList: ReadonlyArray<WeatherData>): WeatherD
   const mergedTemperature = mean(collectNums(dataList, 'temperature'));
   const mergedPressure = mean(collectNums(dataList, 'pressure'));
   const mergedHumidity = mean(collectNums(dataList, 'humidity'));
-  const mergedWindSpeed = mean(collectNums(dataList, 'windSpeed'));
+  const windSpeeds = collectNums(dataList, 'windSpeed');
+  const mergedWindSpeed = mean(windSpeeds);
   const mergedDewPoint = mean(collectNums(dataList, 'dewPoint'));
 
-  // CIRCULAR MEAN: speed-weighted wind direction
+  // CIRCULAR MEAN: speed-weighted wind direction (reuses the windSpeeds array computed above)
   const fallbackDir = firstPresent(dataList, 'windDirection') ?? 0;
   const mergedWindDirection = circularMean(
     collectNums(dataList, 'windDirection'),
-    collectNums(dataList, 'windSpeed'),
+    windSpeeds,
     fallbackDir
   );
 

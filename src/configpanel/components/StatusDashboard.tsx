@@ -77,7 +77,7 @@ export default function StatusDashboard({
   const staleAgeMs = lastUpdatedMs === null ? 0 : Math.max(0, lastAttemptMs - lastUpdatedMs);
 
   return (
-    <div role="status">
+    <div>
       <div style={S.card}>
         <div style={S.cardIcon} aria-hidden="true">
           ⛅
@@ -92,15 +92,19 @@ export default function StatusDashboard({
           <span style={{ ...S.dot, ...dotStyle }} aria-hidden="true" />
           <span style={S.dotLabel}>{stateLabel}</span>
         </span>
-        {stale ? (
-          <span style={S.staleMarker}>updated {Math.round(staleAgeMs / 1000)} s ago</span>
-        ) : null}
+        {/* Only the freshness line is a polite live region. The stats grid
+            below opts out (aria-live="off") so a 10-second poll announces at
+            most the age, not a wall of every stat. */}
+        <span role="status" style={S.staleMarker}>
+          {stale ? `updated ${Math.round(staleAgeMs / 1000)} s ago` : ''}
+        </span>
       </div>
 
       {/* The grid renders in every state. When the plugin is stopped it shows
           the last-known values (or placeholders) so the layout never jumps
-          and the operator keeps context. */}
-      <div style={S.statsGrid}>
+          and the operator keeps context. The grid opts out of live updates so
+          polls stay quiet for screen readers. */}
+      <div style={S.statsGrid} aria-live="off">
         <Stat value={count(status?.updates)} label="Updates" />
         <Stat value={count(status?.quotaUsedLast24h)} label="API calls (24h)" />
         <Stat value={count(status?.activeNotifications)} label="Active alerts" />

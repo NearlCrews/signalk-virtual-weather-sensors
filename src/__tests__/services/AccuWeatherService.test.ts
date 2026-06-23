@@ -204,7 +204,7 @@ describe('AccuWeatherService', () => {
       };
 
       await expect(service.fetchCurrentWeather(invalidLocation)).rejects.toThrow(
-        /INVALID_COORDINATES.*lat 91/
+        /INVALID_COORDINATES.*AccuWeather request/
       );
     });
 

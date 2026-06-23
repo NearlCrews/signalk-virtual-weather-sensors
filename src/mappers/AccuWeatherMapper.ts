@@ -11,6 +11,12 @@
  * computed (NWS Rothfusz). This mapper handles CURRENT conditions only and
  * converts wind inline with `kmhToMS`; validation stays in the service, which
  * runs `validateWeatherData` on this mapper's output.
+ *
+ * This file does not use `deriveBaseWeatherFields` because AccuWeather may
+ * supply its own measured WindChillTemperature: the wind-chill branch checks
+ * for that value first and falls back to the Environment Canada formula only
+ * when the field is absent. Routing through the shared helper would discard
+ * the measured value and always recompute it.
  */
 
 import { WindCalculator } from '../calculators/WindCalculator.js';

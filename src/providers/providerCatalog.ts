@@ -6,7 +6,6 @@
  * notifications-shared.ts, plus the service and its mappers.
  */
 import type { WeatherProviderId } from '../constants/notifications-shared.js';
-import { providerRequiresApiKey } from '../constants/notifications-shared.js';
 import { AccuWeatherService } from '../services/AccuWeatherService.js';
 import { MetNoService } from '../services/MetNoService.js';
 import { OpenMeteoService } from '../services/OpenMeteoService.js';
@@ -14,8 +13,6 @@ import type { Logger, PluginConfiguration } from '../types/index.js';
 import type { CurrentWeatherProvider } from './WeatherProvider.js';
 
 export interface ProviderCatalogEntry {
-  /** True when the provider needs no API key. */
-  readonly keyless: boolean;
   /** Build the provider from validated config. */
   construct(config: PluginConfiguration, logger: Logger): CurrentWeatherProvider;
 }
@@ -23,7 +20,6 @@ export interface ProviderCatalogEntry {
 export const PROVIDER_CATALOG: Readonly<Record<WeatherProviderId, ProviderCatalogEntry>> =
   Object.freeze({
     'open-meteo': {
-      keyless: !providerRequiresApiKey('open-meteo'),
       construct: (config, logger) =>
         new OpenMeteoService(
           logger,
@@ -31,14 +27,12 @@ export const PROVIDER_CATALOG: Readonly<Record<WeatherProviderId, ProviderCatalo
         ),
     },
     accuweather: {
-      keyless: !providerRequiresApiKey('accuweather'),
       construct: (config, logger) =>
         new AccuWeatherService(config.accuWeatherApiKey, logger, {
           dailyApiQuota: config.dailyApiQuota,
         }),
     },
     'met-no': {
-      keyless: !providerRequiresApiKey('met-no'),
       construct: (_config, logger) => new MetNoService(logger),
     },
   });

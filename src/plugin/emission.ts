@@ -80,7 +80,7 @@ function emitWeatherTick(instance: PluginInstance, app: ServerAPI): void {
   // Notifications are evaluated on the same edge: transitions only fire when
   // the underlying snapshot changes, so re-evaluating on every emission tick
   // would waste CPU on the steady-state case.
-  let notificationValues: PathValue[] = [];
+  let notificationValues: PathValue[] | undefined;
   if (weatherData !== instance.cachedWeatherDataRef) {
     const refreshed = refreshCachedDelta(instance, app, weatherData, instance.pathMapper);
     if (refreshed === null) return;
@@ -101,7 +101,7 @@ function emitWeatherTick(instance: PluginInstance, app: ServerAPI): void {
   // do not see a `notifications.*` leaf interleaved with measurements. The
   // notifier returned PathValues only on transition, so a non-empty list here
   // always represents an entry or exit edge.
-  if (notificationValues.length > 0) {
+  if (notificationValues?.length) {
     app.handleMessage(
       PLUGIN.NAME,
       buildValuesDelta(notificationValues, undefined, instance.sourceRef),
@@ -214,7 +214,7 @@ function withEmissionTimestamp(instance: PluginInstance, cached: Delta): Delta {
     // buildValuesDelta, so this shape should be unreachable. Returning the
     // original un-restamped would re-broadcast a stale timestamp silently, so
     // log if it ever happens rather than passing it through unnoticed.
-    instance.logger('warn', 'withEmissionTimestamp: cached delta is not a values update', {});
+    instance.logger('warn', 'withEmissionTimestamp: cached delta is not a values update');
     return cached;
   }
   return buildValuesDelta(update.values, undefined, update.$source);

@@ -50,7 +50,7 @@ body:
         - Weather Data (new data points)
         - NMEA2000 Integration
         - Signal K Paths
-        - API Integration (AccuWeather or other)
+        - Weather Source / Provider (Open-Meteo, Met.no, AccuWeather, merge)
         - Calculations (wind, temperature, etc.)
         - Configuration Options
         - Performance Improvement

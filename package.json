@@ -1,7 +1,7 @@
 {
   "name": "signalk-virtual-weather-sensors",
-  "version": "1.9.1",
-  "description": "Signal K plugin: keyless Open-Meteo or AccuWeather marine weather as 30+ environment deltas, severe-weather notifications, NMEA2000-ready",
+  "version": "1.10.0",
+  "description": "Signal K plugin: keyless Open-Meteo, Met.no, or AccuWeather marine weather as 30+ environment deltas, severe-weather notifications, NMEA2000-ready",
   "keywords": [
     "signalk-node-server-plugin",
     "signalk-plugin-configurator",
@@ -9,6 +9,8 @@
     "signalk-category-nmea-2000",
     "nmea2000",
     "weather",
+    "open-meteo",
+    "met-no",
     "accuweather",
     "typescript",
     "marine",

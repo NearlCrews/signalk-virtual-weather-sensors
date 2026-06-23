@@ -20,7 +20,6 @@ import type {
   WeatherData,
 } from '../types/index.js';
 import {
-  asOpenMeteoTimestamp,
   asOptionalNumber,
   calculateGustFactor,
   calculateHeatStressIndex,
@@ -29,9 +28,11 @@ import {
   estimateWetBulbGlobeTemperature,
   millibarsToPA,
   normalizeAngle0To2Pi,
+  normalizeIsoTimestamp,
   optionalPercentageToRatio,
   percentageToRatio,
 } from '../utils/conversions.js';
+import { requireNumber } from './mapperUtils.js';
 
 /**
  * Met.no `symbol_code` base (suffix stripped) to plain-language description.
@@ -83,23 +84,18 @@ export const MET_NO_DESCRIPTIONS: ReadonlyMap<string, string> = new Map([
   ['heavysnowshowersandthunder', 'Heavy snow showers and thunder'],
 ]);
 
-/** Narrow a required numeric field, throwing a tagged error when absent or non-finite. */
-function requireNumber(value: unknown, field: string): number {
-  const parsed = asOptionalNumber(value);
-  if (parsed === undefined) {
-    throw new Error(`${ERROR_CODES.DATA.INVALID_WEATHER_DATA}: Met.no response missing ${field}`);
-  }
-  return parsed;
-}
-
 type InstantDetails = NonNullable<NonNullable<MetNoTimeseriesEntry['data']>['instant']>['details'];
 type Next1h = NonNullable<MetNoTimeseriesEntry['data']>['next_1_hours'];
 
 /**
  * Decode the optional Met.no instant fields and next_1_hours block, returning
  * only the keys that were present. Kept separate from the core transform so
- * neither grows the cognitive complexity the codebase caps, mirroring
- * `extractOptionalFields` in `OpenMeteoMapper.ts`.
+ * neither grows the cognitive complexity the codebase caps.
+ *
+ * Unlike the Open-Meteo counterpart (which reads from columnar arrays), this
+ * function reads from `instant.details` for the snapshot and `next_1_hours` for
+ * precipitation and description: the two are structurally different and are not
+ * interchangeable.
  */
 function extractOptionalFields(
   details: NonNullable<InstantDetails>,
@@ -152,17 +148,21 @@ export function mapMetNoCurrentToWeatherData(response: MetNoLocationforecastResp
     );
   }
 
-  const temperature = celsiusToKelvin(requireNumber(details.air_temperature, 'air_temperature'));
-  const pressure = millibarsToPA(
-    requireNumber(details.air_pressure_at_sea_level, 'air_pressure_at_sea_level')
+  const temperature = celsiusToKelvin(
+    requireNumber(details.air_temperature, 'air_temperature', 'Met.no')
   );
-  const humidity = percentageToRatio(requireNumber(details.relative_humidity, 'relative_humidity'));
-  const windSpeed = requireNumber(details.wind_speed, 'wind_speed');
+  const pressure = millibarsToPA(
+    requireNumber(details.air_pressure_at_sea_level, 'air_pressure_at_sea_level', 'Met.no')
+  );
+  const humidity = percentageToRatio(
+    requireNumber(details.relative_humidity, 'relative_humidity', 'Met.no')
+  );
+  const windSpeed = requireNumber(details.wind_speed, 'wind_speed', 'Met.no');
   const windDirection = normalizeAngle0To2Pi(
-    degreesToRadians(requireNumber(details.wind_from_direction, 'wind_from_direction'))
+    degreesToRadians(requireNumber(details.wind_from_direction, 'wind_from_direction', 'Met.no'))
   );
   const dewPoint = celsiusToKelvin(
-    requireNumber(details.dew_point_temperature, 'dew_point_temperature')
+    requireNumber(details.dew_point_temperature, 'dew_point_temperature', 'Met.no')
   );
 
   // Met.no carries no wind chill: recompute from the true wind (as the
@@ -177,9 +177,8 @@ export function mapMetNoCurrentToWeatherData(response: MetNoLocationforecastResp
   const wetBulbGlobeTemperature = estimateWetBulbGlobeTemperature(temperature, humidity);
   const heatStressIndex = calculateHeatStressIndex(wetBulbGlobeTemperature);
 
-  // asOpenMeteoTimestamp is a general-purpose ISO 8601 helper, not Open-Meteo-specific.
   // Met.no emits ISO 8601 with a trailing Z, so the call is a passthrough.
-  const timestamp = asOpenMeteoTimestamp(entry.time);
+  const timestamp = normalizeIsoTimestamp(entry.time);
 
   const next1h = entry.data?.next_1_hours;
 

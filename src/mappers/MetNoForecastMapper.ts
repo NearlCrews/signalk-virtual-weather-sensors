@@ -32,7 +32,7 @@ import {
 import { MET_NO_DESCRIPTIONS } from './MetNoMapper.js';
 import { buildSkOutsideSI, buildWindFromMs } from './skV2Envelope.js';
 
-const GRID_HOURS = [0, 6, 12, 18];
+const GRID_HOURS = new Set([0, 6, 12, 18]);
 
 /** Per-day accumulator for the daily derivation. */
 interface DayAcc {
@@ -142,7 +142,7 @@ function processGridWindow(entry: MetNoTimeseriesEntry, byDay: Map<string, DayAc
 
   // Parse UTC hour as a number so '06' matches 6 in the numeric set.
   const hour = Number(time.slice(11, 13));
-  if (!GRID_HOURS.includes(hour)) return;
+  if (!GRID_HOURS.has(hour)) return;
 
   const day = time.slice(0, 10);
   const maxC = asOptionalNumber(next6.details.air_temperature_max);
@@ -213,6 +213,7 @@ export function mapMetNoToDailyForecasts(response: MetNoLocationforecastResponse
   for (const entry of timeseries) {
     processGridWindow(entry, byDay);
   }
+  // ISO YYYY-MM-DD keys sort correctly as strings: no Date parsing needed.
   return Array.from(byDay.entries())
     .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
     .map(([day, acc]) => buildDailyEntry(day, acc));

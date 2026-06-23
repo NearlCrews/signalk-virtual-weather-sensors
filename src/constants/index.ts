@@ -44,6 +44,12 @@ export const PLUGIN = {
   DESCRIPTION:
     'Signal K plugin providing comprehensive weather data with NMEA2000-compatible environmental measurements',
   VERSION: process.env.PKG_VERSION || '1.0.0',
+  /**
+   * Identifying User-Agent required by Met.no and NWS terms of service.
+   * Both APIs require a contact URL or email address in the User-Agent header.
+   * See https://api.met.no/doc/TermsOfService
+   */
+  CONTACT_USER_AGENT: `${PLUGIN_NAME}/${process.env.PKG_VERSION || '1.0.0'} (+https://github.com/NearlCrews/signalk-virtual-weather-sensors)`,
   STATUS: {
     RUNNING: 'Running',
     /** Banner prefix once 24h API usage crosses `API_QUOTA.WARN_RATIO`. */
@@ -476,6 +482,7 @@ export const VALIDATION_LIMITS = {
 export const ERROR_CODES = {
   CONFIGURATION: {
     INVALID_API_KEY: 'INVALID_API_KEY',
+    INVALID_CONFIGURATION: 'INVALID_CONFIGURATION',
     INVALID_COORDINATES: 'INVALID_COORDINATES',
   },
 

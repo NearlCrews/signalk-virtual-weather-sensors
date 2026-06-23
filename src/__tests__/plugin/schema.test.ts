@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   DEFAULT_NOTIFICATIONS,
+  DEFAULT_WEATHER_MODE,
   NOTIFICATION_BAND_KEYS,
   NOTIFICATION_LABELS,
   NOTIFICATION_MASTER_LABEL,
@@ -9,8 +10,12 @@ import { pluginSchema, pluginUiSchema } from '../../plugin/schema.js';
 
 type BandToggle = { type: 'boolean'; title: string; default: boolean };
 type SchemaNotificationsProps = { enabled: BandToggle } & Record<string, BandToggle>;
+type EnumProp = { type: 'string'; enum: string[]; enumNames: string[]; default: string };
 type PluginSchemaShape = {
-  properties: { notifications: { properties: SchemaNotificationsProps } };
+  properties: {
+    weatherMode: EnumProp;
+    notifications: { properties: SchemaNotificationsProps };
+  };
 };
 type UiSchemaShape = {
   'ui:order': string[];
@@ -43,5 +48,12 @@ describe('generated notifications schema', () => {
     const ui = pluginUiSchema() as UiSchemaShape;
     expect(ui['ui:order'][0]).toBe('weatherProvider');
     expect(ui.accuWeatherApiKey['ui:widget']).toBe('password');
+  });
+  it('exposes the weatherMode picker with both modes and the single default', () => {
+    const mode = (pluginSchema() as PluginSchemaShape).properties.weatherMode;
+    expect(mode.type).toBe('string');
+    expect(mode.enum).toEqual(['single', 'merged']);
+    expect(mode.default).toBe('single');
+    expect(DEFAULT_WEATHER_MODE).toBe('single');
   });
 });

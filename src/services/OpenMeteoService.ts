@@ -103,6 +103,7 @@ export class OpenMeteoService implements ForecastCapableProvider {
   private readonly requestTimeoutMs: number;
   /** Cumulative attempted-fetch count (incremented before each request), for the status banner. */
   private requestCount = 0;
+  private readonly userAgent = `${PLUGIN.NAME}/${PLUGIN.VERSION}`;
 
   constructor(logger: Logger = () => {}, options?: OpenMeteoOptions) {
     this.logger = logger;
@@ -120,7 +121,7 @@ export class OpenMeteoService implements ForecastCapableProvider {
       this.requestCount++;
       const response = await fetchJson<OpenMeteoCurrentResponse>(url, {
         timeoutMs: this.requestTimeoutMs,
-        headers: { 'User-Agent': `${PLUGIN.NAME}/${PLUGIN.VERSION}` },
+        headers: { 'User-Agent': this.userAgent },
       });
       const weatherData = mapOpenMeteoCurrentToWeatherData(response);
 
@@ -143,52 +144,85 @@ export class OpenMeteoService implements ForecastCapableProvider {
   /** Fetch a single current observation at `location` in the SK v2 WeatherData shape. */
   public async getObservation(location: GeoLocation): Promise<SKWeatherData> {
     assertValidCoordinates(location, 'Open-Meteo observation');
-    this.requestCount++;
-    const response = await fetchJson<OpenMeteoCurrentResponse>(this.buildUrl(location), {
-      timeoutMs: this.requestTimeoutMs,
-      headers: { 'User-Agent': `${PLUGIN.NAME}/${PLUGIN.VERSION}` },
-    });
-    return mapOpenMeteoCurrentToObservation(response);
+    try {
+      this.requestCount++;
+      const response = await fetchJson<OpenMeteoCurrentResponse>(this.buildUrl(location), {
+        timeoutMs: this.requestTimeoutMs,
+        headers: { 'User-Agent': this.userAgent },
+      });
+      return mapOpenMeteoCurrentToObservation(response);
+    } catch (error) {
+      this.logger('error', 'Failed to fetch Open-Meteo observation', {
+        location: `${location.latitude},${location.longitude}`,
+        error: toErrorMessage(error),
+      });
+      throw error;
+    }
   }
 
   /** Fetch hourly (point) forecasts for the next 48 hours in ascending order. */
   public async getHourlyForecast(location: GeoLocation): Promise<SKWeatherData[]> {
     assertValidCoordinates(location, 'Open-Meteo hourly forecast');
-    this.requestCount++;
-    const url = this.buildForecastUrl(location, {
-      hourly: HOURLY_PARAMS,
-      forecastDays: HOURLY_FORECAST_DAYS,
-    });
-    const response = await fetchJson<OpenMeteoForecastResponse>(url, {
-      timeoutMs: this.requestTimeoutMs,
-      headers: { 'User-Agent': `${PLUGIN.NAME}/${PLUGIN.VERSION}` },
-    });
-    return mapOpenMeteoHourlyToForecasts(response);
+    try {
+      this.requestCount++;
+      const url = this.buildForecastUrl(location, {
+        hourly: HOURLY_PARAMS,
+        forecastDays: HOURLY_FORECAST_DAYS,
+      });
+      const response = await fetchJson<OpenMeteoForecastResponse>(url, {
+        timeoutMs: this.requestTimeoutMs,
+        headers: { 'User-Agent': this.userAgent },
+      });
+      return mapOpenMeteoHourlyToForecasts(response);
+    } catch (error) {
+      this.logger('error', 'Failed to fetch Open-Meteo hourly forecast', {
+        location: `${location.latitude},${location.longitude}`,
+        error: toErrorMessage(error),
+      });
+      throw error;
+    }
   }
 
   /** Fetch daily forecasts for the next 7 days in ascending order. */
   public async getDailyForecast(location: GeoLocation): Promise<SKWeatherData[]> {
     assertValidCoordinates(location, 'Open-Meteo daily forecast');
-    this.requestCount++;
-    const url = this.buildForecastUrl(location, {
-      daily: DAILY_PARAMS,
-      forecastDays: DAILY_FORECAST_DAYS,
-    });
-    const response = await fetchJson<OpenMeteoForecastResponse>(url, {
-      timeoutMs: this.requestTimeoutMs,
-      headers: { 'User-Agent': `${PLUGIN.NAME}/${PLUGIN.VERSION}` },
-    });
-    return mapOpenMeteoDailyToForecasts(response);
+    try {
+      this.requestCount++;
+      const url = this.buildForecastUrl(location, {
+        daily: DAILY_PARAMS,
+        forecastDays: DAILY_FORECAST_DAYS,
+      });
+      const response = await fetchJson<OpenMeteoForecastResponse>(url, {
+        timeoutMs: this.requestTimeoutMs,
+        headers: { 'User-Agent': this.userAgent },
+      });
+      return mapOpenMeteoDailyToForecasts(response);
+    } catch (error) {
+      this.logger('error', 'Failed to fetch Open-Meteo daily forecast', {
+        location: `${location.latitude},${location.longitude}`,
+        error: toErrorMessage(error),
+      });
+      throw error;
+    }
   }
 
-  /** Build the current-block request URL with m/s wind units. */
-  private buildUrl(location: GeoLocation): URL {
+  /**
+   * Build the shared base URL for all Open-Meteo requests: lat/lon, m/s wind
+   * units, and GMT timezone. Callers append block-specific params on top.
+   */
+  private buildBaseUrl(location: GeoLocation): URL {
     const url = new URL(`${this.baseUrl}${FORECAST_ENDPOINT}`);
     url.searchParams.set('latitude', String(location.latitude));
     url.searchParams.set('longitude', String(location.longitude));
-    url.searchParams.set('current', CURRENT_PARAMS);
     url.searchParams.set('wind_speed_unit', 'ms');
     url.searchParams.set('timezone', 'GMT');
+    return url;
+  }
+
+  /** Build the current-block request URL. */
+  private buildUrl(location: GeoLocation): URL {
+    const url = this.buildBaseUrl(location);
+    url.searchParams.set('current', CURRENT_PARAMS);
     return url;
   }
 
@@ -200,9 +234,7 @@ export class OpenMeteoService implements ForecastCapableProvider {
     location: GeoLocation,
     params: { hourly?: string; daily?: string; forecastDays: number }
   ): URL {
-    const url = new URL(`${this.baseUrl}${FORECAST_ENDPOINT}`);
-    url.searchParams.set('latitude', String(location.latitude));
-    url.searchParams.set('longitude', String(location.longitude));
+    const url = this.buildBaseUrl(location);
     if (params.hourly !== undefined) {
       url.searchParams.set('hourly', params.hourly);
     }
@@ -210,8 +242,6 @@ export class OpenMeteoService implements ForecastCapableProvider {
       url.searchParams.set('daily', params.daily);
     }
     url.searchParams.set('forecast_days', String(params.forecastDays));
-    url.searchParams.set('wind_speed_unit', 'ms');
-    url.searchParams.set('timezone', 'GMT');
     return url;
   }
 

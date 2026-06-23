@@ -42,7 +42,7 @@ export class ForecastCache {
     now = Date.now()
   ): Promise<T> {
     const cached = this.cache.get(key);
-    if (cached && now < cached.expiresAt) {
+    if (cached !== undefined && now < cached.expiresAt) {
       this.logger('debug', 'Using cached forecast', { key });
       return cached.data as T;
     }

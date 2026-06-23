@@ -1,23 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { RetryingHttpClient } from '../../../services/http/RetryingHttpClient.js';
+import { createMockFetchResponse } from '../../setup.js';
 
 // Match the suite's fetch-mock idiom (AccuWeatherService.test.ts:26-34): stub the
 // global fetch in beforeEach, unstub in afterEach. Do NOT use vi.spyOn here.
 beforeEach(() => vi.stubGlobal('fetch', vi.fn()));
 afterEach(() => vi.unstubAllGlobals());
-
-// Minimal Response stand-in covering what readBoundedJson reads: headers.get and text().
-// Models the existing AccuWeatherService.test.ts mockResponse helper.
-function mockResponse(body: unknown, init?: { status?: number; statusText?: string }): Response {
-  const status = init?.status ?? 200;
-  return {
-    ok: status < 400,
-    status,
-    statusText: init?.statusText ?? 'OK',
-    headers: new Headers({ 'content-type': 'application/json' }),
-    text: async () => JSON.stringify(body),
-  } as unknown as Response;
-}
 
 function makeClient(onRequestCounted?: () => void): RetryingHttpClient {
   return new RetryingHttpClient({
@@ -32,18 +20,26 @@ function makeClient(onRequestCounted?: () => void): RetryingHttpClient {
 describe('RetryingHttpClient', () => {
   it('returns parsed JSON and fires onRequestCounted once per landed response', async () => {
     const onRequestCounted = vi.fn();
-    vi.mocked(globalThis.fetch).mockResolvedValue(mockResponse({ ok: 1 }));
+    vi.mocked(globalThis.fetch).mockResolvedValue(
+      createMockFetchResponse({ ok: 1 }) as unknown as Response
+    );
     const result = await makeClient(onRequestCounted).request<{ ok: number }>(
       new URL('https://example.test/x')
     );
     expect(result).toEqual({ ok: 1 });
     expect(onRequestCounted).toHaveBeenCalledTimes(1);
   });
+
   it('counts a 503 error response too, then retries and succeeds', async () => {
     const onRequestCounted = vi.fn();
     vi.mocked(globalThis.fetch)
-      .mockResolvedValueOnce(mockResponse({}, { status: 503, statusText: 'unavailable' }))
-      .mockResolvedValueOnce(mockResponse({ ok: 2 }));
+      .mockResolvedValueOnce(
+        createMockFetchResponse(
+          {},
+          { ok: false, status: 503, statusText: 'unavailable' }
+        ) as unknown as Response
+      )
+      .mockResolvedValueOnce(createMockFetchResponse({ ok: 2 }) as unknown as Response);
     const result = await makeClient(onRequestCounted).request<{ ok: number }>(
       new URL('https://example.test/x')
     );
@@ -52,5 +48,31 @@ describe('RetryingHttpClient', () => {
     // consumed quota, so onRequestCounted fires on the 503 AND the 200.
     expect(onRequestCounted).toHaveBeenCalledTimes(2);
     expect(globalThis.fetch).toHaveBeenCalledTimes(2);
+  });
+
+  it('throws API_UNAUTHORIZED and calls fetch exactly once on a 401 response', async () => {
+    vi.mocked(globalThis.fetch).mockResolvedValue(
+      createMockFetchResponse(
+        { message: 'invalid' },
+        { ok: false, status: 401, statusText: 'Unauthorized' }
+      ) as unknown as Response
+    );
+    await expect(makeClient().request(new URL('https://example.test/x'))).rejects.toThrow(
+      'API_UNAUTHORIZED'
+    );
+    expect(globalThis.fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('throws API_FORBIDDEN and calls fetch exactly once on a 403 response', async () => {
+    vi.mocked(globalThis.fetch).mockResolvedValue(
+      createMockFetchResponse(
+        { message: 'forbidden' },
+        { ok: false, status: 403, statusText: 'Forbidden' }
+      ) as unknown as Response
+    );
+    await expect(makeClient().request(new URL('https://example.test/x'))).rejects.toThrow(
+      'API_FORBIDDEN'
+    );
+    expect(globalThis.fetch).toHaveBeenCalledTimes(1);
   });
 });

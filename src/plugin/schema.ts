@@ -10,11 +10,14 @@
 import {
   CONFIG_DEFAULTS,
   DEFAULT_NOTIFICATIONS,
+  DEFAULT_WEATHER_MODE,
   DEFAULT_WEATHER_PROVIDER,
   NOTIFICATION_BAND_KEYS,
   NOTIFICATION_LABELS,
   NOTIFICATION_MASTER_LABEL,
   type NotificationBandKey,
+  WEATHER_MODE_IDS,
+  WEATHER_MODE_LABELS,
   WEATHER_PROVIDER_IDS,
   WEATHER_PROVIDER_LABELS,
 } from '../constants/notifications-shared.js';
@@ -65,6 +68,15 @@ export function pluginSchema() {
         enum: [...WEATHER_PROVIDER_IDS],
         enumNames: WEATHER_PROVIDER_IDS.map((id) => WEATHER_PROVIDER_LABELS[id]),
         default: DEFAULT_WEATHER_PROVIDER,
+      },
+      weatherMode: {
+        type: 'string',
+        title: 'Provider mode',
+        description:
+          'In merge mode the weather source above acts as the primary: it sets the source priority order and is the source for forecasts and observations, while merge blends the current conditions of every available provider (Open-Meteo and Met.no always, AccuWeather when a key is set) onto a merged source.',
+        enum: [...WEATHER_MODE_IDS],
+        enumNames: WEATHER_MODE_IDS.map((id) => WEATHER_MODE_LABELS[id]),
+        default: DEFAULT_WEATHER_MODE,
       },
       accuWeatherApiKey: {
         type: 'string',
@@ -139,6 +151,7 @@ export function pluginUiSchema() {
   return {
     'ui:order': [
       'weatherProvider',
+      'weatherMode',
       'accuWeatherApiKey',
       'openMeteoBaseUrl',
       'marineData',

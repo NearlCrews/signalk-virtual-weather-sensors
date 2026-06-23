@@ -20,10 +20,11 @@ non-canonical path.
 
 Every delta carries a `$source` so consumers can set source priorities and
 prefer a real onboard sensor. The atmospheric deltas use the active provider's
-ref (`open-meteo` by default, `accuweather` when AccuWeather is configured), and
-the optional sea-state deltas use a distinct `open-meteo-marine`. Because the
-provider is recorded in `$source` rather than in the path, swapping the weather
-source does not change any path and consumers do not re-subscribe. Some
+ref (`open-meteo` by default, `met-no` for Met.no, `accuweather` for
+AccuWeather, or `merged` in merge mode), and the optional sea-state deltas use a
+distinct `open-meteo-marine`. Because the provider is recorded in `$source`
+rather than in the path, swapping the weather source does not change any path
+and consumers do not re-subscribe. Some
 `environment.weather.*` leaves are AccuWeather-only (RealFeel, RealFeel shade,
 AccuWeather apparent temperature, pressure tendency, precipitation type,
 visibility obstruction, cloud ceiling, and the 24-hour temperature departure);
@@ -230,23 +231,23 @@ SK webapp regardless.
 
 ## Weather API provider
 
-When AccuWeather is the active source, the plugin also registers as a Signal K
-v2 Weather API provider, so consumers can query weather directly through the
-server's REST API instead of subscribing to the delta stream (the forecast and
-observation endpoints are AccuWeather-backed; Open-Meteo forecast support is
-planned). These endpoints are served:
+When the active source is forecast-capable (Open-Meteo, Met.no, or AccuWeather,
+which is every current provider), the plugin also registers as a Signal K v2
+Weather API provider, so consumers can query weather directly through the
+server's REST API instead of subscribing to the delta stream. A default keyless
+install advertises the API; in merge mode the designated forecast child backs
+the endpoints. These endpoints are served:
 
 - `GET /signalk/v2/api/weather/forecasts/point` returns hourly point forecasts
-  from the AccuWeather 12-hour hourly source.
+  from the active source.
 - `GET /signalk/v2/api/weather/forecasts/daily` returns daily forecasts from
-  the AccuWeather 5-day source.
+  the active source.
 - `GET /signalk/v2/api/weather/observations` returns current conditions for the
-  requested position, mapped from the AccuWeather current-conditions endpoint
-  (and including the atmospheric pressure and pressure tendency the forecasts
-  omit).
+  requested position (including the atmospheric pressure and pressure tendency
+  the forecasts omit).
 - `GET /signalk/v2/api/weather/warnings` returns region-aware severe-weather
-  alerts: keyless NWS CAP active alerts for US waters, and an empty list
-  elsewhere.
+  alerts: keyless NWS CAP active alerts for US waters, keyless Met.no MetAlerts
+  for Norwegian waters, and an empty list elsewhere.
 
 Forecasts are mapped to the same SI units used everywhere else in this plugin
 (Kelvin for temperatures, m/s for wind speed, radians for wind direction,
@@ -257,8 +258,10 @@ signalk-binnacle detect that forecast support is available.
 
 ### Point forecast fields
 
-Each point forecast entry populates these fields when AccuWeather provides
-them. Absent upstream values are omitted rather than emitted as zero.
+Each point forecast entry populates these fields when the active source provides
+them. Absent upstream values are omitted rather than emitted as zero. The
+RealFeel `feelsLikeTemperature` is AccuWeather-only; Open-Meteo and Met.no omit
+it.
 
 | Field | Unit | Description |
 |-------|------|-------------|
@@ -278,8 +281,8 @@ them. Absent upstream values are omitted rather than emitted as zero.
 
 ### Daily forecast fields
 
-Each daily forecast entry summarizes the daytime half of the AccuWeather day
-and populates these fields when present.
+Each daily forecast entry summarizes the daytime half of the day and populates
+these fields when the active source provides them.
 
 | Field | Unit | Description |
 |-------|------|-------------|
@@ -297,12 +300,13 @@ and populates these fields when present.
 
 ### Gaps
 
-- Forecasts carry no `outside.pressure`: the AccuWeather forecast endpoints do
-  not return atmospheric pressure, so the field is omitted on both point and
-  daily forecasts. The observations endpoint does include pressure and pressure
-  tendency.
-- The v2 provider is registered only while AccuWeather is the active source;
-  under Open-Meteo the delta emission path still works but the v2 forecast,
-  observation, and warning endpoints are not advertised.
-- Warnings cover US waters today (NWS CAP); other regions return an empty list.
-  Met.no MetAlerts for Nordic waters is planned.
+- Forecasts carry no `outside.pressure`: the forecast endpoints do not return
+  atmospheric pressure, so the field is omitted on both point and daily
+  forecasts. The observations endpoint does include pressure (and, under
+  AccuWeather, pressure tendency).
+- The v2 provider is registered for any forecast-capable source (Open-Meteo,
+  Met.no, or AccuWeather), so a default keyless install advertises the forecast,
+  observation, and warning endpoints. In merge mode the designated forecast
+  child backs them.
+- Warnings cover US waters (NWS CAP) and Norwegian waters (Met.no MetAlerts);
+  other regions return an empty list.

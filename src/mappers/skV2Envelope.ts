@@ -55,6 +55,21 @@ export function buildSkOutsideSI(v: SkOutsideInputs): SKOutside {
   };
 }
 
+/**
+ * Build the SK v2 `sun` block from optional ISO sunrise and sunset strings,
+ * omitting each field when it is absent and returning undefined when both are absent.
+ */
+export function buildSunBlock(
+  sunrise: string | undefined,
+  sunset: string | undefined
+): SKSun | undefined {
+  const sun: SKSun = {
+    ...(typeof sunrise === 'string' && { sunrise }),
+    ...(typeof sunset === 'string' && { sunset }),
+  };
+  return Object.keys(sun).length > 0 ? sun : undefined;
+}
+
 /** Build the SK v2 wind block from m/s speeds and a degree direction, omitting absent fields. */
 export function buildWindFromMs(
   speedMs: number | null | undefined,

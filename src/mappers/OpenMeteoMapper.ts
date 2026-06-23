@@ -16,7 +16,6 @@ import { ERROR_CODES } from '../constants/index.js';
 import { openMeteoSevereCondition } from '../providers/open-meteo-severity.js';
 import type { OpenMeteoCurrentResponse, WeatherData } from '../types/index.js';
 import {
-  asOpenMeteoTimestamp,
   asOptionalNumber,
   calculateGustFactor,
   calculateHeatStressIndex,
@@ -25,9 +24,11 @@ import {
   estimateWetBulbGlobeTemperature,
   millibarsToPA,
   normalizeAngle0To2Pi,
+  normalizeIsoTimestamp,
   optionalPercentageToRatio,
   percentageToRatio,
 } from '../utils/conversions.js';
+import { requireNumber } from './mapperUtils.js';
 
 /**
  * WMO weather-code (table 4677) to plain-language description, the Open-Meteo
@@ -64,17 +65,6 @@ export const WMO_DESCRIPTIONS: ReadonlyMap<number, string> = new Map([
   [96, 'Thunderstorm with slight hail'],
   [99, 'Thunderstorm with heavy hail'],
 ]);
-
-/** Narrow a required numeric field, throwing a tagged error when absent or non-finite. */
-function requireNumber(value: unknown, field: string): number {
-  const parsed = asOptionalNumber(value);
-  if (parsed === undefined) {
-    throw new Error(
-      `${ERROR_CODES.DATA.INVALID_WEATHER_DATA}: Open-Meteo response missing ${field}`
-    );
-  }
-  return parsed;
-}
 
 /**
  * Decode the optional Open-Meteo fields, returning only the keys that were
@@ -124,16 +114,20 @@ export function mapOpenMeteoCurrentToWeatherData(response: OpenMeteoCurrentRespo
     );
   }
 
-  const temperature = celsiusToKelvin(requireNumber(current.temperature_2m, 'temperature_2m'));
-  const pressure = millibarsToPA(requireNumber(current.pressure_msl, 'pressure_msl'));
+  const temperature = celsiusToKelvin(
+    requireNumber(current.temperature_2m, 'temperature_2m', 'Open-Meteo')
+  );
+  const pressure = millibarsToPA(requireNumber(current.pressure_msl, 'pressure_msl', 'Open-Meteo'));
   const humidity = percentageToRatio(
-    requireNumber(current.relative_humidity_2m, 'relative_humidity_2m')
+    requireNumber(current.relative_humidity_2m, 'relative_humidity_2m', 'Open-Meteo')
   );
-  const windSpeed = requireNumber(current.wind_speed_10m, 'wind_speed_10m');
+  const windSpeed = requireNumber(current.wind_speed_10m, 'wind_speed_10m', 'Open-Meteo');
   const windDirection = normalizeAngle0To2Pi(
-    degreesToRadians(requireNumber(current.wind_direction_10m, 'wind_direction_10m'))
+    degreesToRadians(requireNumber(current.wind_direction_10m, 'wind_direction_10m', 'Open-Meteo'))
   );
-  const dewPoint = celsiusToKelvin(requireNumber(current.dew_point_2m, 'dew_point_2m'));
+  const dewPoint = celsiusToKelvin(
+    requireNumber(current.dew_point_2m, 'dew_point_2m', 'Open-Meteo')
+  );
 
   // Open-Meteo carries no wind chill: recompute from the true wind (as the
   // AccuWeather path does when WindChillTemperature is absent). Heat index is
@@ -161,7 +155,7 @@ export function mapOpenMeteoCurrentToWeatherData(response: OpenMeteoCurrentRespo
     airDensityEnhanced,
     wetBulbGlobeTemperature,
     heatStressIndex,
-    timestamp: asOpenMeteoTimestamp(current.time),
+    timestamp: normalizeIsoTimestamp(current.time),
     ...extractOptionalFields(current, windSpeed),
   };
 }

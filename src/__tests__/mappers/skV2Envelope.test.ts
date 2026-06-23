@@ -38,4 +38,22 @@ describe('buildSkOutsideSI', () => {
     expect(out.temperature).toBeUndefined();
     expect(Object.keys(out)).toEqual(['relativeHumidity']);
   });
+  it('maps all of precipitationVolumeM, feelsLikeK, dewPointK, uvIndex, and visibilityM to the right SKOutside fields', () => {
+    const out = buildSkOutsideSI({
+      temperatureK: 293.15,
+      rhRatio: 0.6,
+      precipitationVolumeM: 0.003,
+      feelsLikeK: 295.0,
+      dewPointK: 285.0,
+      uvIndex: 5.4,
+      visibilityM: 12000,
+    });
+    expect(out.precipitationVolume).toBeCloseTo(0.003, 6);
+    expect(out.feelsLikeTemperature).toBeCloseTo(295.0, 5);
+    expect(out.dewPointTemperature).toBeCloseTo(285.0, 5);
+    expect(out.uvIndex).toBeCloseTo(5.4, 5);
+    expect(out.horizontalVisibility).toBeCloseTo(12000, 0);
+    // absoluteHumidity is derived because both temperatureK and rhRatio are present.
+    expect(typeof out.absoluteHumidity).toBe('number');
+  });
 });

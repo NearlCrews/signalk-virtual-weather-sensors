@@ -40,23 +40,25 @@ export function asOptionalNumber(value: unknown): number | undefined {
 }
 
 /** Return the value when it is a string, otherwise an empty string. */
-export function asStringOrEmpty(value: unknown): string {
+function asStringOrEmpty(value: unknown): string {
   return typeof value === 'string' ? value : '';
 }
 
+/** Matches a zone designator at the end of an ISO 8601 string: Z, z, or ±hh:mm / ±hhmm. */
+const ISO_ZONE_RE = /([Zz]|[+-]\d{2}:?\d{2})$/;
+
 /**
- * Normalize an Open-Meteo `current.time` value to an RFC 3339 UTC instant.
- * Open-Meteo with `timezone=GMT` returns a bare wall-clock string like
- * `2024-01-01T12:00` with no zone designator, which a strict consumer would
- * read as local time and so misreport observation age. Append `Z` when no
- * `Z`/`±hh:mm` offset is already present. Returns '' when the value is absent so
- * callers fall back to the emission wall-clock time.
+ * Normalize a bare ISO 8601 string to an RFC 3339 UTC instant. Some APIs
+ * return a wall-clock string like `2024-01-01T12:00` with no zone designator,
+ * which a strict consumer would read as local time and so misreport observation
+ * age. Append `Z` when no `Z`/`±hh:mm` offset is already present. Returns ''
+ * when the value is absent so callers fall back to the emission wall-clock time.
  */
-export function asOpenMeteoTimestamp(value: unknown): string {
+export function normalizeIsoTimestamp(value: unknown): string {
   const time = asStringOrEmpty(value);
   if (time === '') return '';
   // Already carries a zone designator at the end (Z, or a ±hh:mm / ±hhmm offset)?
-  return /([Zz]|[+-]\d{2}:?\d{2})$/.test(time) ? time : `${time}Z`;
+  return ISO_ZONE_RE.test(time) ? time : `${time}Z`;
 }
 
 /**
@@ -412,6 +414,20 @@ export function calculateHeatStressIndex(wetBulbGlobeTemperatureK: number): numb
 }
 
 /**
+ * Coefficients for the Australian Bureau of Meteorology simplified shade WBGT formula.
+ * SVP: saturation vapour pressure via approximation (hPa). WBGT: shade wet-bulb globe.
+ * Reference: Australian Bureau of Meteorology, "Thermal Comfort observations".
+ */
+const BOM_WBGT = {
+  SVP_SCALE: 6.105, // leading scale factor in the SVP approximation (hPa)
+  SVP_A: 17.27, // Magnus-like numerator coefficient for SVP exponent
+  SVP_B: 237.7, // Magnus-like denominator offset for SVP exponent (degrees C)
+  TA_COEFF: 0.567, // air-temperature coefficient in the WBGT sum
+  E_COEFF: 0.393, // vapour-pressure coefficient in the WBGT sum
+  OFFSET: 3.94, // additive constant in the WBGT formula
+} as const;
+
+/**
  * Estimate wet-bulb globe temperature (Kelvin) from air temperature and
  * relative humidity using the Australian Bureau of Meteorology simplified shade
  * approximation. Providers that do not supply a measured WBGT (Open-Meteo) use
@@ -429,7 +445,8 @@ export function estimateWetBulbGlobeTemperature(
   relativeHumidity: number
 ): number {
   const ta = kelvinToCelsius(temperatureK);
-  const vapourPressure = relativeHumidity * 6.105 * Math.exp((17.27 * ta) / (237.7 + ta));
-  const wbgtC = 0.567 * ta + 0.393 * vapourPressure + 3.94;
+  const vapourPressure =
+    relativeHumidity * BOM_WBGT.SVP_SCALE * Math.exp((BOM_WBGT.SVP_A * ta) / (BOM_WBGT.SVP_B + ta));
+  const wbgtC = BOM_WBGT.TA_COEFF * ta + BOM_WBGT.E_COEFF * vapourPressure + BOM_WBGT.OFFSET;
   return celsiusToKelvin(wbgtC);
 }

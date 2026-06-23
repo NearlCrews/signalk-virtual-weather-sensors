@@ -12,6 +12,7 @@ import { NOTIFICATION_PATHS } from '../../constants/index.js';
 import { MAX_MESSAGE_LENGTH, WeatherNotifier } from '../../notifications/WeatherNotifier.js';
 import { accuWeatherSevereCondition } from '../../providers/accuweather-severity.js';
 import type { NotificationsConfig, NotificationValue, WeatherData } from '../../types/index.js';
+import { degreesToRadians } from '../../utils/conversions.js';
 import { createMockWeatherData } from '../setup.js';
 
 const ALL_ENABLED: NotificationsConfig = {
@@ -445,8 +446,6 @@ describe('WeatherNotifier: driver field disappears', () => {
   });
 });
 
-const degToRad = (degrees: number): number => (degrees * Math.PI) / 180;
-
 describe('WeatherNotifier: exact-threshold mutation guards', () => {
   it('wind: fires only the matching ascending band at exact thresholds', () => {
     // Bft 8: gale fires, storm and hurricane do not.
@@ -577,11 +576,11 @@ describe('WeatherNotifier: suffix coverage gaps', () => {
   it('cardinal: lands the right rose at exact 22.5 deg arc boundaries', () => {
     const notifier = makeNotifier();
     const cases: ReadonlyArray<readonly [number, string]> = [
-      [degToRad(11.24), 'from N'],
-      [degToRad(11.25), 'from NNE'],
-      [degToRad(348.74), 'from NNW'],
-      [degToRad(348.75), 'from N'],
-      [degToRad(360), 'from N'],
+      [degreesToRadians(11.24), 'from N'],
+      [degreesToRadians(11.25), 'from NNE'],
+      [degreesToRadians(348.74), 'from NNW'],
+      [degreesToRadians(348.75), 'from N'],
+      [degreesToRadians(360), 'from N'],
     ];
     for (const [radians, expected] of cases) {
       notifier.reset();

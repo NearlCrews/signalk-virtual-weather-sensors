@@ -20,13 +20,18 @@ import type {
 import {
   asOptionalNumber,
   calculateAbsoluteHumidity,
-  celsiusToKelvin,
   kmhToMS,
   millibarsToPA,
   optionalCelsiusToKelvin,
   optionalPercentageToRatio,
 } from '../utils/conversions.js';
-import { buildWindFromMs, type SKOutside, type SKSun, type SKWind } from './skV2Envelope.js';
+import {
+  buildSkOutsideSI,
+  buildSunBlock,
+  buildWindFromMs,
+  type SKOutside,
+  type SKWind,
+} from './skV2Envelope.js';
 
 /** AccuWeather PrecipitationType (lowercased) to the SK PrecipitationKind enum. */
 const PRECIPITATION_KIND_BY_ACCUWEATHER: ReadonlyMap<string, PrecipitationKind> = new Map([
@@ -99,26 +104,21 @@ export function mapHourlyToForecasts(
 ): SKWeatherData[] {
   return hours.map((hour) => {
     const temperatureK = optionalCelsiusToKelvin(hour.Temperature?.Value);
-    const dewPointC = asOptionalNumber(hour.DewPoint?.Value);
-    const realFeelC = asOptionalNumber(hour.RealFeelTemperature?.Value);
+    const dewPointK = optionalCelsiusToKelvin(hour.DewPoint?.Value);
+    const feelsLikeK = optionalCelsiusToKelvin(hour.RealFeelTemperature?.Value);
     const rhRatio = optionalPercentageToRatio(hour.RelativeHumidity);
     const visibilityKm = asOptionalNumber(hour.Visibility?.Value);
     const uvIndex = asOptionalNumber(hour.UVIndex);
 
     const outside: SKOutside = {
-      ...(temperatureK !== undefined && { temperature: temperatureK }),
-      ...(dewPointC !== undefined && { dewPointTemperature: celsiusToKelvin(dewPointC) }),
-      ...(realFeelC !== undefined && { feelsLikeTemperature: celsiusToKelvin(realFeelC) }),
-      ...(rhRatio !== undefined && {
-        relativeHumidity: rhRatio,
-        ...(temperatureK !== undefined && {
-          absoluteHumidity: calculateAbsoluteHumidity(temperatureK, rhRatio),
-        }),
+      ...buildSkOutsideSI({
+        temperatureK,
+        dewPointK,
+        feelsLikeK,
+        rhRatio,
+        visibilityM: visibilityKm !== undefined ? visibilityKm * UNITS.LENGTH.KM_TO_M : undefined,
+        uvIndex,
       }),
-      ...(visibilityKm !== undefined && {
-        horizontalVisibility: visibilityKm * UNITS.LENGTH.KM_TO_M,
-      }),
-      ...(uvIndex !== undefined && { uvIndex }),
       ...buildCloudAndPrecip(hour),
     };
 
@@ -169,10 +169,10 @@ export function mapDailyToForecasts(response: AccuWeatherDailyForecastResponse):
       half?.WindGust?.Speed?.Value
     );
 
-    const sun: SKSun = {
-      ...(typeof day.Sun?.Rise === 'string' && { sunrise: day.Sun.Rise }),
-      ...(typeof day.Sun?.Set === 'string' && { sunset: day.Sun.Set }),
-    };
+    const sun = buildSunBlock(
+      typeof day.Sun?.Rise === 'string' ? day.Sun.Rise : undefined,
+      typeof day.Sun?.Set === 'string' ? day.Sun.Set : undefined
+    );
 
     return {
       date: day.Date,
@@ -180,7 +180,7 @@ export function mapDailyToForecasts(response: AccuWeatherDailyForecastResponse):
       ...(typeof half?.IconPhrase === 'string' && { description: half.IconPhrase }),
       outside,
       ...(wind !== undefined && { wind }),
-      ...(Object.keys(sun).length > 0 && { sun }),
+      ...(sun !== undefined && { sun }),
     };
   });
 }
@@ -191,6 +191,11 @@ export function mapDailyToForecasts(response: AccuWeatherDailyForecastResponse):
  * Imperial pairs (unlike the flat forecast shapes), and they carry pressure and
  * pressure tendency that the forecast endpoints do not. Wind is mapped to the
  * v2 envelope's `wind.speedTrue` like the forecast mappers.
+ *
+ * Note: this function does not route through buildSkOutsideSI because it adds
+ * AccuWeather-exclusive fields (pressureTendency, precipitationType) that the
+ * shared helper does not cover; the hand-rolled spread keeps all outside fields
+ * in one place.
  */
 export function mapCurrentToObservation(c: AccuWeatherCurrentConditions): SKWeatherData {
   const temperatureK = optionalCelsiusToKelvin(c.Temperature?.Metric?.Value);
