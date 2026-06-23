@@ -164,7 +164,8 @@ ${NIGHT_TOKENS}}
    browser's default disabled appearance, so a disabled button would still
    look enabled. !important is required to override the inline style for the
    disabled state. */
-.svws-panel button:disabled {
+.svws-panel button:disabled,
+.svws-panel button[aria-disabled="true"] {
   background: var(--svws-surface-raised) !important;
   color: var(--svws-text-faint) !important;
   border-color: var(--svws-border) !important;
@@ -186,10 +187,10 @@ ${NIGHT_TOKENS}}
     border-color 120ms ease,
     filter 120ms ease;
 }
-.svws-panel button:hover:not(:disabled) {
+.svws-panel button:hover:not(:disabled):not([aria-disabled="true"]) {
   filter: brightness(0.96);
 }
-.svws-panel button:active:not(:disabled) {
+.svws-panel button:active:not(:disabled):not([aria-disabled="true"]) {
   filter: brightness(0.9);
 }
 /* Disclosure chevron rotation. The transition lives in CSS (not the inline
@@ -562,6 +563,79 @@ export const S = {
     background: 'var(--svws-accent)',
     color: 'var(--svws-accent-text)',
     fontWeight: 600,
+  },
+  // Merge composition list. One bordered row per provider: the include
+  // checkbox and label on the left, the reorder controls on the right. A row
+  // wraps on narrow widths so the reorder buttons drop below the label rather
+  // than overflow.
+  mergeRow: {
+    display: 'flex',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: 10,
+    minHeight: 36,
+    padding: '6px 10px',
+    background: 'var(--svws-surface)',
+    border: '1px solid var(--svws-border)',
+    borderRadius: 'var(--svws-radius)',
+    marginBottom: 'var(--svws-space-1)',
+  },
+  // The checkbox-plus-label cluster grows to fill the row so the reorder
+  // controls sit flush right.
+  mergeRowMain: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 10,
+    flex: 1,
+    minWidth: 160,
+  },
+  // Reorder button pair, pinned right.
+  mergeReorder: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: 6,
+    flexShrink: 0,
+  },
+  // Compact square reorder button. Keeps the 36px marine hit area while
+  // staying narrow enough for two side by side. The glyph is the accessible
+  // name's icon; the real label rides on aria-label.
+  reorderBtn: {
+    width: 36,
+    minHeight: 36,
+    padding: 0,
+    background: 'var(--svws-surface-raised)',
+    color: 'var(--svws-text)',
+    border: '1px solid var(--svws-border)',
+    borderRadius: 'var(--svws-radius)',
+    fontSize: 'var(--svws-font-body)',
+    cursor: 'pointer',
+  },
+  // "(primary)" badge on the first included provider. Accent-filled pill so it
+  // reads as a role marker, not a status.
+  primaryBadge: {
+    display: 'inline-block',
+    padding: '1px 8px',
+    background: 'var(--svws-accent)',
+    color: 'var(--svws-accent-text)',
+    borderRadius: 'var(--svws-radius-pill)',
+    fontSize: 'var(--svws-font-small)',
+    fontWeight: 600,
+    flexShrink: 0,
+  },
+  // Inline "needs a key" note on the disabled AccuWeather row. The faint
+  // token, AA in every palette, so it stays readable beside the dimmed label.
+  mergeNote: {
+    fontSize: 'var(--svws-font-small)',
+    color: 'var(--svws-text-faint)',
+    flexShrink: 0,
+  },
+  // Heading above the excluded rows: tells the operator a newly-checked
+  // provider lands at the bottom of the order (and so is not the primary). The
+  // muted token, with a small top gap to separate it from the included rows.
+  mergeAvailableHint: {
+    fontSize: 'var(--svws-font-small)',
+    color: 'var(--svws-text-muted)',
+    margin: 'var(--svws-space-1) 0 var(--svws-space-1)',
   },
   visuallyHidden: {
     position: 'absolute',

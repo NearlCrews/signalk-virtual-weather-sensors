@@ -4,6 +4,7 @@ import { useCallback, useState } from 'react';
 // bounds.
 import {
   CONFIG_DEFAULTS,
+  DEFAULT_MERGE_PROVIDERS,
   DEFAULT_NOTIFICATIONS,
   DEFAULT_WEATHER_MODE,
   DEFAULT_WEATHER_PROVIDER,
@@ -44,6 +45,7 @@ function formStateFromConfig(c: unknown): PanelFormState {
   const cfg = (c ?? {}) as {
     weatherProvider?: WeatherProviderId;
     weatherMode?: WeatherMode;
+    mergeProviders?: ReadonlyArray<WeatherProviderId>;
     accuWeatherApiKey?: string;
     openMeteoBaseUrl?: string;
     marineData?: boolean;
@@ -55,6 +57,7 @@ function formStateFromConfig(c: unknown): PanelFormState {
   return {
     weatherProvider: cfg.weatherProvider ?? DEFAULT_WEATHER_PROVIDER,
     weatherMode: cfg.weatherMode ?? DEFAULT_WEATHER_MODE,
+    mergeProviders: cfg.mergeProviders ?? DEFAULT_MERGE_PROVIDERS,
     accuWeatherApiKey: cfg.accuWeatherApiKey || '',
     openMeteoBaseUrl: cfg.openMeteoBaseUrl ?? '',
     marineData: cfg.marineData ?? false,
@@ -72,6 +75,8 @@ function formsEqual(a: PanelFormState, b: PanelFormState): boolean {
   return (
     a.weatherProvider === b.weatherProvider &&
     a.weatherMode === b.weatherMode &&
+    a.mergeProviders.length === b.mergeProviders.length &&
+    a.mergeProviders.every((id, i) => id === b.mergeProviders[i]) &&
     a.accuWeatherApiKey === b.accuWeatherApiKey &&
     a.openMeteoBaseUrl === b.openMeteoBaseUrl &&
     a.marineData === b.marineData &&

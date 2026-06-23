@@ -10,6 +10,7 @@ import {
 } from '../../constants/notifications-shared.js';
 import type { NotificationsFormState } from '../hooks/usePanelConfig.js';
 import { S } from '../styles.js';
+import CheckboxRow from './CheckboxRow.js';
 
 interface Props {
   notifications: NotificationsFormState;
@@ -26,39 +27,27 @@ export default function NotificationToggles({
 }: Props): React.ReactElement {
   return (
     <>
-      <div style={S.checkboxRow}>
-        <input
-          id="svws-notif-enabled"
-          type="checkbox"
-          style={S.checkbox}
-          checked={notifications.enabled}
-          onChange={(e) => onChange('enabled', e.target.checked)}
-        />
-        <label htmlFor="svws-notif-enabled" style={S.checkboxLabelStrong}>
-          {NOTIFICATION_MASTER_LABEL}
-        </label>
-      </div>
+      <CheckboxRow
+        id="svws-notif-enabled"
+        label={NOTIFICATION_MASTER_LABEL}
+        checked={notifications.enabled}
+        variant="strong"
+        onChange={(checked) => onChange('enabled', checked)}
+      />
 
       <fieldset style={S.fieldset} disabled={!notifications.enabled}>
         <legend style={S.legend}>Alert categories</legend>
         {NOTIFICATION_BAND_KEYS.map((key) => (
-          <div key={key} style={S.checkboxRow}>
-            <input
-              id={`svws-notif-${key}`}
-              type="checkbox"
-              style={S.checkbox}
-              checked={notifications[key]}
-              onChange={(e) => onChange(key, e.target.checked)}
-            />
-            <label
-              htmlFor={`svws-notif-${key}`}
-              // The faint token, not stacked opacity: disabled labels must
-              // stay readable (AA in every palette).
-              style={notifications.enabled ? S.checkboxLabel : S.checkboxLabelDisabled}
-            >
-              {NOTIFICATION_LABELS[key]}
-            </label>
-          </div>
+          <CheckboxRow
+            key={key}
+            id={`svws-notif-${key}`}
+            label={NOTIFICATION_LABELS[key]}
+            checked={notifications[key]}
+            // The faint token, not stacked opacity: disabled labels must stay
+            // readable (AA in every palette) while the master toggle is off.
+            variant={notifications.enabled ? 'normal' : 'disabled'}
+            onChange={(checked) => onChange(key, checked)}
+          />
         ))}
       </fieldset>
     </>

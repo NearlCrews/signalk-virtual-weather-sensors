@@ -6,6 +6,7 @@
 import type { Delta, PathValue } from '@signalk/server-api';
 import type { MockedFunction } from 'vitest';
 import { afterAll, afterEach, beforeAll, vi } from 'vitest';
+import { WEATHER_PROVIDER_IDS } from '../constants/notifications-shared.js';
 
 // ===============================
 // Global Test Setup
@@ -102,6 +103,7 @@ export function createMockConfig(
     emissionInterval: 5,
     dailyApiQuota: 50,
     weatherMode: 'single',
+    mergeProviders: [...WEATHER_PROVIDER_IDS],
     // Mirror DEFAULT_CONFIG.NOTIFICATIONS so unit tests exercise the
     // off-by-default master toggle. Individual tests opt in via overrides.
     notifications: {

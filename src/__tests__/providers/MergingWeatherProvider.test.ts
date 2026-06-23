@@ -56,7 +56,7 @@ describe('MergingWeatherProvider', () => {
     );
     const merged = await svc.fetchCurrentWeather({ latitude: 0, longitude: 0 });
     expect(merged.temperature).toBeCloseTo(295, 5); // mean of 290 and 300
-    expect(svc.sourceRef).toBe('merged');
+    expect(svc.sourceRef).toBe('vws-merged');
     expect(svc.name).toContain('merged');
   });
   it('returns the single survivor unchanged when only one child succeeds', async () => {

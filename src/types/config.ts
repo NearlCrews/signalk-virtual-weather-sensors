@@ -81,4 +81,11 @@ export interface PluginConfiguration {
 
   /** Severe-weather notification settings (opt-in, off by default). */
   readonly notifications: NotificationsConfig;
+
+  /**
+   * Ordered provider ids included in merge mode; the first is the primary: it
+   * sets the categorical-field picks, the tie-breaks, and the forecast source.
+   * Resolved by `resolveMergeProviders`. Ignored in single mode.
+   */
+  readonly mergeProviders: ReadonlyArray<WeatherProviderId>;
 }

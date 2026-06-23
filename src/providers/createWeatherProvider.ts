@@ -1,12 +1,14 @@
 /**
  * Constructs the weather provider the config selects, honoring weatherMode.
  * In single mode this is the catalog provider for config.weatherProvider. In
- * merged mode it builds every available provider (the primary first, then the
- * rest in catalog order) and wraps them in a MergingWeatherProvider, degrading
- * to the single available provider when only one exists.
+ * merged mode it builds the providers the operator selected in `mergeProviders`
+ * (primary first), filtered to those actually available given the current
+ * config, and wraps them in a MergingWeatherProvider. Degrades to single when
+ * fewer than two selected providers are available.
  */
 import {
   providerRequiresApiKey,
+  resolveMergeProviders,
   resolveWeatherMode,
   WEATHER_PROVIDER_IDS,
   type WeatherProviderId,
@@ -34,23 +36,19 @@ export function createWeatherProvider(
   if (resolveWeatherMode(config.weatherMode) === 'single') {
     return createCurrentWeatherProvider(config, logger);
   }
-  // Priority order: the configured provider is the primary ONLY when it is
-  // actually available (a keyed provider needs its key). Guard against prepending
-  // a primary that was filtered out of `available`: an explicit `weatherProvider`
-  // wins in `resolveWeatherProvider` even without a key (for example AccuWeather
-  // via a hand-edited config), and constructing that keyless child would fail
-  // every fetch and log noise on every tick. When the primary is unavailable,
-  // merge over the available set in catalog order instead.
+  // Honor the operator's explicit provider selection and order, intersected with
+  // the providers that are actually available given the current config. A keyed
+  // provider (AccuWeather) is excluded when no key is present.
+  const preference = resolveMergeProviders(config.mergeProviders, config.weatherProvider);
   const available = availableProviderIds(config);
-  const primary = config.weatherProvider;
-  const ordered: WeatherProviderId[] = available.includes(primary)
-    ? [primary, ...available.filter((id) => id !== primary)]
-    : [...available];
+  const ordered = preference.filter((id) => available.includes(id));
   if (ordered.length <= 1) {
-    // Only one provider available (not reachable while Open-Meteo and Met.no are
-    // both keyless and always present). Degrade to single rather than a one-child
-    // "merge", and log it so a future single-keyless config is visible.
-    logger('warn', 'Merged mode: only one provider available, using it single-source');
+    // Fewer than two selected providers are available. Degrade to single rather
+    // than a one-child "merge", and log it so the operator can correct the config.
+    logger(
+      'warn',
+      'Merged mode: fewer than two selected providers are available, using single-source'
+    );
     return createCurrentWeatherProvider(config, logger);
   }
   const children = ordered.map((id) => PROVIDER_CATALOG[id].construct(config, logger));

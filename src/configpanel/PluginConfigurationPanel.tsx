@@ -22,22 +22,17 @@ import {
   NOTIFICATION_BAND_KEYS,
   providerRequiresApiKey,
   QUOTA_WARN_RATIO,
-  WEATHER_MODE_IDS,
-  WEATHER_MODE_LABELS,
-  WEATHER_PROVIDER_IDS,
-  WEATHER_PROVIDER_LABELS,
-  type WeatherMode,
-  type WeatherProviderId,
 } from '../constants/notifications-shared.js';
-import ApiKeyField from './components/ApiKeyField.js';
 import FooterBar from './components/FooterBar.js';
 import NotificationToggles from './components/NotificationToggles.js';
 import NumberInput from './components/NumberInput.js';
 import Section from './components/Section.js';
 import StatusDashboard from './components/StatusDashboard.js';
 import ThemeToggle from './components/ThemeToggle.js';
+import WeatherSourceSection from './components/WeatherSourceSection.js';
 import { usePanelConfig } from './hooks/usePanelConfig.js';
 import { useStatus } from './hooks/useStatus.js';
+import { deriveSourceState } from './sourceState.js';
 import { S, THEME_STYLE } from './styles.js';
 
 interface Props {
@@ -114,12 +109,11 @@ export default function PluginConfigurationPanel({
   };
 
   const enabledBands = NOTIFICATION_BAND_KEYS.filter((key) => form.notifications[key]).length;
-  const needsKey = providerRequiresApiKey(form.weatherProvider);
-  const quotaSummary = !needsKey
-    ? 'keyless'
-    : form.dailyApiQuota === 0
-      ? 'no cap'
-      : `quota ${form.dailyApiQuota}/day`;
+  // One pure derivation for the whole Weather-source view state. The source
+  // section consumes most of it; the cadence section below still reads
+  // src.accuWeatherInPlay and src.quotaSummary, and the Section header reads
+  // src.sourceSummary.
+  const src = deriveSourceState(form);
 
   return (
     <div className="svws-panel" style={S.root}>
@@ -162,108 +156,18 @@ export default function PluginConfigurationPanel({
         title="Weather source"
         open={openSections.apiKey}
         onToggle={() => toggleSection('apiKey')}
-        summary={
-          needsKey
-            ? `${WEATHER_PROVIDER_LABELS[form.weatherProvider]}${form.accuWeatherApiKey.trim() ? ' (key set)' : ' (no key)'}`
-            : WEATHER_PROVIDER_LABELS[form.weatherProvider]
-        }
+        summary={src.sourceSummary}
       >
-        <div style={S.fieldRow}>
-          <label style={S.label} htmlFor="svws-provider">
-            Provider
-          </label>
-          <select
-            id="svws-provider"
-            style={S.input}
-            value={form.weatherProvider}
-            onChange={(e) => setField('weatherProvider', e.target.value as WeatherProviderId)}
-          >
-            {WEATHER_PROVIDER_IDS.map((id) => (
-              <option key={id} value={id}>
-                {WEATHER_PROVIDER_LABELS[id]}
-              </option>
-            ))}
-          </select>
-        </div>
-
-        <div style={S.fieldRow}>
-          <label style={S.label} htmlFor="svws-mode">
-            Provider mode
-          </label>
-          <select
-            id="svws-mode"
-            style={S.input}
-            value={form.weatherMode}
-            onChange={(e) => setField('weatherMode', e.target.value as WeatherMode)}
-          >
-            {WEATHER_MODE_IDS.map((id) => (
-              <option key={id} value={id}>
-                {WEATHER_MODE_LABELS[id]}
-              </option>
-            ))}
-          </select>
-        </div>
-        <p style={S.help}>
-          In merge mode the provider above acts as the primary: it sets the source priority order
-          and is the source for forecasts and observations, while merge blends the current
-          conditions of every available provider (Open-Meteo and Met.no always, AccuWeather when a
-          key is set) onto a merged source.
-        </p>
-
-        {needsKey ? (
-          <ApiKeyField
-            value={form.accuWeatherApiKey}
-            keyError={keyError}
-            onChange={(next) => {
-              setField('accuWeatherApiKey', next);
-              clearKeyError();
-            }}
-          />
-        ) : form.weatherProvider === 'open-meteo' ? (
-          <>
-            <div style={S.fieldRow}>
-              <label style={S.label} htmlFor="svws-ombase">
-                Open-Meteo base URL
-              </label>
-              <input
-                id="svws-ombase"
-                type="text"
-                style={S.input}
-                value={form.openMeteoBaseUrl}
-                placeholder="https://api.open-meteo.com"
-                onChange={(e) => setField('openMeteoBaseUrl', e.target.value)}
-              />
-            </div>
-            <p style={S.help}>
-              Weather data by Open-Meteo.com (CC BY 4.0), no API key required. The free public
-              service is for non-commercial use; commercial users should self-host the open-source
-              Open-Meteo server or use a paid plan and enter its URL above. Leave blank to use the
-              public service.
-            </p>
-          </>
-        ) : (
-          <p style={S.help}>
-            Weather data from the Norwegian Meteorological Institute (api.met.no, CC BY 4.0), no API
-            key required. Global coverage, with Nordic and European weather alerts.
-          </p>
-        )}
-
-        <div style={S.checkboxRow}>
-          <input
-            id="svws-marine"
-            type="checkbox"
-            style={S.checkbox}
-            checked={form.marineData}
-            onChange={(e) => setField('marineData', e.target.checked)}
-          />
-          <label htmlFor="svws-marine" style={S.checkboxLabel}>
-            Emit sea state (waves, swell, sea temperature, current)
-          </label>
-        </div>
-        <p style={S.help}>
-          Adds a keyless Open-Meteo Marine layer on environment.water.* and environment.current,
-          independent of the source above. Coastal and offshore only; inland points have no data.
-        </p>
+        <WeatherSourceSection
+          form={form}
+          setField={setField}
+          merged={src.merged}
+          hasAccuWeatherKey={src.hasAccuWeatherKey}
+          showKeyField={src.showKeyField}
+          openMeteoActive={src.openMeteoActive}
+          keyError={keyError}
+          clearKeyError={clearKeyError}
+        />
       </Section>
 
       <Section
@@ -271,7 +175,7 @@ export default function PluginConfigurationPanel({
         title="Fetch and emission cadence"
         open={openSections.cadence}
         onToggle={() => toggleSection('cadence')}
-        summary={`every ${form.updateFrequency} min, broadcast ${form.emissionInterval} s, ${quotaSummary}`}
+        summary={`every ${form.updateFrequency} min, broadcast ${form.emissionInterval} s, ${src.quotaSummary}`}
       >
         <div style={S.fieldRow}>
           <label style={S.label} htmlFor="svws-update">
@@ -287,9 +191,9 @@ export default function PluginConfigurationPanel({
           />
         </div>
         <p style={S.help}>
-          {needsKey
+          {src.accuWeatherInPlay
             ? `Each fetch costs one AccuWeather API call. 30 min uses 48 calls/day, within the default ${CONFIG_DEFAULTS.DAILY_API_QUOTA}/day quota.`
-            : 'How often new weather data is fetched from Open-Meteo. Open-Meteo is keyless with generous limits, so a shorter interval is fine.'}
+            : 'How often new weather data is fetched. The keyless providers have generous limits, so a shorter interval is fine.'}
         </p>
 
         <div style={S.fieldRow}>
@@ -310,7 +214,7 @@ export default function PluginConfigurationPanel({
           weather fetch cadence.
         </p>
 
-        {needsKey ? (
+        {src.accuWeatherInPlay ? (
           <>
             <div style={S.fieldRow}>
               <label style={S.label} htmlFor="svws-quota">

@@ -295,7 +295,7 @@ function hazardAndCategoricalOptionals(
  * Blend a priority-ordered list of WeatherData survivors into one synthetic
  * WeatherData per the FIELD_MERGE_KINDS policy. The primary (dataList[0]) sets
  * the timestamp; the merged result carries no provider-specific source ref
- * (the MergingWeatherProvider stamps 'merged' on its delta). The list must
+ * (the MergingWeatherProvider stamps 'vws-merged' on its delta). The list must
  * contain at least one element; the provider is responsible for the empty-list
  * guard.
  */

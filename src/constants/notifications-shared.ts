@@ -97,6 +97,13 @@ export const WEATHER_PROVIDER_IDS: ReadonlyArray<WeatherProviderId> = Object.fre
 /** Default provider for a fresh install: keyless so the plugin works out of the box. */
 export const DEFAULT_WEATHER_PROVIDER: WeatherProviderId = 'open-meteo';
 
+/** Narrow an unknown value to a known provider id (used by the config resolvers). */
+function isKnownProviderId(value: unknown): value is WeatherProviderId {
+  return (
+    typeof value === 'string' && (WEATHER_PROVIDER_IDS as ReadonlyArray<string>).includes(value)
+  );
+}
+
 /** Panel and schema labels for the provider picker. */
 export const WEATHER_PROVIDER_LABELS: Readonly<Record<WeatherProviderId, string>> = Object.freeze({
   'open-meteo': 'Open-Meteo (free, no API key, global)',
@@ -115,11 +122,8 @@ export function resolveWeatherProvider(
   explicit: unknown,
   hasAccuWeatherKey: boolean
 ): WeatherProviderId {
-  if (
-    typeof explicit === 'string' &&
-    (WEATHER_PROVIDER_IDS as ReadonlyArray<string>).includes(explicit)
-  ) {
-    return explicit as WeatherProviderId;
+  if (isKnownProviderId(explicit)) {
+    return explicit;
   }
   return hasAccuWeatherKey ? 'accuweather' : 'open-meteo';
 }
@@ -162,6 +166,39 @@ export function resolveWeatherMode(explicit: unknown): WeatherMode {
     (WEATHER_MODE_IDS as ReadonlyArray<string>).includes(explicit)
     ? (explicit as WeatherMode)
     : 'single';
+}
+
+/**
+ * Default ordered provider list for merge mode: all known providers in catalog
+ * order. Used as the merge-providers default in the schema and the sanitizer so
+ * the schema and runtime cannot drift.
+ */
+export const DEFAULT_MERGE_PROVIDERS: ReadonlyArray<WeatherProviderId> = WEATHER_PROVIDER_IDS;
+
+/**
+ * Resolve the ordered list of providers to blend in merge mode.
+ *
+ * When `explicit` is a non-empty array, it is filtered to valid
+ * `WeatherProviderId` members and deduplicated (first-seen order preserved).
+ * If the result is non-empty that list is returned.
+ *
+ * Otherwise (absent, not an array, or empty after filtering) the legacy
+ * default is returned: `[primary, ...rest in catalog order]`. This makes
+ * a merged config that predates `mergeProviders` resolve to the same
+ * behavior as before the field existed.
+ */
+export function resolveMergeProviders(
+  explicit: unknown,
+  primary: WeatherProviderId
+): WeatherProviderId[] {
+  if (Array.isArray(explicit)) {
+    // Keep valid ids, deduplicated with first-seen order preserved.
+    const deduped = [...new Set(explicit.filter(isKnownProviderId))];
+    if (deduped.length > 0) {
+      return deduped;
+    }
+  }
+  return [primary, ...WEATHER_PROVIDER_IDS.filter((id) => id !== primary)];
 }
 
 /** Minimum length for any plausible AccuWeather API key. */

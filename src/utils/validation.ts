@@ -16,7 +16,11 @@ import {
   WEATHER_PROVIDER_IDS,
   type WeatherProviderId,
 } from '../constants/index.js';
-import { providerRequiresApiKey, resolveWeatherMode } from '../constants/notifications-shared.js';
+import {
+  providerRequiresApiKey,
+  resolveMergeProviders,
+  resolveWeatherMode,
+} from '../constants/notifications-shared.js';
 import type {
   GeoLocation,
   NotificationsConfig,
@@ -287,9 +291,14 @@ function sanitizeNotifications(input: unknown): NotificationsConfig {
  */
 export function sanitizeConfiguration(config: Partial<PluginConfiguration>): PluginConfiguration {
   const accuWeatherApiKey = config.accuWeatherApiKey?.trim() || '';
+  const weatherProvider = resolveWeatherProvider(
+    config.weatherProvider,
+    accuWeatherApiKey.length > 0
+  );
   return {
-    weatherProvider: resolveWeatherProvider(config.weatherProvider, accuWeatherApiKey.length > 0),
+    weatherProvider,
     weatherMode: resolveWeatherMode(config.weatherMode),
+    mergeProviders: resolveMergeProviders(config.mergeProviders, weatherProvider),
     accuWeatherApiKey,
     openMeteoBaseUrl: config.openMeteoBaseUrl?.trim() || '',
     marineData: typeof config.marineData === 'boolean' ? config.marineData : false,

@@ -5,15 +5,23 @@ import {
   NOTIFICATION_BAND_KEYS,
   NOTIFICATION_LABELS,
   NOTIFICATION_MASTER_LABEL,
+  WEATHER_PROVIDER_IDS,
 } from '../../constants/notifications-shared.js';
 import { pluginSchema, pluginUiSchema } from '../../plugin/schema.js';
 
 type BandToggle = { type: 'boolean'; title: string; default: boolean };
 type SchemaNotificationsProps = { enabled: BandToggle } & Record<string, BandToggle>;
 type EnumProp = { type: 'string'; enum: string[]; enumNames: string[]; default: string };
+type ArrayProp = {
+  type: 'array';
+  items: { type: string; enum: string[] };
+  uniqueItems: boolean;
+  default: string[];
+};
 type PluginSchemaShape = {
   properties: {
     weatherMode: EnumProp;
+    mergeProviders: ArrayProp;
     notifications: { properties: SchemaNotificationsProps };
   };
 };
@@ -48,6 +56,18 @@ describe('generated notifications schema', () => {
     const ui = pluginUiSchema() as UiSchemaShape;
     expect(ui['ui:order'][0]).toBe('weatherProvider');
     expect(ui.accuWeatherApiKey['ui:widget']).toBe('password');
+  });
+  it('exposes a mergeProviders array property whose items enum matches WEATHER_PROVIDER_IDS', () => {
+    const mp = (pluginSchema() as PluginSchemaShape).properties.mergeProviders;
+    expect(mp.type).toBe('array');
+    expect(mp.uniqueItems).toBe(true);
+    expect(mp.items.type).toBe('string');
+    expect(mp.items.enum).toEqual([...WEATHER_PROVIDER_IDS]);
+    expect(Array.isArray(mp.default)).toBe(true);
+  });
+  it('includes mergeProviders in the top-level ui:order', () => {
+    const order = (pluginUiSchema() as UiSchemaShape)['ui:order'];
+    expect(order).toContain('mergeProviders');
   });
   it('exposes the weatherMode picker with both modes and the single default', () => {
     const mode = (pluginSchema() as PluginSchemaShape).properties.weatherMode;

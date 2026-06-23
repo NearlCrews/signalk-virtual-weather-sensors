@@ -6,6 +6,7 @@ import { describe, expect, it } from 'vitest';
 import {
   DEFAULT_WEATHER_MODE,
   providerRequiresApiKey,
+  resolveMergeProviders,
   resolveWeatherMode,
   resolveWeatherProvider,
   WEATHER_MODE_IDS,
@@ -44,6 +45,64 @@ describe('met-no provider registration', () => {
   });
   it('is resolved as met-no when explicitly set', () => {
     expect(resolveWeatherProvider('met-no', false)).toBe('met-no');
+  });
+});
+
+describe('resolveMergeProviders', () => {
+  it('returns an explicit valid ordered list as-is', () => {
+    expect(resolveMergeProviders(['met-no', 'open-meteo'], 'open-meteo')).toEqual([
+      'met-no',
+      'open-meteo',
+    ]);
+  });
+  it('filters out invalid ids', () => {
+    expect(resolveMergeProviders(['open-meteo', 'bogus', 'met-no'], 'open-meteo')).toEqual([
+      'open-meteo',
+      'met-no',
+    ]);
+  });
+  it('deduplicates entries, preserving first-seen order', () => {
+    expect(resolveMergeProviders(['met-no', 'open-meteo', 'met-no'], 'open-meteo')).toEqual([
+      'met-no',
+      'open-meteo',
+    ]);
+  });
+  it('falls back to [primary, ...rest] when the array is empty after filtering', () => {
+    expect(resolveMergeProviders(['bogus', 'also-bogus'], 'open-meteo')).toEqual([
+      'open-meteo',
+      'accuweather',
+      'met-no',
+    ]);
+  });
+  it('falls back to [primary, ...rest] when not an array', () => {
+    expect(resolveMergeProviders(undefined, 'met-no')).toEqual([
+      'met-no',
+      'open-meteo',
+      'accuweather',
+    ]);
+    expect(resolveMergeProviders(null, 'open-meteo')).toEqual([
+      'open-meteo',
+      'accuweather',
+      'met-no',
+    ]);
+    expect(resolveMergeProviders('open-meteo', 'open-meteo')).toEqual([
+      'open-meteo',
+      'accuweather',
+      'met-no',
+    ]);
+  });
+  it('puts the given primary first in the legacy fallback', () => {
+    const result = resolveMergeProviders(undefined, 'accuweather');
+    expect(result[0]).toBe('accuweather');
+    expect(result).toContain('open-meteo');
+    expect(result).toContain('met-no');
+  });
+  it('falls back to [primary, ...rest] when the array is empty', () => {
+    expect(resolveMergeProviders([], 'open-meteo')).toEqual([
+      'open-meteo',
+      'accuweather',
+      'met-no',
+    ]);
   });
 });
 

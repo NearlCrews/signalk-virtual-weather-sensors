@@ -9,6 +9,7 @@
 
 import {
   CONFIG_DEFAULTS,
+  DEFAULT_MERGE_PROVIDERS,
   DEFAULT_NOTIFICATIONS,
   DEFAULT_WEATHER_MODE,
   DEFAULT_WEATHER_PROVIDER,
@@ -73,10 +74,22 @@ export function pluginSchema() {
         type: 'string',
         title: 'Provider mode',
         description:
-          'In merge mode the weather source above acts as the primary: it sets the source priority order and is the source for forecasts and observations, while merge blends the current conditions of every available provider (Open-Meteo and Met.no always, AccuWeather when a key is set) onto a merged source.',
+          'Single uses one provider (the weather source above). Merge blends the current conditions of the providers chosen in "Merge providers and order" onto a merged source; the first of those is the primary, which sets the categorical-field picks, the tie-breaks, and the source for forecasts and observations.',
         enum: [...WEATHER_MODE_IDS],
         enumNames: WEATHER_MODE_IDS.map((id) => WEATHER_MODE_LABELS[id]),
         default: DEFAULT_WEATHER_MODE,
+      },
+      mergeProviders: {
+        type: 'array',
+        title: 'Merge providers and order',
+        description:
+          'When mode is Merge, the providers to blend, in priority order. The first is the primary: it sets the categorical-field picks, the tie-breaks, and the forecast source. AccuWeather participates only when its key is set. Ignored in single mode.',
+        items: {
+          type: 'string',
+          enum: [...WEATHER_PROVIDER_IDS],
+        },
+        uniqueItems: true,
+        default: [...DEFAULT_MERGE_PROVIDERS],
       },
       accuWeatherApiKey: {
         type: 'string',
@@ -152,6 +165,7 @@ export function pluginUiSchema() {
     'ui:order': [
       'weatherProvider',
       'weatherMode',
+      'mergeProviders',
       'accuWeatherApiKey',
       'openMeteoBaseUrl',
       'marineData',

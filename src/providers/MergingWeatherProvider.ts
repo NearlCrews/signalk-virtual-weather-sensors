@@ -45,7 +45,9 @@ function collectSurvivors(
 
 export class MergingWeatherProvider implements ForecastCapableProvider {
   readonly name = MERGED_PROVIDER_NAME;
-  readonly sourceRef = 'merged';
+  // `vws-` namespaces the synthetic blend in the data browser so it is clearly
+  // this plugin's merge and does not collide with a generic `merged` source.
+  readonly sourceRef = 'vws-merged';
   readonly forecastCapabilities: ForecastCapabilities;
 
   private readonly children: ReadonlyArray<CurrentWeatherProvider>;
