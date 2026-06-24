@@ -254,6 +254,7 @@ export default function PluginConfigurationPanel({
       <FooterBar
         dirty={dirty}
         saving={saving}
+        unconfigured={configuration == null}
         action={action}
         onSave={handleSave}
         onDiscard={discard}
