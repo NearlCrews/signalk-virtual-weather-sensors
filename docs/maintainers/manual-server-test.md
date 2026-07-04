@@ -37,6 +37,7 @@ Open **Server -> Data Browser**. Filter by `vessels.self`. For each path below c
 - [ ] `environment.outside.relativeHumidity` (ratio 0 to 1)
 - [ ] `environment.outside.dewPointTemperature` (K)
 - [ ] `environment.outside.apparentWindChillTemperature` (K)
+- [ ] `environment.outside.theoreticalWindChillTemperature` (K, wind chill from the true wind)
 - [ ] `environment.outside.heatIndexTemperature` (K, computed NWS heat index, not AccuWeather RealFeel)
 - [ ] `environment.outside.airDensity` (kg/m3, roughly 1.0 to 1.4)
 
@@ -67,6 +68,10 @@ Open **Server -> Data Browser**. Filter by `vessels.self`. For each path below c
 - [ ] `environment.weather.windAngleApparent` (rad, -pi..pi, negative to port)
 - [ ] `environment.weather.beaufortScale` (0..12)
 - [ ] `environment.weather.heatStressIndex` (0..4, present only when WBGT is)
+- [ ] `environment.weather.description` (string, plain-language condition summary)
+- [ ] `environment.weather.pressureTendency` (-1 falling, 0 steady, +1 rising; AccuWeather only)
+- [ ] `environment.weather.precipitationType` (string, present only during precipitation; AccuWeather only)
+- [ ] `environment.weather.visibilityObstruction` (string, present only when obstructed; AccuWeather only)
 
 ### Meta verification
 
@@ -91,7 +96,7 @@ Enable **Emit sea state** in **Weather source**, save, and (for a coastal or off
 
 - [ ] Set `dailyApiQuota` to a low value (e.g. 3) and `updateFrequency` to 1 minute. Submit. Wait long enough for the rolling 24h count to cross 90% of the cap.
 - [ ] The banner prefix should switch from `Running` to `Running [quota 90% used]`.
-- [ ] Continue waiting until the count reaches the cap. The banner should switch to a red error reading `AccuWeather daily quota reached (3/3 in last 24h). Pausing fetches until usage drops below the cap.` and the `<N> updates` counter should stop climbing.
+- [ ] Continue waiting until the count reaches the cap. The banner should switch to a red error reading `AccuWeather daily quota reached (3/3 in last 24h). Fetches paused until the rolling window drops below the cap. To resume sooner, raise dailyApiQuota or increase updateFrequency.` (the banner names the active weather source) and the `<N> updates` counter should stop climbing.
 - [ ] Restore `dailyApiQuota` to its production value (or 0 to disable). Submit. New fetches resume on the next cycle.
 
 ## 4. Error path verification

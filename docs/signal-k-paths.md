@@ -28,8 +28,8 @@ and consumers do not re-subscribe. Some
 `environment.weather.*` leaves are AccuWeather-only (RealFeel, RealFeel shade,
 AccuWeather apparent temperature, pressure tendency, precipitation type,
 visibility obstruction, cloud ceiling, and the 24-hour temperature departure);
-Open-Meteo supplies the rest and the plugin estimates the wet-bulb globe
-temperature so the heat-stress band still works.
+the keyless Open-Meteo and Met.no sources supply the rest, and the plugin
+estimates the wet-bulb globe temperature so the heat-stress band still works.
 
 > Note: the plugin re-emits its cached delta on a fixed interval for NMEA2000
 > recognition. Each re-emission stamps the delta with the current emission
@@ -204,6 +204,12 @@ so plotter UIs clear the alert. `method` is `['visual']` for `warn`,
 `['visual', 'sound']` for `alarm` / `emergency`, and `[]` (empty) for the
 `normal` clear so consumers drop the cue rather than keeping it lit.
 
+On the first evaluation after a plugin start (including the automatic restart
+after a configuration change), the plugin writes each enabled band's current
+state once, including `normal`, so an alert raised by a previous run clears
+instead of staying lit. After that first pass, only genuine transitions are
+emitted.
+
 The `message` field packs adjacent context so a chartplotter banner is
 actionable on its own:
 
@@ -211,7 +217,7 @@ actionable on its own:
 |------|----------------|
 | Wind | `Gale-force wind: Bf9 from SW, 19 m/s, gusts 27 m/s, 998 hPa` |
 | Visibility | `Reduced visibility: 0.8 km, ceiling 90 m, rain 2.5 mm/h` |
-| Heat | `High heat stress: HSI 3, WBGT 32 C, RH 78%, RealFeel 35 C` |
+| Heat | `High heat stress: HSI 3, WBGT 32 C, RH 78%, RealFeel (shade) 35 C` |
 | Cold | `Cold exposure caution: wind chill -2 C, air 1 C, wind 12 m/s` |
 | Severe | `Thunderstorms: Severe thunderstorms approaching, 998 hPa` |
 

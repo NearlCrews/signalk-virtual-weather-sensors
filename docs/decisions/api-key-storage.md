@@ -1,5 +1,7 @@
 # API Key Storage
 
+> Historical design snapshot; not maintained against shipped behavior. File references reflect the code at writing time (for example, the log-redaction pattern has since moved from `src/index.ts` to `src/plugin/logging.ts`).
+
 **TL;DR**: Close the "encrypt the API key in configuration storage" TODO. Signal K has no plugin-facing secrets API to wrap, peer plugins all store keys in plaintext, and the live plugin already does the only meaningful hardening (`'ui:widget': 'password'`, log redaction, schema-level `minLength`). A custom symmetric-encryption layer would not raise the security floor in any realistic threat model on a single-user marine box.
 
 ## Current state

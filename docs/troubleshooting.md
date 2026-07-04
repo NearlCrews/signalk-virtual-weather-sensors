@@ -98,10 +98,11 @@ picked up; use a different source label or a real GPS/AIS feed.
 ## Weather paths vanish from a downstream consumer after switching the weather source
 
 This is not a fault banner. The plugin stamps every weather delta with a
-`$source` that identifies the active provider: `open-meteo` by default and
-`accuweather` when AccuWeather is selected (the optional marine layer uses
-`open-meteo-marine`). Changing `weatherProvider` therefore changes the `$source`
-on every path the plugin emits. Any downstream consumer pinned to a specific
+`$source` that identifies the active provider: `open-meteo` by default,
+`met-no` for Met.no, `accuweather` for AccuWeather, and `vws-merged` in merge
+mode (the optional marine layer uses `open-meteo-marine`). Changing the
+weather source therefore changes the `$source` on every path the plugin
+emits. Any downstream consumer pinned to a specific
 source keeps listening for the old one and silently receives nothing, even
 though the Data Browser shows the new values arriving.
 

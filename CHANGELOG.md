@@ -7,6 +7,63 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+<a id="v1110"></a>
+
+## [1.11.0] - 2026-07-04
+
+Correctness fixes across merged mode, notifications, the Met.no daily
+forecast, and the config panel save flow, plus consistency cleanups
+throughout. No paths or defaults change.
+
+### Fixed
+
+- **The merge provider order now survives a plugin restart.** A saved
+  `mergeProviders` pick-and-order list was dropped when settings were
+  re-validated on restart, so merged mode silently fell back to the default
+  catalog order. The saved list is now carried through.
+- **A hazard notification no longer stays latched across a restart.** The first
+  evaluation after a plugin start (including the automatic restart after a
+  configuration change) writes each enabled band's current state, including
+  `normal`, so an alert raised by a previous run clears instead of staying
+  stuck at warn, alarm, or emergency. Steady-state behavior is unchanged: once
+  primed, unchanged snapshots still emit nothing.
+- **The config panel no longer discards an edit typed while a save is in
+  flight.** The form adopts the saved payload only when nothing has changed
+  since Save was clicked, so a keystroke landing during the save round-trip is
+  kept.
+- **Met.no daily forecasts keep their weather description.** A midday window
+  without a symbol code no longer wipes a description captured from an earlier
+  window and no longer blocks a later window from supplying one.
+
+### Changed
+
+- **Status banners name the active weather source.** The quota-exhausted and
+  key-rejected banners now use the active provider's name instead of a
+  hardcoded "AccuWeather" (the text is unchanged on an AccuWeather install).
+- **The heat notification labels its RealFeel value correctly.** The value
+  shown was always the shade reading; the message now says "RealFeel (shade)".
+- **The merge list can no longer be saved empty from the panel.** The last
+  included provider cannot be unchecked (an inline note says at least one
+  provider must stay in the merge), and a provider row disabled for a missing
+  key grays its label.
+- **Configuration validation warns instead of erroring** on an unrecognized
+  `weatherMode`, a non-list `mergeProviders`, or unknown merge provider ids,
+  falling back to the defaults in each case.
+- Internal consolidation with identical output: the AccuWeather mapper derives
+  wind chill, heat index, Beaufort scale, absolute humidity, and air density
+  through the shared recompute helper (keeping AccuWeather's measured wind
+  chill when present), the v2 observation assembly reuses the shared SK v2
+  envelope builder, and one shared coordinate-key helper backs the AccuWeather
+  location cache, the Met.no memo, and the NWS point query.
+
+### Removed
+
+- Dead internal exports: `msToKnots`, the `KNOTS_TO_MS` unit constant, and the
+  `ACCUWEATHER_SOURCE` delta constant (the shared delta builders now require an
+  explicit source ref). The constants barrel re-exports only the names its
+  consumers use; the notification and provider registries are imported from
+  `constants/notifications-shared.js` directly.
+
 <a id="v1100"></a>
 
 ## [1.10.0] - 2026-06-23

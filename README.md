@@ -18,27 +18,26 @@ service; AccuWeather is an optional source for users who have an API key.
 > for safety-of-life decisions: always cross-check official forecasts and
 > warnings against your primary instruments.
 
-## What's new in 1.10.0
+## What's new in 1.11.0
 
-Two new keyless providers, full Signal K v2 Weather API support across every
-provider, and an optional synthesis mode that blends the available sources. The
-default behavior is unchanged: a fresh install still runs on keyless Open-Meteo.
+Correctness fixes across merged mode, notifications, the Met.no daily
+forecast, and the config panel save flow. No paths or defaults change.
 
-- **Met.no joins as a keyless provider.** A third weather source backed by the
-  Norwegian Meteorological Institute, selectable alongside Open-Meteo and
-  AccuWeather, with deltas stamped `$source: 'met-no'`.
-- **The v2 Weather API works on any source.** Open-Meteo, Met.no, and AccuWeather
-  all serve forecasts and observations, so a default keyless install advertises
-  `weather` under `/signalk/v2/features` without an API key.
-- **Region-aware warnings in two regions.** The `warnings` endpoint serves NWS
-  active alerts for US waters and Met.no MetAlerts for Norwegian waters, both
-  keyless and best-effort.
-- **Merge mode blends the providers you choose.** A "Provider mode" toggle adds an
-  optional merged source (`$source: 'vws-merged'`); a pick-and-order list selects which
-  providers blend and their priority (the first is the primary), hazard fields escalate
-  to the most conservative value, and derived quantities are recomputed from the blend.
+- **The merge provider order survives a restart.** A saved pick-and-order
+  list no longer resets to the default catalog order every time the plugin
+  restarts.
+- **Stale hazard alerts clear after a restart.** The first evaluation after a
+  plugin start writes each enabled band's current state, including `normal`,
+  so an alarm raised by a previous run cannot stay latched on a plotter.
+- **Config panel save-flow fixes.** An edit typed while a save is in flight is
+  kept instead of silently discarded, and the merge list can no longer be
+  saved empty.
+- **Met.no daily forecasts keep their weather description.** A midday window
+  without a symbol code no longer wipes it.
+- **Clearer operator text.** Status banners name the active weather source,
+  and the heat notification labels its value "RealFeel (shade)".
 
-See the [v1.10.0 changelog entry](CHANGELOG.md#v1100), or the
+See the [v1.11.0 changelog entry](CHANGELOG.md#v1110), or the
 [changelog](CHANGELOG.md) for the full list.
 
 ## What it does
@@ -160,8 +159,9 @@ The plugin emits 30+ data points under canonical `environment.outside.*` and
 producer-namespaced `environment.weather.*` branch for provider extensions and
 plugin-derived values (Beaufort scale, heat stress, gust factor, and more).
 Some extension leaves are AccuWeather-only (RealFeel, pressure tendency,
-precipitation type, visibility obstruction, the plain-language condition
-summary, and the 24-hour temperature departure); Open-Meteo supplies the rest.
+precipitation type, visibility obstruction, cloud ceiling, and the 24-hour
+temperature departure); the keyless sources supply the rest, including the
+plain-language condition summary.
 With the sea-state option enabled, a keyless Open-Meteo Marine layer adds
 waves, swell, and sea temperature on `environment.water.*` and surface current
 on `environment.current`. A one-shot meta delta on start describes units and

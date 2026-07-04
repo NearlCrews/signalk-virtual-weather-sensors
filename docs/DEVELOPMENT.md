@@ -390,8 +390,8 @@ process, coding standards, and commit conventions.
 ## Testing Strategy
 
 The suite covers unit behavior, service integration, calculation accuracy,
-edge and boundary conditions, and error handling. **Total: 547 tests** across
-43 test files. (`npm test` prints the current totals; the `vitest.config.ts`
+edge and boundary conditions, and error handling. **Total: 576 tests** across
+44 test files. (`npm test` prints the current totals; the `vitest.config.ts`
 coverage gate holds at 80% for branches, functions, lines, and statements.)
 
 Coverage spans these areas:
@@ -473,7 +473,7 @@ This plugin adheres to the [Signal K 1.8.2 specification](https://signalk.org/sp
 | Source Metadata | Yes | Per-provider `$source` (`SourceRef` brand) on every update: each provider declares its own `sourceRef` (`open-meteo` by default, `met-no`, `accuweather`, or `vws-merged` in merge mode), with `open-meteo-marine` on the sea-state deltas |
 | Meta | Yes | One-shot meta delta on plugin start (`NMEA2000PathMapper.buildMetaDelta()`) describing units and labels for non-canonical paths |
 | Status Reporting | Yes | `app.setPluginStatus` / `app.setPluginError`. Live banner string from `WeatherService.formatStatusBanner()`: `Running, last update Nm ago (N updates, K API requests, K/Q today)`, with a `Running [quota 90% used]` warning prefix and a `setPluginError` quota-exhausted state. `emitWeatherTick` re-pushes the banner on every fresh tick so the age and quota counters stay current. A `setBanner()` dedupe layer coalesces consecutive identical `(kind, message)` pushes to a single SK call. |
-| Notifications | Yes | Opt-in `notifications.environment.*` deltas per SK 1.8.2 notifications.html. 11 distinct hazard paths (`wind.gale|storm|hurricane`, `visibility.low|veryLow`, `heat.caution|high|extreme`, `cold.caution|extreme`, `weather.severe`). Value shape `{ state, method, message, timestamp }`. Transition state machine in `WeatherNotifier`: a band is emitted only on entry / exit, so unchanged snapshots never write to the bus. N2K Alert PGN 126983 / 126985 bridging requires the separate `signalk-to-nmea2000` plugin. |
+| Notifications | Yes | Opt-in `notifications.environment.*` deltas per SK 1.8.2 notifications.html. 11 distinct hazard paths (`wind.gale|storm|hurricane`, `visibility.low|veryLow`, `heat.caution|high|extreme`, `cold.caution|extreme`, `weather.severe`). Value shape `{ state, method, message, timestamp }`. Transition state machine in `WeatherNotifier`: a band is emitted only on entry / exit, so unchanged snapshots never write to the bus. The one exception is the first evaluation after a plugin start or reset, which emits every enabled band's current state (including `normal`) once, so a hazard latched by a previous plugin instance clears after a restart. N2K Alert PGN 126983 / 126985 bridging requires the separate `signalk-to-nmea2000` plugin. |
 | `handleMessage` versioning | Yes | `app.handleMessage(id, delta, SKVersion.v1)` |
 | Logging channel separation | Yes | `debug` and `info` go through `app.debug` (gated by the server's `DEBUG=signalk-virtual-weather-sensors` setting); `warn` and `error` go through `app.error` so they surface in production logs without enabling DEBUG (see `createLogger` in `src/plugin/logging.ts`). `app.setPluginError` is reserved for the Admin UI status banner, separate from log output. |
 
