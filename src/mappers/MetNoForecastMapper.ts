@@ -85,7 +85,9 @@ function mapEntry(entry: MetNoTimeseriesEntry, type: 'point' | 'observation'): S
 
 /**
  * Merge one canonical 6-hour grid window into the per-day accumulator.
- * Prefer the 12:00 UTC window for description; fall back to the first window seen.
+ * Prefer the 12:00 UTC window for description; fall back to the first window
+ * that carries one. A noon window without a symbol_code neither clobbers an
+ * earlier description nor locks out a later window from supplying one.
  * Note: air_temperature_max and air_temperature_min live ONLY on
  * next_6_hours.details, not on next_1_hours.details (even though the shared
  * MetNoPeriod type declares them on both shapes).
@@ -103,7 +105,7 @@ function accumulateWindow(
   if (minC !== undefined && minC < acc.minC) acc.minC = minC;
   acc.precipMm += precipMm;
   if (precipPresent) acc.hasPrecip = true;
-  if (hour === 12) {
+  if (hour === 12 && desc !== undefined) {
     acc.description = desc;
     acc.has12 = true;
   } else if (!acc.has12 && acc.description === undefined && desc !== undefined) {

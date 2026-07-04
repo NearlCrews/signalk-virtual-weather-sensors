@@ -58,7 +58,7 @@ function formStateFromConfig(c: unknown): PanelFormState {
     weatherProvider: cfg.weatherProvider ?? DEFAULT_WEATHER_PROVIDER,
     weatherMode: cfg.weatherMode ?? DEFAULT_WEATHER_MODE,
     mergeProviders: cfg.mergeProviders ?? DEFAULT_MERGE_PROVIDERS,
-    accuWeatherApiKey: cfg.accuWeatherApiKey || '',
+    accuWeatherApiKey: cfg.accuWeatherApiKey ?? '',
     openMeteoBaseUrl: cfg.openMeteoBaseUrl ?? '',
     marineData: cfg.marineData ?? false,
     updateFrequency: cfg.updateFrequency ?? CONFIG_DEFAULTS.UPDATE_FREQUENCY,
@@ -92,6 +92,11 @@ function formsEqual(a: PanelFormState, b: PanelFormState): boolean {
   );
 }
 
+// Post-save restart confirmation cadence: up to 4 polls, 1.5 s apart, before
+// giving up. Named like useStatus's POLL_MS so the numbers read as policy.
+const RESTART_POLL_ATTEMPTS = 4;
+const RESTART_POLL_DELAY_MS = 1500;
+
 // The plugin is restarting after a save, so /api/status may be briefly
 // unreachable: poll a few times before giving up, then report what the
 // status actually says rather than an optimistic "Saved." that could lie.
@@ -99,8 +104,8 @@ async function confirmRestart(
   refreshStatus: () => Promise<PanelStatusResponse | null>
 ): Promise<SaveAction> {
   let data: PanelStatusResponse | null = null;
-  for (let attempt = 0; attempt < 4 && !data; attempt++) {
-    await new Promise((resolve) => setTimeout(resolve, 1500));
+  for (let attempt = 0; attempt < RESTART_POLL_ATTEMPTS && !data; attempt++) {
+    await new Promise((resolve) => setTimeout(resolve, RESTART_POLL_DELAY_MS));
     data = await refreshStatus();
   }
   if (!data) {
@@ -220,8 +225,10 @@ export function usePanelConfig(
       };
       await Promise.resolve(hostSave(payload));
       // What we handed the host is the new baseline; adopting it as the form
-      // too keeps dirty false even when trimming changed the key.
-      setForm(payload);
+      // too keeps dirty false even when trimming changed the key. Adopt only
+      // if the user has not typed since Save was clicked: a mid-save edit
+      // must survive and stay dirty against the new baseline.
+      setForm((current) => (formsEqual(current, form) ? payload : current));
       setSavedForm(payload);
       setAction(await confirmRestart(refreshStatus));
     } catch (err) {

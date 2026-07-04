@@ -200,7 +200,9 @@ function formatHeatSuffix(data: WeatherData): string {
   }
   const realFeelShadeVal = asOptionalNumber(data.realFeelShade);
   if (realFeelShadeVal !== undefined) {
-    parts.push(`RealFeel ${kToCRounded(realFeelShadeVal)} C`);
+    // Labeled like the REAL_FEEL_SHADE meta displayName so the operator does
+    // not mistake the shade value for the full-sun environment.weather.realFeel.
+    parts.push(`RealFeel (shade) ${kToCRounded(realFeelShadeVal)} C`);
   }
   return parts.join(', ');
 }
@@ -355,6 +357,15 @@ export class WeatherNotifier {
   private readonly logger: Logger;
   /** Last state emitted per notification path; default `normal` until set. */
   private readonly lastState = new Map<string, NotificationState>();
+  /**
+   * False until the first evaluate() after construction or reset(). While
+   * unprimed, leading `normal` states ARE emitted: a previous plugin instance
+   * (stopped by a config change, or crashed) may have left an active
+   * notification latched in the server's full model, and only a fresh
+   * `normal` write can clear it. Once primed, leading normals are suppressed
+   * again because the bus is known to have nothing to clear.
+   */
+  private primed = false;
 
   constructor(config: NotificationsConfig, logger: Logger = () => {}) {
     this.config = config;
@@ -389,15 +400,19 @@ export class WeatherNotifier {
       });
     }
 
+    this.primed = true;
     return transitions;
   }
 
   /**
-   * Reset all band state so a fresh start() begins with every band inactive.
-   * Avoids ghost `normal` transitions on the first evaluate() after stop().
+   * Reset all band state so a fresh start() begins with every band inactive
+   * and unprimed: the first evaluate() after the restart re-emits each
+   * enabled band's state (including `normal`) so a hazard that cleared while
+   * the plugin was stopped does not stay latched in the server model.
    */
   public reset(): void {
     this.lastState.clear();
+    this.primed = false;
   }
 
   /**
@@ -546,12 +561,16 @@ export class WeatherNotifier {
 
   /**
    * Push a notification PathValue onto `out` if and only if the desired state
-   * differs from the last state emitted for this path. The very first
+   * differs from the last state emitted for this path. Once primed, the first
    * evaluation against `normal` records `normal` in lastState (so a later
    * transition to an active band correctly emits the entry delta) but does
    * NOT emit a delta: the bus has nothing to clear. Result: `lastState` may
    * contain many paths in `normal` state, but `getActiveCount` still returns
-   * 0 because it counts only non-normal entries.
+   * 0 because it counts only non-normal entries. On the unprimed first
+   * evaluate after a (re)start the leading `normal` IS emitted, clearing any
+   * notification a previous plugin instance left latched. Bands disabled in
+   * config are never evaluated, so a stale alarm on a band the operator
+   * disabled across the restart stays untouched by design.
    *
    * The message producer and the transition timestamp are computed lazily so
    * the steady-state case allocates no strings.
@@ -563,10 +582,10 @@ export class WeatherNotifier {
     out: PathValue[]
   ): void {
     const prior = this.lastState.get(path);
-    if (prior === undefined && desired === 'normal') {
-      // Never emit a leading `normal`: the band has never been active, so the
-      // bus has nothing to clear. Record the state so a later transition to
-      // an active band correctly emits the entry delta.
+    if (prior === undefined && desired === 'normal' && this.primed) {
+      // Suppress the leading `normal`: the band has never been active since
+      // priming, so the bus has nothing to clear. Record the state so a later
+      // transition to an active band correctly emits the entry delta.
       this.lastState.set(path, desired);
       return;
     }

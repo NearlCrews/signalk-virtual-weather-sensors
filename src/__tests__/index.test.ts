@@ -659,4 +659,28 @@ describe('Weather provider registration', () => {
     await plugin.stop();
     expect(unRegister).toHaveBeenCalledWith('signalk-virtual-weather-sensors');
   });
+
+  it('honors a saved mergeProviders list on start instead of resetting to catalog order', async () => {
+    // Regression: validateAndNormalizeSettings used to drop mergeProviders, so
+    // every restart silently reset the operator's pick-and-order list to the
+    // default (all providers). With a single selected provider the merge path
+    // must degrade to single-source; under the dropped-field bug it would
+    // build the full MergingWeatherProvider instead.
+    const registerWeatherProvider = vi.fn();
+    const unRegister = vi.fn();
+    const app = buildMockApp({ registerWeatherProvider, weatherApi: { unRegister } });
+
+    const plugin = createPlugin(app as never);
+    await plugin.start(
+      { weatherProvider: 'open-meteo', weatherMode: 'merged', mergeProviders: ['open-meteo'] },
+      () => {}
+    );
+
+    expect(registerWeatherProvider).toHaveBeenCalledTimes(1);
+    const provider = registerWeatherProvider.mock.calls[0]?.[0];
+    expect(provider.name).toBe('Open-Meteo');
+    expect(provider.name).not.toContain('merged');
+
+    await plugin.stop();
+  });
 });

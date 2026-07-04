@@ -120,6 +120,51 @@ describe('MetNoForecastMapper', () => {
     // The 00:00 window is the earliest and must win, not the last (18:00) window.
     expect(out[0]?.description).toBe('Snow');
   });
+  it('keeps an earlier description when the 12:00 window has no symbol_code', () => {
+    const six = (time: string, symbol?: string) => ({
+      time,
+      data: {
+        instant: { details: { air_temperature: 15 } },
+        next_6_hours: {
+          ...(symbol !== undefined && { summary: { symbol_code: symbol } }),
+          details: { air_temperature_max: 20, air_temperature_min: 10, precipitation_amount: 0 },
+        },
+      },
+    });
+    const out = mapMetNoToDailyForecasts({
+      properties: {
+        timeseries: [
+          six('2026-06-26T00:00:00Z', 'snow'), // fallback description
+          six('2026-06-26T12:00:00Z'), // noon window without a symbol must not clobber it
+        ],
+      },
+    });
+    expect(out).toHaveLength(1);
+    expect(out[0]?.description).toBe('Snow');
+  });
+  it('lets a later window supply the description when noon has no symbol_code', () => {
+    const six = (time: string, symbol?: string) => ({
+      time,
+      data: {
+        instant: { details: { air_temperature: 15 } },
+        next_6_hours: {
+          ...(symbol !== undefined && { summary: { symbol_code: symbol } }),
+          details: { air_temperature_max: 20, air_temperature_min: 10, precipitation_amount: 0 },
+        },
+      },
+    });
+    const out = mapMetNoToDailyForecasts({
+      properties: {
+        timeseries: [
+          six('2026-06-26T06:00:00Z'), // no symbol yet
+          six('2026-06-26T12:00:00Z'), // noon also empty; must not lock the day
+          six('2026-06-26T18:00:00Z', 'cloudy'), // only window with a symbol
+        ],
+      },
+    });
+    expect(out).toHaveLength(1);
+    expect(out[0]?.description).toBe('Cloudy');
+  });
   it('emits precipitationVolume of 0 when all 6-hour windows report 0 mm', () => {
     const dryDay = (time: string) => ({
       time,

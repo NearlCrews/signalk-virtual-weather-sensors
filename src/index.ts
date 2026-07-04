@@ -389,6 +389,11 @@ function validateAndNormalizeSettings(settings: unknown, logger: Logger): Plugin
     ...(typeof rawSettings.weatherMode === 'string' && {
       weatherMode: rawSettings.weatherMode as PluginConfiguration['weatherMode'],
     }),
+    // The saved merge pick-and-order list must survive a restart; the
+    // sanitizer's resolveMergeProviders filters and dedupes whatever is here.
+    ...(Array.isArray(rawSettings.mergeProviders) && {
+      mergeProviders: rawSettings.mergeProviders as PluginConfiguration['mergeProviders'],
+    }),
     ...(typeof rawSettings.openMeteoBaseUrl === 'string' && {
       openMeteoBaseUrl: rawSettings.openMeteoBaseUrl,
     }),
