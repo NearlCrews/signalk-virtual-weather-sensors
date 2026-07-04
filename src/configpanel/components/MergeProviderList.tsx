@@ -36,6 +36,50 @@ interface Props {
  * reordering. A polite live region restates the order after every edit so the
  * change is announced to assistive tech.
  */
+/**
+ * Up and down reorder controls for one included row. aria-disabled, not
+ * native disabled, so focus stays on the button after a move lands the row at
+ * a bound; the handler no-ops there.
+ */
+function ReorderButtons({
+  label,
+  atTop,
+  atBottom,
+  onMove,
+}: {
+  label: string;
+  atTop: boolean;
+  atBottom: boolean;
+  onMove: (direction: -1 | 1) => void;
+}): React.ReactElement {
+  return (
+    <div style={S.mergeReorder}>
+      <button
+        type="button"
+        style={S.reorderBtn}
+        aria-label={`Move ${label} up`}
+        aria-disabled={atTop}
+        onClick={() => {
+          if (!atTop) onMove(-1);
+        }}
+      >
+        <span aria-hidden="true">↑</span>
+      </button>
+      <button
+        type="button"
+        style={S.reorderBtn}
+        aria-label={`Move ${label} down`}
+        aria-disabled={atBottom}
+        onClick={() => {
+          if (!atBottom) onMove(1);
+        }}
+      >
+        <span aria-hidden="true">↓</span>
+      </button>
+    </div>
+  );
+}
+
 export default function MergeProviderList({
   mergeProviders,
   hasAccuWeatherKey,
@@ -81,14 +125,32 @@ export default function MergeProviderList({
           .map((id, i) => `${i + 1} ${WEATHER_PROVIDER_LABELS[id]}${i === 0 ? ' (primary)' : ''}`)
           .join(', ')}.`;
 
+  /**
+   * Whether a row's checkbox is locked, and the inline note explaining why.
+   * AccuWeather with no key cannot be added (an already-included AccuWeather,
+   * from a saved merge whose key was later cleared, stays toggle-able so the
+   * operator can remove it). The last included provider cannot be unchecked:
+   * an empty list would silently resolve back to the full default order at
+   * runtime, the opposite of what an emptied list reads as in the panel.
+   */
+  const rowLockState = (
+    id: WeatherProviderId,
+    isIncluded: boolean
+  ): { disabled: boolean; note: string | null } => {
+    if (providerRequiresApiKey(id) && !hasAccuWeatherKey && !isIncluded) {
+      return { disabled: true, note: 'needs an AccuWeather key (set it below)' };
+    }
+    if (isIncluded && included.length === 1) {
+      return { disabled: true, note: 'at least one provider must stay in the merge' };
+    }
+    return { disabled: false, note: null };
+  };
+
   const renderRow = (id: WeatherProviderId, includedIndex: number | null): React.ReactElement => {
     const isIncluded = includedIndex !== null;
     const isPrimary = includedIndex === 0;
     const isLastIncluded = isIncluded && includedIndex === lastIndex;
-    // AccuWeather with no key cannot be added; an already-included AccuWeather
-    // (a saved merge whose key was later cleared) stays toggle-able so the
-    // operator can remove it.
-    const blockedForKey = providerRequiresApiKey(id) && !hasAccuWeatherKey && !isIncluded;
+    const { disabled, note } = rowLockState(id, isIncluded);
     const label = WEATHER_PROVIDER_LABELS[id];
     const noteId = `svws-merge-${id}-note`;
 
@@ -98,52 +160,34 @@ export default function MergeProviderList({
           id={`svws-merge-${id}`}
           label={label}
           checked={isIncluded}
-          disabled={blockedForKey}
+          disabled={disabled}
+          // Match the label emphasis to the disabled state, the same pairing
+          // NotificationToggles uses for its disabled sub-toggles.
+          variant={disabled ? 'disabled' : 'normal'}
           // The primary role rides into the accessible name so it is announced,
           // not conveyed by the visual pill alone.
           visuallyHiddenSuffix={isPrimary ? ', primary' : undefined}
-          // Point a blocked row's checkbox at its inline note so the reason is
+          // Point a locked row's checkbox at its inline note so the reason is
           // part of the accessible description (the ApiKeyField idiom).
-          describedBy={blockedForKey ? noteId : undefined}
+          describedBy={note !== null ? noteId : undefined}
           containerStyle={S.mergeRowMain}
           onChange={(checked) => (checked ? include(id) : exclude(id))}
         >
           {isPrimary ? <span style={S.primaryBadge}>primary</span> : null}
-          {blockedForKey ? (
+          {note !== null ? (
             <span id={noteId} style={S.mergeNote}>
-              needs an AccuWeather key (set it below)
+              {note}
             </span>
           ) : null}
         </CheckboxRow>
 
         {isIncluded ? (
-          <div style={S.mergeReorder}>
-            <button
-              type="button"
-              style={S.reorderBtn}
-              aria-label={`Move ${label} up`}
-              // aria-disabled, not native disabled, so focus stays on the
-              // button after a move lands it on the new primary row. The
-              // handler no-ops at the bound.
-              aria-disabled={isPrimary}
-              onClick={() => {
-                if (!isPrimary) move(includedIndex, -1);
-              }}
-            >
-              <span aria-hidden="true">↑</span>
-            </button>
-            <button
-              type="button"
-              style={S.reorderBtn}
-              aria-label={`Move ${label} down`}
-              aria-disabled={isLastIncluded}
-              onClick={() => {
-                if (!isLastIncluded) move(includedIndex, 1);
-              }}
-            >
-              <span aria-hidden="true">↓</span>
-            </button>
-          </div>
+          <ReorderButtons
+            label={label}
+            atTop={isPrimary}
+            atBottom={isLastIncluded}
+            onMove={(direction) => move(includedIndex, direction)}
+          />
         ) : null}
       </div>
     );

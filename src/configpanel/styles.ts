@@ -36,11 +36,12 @@ const SCALE_TOKENS = `
 `;
 
 // Light theme. Cards must read white so they stand out from the admin's gray
-// page background. Muted text is #62687a: 5.05:1 on the raised surface and
-// 5.74:1 on white, so it clears WCAG AA (4.5:1) everywhere it appears at
-// small sizes. color-scheme rides along with each token block so native
-// widgets (checkboxes, number spinners, scrollbars) follow the panel theme
-// even when it is pinned against the host.
+// page background. Muted text is #555555: 7.46:1 on white and 6.77:1 on the
+// raised surface; faint text is #62687a: 5.55:1 on white and 5.05:1 on the
+// raised surface. Both clear WCAG AA (4.5:1) everywhere they appear at small
+// sizes. color-scheme rides along with each token block so native widgets
+// (checkboxes, number spinners, scrollbars) follow the panel theme even when
+// it is pinned against the host.
 const LIGHT_TOKENS = `
   color-scheme: light;
   --svws-bg: #e4e5e6;
@@ -70,8 +71,10 @@ const LIGHT_TOKENS = `
   --svws-info-border: #c7d2fe;
 `;
 
-// Dark theme. Muted text is #9aa1ad: 4.88:1 on the raised surface and 5.63:1
-// on the card surface, so AA holds on every dark background it appears on.
+// Dark theme. Muted text is #a3a9b5: 5.38:1 on the raised surface and 6.21:1
+// on the card surface; faint text is #9aa1ad: 4.88:1 on the raised surface
+// and 5.63:1 on the card surface. AA holds on every dark background either
+// appears on.
 const DARK_TOKENS = `
   color-scheme: dark;
   --svws-bg: #1b1c22;

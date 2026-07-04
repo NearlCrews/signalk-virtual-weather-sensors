@@ -381,6 +381,31 @@ describe('sanitizeConfiguration weatherMode', () => {
   });
 });
 
+describe('validateConfiguration mode and merge-provider warnings', () => {
+  it('warns, without erroring, on an unknown weatherMode', () => {
+    const r = validateConfiguration({ weatherMode: 'blended' as never });
+    expect(r.isValid).toBe(true);
+    expect(r.warnings.some((w) => w.includes('Unknown weatherMode "blended"'))).toBe(true);
+  });
+  it('warns when mergeProviders is not a list', () => {
+    const r = validateConfiguration({ mergeProviders: 'open-meteo' as never });
+    expect(r.isValid).toBe(true);
+    expect(r.warnings.some((w) => w.includes('mergeProviders is not a list'))).toBe(true);
+  });
+  it('warns about unknown merge provider ids and stays valid', () => {
+    const r = validateConfiguration({ mergeProviders: ['open-meteo', 'noaa'] as never });
+    expect(r.isValid).toBe(true);
+    expect(r.warnings.some((w) => w.includes('Ignoring unknown merge providers: noaa'))).toBe(true);
+  });
+  it('stays silent for recognized values', () => {
+    const r = validateConfiguration({
+      weatherMode: 'merged',
+      mergeProviders: ['open-meteo', 'met-no'],
+    });
+    expect(r.warnings.some((w) => w.includes('weatherMode') || w.includes('merge'))).toBe(false);
+  });
+});
+
 describe('validateApiKey is capability-driven', () => {
   it('requires a key for accuweather', () => {
     const r = validateConfiguration({ weatherProvider: 'accuweather', accuWeatherApiKey: '' });

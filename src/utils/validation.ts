@@ -17,9 +17,12 @@ import {
   type WeatherProviderId,
 } from '../constants/index.js';
 import {
+  DEFAULT_WEATHER_MODE,
   providerRequiresApiKey,
   resolveMergeProviders,
   resolveWeatherMode,
+  WEATHER_MODE_IDS,
+  type WeatherMode,
 } from '../constants/notifications-shared.js';
 import type {
   GeoLocation,
@@ -246,6 +249,7 @@ export function validateConfiguration(config: Partial<PluginConfiguration>): Val
     (config.accuWeatherApiKey ?? '').trim().length > 0
   );
   validateWeatherProvider(config, errors);
+  validateModeAndMergeProviders(config, warnings);
   validateApiKey(config, provider, errors, warnings);
   validateOpenMeteoBaseUrl(config, errors);
   for (const rule of NUMERIC_CONFIG_RULES) {
@@ -257,6 +261,36 @@ export function validateConfiguration(config: Partial<PluginConfiguration>): Val
     errors,
     warnings,
   };
+}
+
+/**
+ * Warn (never error) when weatherMode or mergeProviders is present but
+ * unrecognized. Both fields fall back to migration-safe defaults in
+ * `sanitizeConfiguration`, so a typo must not block a legacy config from
+ * loading, but the operator should see why the saved value was ignored:
+ * an unknown weatherProvider hard-errors, and silence here would make these
+ * two fields the only ones that fail without feedback.
+ */
+function validateModeAndMergeProviders(
+  config: Partial<PluginConfiguration>,
+  warnings: string[]
+): void {
+  const mode: unknown = config.weatherMode;
+  if (mode !== undefined && !WEATHER_MODE_IDS.includes(mode as WeatherMode)) {
+    warnings.push(
+      `Unknown weatherMode "${String(mode)}", falling back to "${DEFAULT_WEATHER_MODE}"`
+    );
+  }
+  const merge: unknown = config.mergeProviders;
+  if (merge === undefined) return;
+  if (!Array.isArray(merge)) {
+    warnings.push('mergeProviders is not a list, falling back to the default provider order');
+    return;
+  }
+  const unknown = merge.filter((id) => !WEATHER_PROVIDER_IDS.includes(id as WeatherProviderId));
+  if (unknown.length > 0) {
+    warnings.push(`Ignoring unknown merge providers: ${unknown.map(String).join(', ')}`);
+  }
 }
 
 /** Return `value` when it is a boolean, otherwise `fallback`. */
