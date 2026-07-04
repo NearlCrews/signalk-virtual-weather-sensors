@@ -34,16 +34,15 @@ import {
   isValidPressure,
   isValidTemperature,
   isValidWindSpeed,
+  toCoordKey,
   toErrorMessage,
 } from '../utils/conversions.js';
+import { DEFAULT_MAX_RESPONSE_BYTES } from '../utils/http.js';
 import { assertValidCoordinates, validateAccuWeatherResponse } from '../utils/validation.js';
 import { CoalescingTtlCache } from './cache/CoalescingTtlCache.js';
 import { ForecastCache } from './cache/ForecastCache.js';
 import { RetryingHttpClient } from './http/RetryingHttpClient.js';
 import { RollingRequestWindow } from './quota/RollingRequestWindow.js';
-
-/** Maximum allowed response body size in bytes (1 MiB) */
-const MAX_RESPONSE_BYTES = 1_048_576;
 
 /** Validation pattern for AccuWeather location keys (URL path segment). */
 const LOCATION_KEY_PATTERN = /^[a-zA-Z0-9_-]+$/;
@@ -124,7 +123,7 @@ export class AccuWeatherService implements CurrentWeatherProvider {
       userAgent: `${PLUGIN.NAME}/${PLUGIN.VERSION}`,
       onRequestCounted: () => this.requestWindow.record(),
       logger: this.logger,
-      maxResponseBytes: MAX_RESPONSE_BYTES,
+      maxResponseBytes: DEFAULT_MAX_RESPONSE_BYTES,
       responseLabel: 'AccuWeather response',
     });
 
@@ -310,7 +309,7 @@ export class AccuWeatherService implements CurrentWeatherProvider {
 
   /** Stable location-cache key for a coordinate, rounded to 4 decimal places. @private */
   private locationCacheKey(location: GeoLocation): string {
-    return `${location.latitude.toFixed(4)},${location.longitude.toFixed(4)}`;
+    return toCoordKey(location);
   }
 
   /**

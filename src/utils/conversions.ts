@@ -1,5 +1,6 @@
 import type { Timestamp } from '@signalk/server-api';
 import { API_QUOTA, MAGNUS, UNITS, VALIDATION_LIMITS } from '../constants/index.js';
+import type { GeoLocation } from '../types/navigation.js';
 
 /** Extract a string message from any thrown value: `Error.message` or `String(value)`. */
 export function toErrorMessage(error: unknown): string {
@@ -131,11 +132,6 @@ export function msToKMH(ms: number): number {
   return ms / UNITS.WIND_SPEED.KMH_TO_MS;
 }
 
-export function msToKnots(ms: number): number {
-  if (!Number.isFinite(ms)) return 0;
-  return ms / UNITS.WIND_SPEED.KNOTS_TO_MS;
-}
-
 export function degreesToRadians(degrees: number): number {
   if (!Number.isFinite(degrees)) return 0;
   return degrees * UNITS.ANGLE.DEGREES_TO_RADIANS;
@@ -265,6 +261,15 @@ export function isValidCoordinates(latitude: number, longitude: number): boolean
       VALIDATION_LIMITS.COORDINATES.LONGITUDE.MAX
     )
   );
+}
+
+/**
+ * Canonical `lat,lon` key for a location at 4-decimal precision (about 11 m).
+ * Shared by the provider cache keys and the NWS point query so the rounding
+ * policy lives in one place instead of three hand-copied template literals.
+ */
+export function toCoordKey(location: GeoLocation, decimals = 4): string {
+  return `${location.latitude.toFixed(decimals)},${location.longitude.toFixed(decimals)}`;
 }
 
 /**

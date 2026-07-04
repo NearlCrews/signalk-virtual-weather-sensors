@@ -214,17 +214,12 @@ async function startServices(
   if (marineService) {
     instance.marinePathMapper = new MarinePathMapper(instance.logger);
   }
-  instance.weatherService = new WeatherService(
-    app,
-    config,
-    instance.logger,
-    undefined,
-    provider,
-    undefined,
-    bannerSink,
-    marineService
-  );
-  instance.pathMapper = new NMEA2000PathMapper(instance.logger, instance.sourceRef);
+  instance.weatherService = new WeatherService(app, config, instance.logger, {
+    weatherProvider: provider,
+    setBanner: bannerSink,
+    marineService,
+  });
+  instance.pathMapper = new NMEA2000PathMapper(instance.sourceRef, instance.logger);
   // Construct the notifier even when notifications are disabled at the master
   // level so a hot-reload from disabled -> enabled does not need a restart.
   // `evaluate()` short-circuits when `config.notifications.enabled` is false.

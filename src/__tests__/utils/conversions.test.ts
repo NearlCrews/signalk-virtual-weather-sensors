@@ -30,7 +30,6 @@ import {
   kmhToMS,
   millibarsToPA,
   msToKMH,
-  msToKnots,
   normalizeAngle0To2Pi,
   normalizeAnglePiToPi,
   normalizeIsoTimestamp,
@@ -93,11 +92,6 @@ describe('Wind speed conversions', () => {
     expect(msToKMH(10)).toBeCloseTo(36, 5);
     expect(kmhToMS(Number.NaN)).toBe(0);
     expect(msToKMH(Number.NaN)).toBe(0);
-  });
-
-  it('m/s → knots', () => {
-    expect(msToKnots(0.514444)).toBeCloseTo(1, 4);
-    expect(msToKnots(Number.NaN)).toBe(0);
   });
 });
 

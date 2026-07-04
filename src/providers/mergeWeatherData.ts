@@ -205,13 +205,13 @@ function collectNums(dataList: ReadonlyArray<WeatherData>, key: keyof WeatherDat
 /**
  * Conservative-tendency merge: falling (-1) overrides all; else the priority
  * first-present value. Returns undefined when no element supplies the field.
+ * `vals` comes from collectNums, which preserves priority order, so vals[0]
+ * IS the highest-priority present value; no second scan needed.
  */
-function mergeTendency(dataList: ReadonlyArray<WeatherData>, vals: number[]): number | undefined {
+function mergeTendency(vals: number[]): number | undefined {
   if (vals.length === 0) return undefined;
   if (vals.includes(-1)) return -1;
-  // The empty-guard above ensures at least one element supplies pressureTendency,
-  // so firstPresent returns a number here, not undefined.
-  return firstPresent(dataList, 'pressureTendency') as number;
+  return vals[0];
 }
 
 /** Mutable accumulator used inside helper builders; spread into the final readonly result. */
@@ -261,7 +261,7 @@ function hazardAndCategoricalOptionals(
   const visVals = collectNums(dataList, 'visibility');
   if (visVals.length > 0) opt.visibility = hazardMin(visVals);
 
-  const tendency = mergeTendency(dataList, collectNums(dataList, 'pressureTendency'));
+  const tendency = mergeTendency(collectNums(dataList, 'pressureTendency'));
   if (tendency !== undefined) opt.pressureTendency = tendency;
 
   const wbgt = firstPresent(dataList, 'wetBulbGlobeTemperature');

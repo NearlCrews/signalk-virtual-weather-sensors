@@ -15,28 +15,28 @@ describe('NMEA2000PathMapper', () => {
 
   beforeEach(() => {
     mockLogger = vi.fn();
-    mapper = new NMEA2000PathMapper(mockLogger);
+    mapper = new NMEA2000PathMapper(toSourceRef('accuweather'), mockLogger);
     vi.clearAllMocks();
   });
 
   describe('Constructor', () => {
     it('should initialize with logger', () => {
       // Create new mapper to trigger logger call
-      new NMEA2000PathMapper(mockLogger);
+      new NMEA2000PathMapper(toSourceRef('accuweather'), mockLogger);
       expect(mockLogger).toHaveBeenCalledWith('debug', expect.stringContaining('initialized'));
     });
 
     it('should work with default logger', () => {
-      expect(() => new NMEA2000PathMapper()).not.toThrow();
+      expect(() => new NMEA2000PathMapper(toSourceRef('accuweather'))).not.toThrow();
     });
 
-    it('defaults the delta $source to accuweather', () => {
+    it('stamps the constructor sourceRef on the delta $source', () => {
       const update = mapper.mapToSignalKPaths(createMockWeatherData()).updates[0];
       expect(update).toHaveProperty('$source', 'accuweather');
     });
 
     it('stamps a provided provider sourceRef on values and meta deltas', () => {
-      const om = new NMEA2000PathMapper(mockLogger, toSourceRef('open-meteo'));
+      const om = new NMEA2000PathMapper(toSourceRef('open-meteo'), mockLogger);
       expect(om.mapToSignalKPaths(createMockWeatherData()).updates[0]).toHaveProperty(
         '$source',
         'open-meteo'

@@ -28,7 +28,7 @@ import type {
   MetNoLocationforecastResponse,
   WeatherData,
 } from '../types/index.js';
-import { toErrorMessage } from '../utils/conversions.js';
+import { toCoordKey, toErrorMessage } from '../utils/conversions.js';
 import { DEFAULT_REQUEST_TIMEOUT_MS, fetchJson, normalizeBaseUrl } from '../utils/http.js';
 import { assertValidCoordinates } from '../utils/validation.js';
 
@@ -136,7 +136,7 @@ export class MetNoService implements ForecastCapableProvider {
     context: string
   ): Promise<MetNoLocationforecastResponse> {
     assertValidCoordinates(location, context);
-    const key = `${location.latitude.toFixed(4)},${location.longitude.toFixed(4)}`;
+    const key = toCoordKey(location);
     const now = Date.now();
     if (this.memo && this.memo.key === key && this.memo.expiresAt > now) {
       return this.memo.doc;

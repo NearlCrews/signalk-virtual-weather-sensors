@@ -11,17 +11,15 @@ import {
   QUOTA_WARN_RATIO,
 } from './notifications-shared.js';
 
+// Only the names utils/validation.ts consumes through this module are
+// re-exported. Everything else in notifications-shared.ts is imported
+// directly from there (the panel, the schema, and the runtime all do), so a
+// wider re-export surface here would only invite drift.
 export {
   API_KEY_MIN_LENGTH,
   CONFIG_DEFAULTS,
-  DEFAULT_NOTIFICATIONS,
-  DEFAULT_WEATHER_PROVIDER,
-  NOTIFICATION_LABELS,
-  NOTIFICATION_MASTER_LABEL,
-  QUOTA_WARN_RATIO,
   resolveWeatherProvider,
   WEATHER_PROVIDER_IDS,
-  WEATHER_PROVIDER_LABELS,
   type WeatherProviderId,
 } from './notifications-shared.js';
 
@@ -305,7 +303,6 @@ export const UNITS = {
   /** Wind speed conversions */
   WIND_SPEED: {
     KMH_TO_MS: 1 / 3.6,
-    KNOTS_TO_MS: 0.514444,
   },
 
   /** Angular conversions */

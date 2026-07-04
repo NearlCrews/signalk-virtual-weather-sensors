@@ -13,6 +13,10 @@ import {
 } from '../utils/conversions.js';
 import { WindCalculator } from './WindCalculator.js';
 
+// Deliberately constructed with the default no-op logger: every caller feeds
+// values already validated by its own mapper or the merge engine, so the
+// calculator's invalid-input warnings cannot fire here in practice, and a
+// module-level singleton cannot receive a per-plugin logger anyway.
 const sharedWindCalculator = new WindCalculator();
 
 export interface DerivedBaseFields {

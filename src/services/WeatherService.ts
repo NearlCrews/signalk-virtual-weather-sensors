@@ -66,6 +66,19 @@ export interface TickBanner {
 export type BannerSink = (kind: 'status' | 'error', message: string) => void;
 
 /**
+ * Optional collaborators for WeatherService, all named so a caller injecting
+ * only one does not thread `undefined` placeholders through the positional
+ * list. Every absent field gets the same default the positional form used.
+ */
+export interface WeatherServiceOptions {
+  readonly windCalculator?: WindCalculator | undefined;
+  readonly weatherProvider?: CurrentWeatherProvider | undefined;
+  readonly signalKService?: SignalKService | undefined;
+  readonly setBanner?: BannerSink | undefined;
+  readonly marineService?: OpenMeteoMarineService | undefined;
+}
+
+/**
  * Main Weather Service orchestrating all weather data operations
  * Coordinates the configured weather provider, the optional marine layer,
  * vessel navigation, and wind calculations
@@ -122,12 +135,9 @@ export class WeatherService {
     app: ServerAPI,
     config: PluginConfiguration,
     logger: Logger = () => {},
-    windCalculator?: WindCalculator,
-    weatherProvider?: CurrentWeatherProvider,
-    signalKService?: SignalKService,
-    setBanner?: BannerSink,
-    marineService?: OpenMeteoMarineService
+    options: WeatherServiceOptions = {}
   ) {
+    const { windCalculator, weatherProvider, signalKService, setBanner, marineService } = options;
     this.app = app;
     this.config = config;
     this.logger = logger;
@@ -358,7 +368,9 @@ export class WeatherService {
 
   /**
    * Rolling 24h request count for the admin-UI panel's `/api/status` endpoint.
-   * Delegates to the AccuWeather service's hourly-bucket accessor.
+   * Delegates to the active weather provider's rolling-24h accessor; keyless
+   * providers report 0, AccuWeather counts through its hourly buckets, and the
+   * merging provider sums its children.
    */
   public getRequestCountLast24h(): number {
     return this.weatherProvider.getRequestCountLast24h();
@@ -456,15 +468,15 @@ export class WeatherService {
    * Public so the emission tick can re-push the same wording instead of
    * letting a periodic setPluginStatus call silently overwrite the error.
    *
-   * The AccuWeather-specific wording is safe: this path is reachable only when
-   * `isQuotaExhausted()` is true, which requires a non-zero rolling-24h request
-   * count, and AccuWeather is the only provider that reports one (Open-Meteo's
-   * `getRequestCountLast24h()` is hardcoded to 0).
+   * The provider name comes from the active provider so a future key-gated
+   * provider hitting this path is not mislabeled as AccuWeather. The path is
+   * reachable only when `isQuotaExhausted()` is true, which requires a
+   * non-zero rolling-24h request count (keyless providers report 0).
    */
   public formatQuotaExhaustedMessage(): string {
     const used = this.getRequestCountLast24h();
     const quota = this.config.dailyApiQuota;
-    return `AccuWeather daily quota reached (${used}/${quota} in last 24h). Fetches paused until the rolling window drops below the cap. To resume sooner, raise dailyApiQuota or increase updateFrequency.`;
+    return `${this.weatherProvider.name} daily quota reached (${used}/${quota} in last 24h). Fetches paused until the rolling window drops below the cap. To resume sooner, raise dailyApiQuota or increase updateFrequency.`;
   }
 
   /**
@@ -692,7 +704,7 @@ export class WeatherService {
       }
       this.setBanner(
         'error',
-        `AccuWeather rejected the configured API key. Update the key in plugin settings: ${errorMessage}`
+        `${this.weatherProvider.name} rejected the configured API key. Update the key in plugin settings: ${errorMessage}`
       );
       return;
     }

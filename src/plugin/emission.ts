@@ -206,14 +206,15 @@ function withEmissionTimestamp(instance: PluginInstance, cached: Delta): Delta {
   // The cached delta is always a single-update values delta built by
   // `buildValuesDelta`, so restamping is a rebuild through the same helper,
   // which stamps the current wall-clock time when no timestamp is passed. The
-  // original `$source` (the active provider's) is preserved so re-broadcasts do
-  // not silently revert to the default source ref.
+  // original `$source` (the active provider's) is preserved so re-broadcasts
+  // cannot change provenance.
   const update = cached.updates[0];
-  if (update === undefined || !('values' in update)) {
+  if (update === undefined || !('values' in update) || update.$source === undefined) {
     // Defensive: every cached delta is a single values update built by
-    // buildValuesDelta, so this shape should be unreachable. Returning the
-    // original un-restamped would re-broadcast a stale timestamp silently, so
-    // log if it ever happens rather than passing it through unnoticed.
+    // buildValuesDelta with an explicit $source, so this shape should be
+    // unreachable. Returning the original un-restamped would re-broadcast a
+    // stale timestamp silently, so log if it ever happens rather than passing
+    // it through unnoticed.
     instance.logger('warn', 'withEmissionTimestamp: cached delta is not a values update');
     return cached;
   }

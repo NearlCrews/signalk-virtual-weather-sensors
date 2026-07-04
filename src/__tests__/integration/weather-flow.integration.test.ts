@@ -20,6 +20,7 @@ import { NMEA2000PathMapper } from '../../mappers/NMEA2000PathMapper.js';
 import { AccuWeatherService } from '../../services/AccuWeatherService.js';
 import { SignalKService } from '../../services/SignalKService.js';
 import { WeatherService } from '../../services/WeatherService.js';
+import { toSourceRef } from '../../utils/skDelta.js';
 import {
   createMockAccuWeatherResponse,
   createMockConfig,
@@ -70,8 +71,11 @@ function buildPipeline(app: ReturnType<typeof createMockSignalKApp>) {
     retryDelay: 1,
   });
   const signalK = new SignalKService(app as never, () => {});
-  const weather = new WeatherService(app as never, config, () => {}, undefined, accu, signalK);
-  const mapper = new NMEA2000PathMapper(() => {});
+  const weather = new WeatherService(app as never, config, () => {}, {
+    weatherProvider: accu,
+    signalKService: signalK,
+  });
+  const mapper = new NMEA2000PathMapper(toSourceRef('accuweather'), () => {});
   return { weather, accu, mapper };
 }
 

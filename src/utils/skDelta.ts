@@ -4,7 +4,9 @@
  * Centralises the branded-type casts (`Context`, `SourceRef`, `Path`) and the
  * one-line `pv` / `me` builders so the mapper, notifier, and plugin entry
  * point all construct deltas through the same call sites. Keeps the
- * `vessels.self` literal and the `accuweather` `$source` ref in one place.
+ * `vessels.self` literal in one place. Every delta must name its `$source`
+ * explicitly: there is deliberately no default ref, so a caller that forgets
+ * one fails to compile instead of silently mis-stamping a provider.
  */
 
 import type {
@@ -20,9 +22,6 @@ import { asTimestamp } from './conversions.js';
 
 /** Signal K self-context literal used for every delta this plugin emits. */
 export const SELF_CONTEXT = 'vessels.self' as Context;
-
-/** Default `$source` ref for deltas built without an explicit source (fallback only; live callers pass the active provider's ref). */
-export const ACCUWEATHER_SOURCE = 'accuweather' as SourceRef;
 
 /** Brand a provider's plain `sourceRef` string as the Signal K `SourceRef` type. */
 export const toSourceRef = (source: string): SourceRef => source as SourceRef;
@@ -47,14 +46,13 @@ const nowIso = () => asTimestamp(new Date().toISOString());
  * non-empty ISO timestamp for cached deltas that should keep the original
  * observation time. Defaulting empty here is the single chokepoint so every
  * caller is covered and an empty string can never reach the wire as a
- * timestamp. `sourceRef` defaults to AccuWeather for backward compatibility;
- * the active provider passes its own ref so consumers' source-priority rules
- * can distinguish weather sources.
+ * timestamp. `sourceRef` is required: the active provider passes its own ref
+ * so consumers' source-priority rules can distinguish weather sources.
  */
 export function buildValuesDelta(
   values: PathValue[],
-  timestamp?: string,
-  sourceRef: SourceRef = ACCUWEATHER_SOURCE
+  timestamp: string | undefined,
+  sourceRef: SourceRef
 ): Delta {
   return {
     context: SELF_CONTEXT,
@@ -72,7 +70,7 @@ export function buildValuesDelta(
  * Build a Signal K Delta carrying a single meta update. Mirrors
  * {@link buildValuesDelta} for the static one-shot meta block.
  */
-export function buildMetaDelta(meta: Meta[], sourceRef: SourceRef = ACCUWEATHER_SOURCE): Delta {
+export function buildMetaDelta(meta: Meta[], sourceRef: SourceRef): Delta {
   return {
     context: SELF_CONTEXT,
     updates: [

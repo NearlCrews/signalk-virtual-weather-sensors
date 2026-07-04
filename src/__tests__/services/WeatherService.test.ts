@@ -77,12 +77,9 @@ describe('WeatherService', () => {
         normalizeAngle: vi.fn().mockReturnValue(0),
       };
 
-      const service = new WeatherService(
-        mockApp as never,
-        config,
-        mockLogger,
-        mockWindCalculator as never
-      );
+      const service = new WeatherService(mockApp as never, config, mockLogger, {
+        windCalculator: mockWindCalculator as never,
+      });
 
       expect(service).toBeDefined();
     });
@@ -325,14 +322,10 @@ describe('WeatherService - Data Emission', () => {
       clearCache: vi.fn(),
     };
 
-    const service = new WeatherService(
-      mockApp as never,
-      config,
-      mockLogger,
-      undefined,
-      mockAccu as never,
-      mockSignalK as never
-    );
+    const service = new WeatherService(mockApp as never, config, mockLogger, {
+      weatherProvider: mockAccu as never,
+      signalKService: mockSignalK as never,
+    });
 
     // The service must be running for updateWeatherData to keep its result.
     await service.start();
@@ -373,16 +366,11 @@ describe('WeatherService - Data Emission', () => {
     const mockSignalK = { getVesselNavigationData: vi.fn(() => vesselData), clearCache: vi.fn() };
     const mockMarine = { fetchMarine: vi.fn().mockResolvedValue(marine) };
 
-    const service = new WeatherService(
-      mockApp as never,
-      config,
-      mockLogger,
-      undefined,
-      mockProvider as never,
-      mockSignalK as never,
-      undefined,
-      mockMarine as never
-    );
+    const service = new WeatherService(mockApp as never, config, mockLogger, {
+      weatherProvider: mockProvider as never,
+      signalKService: mockSignalK as never,
+      marineService: mockMarine as never,
+    });
 
     await service.start();
     await service.forceUpdate();
@@ -414,16 +402,11 @@ describe('WeatherService - Data Emission', () => {
     const mockSignalK = { getVesselNavigationData: vi.fn(() => vesselData), clearCache: vi.fn() };
     const mockMarine = { fetchMarine: vi.fn().mockRejectedValue(new Error('marine host down')) };
 
-    const service = new WeatherService(
-      mockApp as never,
-      config,
-      mockLogger,
-      undefined,
-      mockProvider as never,
-      mockSignalK as never,
-      undefined,
-      mockMarine as never
-    );
+    const service = new WeatherService(mockApp as never, config, mockLogger, {
+      weatherProvider: mockProvider as never,
+      signalKService: mockSignalK as never,
+      marineService: mockMarine as never,
+    });
 
     await service.start();
     await service.forceUpdate();
@@ -467,14 +450,10 @@ describe('WeatherService - Data Emission', () => {
       clearCache: vi.fn(),
     };
 
-    const service = new WeatherService(
-      mockApp as never,
-      config,
-      mockLogger,
-      undefined,
-      mockAccu as never,
-      mockSignalK as never
-    );
+    const service = new WeatherService(mockApp as never, config, mockLogger, {
+      weatherProvider: mockAccu as never,
+      signalKService: mockSignalK as never,
+    });
     await service.start();
 
     // Two updates racing: the second must join the first fetch, not start a
@@ -510,6 +489,7 @@ describe('WeatherService - Quota Banner', () => {
    */
   const makeFakeAccu = (last24h: number, cumulative = last24h) =>
     ({
+      name: 'AccuWeather',
       getRequestCount: () => cumulative,
       getRequestCountLast24h: () => last24h,
       getCacheStats: () => ({ size: 0 }),
@@ -522,13 +502,9 @@ describe('WeatherService - Quota Banner', () => {
 
   it('omits the quota suffix when dailyApiQuota is 0', () => {
     const config = createTestConfig({ dailyApiQuota: 0 });
-    const service = new WeatherService(
-      mockApp as never,
-      config,
-      mockLogger,
-      undefined,
-      makeFakeAccu(40)
-    );
+    const service = new WeatherService(mockApp as never, config, mockLogger, {
+      weatherProvider: makeFakeAccu(40),
+    });
 
     const banner = service.formatStatusBanner();
     expect(banner).toBe('Running, awaiting first update');
@@ -537,13 +513,9 @@ describe('WeatherService - Quota Banner', () => {
 
   it('appends ", K/Q today" with the running prefix at 50% usage', () => {
     const config = createTestConfig({ dailyApiQuota: 50 });
-    const service = new WeatherService(
-      mockApp as never,
-      config,
-      mockLogger,
-      undefined,
-      makeFakeAccu(25)
-    );
+    const service = new WeatherService(mockApp as never, config, mockLogger, {
+      weatherProvider: makeFakeAccu(25),
+    });
 
     const banner = service.formatStatusBanner();
     expect(banner).toContain('Running');
@@ -553,13 +525,9 @@ describe('WeatherService - Quota Banner', () => {
 
   it('switches to the quota-warning prefix at 90% usage', () => {
     const config = createTestConfig({ dailyApiQuota: 50 });
-    const service = new WeatherService(
-      mockApp as never,
-      config,
-      mockLogger,
-      undefined,
-      makeFakeAccu(45)
-    );
+    const service = new WeatherService(mockApp as never, config, mockLogger, {
+      weatherProvider: makeFakeAccu(45),
+    });
 
     const banner = service.formatStatusBanner();
     expect(banner).toContain('Running [quota 90% used]');
@@ -569,13 +537,9 @@ describe('WeatherService - Quota Banner', () => {
 
   it('flags exhaustion at 100% usage and keeps the warning prefix', () => {
     const config = createTestConfig({ dailyApiQuota: 50 });
-    const service = new WeatherService(
-      mockApp as never,
-      config,
-      mockLogger,
-      undefined,
-      makeFakeAccu(50)
-    );
+    const service = new WeatherService(mockApp as never, config, mockLogger, {
+      weatherProvider: makeFakeAccu(50),
+    });
 
     const banner = service.formatStatusBanner();
     expect(banner).toContain('Running [quota 90% used]');
@@ -585,13 +549,9 @@ describe('WeatherService - Quota Banner', () => {
 
   it('formats the quota-exhausted message with actionable guidance', () => {
     const config = createTestConfig({ dailyApiQuota: 50 });
-    const service = new WeatherService(
-      mockApp as never,
-      config,
-      mockLogger,
-      undefined,
-      makeFakeAccu(50)
-    );
+    const service = new WeatherService(mockApp as never, config, mockLogger, {
+      weatherProvider: makeFakeAccu(50),
+    });
 
     const message = service.formatQuotaExhaustedMessage();
     expect(message).toContain('AccuWeather daily quota reached (50/50 in last 24h)');
@@ -608,6 +568,7 @@ describe('WeatherService - Tick Banner and Staleness', () => {
   /** Stand-in AccuWeatherService that pins both counters; see Quota Banner block. */
   const makeFakeAccu = (last24h: number, cumulative = last24h) =>
     ({
+      name: 'AccuWeather',
       getRequestCount: () => cumulative,
       getRequestCountLast24h: () => last24h,
       getCacheStats: () => ({ size: 0 }),
@@ -628,13 +589,9 @@ describe('WeatherService - Tick Banner and Staleness', () => {
   it('isDataStale is false before the first fetch and inside the staleness window', () => {
     // updateFrequency 5 min, STALENESS_FACTOR 2: stale past 10 minutes.
     const config = createTestConfig({ updateFrequency: 5, dailyApiQuota: 0 });
-    const service = new WeatherService(
-      mockApp as never,
-      config,
-      mockLogger,
-      undefined,
-      makeFakeAccu(0)
-    );
+    const service = new WeatherService(mockApp as never, config, mockLogger, {
+      weatherProvider: makeFakeAccu(0),
+    });
 
     expect(service.isDataStale()).toBe(false);
 
@@ -647,13 +604,9 @@ describe('WeatherService - Tick Banner and Staleness', () => {
 
   it('returns the live status banner while data is fresh and quota has headroom', () => {
     const config = createTestConfig({ updateFrequency: 5, dailyApiQuota: 50 });
-    const service = new WeatherService(
-      mockApp as never,
-      config,
-      mockLogger,
-      undefined,
-      makeFakeAccu(10)
-    );
+    const service = new WeatherService(mockApp as never, config, mockLogger, {
+      weatherProvider: makeFakeAccu(10),
+    });
     pinLastUpdate(service, 1);
 
     const banner = service.getTickBanner();
@@ -663,13 +616,9 @@ describe('WeatherService - Tick Banner and Staleness', () => {
 
   it('returns the stale-data error once age crosses the staleness window', () => {
     const config = createTestConfig({ updateFrequency: 5, dailyApiQuota: 0 });
-    const service = new WeatherService(
-      mockApp as never,
-      config,
-      mockLogger,
-      undefined,
-      makeFakeAccu(0)
-    );
+    const service = new WeatherService(mockApp as never, config, mockLogger, {
+      weatherProvider: makeFakeAccu(0),
+    });
     pinLastUpdate(service, 15);
 
     const banner = service.getTickBanner();
@@ -681,13 +630,9 @@ describe('WeatherService - Tick Banner and Staleness', () => {
     // updateFrequency 0.5 min keeps the threshold (1 minute) below the pinned
     // 1.5-minute age so the stale branch fires with a floored age of 1.
     const config = createTestConfig({ updateFrequency: 0.5, dailyApiQuota: 0 });
-    const service = new WeatherService(
-      mockApp as never,
-      config,
-      mockLogger,
-      undefined,
-      makeFakeAccu(0)
-    );
+    const service = new WeatherService(mockApp as never, config, mockLogger, {
+      weatherProvider: makeFakeAccu(0),
+    });
     pinLastUpdate(service, 1.5);
 
     expect(service.getTickBanner().message).toBe('Weather data stale: last update 1 minute ago');
@@ -695,13 +640,9 @@ describe('WeatherService - Tick Banner and Staleness', () => {
 
   it('prefers the quota-exhausted error over the stale-data error', () => {
     const config = createTestConfig({ updateFrequency: 5, dailyApiQuota: 50 });
-    const service = new WeatherService(
-      mockApp as never,
-      config,
-      mockLogger,
-      undefined,
-      makeFakeAccu(50)
-    );
+    const service = new WeatherService(mockApp as never, config, mockLogger, {
+      weatherProvider: makeFakeAccu(50),
+    });
     // Stale too: the quota message must win because it explains WHY fetches paused.
     pinLastUpdate(service, 15);
 
@@ -721,6 +662,7 @@ describe('WeatherService - Banner Pluralization', () => {
   /** Stand-in AccuWeatherService that pins both counters; see Quota Banner block. */
   const makeFakeAccu = (last24h: number, cumulative = last24h) =>
     ({
+      name: 'AccuWeather',
       getRequestCount: () => cumulative,
       getRequestCountLast24h: () => last24h,
       getCacheStats: () => ({ size: 0 }),
@@ -733,13 +675,9 @@ describe('WeatherService - Banner Pluralization', () => {
 
   it('uses singular "update" and singular "API request" when both counters are 1', () => {
     const config = createTestConfig({ dailyApiQuota: 0 });
-    const service = new WeatherService(
-      mockApp as never,
-      config,
-      mockLogger,
-      undefined,
-      makeFakeAccu(0, 1)
-    );
+    const service = new WeatherService(mockApp as never, config, mockLogger, {
+      weatherProvider: makeFakeAccu(0, 1),
+    });
 
     // Reach into the orchestrator to pin updateCount=1 and lastUpdate=now
     // without driving a real fetch.
@@ -755,13 +693,9 @@ describe('WeatherService - Banner Pluralization', () => {
 
   it('uses plural "updates" / "API requests" when counters are >1', () => {
     const config = createTestConfig({ dailyApiQuota: 0 });
-    const service = new WeatherService(
-      mockApp as never,
-      config,
-      mockLogger,
-      undefined,
-      makeFakeAccu(0, 3)
-    );
+    const service = new WeatherService(mockApp as never, config, mockLogger, {
+      weatherProvider: makeFakeAccu(0, 3),
+    });
 
     (service as unknown as { updateCount: number }).updateCount = 3;
     (service as unknown as { lastUpdate: Date }).lastUpdate = new Date();
@@ -818,21 +752,18 @@ describe('WeatherService - Fetch Skip and Error Escalation', () => {
     // Provider reports last24h === dailyApiQuota, so isQuotaExhausted() is true.
     const config = createTestConfig({ dailyApiQuota: 50 });
     const mockProvider = {
+      name: 'AccuWeather',
       fetchCurrentWeather: vi.fn().mockResolvedValue(weatherData),
       getRequestCount: vi.fn(() => 50),
       getRequestCountLast24h: vi.fn(() => 50),
       getCacheStats: vi.fn(() => ({ size: 0 })),
     };
 
-    const service = new WeatherService(
-      mockApp as never,
-      config,
-      mockLogger,
-      undefined,
-      mockProvider as never,
-      makeSignalK() as never,
-      setBanner
-    );
+    const service = new WeatherService(mockApp as never, config, mockLogger, {
+      weatherProvider: mockProvider as never,
+      signalKService: makeSignalK() as never,
+      setBanner,
+    });
 
     await service.forceUpdate();
 
@@ -849,6 +780,7 @@ describe('WeatherService - Fetch Skip and Error Escalation', () => {
   it('escalates a 401 to apiKeyRejected, clears the timer, and refuses subsequent fetches', async () => {
     const config = createTestConfig({ dailyApiQuota: 0 });
     const mockProvider = {
+      name: 'AccuWeather',
       // Error message carries the API_UNAUTHORIZED tag isAuthError() looks for.
       fetchCurrentWeather: vi
         .fn()
@@ -858,15 +790,11 @@ describe('WeatherService - Fetch Skip and Error Escalation', () => {
       getCacheStats: vi.fn(() => ({ size: 0 })),
     };
 
-    const service = new WeatherService(
-      mockApp as never,
-      config,
-      mockLogger,
-      undefined,
-      mockProvider as never,
-      makeSignalK() as never,
-      setBanner
-    );
+    const service = new WeatherService(mockApp as never, config, mockLogger, {
+      weatherProvider: mockProvider as never,
+      signalKService: makeSignalK() as never,
+      setBanner,
+    });
 
     await service.start();
     // The update timer is live after start(); the 401 escalation must clear it.
@@ -905,15 +833,11 @@ describe('WeatherService - Fetch Skip and Error Escalation', () => {
       getCacheStats: vi.fn(() => ({ size: 0 })),
     };
 
-    const service = new WeatherService(
-      mockApp as never,
-      config,
-      mockLogger,
-      undefined,
-      mockProvider as never,
-      makeSignalK() as never,
-      setBanner
-    );
+    const service = new WeatherService(mockApp as never, config, mockLogger, {
+      weatherProvider: mockProvider as never,
+      signalKService: makeSignalK() as never,
+      setBanner,
+    });
 
     await service.start();
 
@@ -956,15 +880,11 @@ describe('WeatherService - Fetch Skip and Error Escalation', () => {
       getCacheStats: vi.fn(() => ({ size: 0 })),
     };
 
-    const service = new WeatherService(
-      mockApp as never,
-      config,
-      mockLogger,
-      undefined,
-      mockProvider as never,
-      makeSignalK() as never,
-      setBanner
-    );
+    const service = new WeatherService(mockApp as never, config, mockLogger, {
+      weatherProvider: mockProvider as never,
+      signalKService: makeSignalK() as never,
+      setBanner,
+    });
 
     await service.start();
     const updatePromise = service.forceUpdate();
@@ -993,15 +913,11 @@ describe('WeatherService - Fetch Skip and Error Escalation', () => {
       getCacheStats: vi.fn(() => ({ size: 0 })),
     };
 
-    const service = new WeatherService(
-      mockApp as never,
-      config,
-      mockLogger,
-      undefined,
-      mockProvider as never,
-      makeSignalK(positionOnlyVessel) as never,
-      setBanner
-    );
+    const service = new WeatherService(mockApp as never, config, mockLogger, {
+      weatherProvider: mockProvider as never,
+      signalKService: makeSignalK(positionOnlyVessel) as never,
+      setBanner,
+    });
 
     await service.start();
     await service.forceUpdate();
@@ -1039,15 +955,12 @@ describe('WeatherService - Fetch Skip and Error Escalation', () => {
       getCacheStats: vi.fn(() => ({ size: 0 })),
     };
 
-    const service = new WeatherService(
-      mockApp as never,
-      config,
-      mockLogger,
-      mockWindCalculator as never,
-      mockProvider as never,
-      makeSignalK(completeVessel) as never,
-      setBanner
-    );
+    const service = new WeatherService(mockApp as never, config, mockLogger, {
+      windCalculator: mockWindCalculator as never,
+      weatherProvider: mockProvider as never,
+      signalKService: makeSignalK(completeVessel) as never,
+      setBanner,
+    });
 
     await service.start();
     await service.forceUpdate();

@@ -12,22 +12,18 @@
  * converts wind inline with `kmhToMS`; validation stays in the service, which
  * runs `validateWeatherData` on this mapper's output.
  *
- * This file does not use `deriveBaseWeatherFields` because AccuWeather may
- * supply its own measured WindChillTemperature: the wind-chill branch checks
- * for that value first and falls back to the Environment Canada formula only
- * when the field is absent. Routing through the shared helper would discard
- * the measured value and always recompute it.
+ * Base-derived fields come from the shared `deriveBaseWeatherFields`, the same
+ * assembly Open-Meteo and Met.no use; the one AccuWeather twist is that a
+ * measured WindChillTemperature, when present, overrides the helper's
+ * Environment Canada wind-chill formula.
  */
 
-import { WindCalculator } from '../calculators/WindCalculator.js';
+import { deriveBaseWeatherFields } from '../calculators/deriveWeatherFields.js';
 import { ACCUWEATHER, UNITS } from '../constants/index.js';
 import { accuWeatherSevereCondition } from '../providers/accuweather-severity.js';
 import type { AccuWeatherCurrentConditions, WeatherData } from '../types/index.js';
 import {
   asOptionalNumber,
-  calculateAbsoluteHumidity,
-  calculateAirDensity,
-  calculateBeaufortScale,
   calculateGustFactor,
   calculateHeatStressIndex,
   celsiusToKelvin,
@@ -40,9 +36,6 @@ import {
   percentageToRatio,
   truncateToCodePoints,
 } from '../utils/conversions.js';
-
-/** Stateless apart from its logger; reused so the mapper allocates no calculator per call. */
-const sharedWindCalculator = new WindCalculator();
 
 /**
  * Strip control characters and truncate a string from the API to a safe length
@@ -122,7 +115,12 @@ function extractEnhancedConditions(
   };
 }
 
-/** AccuWeather PressureTendency.Code to a numeric trend: falling/steady/rising. */
+/**
+ * AccuWeather PressureTendency.Code to a numeric trend: falling/steady/rising.
+ * Decodes the same F/S/R alphabet as TENDENCY_KIND_BY_CODE in
+ * WeatherProviderMapper.ts (which targets the SK v2 TendencyKind strings);
+ * a new AccuWeather code must be added to both tables.
+ */
 const PRESSURE_TENDENCY_CODES: ReadonlyMap<string, number> = new Map([
   ['F', -1],
   ['S', 0],
@@ -177,18 +175,18 @@ export function mapAccuWeatherCurrentToWeatherData(
   // which the NMEA2000 half-open range check rejects.
   const windDirection = normalizeAngle0To2Pi(degreesToRadians(conditions.Wind.Direction.Degrees));
   const dewPoint = celsiusToKelvin(conditions.DewPoint.Metric.Value);
-  // WindChillTemperature is optional on partial / lower-tier responses: fall
-  // back to the Environment Canada formula so a missing block degrades the
-  // value gracefully instead of throwing and aborting the whole fetch.
-  const rawWindChillC = conditions.WindChillTemperature?.Metric?.Value;
-  const windChill =
-    typeof rawWindChillC === 'number'
-      ? celsiusToKelvin(rawWindChillC)
-      : sharedWindCalculator.calculateWindChill(temperature, windSpeed);
+  // Shared base derivation (wind chill, heat index, Beaufort, absolute
+  // humidity, air density), the same assembly every provider mapper uses.
   // Heat index is computed (NWS Rothfusz), not AccuWeather RealFeel: RealFeel
   // can fall below air temperature, so it cannot occupy the canonical
   // heatIndexTemperature leaf. RealFeel ships on environment.weather.realFeel.
-  const heatIndex = sharedWindCalculator.calculateHeatIndex(temperature, humidity);
+  const derived = deriveBaseWeatherFields(temperature, pressure, humidity, windSpeed);
+  // WindChillTemperature is optional on partial / lower-tier responses: prefer
+  // the measured value and fall back to the helper's Environment Canada
+  // formula so a missing block degrades gracefully.
+  const rawWindChillC = conditions.WindChillTemperature?.Metric?.Value;
+  const windChill =
+    typeof rawWindChillC === 'number' ? celsiusToKelvin(rawWindChillC) : derived.windChill;
 
   const enhancedTemps = extractEnhancedTemperatures(conditions);
   const enhancedConditions = extractEnhancedConditions(conditions, windSpeed);
@@ -202,11 +200,6 @@ export function mapAccuWeatherCurrentToWeatherData(
   // an AccuWeather-specific value.
   const severeCondition = accuWeatherSevereCondition(enhancedConditions.weatherIcon);
 
-  // Beaufort is a sustained-wind scale (WMO): a gust must not inflate it.
-  const beaufortScale = calculateBeaufortScale(windSpeed);
-  const absoluteHumidity = calculateAbsoluteHumidity(temperature, humidity);
-  const airDensityEnhanced = calculateAirDensity(temperature, pressure, humidity);
-
   return {
     temperature,
     pressure,
@@ -214,11 +207,10 @@ export function mapAccuWeatherCurrentToWeatherData(
     windSpeed,
     windDirection,
     dewPoint,
+    // Spread the shared derivation, then override wind chill with the measured
+    // value when AccuWeather supplied one.
+    ...derived,
     windChill,
-    heatIndex,
-    beaufortScale,
-    absoluteHumidity,
-    airDensityEnhanced,
     // `description` carries the AccuWeather phrase; `weatherIcon` (decoded
     // into enhancedConditions) carries the icon code for severe-condition
     // classification.

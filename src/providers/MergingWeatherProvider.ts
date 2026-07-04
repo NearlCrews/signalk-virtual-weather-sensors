@@ -98,15 +98,20 @@ export class MergingWeatherProvider implements ForecastCapableProvider {
     return this.forecastChild.getDailyForecast(location);
   }
 
+  /** Sum a numeric accessor across every child provider. */
+  private sumAcrossChildren(read: (child: CurrentWeatherProvider) => number): number {
+    return this.children.reduce((sum, c) => sum + read(c), 0);
+  }
+
   getRequestCount(): number {
-    return this.children.reduce((sum, c) => sum + c.getRequestCount(), 0);
+    return this.sumAcrossChildren((c) => c.getRequestCount());
   }
 
   getRequestCountLast24h(): number {
-    return this.children.reduce((sum, c) => sum + c.getRequestCountLast24h(), 0);
+    return this.sumAcrossChildren((c) => c.getRequestCountLast24h());
   }
 
   getCacheStats(): { size: number } {
-    return { size: this.children.reduce((sum, c) => sum + c.getCacheStats().size, 0) };
+    return { size: this.sumAcrossChildren((c) => c.getCacheStats().size) };
   }
 }

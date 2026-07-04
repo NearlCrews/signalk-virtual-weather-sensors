@@ -19,7 +19,6 @@ import type {
 } from '../types/index.js';
 import {
   asOptionalNumber,
-  calculateAbsoluteHumidity,
   kmhToMS,
   millibarsToPA,
   optionalCelsiusToKelvin,
@@ -46,7 +45,12 @@ function mapPrecipitationKind(type: string | null | undefined): PrecipitationKin
   return PRECIPITATION_KIND_BY_ACCUWEATHER.get(type.trim().toLowerCase());
 }
 
-/** AccuWeather PressureTendency.Code (F/S/R) to the SK TendencyKind enum. */
+/**
+ * AccuWeather PressureTendency.Code (F/S/R) to the SK TendencyKind enum.
+ * Decodes the same alphabet as PRESSURE_TENDENCY_CODES in AccuWeatherMapper.ts
+ * (which targets the internal numeric trend); a new AccuWeather code must be
+ * added to both tables.
+ */
 const TENDENCY_KIND_BY_CODE: ReadonlyMap<string, TendencyKind> = new Map([
   ['F', 'decreasing'],
   ['S', 'steady'],
@@ -190,46 +194,32 @@ export function mapDailyToForecasts(response: AccuWeatherDailyForecastResponse):
  * the v2 Weather API observations endpoint. Current conditions use Metric/
  * Imperial pairs (unlike the flat forecast shapes), and they carry pressure and
  * pressure tendency that the forecast endpoints do not. Wind is mapped to the
- * v2 envelope's `wind.speedTrue` like the forecast mappers.
- *
- * Note: this function does not route through buildSkOutsideSI because it adds
- * AccuWeather-exclusive fields (pressureTendency, precipitationType) that the
- * shared helper does not cover; the hand-rolled spread keeps all outside fields
- * in one place.
+ * v2 envelope's `wind.speedTrue` like the forecast mappers. The shared
+ * buildSkOutsideSI assembles the common fields; the AccuWeather-exclusive
+ * pressureTendency and precipitationType are spread on top, mirroring how
+ * mapHourlyToForecasts layers buildCloudAndPrecip over the shared builder.
  */
 export function mapCurrentToObservation(c: AccuWeatherCurrentConditions): SKWeatherData {
-  const temperatureK = optionalCelsiusToKelvin(c.Temperature?.Metric?.Value);
-  const dewPointK = optionalCelsiusToKelvin(c.DewPoint?.Metric?.Value);
-  const feelsLikeK = optionalCelsiusToKelvin(c.RealFeelTemperature?.Metric?.Value);
-  const rhRatio = optionalPercentageToRatio(c.RelativeHumidity);
   const pressureMbar = asOptionalNumber(c.Pressure?.Metric?.Value);
   const visibilityKm = asOptionalNumber(c.Visibility?.Metric?.Value);
-  const uvIndex = asOptionalNumber(c.UVIndexFloat);
-  const cloudCover = optionalPercentageToRatio(c.CloudCover);
   const precipitationMm = asOptionalNumber(c.Precip1hr?.Metric?.Value);
   const precipitationType = mapPrecipitationKind(c.PrecipitationType);
   const pressureTendency = mapTendencyKind(c.PressureTendency?.Code);
 
   const outside: SKOutside = {
-    ...(temperatureK !== undefined && { temperature: temperatureK }),
-    ...(dewPointK !== undefined && { dewPointTemperature: dewPointK }),
-    ...(feelsLikeK !== undefined && { feelsLikeTemperature: feelsLikeK }),
-    ...(rhRatio !== undefined && {
-      relativeHumidity: rhRatio,
-      ...(temperatureK !== undefined && {
-        absoluteHumidity: calculateAbsoluteHumidity(temperatureK, rhRatio),
-      }),
+    ...buildSkOutsideSI({
+      temperatureK: optionalCelsiusToKelvin(c.Temperature?.Metric?.Value),
+      dewPointK: optionalCelsiusToKelvin(c.DewPoint?.Metric?.Value),
+      feelsLikeK: optionalCelsiusToKelvin(c.RealFeelTemperature?.Metric?.Value),
+      rhRatio: optionalPercentageToRatio(c.RelativeHumidity),
+      pressurePa: pressureMbar !== undefined ? millibarsToPA(pressureMbar) : undefined,
+      visibilityM: visibilityKm !== undefined ? visibilityKm * UNITS.LENGTH.KM_TO_M : undefined,
+      cloudCover: optionalPercentageToRatio(c.CloudCover),
+      uvIndex: asOptionalNumber(c.UVIndexFloat),
+      precipitationVolumeM:
+        precipitationMm !== undefined ? precipitationMm * UNITS.PRECIPITATION.MM_TO_M : undefined,
     }),
-    ...(pressureMbar !== undefined && { pressure: millibarsToPA(pressureMbar) }),
     ...(pressureTendency !== undefined && { pressureTendency }),
-    ...(visibilityKm !== undefined && {
-      horizontalVisibility: visibilityKm * UNITS.LENGTH.KM_TO_M,
-    }),
-    ...(uvIndex !== undefined && { uvIndex }),
-    ...(cloudCover !== undefined && { cloudCover }),
-    ...(precipitationMm !== undefined && {
-      precipitationVolume: precipitationMm * UNITS.PRECIPITATION.MM_TO_M,
-    }),
     ...(precipitationType !== undefined && { precipitationType }),
   };
 

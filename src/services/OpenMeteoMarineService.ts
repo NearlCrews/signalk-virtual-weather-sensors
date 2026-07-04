@@ -92,7 +92,13 @@ export class OpenMeteoMarineService {
     return url;
   }
 
-  /** Cumulative marine request count, for diagnostics. */
+  /**
+   * Cumulative marine request count. Deliberately diagnostics-only: the
+   * status banner and the panel's /api/status count only the atmospheric
+   * provider, since the keyless marine layer has no quota to watch. Kept (and
+   * unit-tested) so wiring marine volume into the panel later is a one-line
+   * change, not dead code.
+   */
   public getRequestCount(): number {
     return this.requestCount;
   }

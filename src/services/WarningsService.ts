@@ -19,7 +19,7 @@ import {
   type NwsAlertsResponse,
 } from '../mappers/WarningsMapper.js';
 import type { GeoLocation, Logger } from '../types/index.js';
-import { isWithinBounds, toErrorMessage } from '../utils/conversions.js';
+import { isWithinBounds, toCoordKey, toErrorMessage } from '../utils/conversions.js';
 import { DEFAULT_REQUEST_TIMEOUT_MS, fetchJson } from '../utils/http.js';
 
 /**
@@ -83,7 +83,7 @@ export class WarningsService {
 
   /** Fetch and map NWS active alerts, best-effort (empty on any failure). */
   private async fetchNws(location: GeoLocation): Promise<WeatherWarning[]> {
-    const point = `${location.latitude.toFixed(4)},${location.longitude.toFixed(4)}`;
+    const point = toCoordKey(location);
     const url = `https://api.weather.gov/alerts/active?point=${point}`;
     try {
       const response = await fetchJson<NwsAlertsResponse>(url, {

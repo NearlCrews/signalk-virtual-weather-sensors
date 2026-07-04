@@ -25,13 +25,15 @@ const EXCLUDED_SOURCE_LABELS: ReadonlyArray<string> = ['node-red'];
 /**
  * Course/heading fallback chain in priority order: COG-true, COG-magnetic,
  * heading-true, heading-magnetic. Hoisted to module level so the array is
- * not re-allocated on every call to `getVesselCourseOverGroundTrue`.
+ * not re-allocated on every call to `getVesselCourseOverGroundTrue`. Each
+ * entry pairs the path with the readable label used in warn/debug log lines,
+ * matching the labeled style of the speed and variation getters.
  */
 const COURSE_FALLBACK_PATHS = [
-  NAV.COURSE_OVER_GROUND_TRUE,
-  NAV.COURSE_OVER_GROUND_MAGNETIC,
-  NAV.HEADING_TRUE,
-  NAV.HEADING_MAGNETIC,
+  { path: NAV.COURSE_OVER_GROUND_TRUE, label: 'course over ground (true)' },
+  { path: NAV.COURSE_OVER_GROUND_MAGNETIC, label: 'course over ground (magnetic)' },
+  { path: NAV.HEADING_TRUE, label: 'heading (true)' },
+  { path: NAV.HEADING_MAGNETIC, label: 'heading (magnetic)' },
 ] as const;
 
 interface SignalKDataValue {
@@ -233,8 +235,8 @@ export class SignalKService {
    * callers that want to apply a correction.
    */
   public getVesselCourseOverGroundTrue(): number | null {
-    for (const path of COURSE_FALLBACK_PATHS) {
-      const course = this.readNumericSelfPath(path, isValidBearing, path);
+    for (const { path, label } of COURSE_FALLBACK_PATHS) {
+      const course = this.readNumericSelfPath(path, isValidBearing, label);
       if (course !== null) {
         return course;
       }
@@ -265,7 +267,8 @@ export class SignalKService {
    * @private
    */
   private getHeading(path: typeof NAV.HEADING_TRUE | typeof NAV.HEADING_MAGNETIC): number | null {
-    return this.readNumericSelfPath(path, isValidBearing, path);
+    const label = path === NAV.HEADING_TRUE ? 'heading (true)' : 'heading (magnetic)';
+    return this.readNumericSelfPath(path, isValidBearing, label);
   }
 
   /**

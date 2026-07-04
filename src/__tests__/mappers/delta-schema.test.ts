@@ -29,6 +29,7 @@ import Ajv from 'ajv-draft-04';
 import addFormats from 'ajv-formats';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { NMEA2000PathMapper } from '../../mappers/NMEA2000PathMapper.js';
+import { toSourceRef } from '../../utils/skDelta.js';
 import { createMockWeatherData, getValuesFromDelta } from '../setup.js';
 
 // Resolve the schema package by following the npm install path. The package
@@ -112,7 +113,7 @@ describe('Signal K Delta Schema Conformance (1.8.2)', () => {
     relaxedAjv.addSchema(definitionsClone, './definitions.json');
     validateMetaDelta = relaxedAjv.compile(deltaSchema);
 
-    mapper = new NMEA2000PathMapper();
+    mapper = new NMEA2000PathMapper(toSourceRef('accuweather'));
   });
 
   describe('mapToSignalKPaths -> values delta', () => {

@@ -20,8 +20,6 @@ export interface SourceState {
   merged: boolean;
   // True when a non-empty AccuWeather key is in the form.
   hasAccuWeatherKey: boolean;
-  // True when the single-provider pick requires a key (AccuWeather).
-  singleNeedsKey: boolean;
   // True when AccuWeather is actually fetching: the single keyed provider, or
   // a member of the merge list. Drives the cadence section's quota field and
   // AccuWeather-specific help.
@@ -36,6 +34,34 @@ export interface SourceState {
   quotaSummary: string;
   // Collapsed-section summary for the Weather-source header.
   sourceSummary: string;
+}
+
+/** Cadence-summary fragment describing the quota posture. */
+function describeQuotaPosture(accuWeatherInPlay: boolean, dailyApiQuota: number): string {
+  if (!accuWeatherInPlay) return 'keyless';
+  if (dailyApiQuota === 0) return 'no cap';
+  return `quota ${dailyApiQuota}/day`;
+}
+
+/**
+ * Collapsed Weather-source header summary: in merged mode, the merge count and
+ * the primary; in single mode, the provider label plus its key state when
+ * keyed. The primary id stays local: callers only need the finished string.
+ */
+function describeSource(
+  form: PanelFormState,
+  merged: boolean,
+  singleNeedsKey: boolean,
+  hasAccuWeatherKey: boolean
+): string {
+  if (merged) {
+    const primaryId = form.mergeProviders[0];
+    const primary = primaryId ? WEATHER_PROVIDER_LABELS[primaryId] : 'none';
+    return `merge of ${form.mergeProviders.length}, primary ${primary}`;
+  }
+  const label = WEATHER_PROVIDER_LABELS[form.weatherProvider];
+  if (!singleNeedsKey) return label;
+  return `${label}${hasAccuWeatherKey ? ' (key set)' : ' (no key)'}`;
 }
 
 /**
@@ -66,28 +92,12 @@ export function deriveSourceState(form: PanelFormState): SourceState {
   const openMeteoActive = merged
     ? form.mergeProviders.includes('open-meteo')
     : form.weatherProvider === 'open-meteo';
-  const quotaSummary = !accuWeatherInPlay
-    ? 'keyless'
-    : form.dailyApiQuota === 0
-      ? 'no cap'
-      : `quota ${form.dailyApiQuota}/day`;
-
-  // Source-section summary: in merged mode, the merge count and the primary;
-  // in single mode, the provider label plus its key state when keyed. The
-  // primary id stays local: callers only need the finished summary string.
-  const primaryId = form.mergeProviders[0];
-  const sourceSummary = merged
-    ? `merge of ${form.mergeProviders.length}, primary ${
-        primaryId ? WEATHER_PROVIDER_LABELS[primaryId] : 'none'
-      }`
-    : singleNeedsKey
-      ? `${WEATHER_PROVIDER_LABELS[form.weatherProvider]}${hasAccuWeatherKey ? ' (key set)' : ' (no key)'}`
-      : WEATHER_PROVIDER_LABELS[form.weatherProvider];
+  const quotaSummary = describeQuotaPosture(accuWeatherInPlay, form.dailyApiQuota);
+  const sourceSummary = describeSource(form, merged, singleNeedsKey, hasAccuWeatherKey);
 
   return {
     merged,
     hasAccuWeatherKey,
-    singleNeedsKey,
     accuWeatherInPlay,
     showKeyField,
     openMeteoActive,

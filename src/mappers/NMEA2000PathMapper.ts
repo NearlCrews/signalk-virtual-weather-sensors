@@ -6,13 +6,7 @@
 import type { Delta, Meta, PathValue, SourceRef } from '@signalk/server-api';
 import { NOTIFICATION_PATHS, SIGNALK_PATHS, UNITS } from '../constants/index.js';
 import type { Logger, WeatherData } from '../types/index.js';
-import {
-  ACCUWEATHER_SOURCE,
-  buildMetaDelta as buildSkMetaDelta,
-  buildValuesDelta,
-  me,
-  pv,
-} from '../utils/skDelta.js';
+import { buildMetaDelta as buildSkMetaDelta, buildValuesDelta, me, pv } from '../utils/skDelta.js';
 import { NMEA2000Validator } from '../utils/validation.js';
 
 /**
@@ -273,7 +267,7 @@ export class NMEA2000PathMapper {
   /** `$source` stamped on every delta this mapper builds; identifies the active provider. */
   private readonly sourceRef: SourceRef;
 
-  constructor(logger: Logger = () => {}, sourceRef: SourceRef = ACCUWEATHER_SOURCE) {
+  constructor(sourceRef: SourceRef, logger: Logger = () => {}) {
     this.logger = logger;
     this.sourceRef = sourceRef;
     this.logger('debug', 'NMEA2000PathMapper initialized');
