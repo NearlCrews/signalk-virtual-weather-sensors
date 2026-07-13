@@ -6,7 +6,8 @@
   "_comment_vitest": "Vitest auto-discovers vitest.config.ts in the sandbox; explicit configFile path can fail to resolve when Stryker copies files into .stryker-tmp/. `related: false` runs the full suite per mutant: needed because vitest's related-test heuristic does not always pick up the relevant tests when sources import .js extensions but live as .ts files.",
   "vitest": { "related": false },
   "ignorePatterns": ["dist/", "coverage/", "reports/", ".stryker-tmp/"],
-  "_comment_checkers": "typescript-checker is disabled here to keep the opt-in mutation run fast. Re-enable by adding `\"checkers\": [\"typescript\"]` and `\"tsconfigFile\": \"tsconfig.json\"` if a future run uncovers mutants that the typechecker would have caught.",
+  "_comment_typescript_7": "TypeScript 7 no longer exposes the JavaScript config parser used by Stryker 9.6.1. The intentionally absent tsconfigFile skips Stryker's unnecessary path rewrite; Vitest still discovers the repository tsconfig.json inside the sandbox.",
+  "tsconfigFile": ".stryker-no-tsconfig-rewrite.json",
   "warnings": { "unknownOptions": false },
   "reporters": ["html", "json", "clear-text", "progress"],
   "concurrency": 2,
@@ -19,6 +20,7 @@
     "src/utils/validation.ts"
   ],
   "tempDirName": ".stryker-tmp",
+  "cleanTempDir": "always",
   "htmlReporter": {
     "fileName": "reports/mutation/index.html"
   },

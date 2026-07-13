@@ -15,6 +15,33 @@ import type { PanelStatusResponse } from '../types/index.js';
 import { msToWholeMinutes, toErrorMessage } from '../utils/conversions.js';
 import type { PluginInstance } from './instance.js';
 
+export const PANEL_OPENAPI = {
+  openapi: '3.0.3',
+  info: {
+    title: 'Virtual Weather Sensors panel API',
+    version: '1.0.0',
+  },
+  servers: [{ url: '/plugins/signalk-virtual-weather-sensors' }],
+  paths: {
+    '/api/status': {
+      get: {
+        summary: 'Get current plugin and provider status',
+        responses: { '200': { description: 'Current panel status' } },
+      },
+    },
+    '/api/test-key': {
+      post: {
+        summary: 'Verify an AccuWeather API key without saving it',
+        responses: {
+          '200': { description: 'Key verification result' },
+          '400': { description: 'Invalid key format' },
+          '429': { description: 'Request limit exceeded' },
+        },
+      },
+    },
+  },
+} as const;
+
 /**
  * Mount the panel's REST endpoints onto the express router signalk-server
  * passes in.
@@ -54,13 +81,9 @@ export function registerPanelRoutes(router: IRouter, instance: PluginInstance): 
     res.json(payload);
   });
 
-  // Token-bucket-style rate limiter for /api/test-key. signalk-server does NOT
-  // apply its security strategy to plugin routers, so this endpoint is
-  // effectively unauthenticated: any client that can reach the server can
-  // drive it, and each call costs one upstream AccuWeather request. The
-  // limiter caps a flood at 10 calls/minute, well under the default daily
-  // quota. /api/status is likewise unauthenticated but strictly read-only.
-  const TEST_KEY_RATE_LIMIT = 10;
+  // Signal K protects the complete /plugins route tree with its admin
+  // authentication middleware before mounting each plugin's Express router.
+  const TEST_KEY_RATE_LIMIT = 3;
   const TEST_KEY_WINDOW_MS = 60_000;
   const testKeyHits: number[] = [];
 

@@ -23,7 +23,6 @@ import {
   elapsedSinceMs,
   isApiQuotaReached,
   msToWholeMinutes,
-  normalizeAnglePiToPi,
   toErrorMessage,
 } from '../utils/conversions.js';
 import type { OpenMeteoMarineService } from './OpenMeteoMarineService.js';
@@ -823,12 +822,9 @@ export class WeatherService {
     }
   }
 
-  /**
-   * Calculate apparent wind fallback using true wind and vessel heading
-   * @private
-   */
+  /** Omit apparent wind when the vessel motion vector is incomplete. */
   private calculateApparentWindFallback(
-    weatherData: WeatherData,
+    _weatherData: WeatherData,
     vesselData: VesselNavigationData
   ): ApparentWind {
     if (!vesselData.isComplete) {
@@ -839,32 +835,6 @@ export class WeatherService {
         vesselDataAge: vesselData.dataAge,
       });
     }
-
-    const apparentWindSpeed = weatherData.windSpeed;
-    const apparentWindAngle = this.calculateApparentWindAngleFromHeading(
-      weatherData.windDirection,
-      vesselData
-    );
-
-    return apparentWindAngle === null
-      ? { apparentWindSpeed }
-      : { apparentWindSpeed, apparentWindAngle };
-  }
-
-  /**
-   * Calculate apparent wind angle from vessel heading. Returns null when no heading
-   * is available: callers must omit the apparentWindAngle path entirely rather than
-   * emitting an absolute bearing as if it were a bow-relative angle.
-   * @private
-   */
-  private calculateApparentWindAngleFromHeading(
-    windDirection: number,
-    vesselData: VesselNavigationData
-  ): number | null {
-    const vesselHeading = vesselData.headingTrue ?? vesselData.courseOverGroundTrue;
-    if (vesselHeading === undefined) {
-      return null;
-    }
-    return normalizeAnglePiToPi(windDirection - vesselHeading);
+    return {};
   }
 }

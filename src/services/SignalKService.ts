@@ -11,6 +11,7 @@ import {
   isValidBearing,
   isValidCoordinates,
   isValidVesselSpeed,
+  normalizeAngle0To2Pi,
   toErrorMessage,
 } from '../utils/conversions.js';
 
@@ -21,20 +22,6 @@ const NAV = SIGNALK_PATHS.NAVIGATION;
  * feedback loops. Substring match, so `'node-red'` covers `'signalk-node-red'`.
  */
 const EXCLUDED_SOURCE_LABELS: ReadonlyArray<string> = ['node-red'];
-
-/**
- * Course/heading fallback chain in priority order: COG-true, COG-magnetic,
- * heading-true, heading-magnetic. Hoisted to module level so the array is
- * not re-allocated on every call to `getVesselCourseOverGroundTrue`. Each
- * entry pairs the path with the readable label used in warn/debug log lines,
- * matching the labeled style of the speed and variation getters.
- */
-const COURSE_FALLBACK_PATHS = [
-  { path: NAV.COURSE_OVER_GROUND_TRUE, label: 'course over ground (true)' },
-  { path: NAV.COURSE_OVER_GROUND_MAGNETIC, label: 'course over ground (magnetic)' },
-  { path: NAV.HEADING_TRUE, label: 'heading (true)' },
-  { path: NAV.HEADING_MAGNETIC, label: 'heading (magnetic)' },
-] as const;
 
 interface SignalKDataValue {
   value: unknown;
@@ -48,6 +35,13 @@ interface SignalKDataValue {
   $source?: string;
 }
 
+interface TimedReading<T> {
+  readonly value: T | null;
+  readonly timestampMs: number | null;
+}
+
+const EMPTY_READING: TimedReading<never> = Object.freeze({ value: null, timestampMs: null });
+
 /**
  * Snapshot of vessel navigation data. `readonly` enforces the replace-wholesale
  * invariant documented on EMPTY_CACHED_VESSEL_DATA: the cache is never mutated
@@ -60,7 +54,7 @@ interface CachedVesselData {
   readonly headingTrue: number | null;
   readonly headingMagnetic: number | null;
   readonly magneticVariation: number | null;
-  /** Wall-clock millisecond timestamp of the most recent cache write (null when never written). */
+  /** Oldest accepted source measurement timestamp in the snapshot. */
   readonly lastUpdateMs: number | null;
 }
 
@@ -96,14 +90,77 @@ export class SignalKService {
   }
 
   public getVesselNavigationData(): VesselNavigationData {
+    const position = this.readPosition();
+    const speedOverGround = this.readNumericSelfPath(
+      NAV.SPEED_OVER_GROUND,
+      isValidVesselSpeed,
+      'speed over ground'
+    );
+    const magneticVariation = this.readNumericSelfPath(
+      NAV.MAGNETIC_VARIATION,
+      (variation) => Math.abs(variation) <= Math.PI,
+      'magnetic variation'
+    );
+    const courseTrue = this.readNumericSelfPath(
+      NAV.COURSE_OVER_GROUND_TRUE,
+      isValidBearing,
+      'course over ground (true)'
+    );
+    const courseMagnetic = this.readNumericSelfPath(
+      NAV.COURSE_OVER_GROUND_MAGNETIC,
+      isValidBearing,
+      'course over ground (magnetic)'
+    );
+    const headingTrue = this.readNumericSelfPath(
+      NAV.HEADING_TRUE,
+      isValidBearing,
+      'heading (true)'
+    );
+    const headingMagnetic = this.readNumericSelfPath(
+      NAV.HEADING_MAGNETIC,
+      isValidBearing,
+      'heading (magnetic)'
+    );
+
+    const correctedCourseMagnetic = this.correctMagneticReading(
+      courseMagnetic,
+      magneticVariation,
+      'course over ground'
+    );
+    const correctedHeadingMagnetic = this.correctMagneticReading(
+      headingMagnetic,
+      magneticVariation,
+      'heading'
+    );
+    const resolvedHeadingTrue = headingTrue.value !== null ? headingTrue : correctedHeadingMagnetic;
+    const resolvedCourseTrue =
+      courseTrue.value !== null
+        ? courseTrue
+        : correctedCourseMagnetic.value !== null
+          ? correctedCourseMagnetic
+          : resolvedHeadingTrue;
+
+    const acceptedTimestamps = [
+      position,
+      speedOverGround,
+      resolvedCourseTrue,
+      resolvedHeadingTrue,
+      headingMagnetic,
+      magneticVariation,
+    ]
+      .filter((reading) => reading.value !== null && reading.timestampMs !== null)
+      .map((reading) => reading.timestampMs as number);
+
     this.cachedData = {
-      position: this.getVesselPosition(),
-      speedOverGround: this.getVesselSpeedOverGround(),
-      courseOverGroundTrue: this.getVesselCourseOverGroundTrue(),
-      headingTrue: this.getVesselHeadingTrue(),
-      headingMagnetic: this.getVesselHeadingMagnetic(),
-      magneticVariation: this.getMagneticVariation(),
-      lastUpdateMs: Date.now(),
+      position: position.value,
+      speedOverGround: speedOverGround.value,
+      courseOverGroundTrue: resolvedCourseTrue.value,
+      headingTrue: resolvedHeadingTrue.value,
+      headingMagnetic: headingMagnetic.value,
+      magneticVariation: magneticVariation.value,
+      // A snapshot is only as fresh as its oldest accepted component. This is
+      // the source measurement time, not the wall clock time of this read.
+      lastUpdateMs: acceptedTimestamps.length > 0 ? Math.min(...acceptedTimestamps) : null,
     };
 
     const navigationData = this.getCachedNavigationData();
@@ -126,26 +183,33 @@ export class SignalKService {
    * @returns Position coordinates or null if not available
    */
   public getVesselPosition(): GeoLocation | null {
+    return this.readPosition().value;
+  }
+
+  private readPosition(): TimedReading<GeoLocation> {
     try {
       const positionData = this.app.getSelfPath(NAV.POSITION);
 
       if (!this.isValidSignalKData(positionData)) {
         this.logger('debug', 'No position data available from navigation.position');
-        return null;
+        return EMPTY_READING;
       }
 
       if (this.isExcludedSource(positionData)) {
         this.logger('debug', 'Ignoring position data from excluded source', {
           source: positionData.$source,
         });
-        return null;
+        return EMPTY_READING;
       }
+
+      const timestampMs = this.getFreshTimestamp(positionData, 'position');
+      if (timestampMs === null) return EMPTY_READING;
 
       const value = positionData.value as { latitude?: number; longitude?: number };
 
       if (!value || typeof value.latitude !== 'number' || typeof value.longitude !== 'number') {
         this.logger('debug', 'Invalid position data structure', { value });
-        return null;
+        return EMPTY_READING;
       }
 
       if (!isValidCoordinates(value.latitude, value.longitude)) {
@@ -153,7 +217,7 @@ export class SignalKService {
           latitude: value.latitude,
           longitude: value.longitude,
         });
-        return null;
+        return EMPTY_READING;
       }
 
       const position: GeoLocation = {
@@ -167,12 +231,12 @@ export class SignalKService {
         source: positionData.$source,
       });
 
-      return position;
+      return { value: position, timestampMs };
     } catch (error) {
       this.logger('error', 'Error retrieving vessel position', {
         error: toErrorMessage(error),
       });
-      return null;
+      return EMPTY_READING;
     }
   }
 
@@ -181,7 +245,8 @@ export class SignalKService {
    * @returns Speed in m/s or null if not available
    */
   public getVesselSpeedOverGround(): number | null {
-    return this.readNumericSelfPath(NAV.SPEED_OVER_GROUND, isValidVesselSpeed, 'speed over ground');
+    return this.readNumericSelfPath(NAV.SPEED_OVER_GROUND, isValidVesselSpeed, 'speed over ground')
+      .value;
   }
 
   /**
@@ -198,49 +263,69 @@ export class SignalKService {
     path: string,
     isValid: (value: number) => boolean,
     label: string
-  ): number | null {
+  ): TimedReading<number> {
     try {
       const data = this.app.getSelfPath(path);
       if (!this.isValidSignalKData(data) || typeof data.value !== 'number') {
-        return null;
+        return EMPTY_READING;
       }
       if (this.isExcludedSource(data)) {
         this.logger('debug', `Ignoring ${label} from excluded source`, { source: data.$source });
-        return null;
+        return EMPTY_READING;
       }
+      const timestampMs = this.getFreshTimestamp(data, label);
+      if (timestampMs === null) return EMPTY_READING;
       const value = data.value;
       if (!isValid(value)) {
         this.logger('warn', `Invalid ${label} value`, { value });
-        return null;
+        return EMPTY_READING;
       }
       this.logger('debug', `Retrieved ${label}`, { value, source: data.$source });
-      return value;
+      return { value, timestampMs };
     } catch (error) {
       this.logger('error', `Error retrieving ${label}`, { error: toErrorMessage(error) });
-      return null;
+      return EMPTY_READING;
     }
   }
 
-  /**
-   * Returns the best-available course/heading in radians, falling back through
-   * COG-true, COG-magnetic, heading-true, heading-magnetic in order.
-   *
-   * Caveat: when the chosen source is magnetic (COG-magnetic or heading-magnetic),
-   * the returned value is a magnetic reference even though the method is named
-   * `...True`. The plugin's apparent-wind math treats it as a true reference,
-   * which biases the result by the local magnetic variation (a few degrees in
-   * most cruising waters, up to ~10 degrees in high latitudes). We accept this
-   * trade-off to keep apparent-wind output flowing when only magnetic sources
-   * are available; `magneticVariation` is included in VesselNavigationData for
-   * callers that want to apply a correction.
-   */
+  /** Returns the best available true course or heading in radians. */
   public getVesselCourseOverGroundTrue(): number | null {
-    for (const { path, label } of COURSE_FALLBACK_PATHS) {
-      const course = this.readNumericSelfPath(path, isValidBearing, label);
-      if (course !== null) {
-        return course;
-      }
-    }
+    const courseTrue = this.readNumericSelfPath(
+      NAV.COURSE_OVER_GROUND_TRUE,
+      isValidBearing,
+      'course over ground (true)'
+    );
+    if (courseTrue.value !== null) return courseTrue.value;
+
+    const variation = this.readNumericSelfPath(
+      NAV.MAGNETIC_VARIATION,
+      (value) => Math.abs(value) <= Math.PI,
+      'magnetic variation'
+    );
+    const courseMagnetic = this.correctMagneticReading(
+      this.readNumericSelfPath(
+        NAV.COURSE_OVER_GROUND_MAGNETIC,
+        isValidBearing,
+        'course over ground (magnetic)'
+      ),
+      variation,
+      'course over ground'
+    );
+    if (courseMagnetic.value !== null) return courseMagnetic.value;
+
+    const headingTrue = this.readNumericSelfPath(
+      NAV.HEADING_TRUE,
+      isValidBearing,
+      'heading (true)'
+    );
+    if (headingTrue.value !== null) return headingTrue.value;
+
+    const headingMagnetic = this.correctMagneticReading(
+      this.readNumericSelfPath(NAV.HEADING_MAGNETIC, isValidBearing, 'heading (magnetic)'),
+      variation,
+      'heading'
+    );
+    if (headingMagnetic.value !== null) return headingMagnetic.value;
 
     this.logger('debug', 'No course or heading data available from any source');
     return null;
@@ -268,7 +353,7 @@ export class SignalKService {
    */
   private getHeading(path: typeof NAV.HEADING_TRUE | typeof NAV.HEADING_MAGNETIC): number | null {
     const label = path === NAV.HEADING_TRUE ? 'heading (true)' : 'heading (magnetic)';
-    return this.readNumericSelfPath(path, isValidBearing, label);
+    return this.readNumericSelfPath(path, isValidBearing, label).value;
   }
 
   /**
@@ -281,7 +366,7 @@ export class SignalKService {
       NAV.MAGNETIC_VARIATION,
       (variation) => Math.abs(variation) <= Math.PI,
       'magnetic variation'
-    );
+    ).value;
   }
 
   /**
@@ -356,6 +441,61 @@ export class SignalKService {
   public clearCache(): void {
     this.cachedData = EMPTY_CACHED_VESSEL_DATA;
     this.logger('debug', 'SignalK data cache cleared');
+  }
+
+  private correctMagneticReading(
+    magnetic: TimedReading<number>,
+    variation: TimedReading<number>,
+    label: string
+  ): TimedReading<number> {
+    if (
+      magnetic.value === null ||
+      magnetic.timestampMs === null ||
+      variation.value === null ||
+      variation.timestampMs === null
+    ) {
+      if (magnetic.value !== null) {
+        this.logger('debug', `Cannot convert magnetic ${label} to true without fresh variation`);
+      }
+      return EMPTY_READING;
+    }
+
+    return {
+      value: normalizeAngle0To2Pi(magnetic.value + variation.value),
+      timestampMs: Math.min(magnetic.timestampMs, variation.timestampMs),
+    };
+  }
+
+  /**
+   * Return the source measurement timestamp when it is valid and fresh.
+   * Navigation leaves without trustworthy timestamps are not safe inputs for
+   * position selection or vector calculations.
+   */
+  private getFreshTimestamp(data: SignalKDataValue, label: string): number | null {
+    if (typeof data.timestamp !== 'string') {
+      this.logger('warn', `Ignoring ${label} without a Signal K timestamp`);
+      return null;
+    }
+
+    const timestampMs = Date.parse(data.timestamp);
+    if (!Number.isFinite(timestampMs)) {
+      this.logger('warn', `Ignoring ${label} with an invalid Signal K timestamp`, {
+        timestamp: data.timestamp,
+      });
+      return null;
+    }
+
+    const ageSeconds = Math.floor((Date.now() - timestampMs) / 1000);
+    if (ageSeconds > this.maxDataAge || ageSeconds < -this.maxDataAge) {
+      this.logger('warn', `Ignoring ${label} with a stale or future Signal K timestamp`, {
+        timestamp: data.timestamp,
+        ageSeconds,
+        maxDataAgeSeconds: this.maxDataAge,
+      });
+      return null;
+    }
+
+    return timestampMs;
   }
 
   /**

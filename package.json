@@ -1,6 +1,6 @@
 {
   "name": "signalk-virtual-weather-sensors",
-  "version": "1.11.0",
+  "version": "1.12.0",
   "description": "Signal K plugin: keyless Open-Meteo, Met.no, or AccuWeather marine weather as 30+ environment deltas, severe-weather notifications, NMEA2000-ready",
   "keywords": [
     "signalk-node-server-plugin",
@@ -86,17 +86,19 @@
     "@babel/core": "^8.0.1",
     "@babel/preset-react": "^8.0.1",
     "@babel/preset-typescript": "^8.0.1",
-    "@biomejs/biome": "^2.5.1",
-    "@signalk/server-api": "^2.28.0",
+    "@biomejs/biome": "^2.5.3",
+    "@signalk/server-api": "^2.30.0",
     "@signalk/signalk-schema": "^1.8.2",
     "@stryker-mutator/core": "^9.6.1",
     "@stryker-mutator/typescript-checker": "^9.6.1",
     "@stryker-mutator/vitest-runner": "^9.6.1",
     "@types/express": "^5.0.6",
-    "@types/node": "^26.0.0",
+    "@types/node": "^26.1.1",
     "@types/react": "^19.2.17",
-    "@vitest/coverage-v8": "^4.1.7",
-    "@vitest/ui": "^4.1.7",
+    "@types/react-dom": "^19.2.3",
+    "@vitest/browser-playwright": "^4.1.10",
+    "@vitest/coverage-v8": "^4.1.10",
+    "@vitest/ui": "^4.1.10",
     "ajv": "^8.20.0",
     "ajv-draft-04": "^1.0.0",
     "ajv-formats": "^3.0.1",
@@ -104,12 +106,14 @@
     "esbuild": "^0.28.1",
     "husky": "^9.1.7",
     "lint-staged": "^17.0.8",
+    "playwright": "^1.61.1",
     "react": "^19.2.7",
-    "tsx": "^4.22.4",
-    "typescript": "^6.0.3",
-    "vitest": "^4.1.7",
-    "webpack": "^5.107.2",
-    "webpack-cli": "^7.0.3"
+    "react-dom": "^19.2.7",
+    "tsx": "^4.23.1",
+    "typescript": "^7.0.2",
+    "vitest": "^4.1.10",
+    "webpack": "^5.108.4",
+    "webpack-cli": "^7.2.1"
   },
   "scripts": {
     "build": "npm run clean && npm run build:types && npm run build:bundle && npm run build:panel",
@@ -120,6 +124,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:ui": "vitest --ui",
+    "test:browser": "vitest run --config vitest.browser.config.ts",
+    "screenshots:panel": "node scripts/capture-panel-screenshots.mjs",
     "test:coverage": "vitest run --coverage",
     "test:run": "vitest run",
     "mutation-test": "stryker run",
@@ -144,5 +150,8 @@
     "*.{json,md}": [
       "biome format --write"
     ]
+  },
+  "allowScripts": {
+    "esbuild@0.28.1": true
   }
 }

@@ -38,13 +38,13 @@ export interface UseStatusResult {
 // One status fetch, with the failure folded into the result instead of a
 // throw, so the hook's refresh stays a single linear path. `text` is the raw
 // body so refresh can skip the setStatus write when nothing changed.
-async function fetchStatus(): Promise<{
+async function fetchStatus(signal: AbortSignal): Promise<{
   data: PanelStatusResponse | null;
   text: string;
   error: string | null;
 }> {
   try {
-    const { ok, status, text, body } = await fetchJson('/status');
+    const { ok, status, text, body } = await fetchJson('/status', { signal });
     if (!ok) return { data: null, text: '', error: `HTTP ${status}` };
     if (body === null) return { data: null, text: '', error: 'invalid JSON in status response' };
     return { data: body as PanelStatusResponse, text, error: null };
@@ -76,28 +76,40 @@ export function useStatus(): UseStatusResult {
   // successful unchanged poll stays write-free; consumers read it on render.
   const lastUpdatedRef = useRef<number | null>(null);
   const cancelled = useRef(false);
+  const controllerRef = useRef<AbortController | null>(null);
+  const inFlightRef = useRef<Promise<PanelStatusResponse | null> | null>(null);
 
-  const refresh = useCallback(async (): Promise<PanelStatusResponse | null> => {
-    const result = await fetchStatus();
-    if (cancelled.current) return result.data;
-    if (result.data) {
-      lastUpdatedRef.current = Date.now();
-      if (result.text !== lastTextRef.current) {
-        lastTextRef.current = result.text;
-        setStatus(result.data);
+  const refresh = useCallback((): Promise<PanelStatusResponse | null> => {
+    if (inFlightRef.current) return inFlightRef.current;
+    const controller = new AbortController();
+    controllerRef.current = controller;
+    const request = (async (): Promise<PanelStatusResponse | null> => {
+      const result = await fetchStatus(controller.signal);
+      if (cancelled.current || controller.signal.aborted) return result.data;
+      if (result.data) {
+        lastUpdatedRef.current = Date.now();
+        if (result.text !== lastTextRef.current) {
+          lastTextRef.current = result.text;
+          setStatus(result.data);
+        }
+        setError(null);
+      } else {
+        setError(result.error);
+        // Failure-only re-render driver: lets the dashboard's "updated Ns ago"
+        // marker advance per attempt while the poll is down.
+        setLastAttemptMs(Date.now());
       }
-      setError(null);
-    } else {
-      setError(result.error);
-      // Failure-only re-render driver: lets the dashboard's "updated Ns ago"
-      // marker advance per attempt while the poll is down.
-      setLastAttemptMs(Date.now());
-    }
-    setStale(
-      lastUpdatedRef.current !== null && Date.now() - lastUpdatedRef.current > STALE_AFTER_MS
-    );
-    setLoading(false);
-    return result.data;
+      setStale(
+        lastUpdatedRef.current !== null && Date.now() - lastUpdatedRef.current > STALE_AFTER_MS
+      );
+      setLoading(false);
+      return result.data;
+    })().finally(() => {
+      if (controllerRef.current === controller) controllerRef.current = null;
+      if (inFlightRef.current === request) inFlightRef.current = null;
+    });
+    inFlightRef.current = request;
+    return request;
   }, []);
 
   useEffect(() => {
@@ -119,6 +131,9 @@ export function useStatus(): UseStatusResult {
     }
     return () => {
       cancelled.current = true;
+      controllerRef.current?.abort();
+      controllerRef.current = null;
+      inFlightRef.current = null;
       clearInterval(id);
       if (typeof document !== 'undefined') {
         document.removeEventListener('visibilitychange', onVisibility);

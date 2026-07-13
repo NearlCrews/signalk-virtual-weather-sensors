@@ -18,26 +18,28 @@ service; AccuWeather is an optional source for users who have an API key.
 > for safety-of-life decisions: always cross-check official forecasts and
 > warnings against your primary instruments.
 
-## What's new in 1.11.0
+## What's new in 1.12.0
 
-Correctness fixes across merged mode, notifications, the Met.no daily
-forecast, and the config panel save flow. No paths or defaults change.
+Signal K correctness, safer provider and notification behavior, a smoother
+configuration panel, and a fully current TypeScript 7 development toolchain.
+No configuration migration is required.
 
-- **The merge provider order survives a restart.** A saved pick-and-order
-  list no longer resets to the default catalog order every time the plugin
-  restarts.
-- **Stale hazard alerts clear after a restart.** The first evaluation after a
-  plugin start writes each enabled band's current state, including `normal`,
-  so an alarm raised by a previous run cannot stay latched on a plotter.
-- **Config panel save-flow fixes.** An edit typed while a save is in flight is
-  kept instead of silently discarded, and the merge list can no longer be
-  saved empty.
-- **Met.no daily forecasts keep their weather description.** A midday window
-  without a symbol code no longer wipes it.
-- **Clearer operator text.** Status banners name the active weather source,
-  and the heat notification labels its value "RealFeel (shade)".
+- **Observation age is truthful.** Cached rebroadcasts retain the provider
+  observation timestamp, navigation inputs must be fresh, and magnetic
+  readings are converted to true only with fresh variation data.
+- **Synthetic wind is no longer guessed.** Apparent wind and apparent wind
+  chill are omitted when the required vessel motion or heading is unavailable.
+- **Alerts clear reliably.** Disabling a category, disabling notifications, or
+  stopping the plugin publishes `normal` for every notification path it owns.
+- **Weather APIs and network handling are stricter.** Signal K v2 options,
+  sorting, coordinates, warning times, response byte limits, retries, quotas,
+  OpenAPI documentation, and panel rate limits are enforced at their
+  boundaries.
+- **The panel is smoother on every display.** Polls and API-key tests are
+  single-flight and cancellable, invalid numbers receive inline feedback, and
+  narrow marine screens receive a responsive layout verified in Chromium.
 
-See the [v1.11.0 changelog entry](CHANGELOG.md#v1110), or the
+See the [v1.12.0 changelog entry](CHANGELOG.md#v1120), or the
 [changelog](CHANGELOG.md) for the full list.
 
 ## What it does
@@ -148,7 +150,7 @@ In the Signal K admin UI, open **Server, then Plugin Config**, find
 | Open-Meteo base URL | Optional. Leave blank for the free public service (non-commercial use). Self-hosted or paid users can enter a custom endpoint. | none | n/a |
 | Emit sea state | Adds a keyless Open-Meteo Marine layer (waves, swell, sea temperature, and current) on `environment.water.*` and `environment.current`. Coastal and offshore only. | off | boolean |
 | Weather Update Frequency | Minutes between weather fetches. With AccuWeather selected, the default 30 makes 48 calls/day, within the default 50/day quota. | 30 | 1 to 60 |
-| Broadcast Interval | Seconds between delta re-emissions, so NMEA2000 listeners keep seeing fresh deltas. | 5 | 1 to 60 |
+| Broadcast Interval | Seconds between cached delta re-emissions for NMEA2000 listeners. The provider observation timestamp is retained. | 5 | 1 to 60 |
 | Daily API Call Quota | Cap on AccuWeather calls per rolling 24-hour window. 0 disables the cap. Open-Meteo is keyless and uncapped. | 50 | 0 to 1000 |
 | Severe-weather notifications | Master toggle plus per-category sub-toggles (wind, visibility, heat, cold, severe conditions). | master off, sub-toggles on | boolean |
 
@@ -195,7 +197,8 @@ designated forecast child backs the endpoints:
   omit).
 - `GET /signalk/v2/api/weather/warnings` returns region-aware severe-weather
   alerts: NWS active alerts for US waters, Met.no MetAlerts for Norwegian
-  waters (both keyless and best-effort), and an empty list elsewhere.
+  waters (both keyless), and reports unsupported positions outside those
+  regions.
 
 Registering the provider is what makes the server list `weather` under
 `/signalk/v2/features`, which is how dashboards such as
@@ -243,8 +246,8 @@ See [docs/troubleshooting.md](docs/troubleshooting.md) for the full guide.
 
 ## Development
 
-This project targets Node 20.18 or newer and develops against
-`@signalk/server-api` 2.24 or newer, with TypeScript 6 (development only).
+This project targets Node 20.18 or newer, supports `@signalk/server-api` 2.24 or
+newer, and develops against version 2.30 with TypeScript 7.
 
 ```bash
 git clone https://github.com/NearlCrews/signalk-virtual-weather-sensors.git
@@ -252,6 +255,7 @@ cd signalk-virtual-weather-sensors
 npm install          # install dependencies
 npm run build        # compile the plugin and bundle the config panel
 npm test             # Vitest suite, single run
+npm run test:browser # config-panel checks in headless Chromium
 npm run type-check   # type-check the plugin and the panel
 npm run lint         # Biome check
 npm run lint:fix     # lint and auto-fix

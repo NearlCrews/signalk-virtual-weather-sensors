@@ -7,6 +7,54 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+<a id="v1120"></a>
+
+## [1.12.0] - 2026-07-13
+
+Signal K correctness, safer provider and notification behavior, a smoother
+configuration panel, and a fully current TypeScript 7 development toolchain.
+No configuration migration is required.
+
+### Fixed
+
+- Navigation inputs now require fresh Signal K source timestamps. Stale,
+  future-dated, or untimestamped position and motion values are rejected, and
+  magnetic course or heading is converted to true only when a fresh magnetic
+  variation is available.
+- Cached atmospheric and marine deltas retain the provider observation time
+  when rebroadcast. The emission cadence no longer makes old observations
+  appear newly measured.
+- Apparent wind and apparent wind chill are omitted when vessel motion or
+  heading is incomplete instead of being fabricated from true wind values.
+- Disabling notifications, disabling an individual notification category, or
+  stopping the plugin now publishes `normal` for every owned notification path
+  so alerts cannot remain latched in consumers.
+- Signal K v2 weather requests now honor `startDate` and `maxCount`, reject
+  unsupported custom requests, validate coordinates, reject malformed warning
+  times, and distinguish unsupported warning regions from upstream failures.
+- HTTP response limits are enforced on streamed UTF-8 bytes, including
+  multibyte text, and every retry attempt counts against provider quotas even
+  when the request fails before a response arrives.
+- Merged mode accepts an empty optional AccuWeather key by excluding that
+  provider, while still rejecting a malformed nonempty key.
+- The configuration panel now sanitizes saved values, prevents overlapping
+  status polls and API-key tests, cancels requests when controls unmount, and
+  reports invalid number fields instead of silently clamping them.
+- Panel status and API-key testing remain under Signal K's admin-protected
+  plugin route tree, and the test-key endpoint has a tighter rate limit.
+
+### Changed
+
+- Updated the development toolchain to TypeScript 7.0.2, Signal K server API
+  2.30.0, Biome 2.5.3, Vitest 4.1.10, webpack 5.108.4, webpack-cli 7.2.1,
+  tsx 4.23.1, Playwright 1.61.1, React 19.2.7, and current Node.js and React
+  type definitions. Mutation testing now bypasses Stryker's TypeScript 6
+  compiler-API hook while preserving its sandboxed Vitest execution.
+- The panel REST surface now publishes an OpenAPI description, rate-limits
+  API-key checks to three attempts per minute, and adapts its status layout for
+  narrow marine displays. Chromium interaction tests cover number validation
+  and mobile overflow.
+
 <a id="v1110"></a>
 
 ## [1.11.0] - 2026-07-04

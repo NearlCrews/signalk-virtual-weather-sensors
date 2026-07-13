@@ -32,9 +32,8 @@ the keyless Open-Meteo and Met.no sources supply the rest, and the plugin
 estimates the wet-bulb globe temperature so the heat-stress band still works.
 
 > Note: the plugin re-emits its cached delta on a fixed interval for NMEA2000
-> recognition. Each re-emission stamps the delta with the current emission
-> time, not the original observation time, so a value can be re-broadcast as
-> "now" for up to one `updateFrequency` window after it was fetched.
+> recognition. Each re-emission retains the provider's original observation
+> timestamp so consumers can determine the true age of the measurement.
 
 ## Core environmental (canonical)
 
@@ -45,7 +44,7 @@ estimates the wet-bulb globe temperature so the heat-stress band still works.
 | `environment.outside.relativeHumidity` | ratio (0 to 1) | Relative humidity |
 | `environment.outside.dewPointTemperature` | K | Dew point |
 | `environment.outside.theoreticalWindChillTemperature` | K | Wind chill from the true (ground-referenced) wind |
-| `environment.outside.apparentWindChillTemperature` | K | Wind chill from the apparent wind (true wind plus vessel motion); falls back to the theoretical value when no vessel motion data is available |
+| `environment.outside.apparentWindChillTemperature` | K | Wind chill from the apparent wind (true wind plus vessel motion); omitted when the required fresh vessel motion data is unavailable |
 | `environment.outside.heatIndexTemperature` | K | Heat index, computed (NWS Rothfusz) from air temperature and humidity |
 | `environment.outside.airDensity` | kg/m3 | Calculated air density |
 
@@ -205,10 +204,11 @@ so plotter UIs clear the alert. `method` is `['visual']` for `warn`,
 `normal` clear so consumers drop the cue rather than keeping it lit.
 
 On the first evaluation after a plugin start (including the automatic restart
-after a configuration change), the plugin writes each enabled band's current
-state once, including `normal`, so an alert raised by a previous run clears
-instead of staying lit. After that first pass, only genuine transitions are
-emitted.
+after a configuration change), the plugin writes every owned path once.
+Enabled bands publish their current state, and disabled bands publish `normal`,
+so an alert raised by a previous run clears instead of staying lit. Disabling a
+category and stopping the plugin also clear the paths it owns. After the first
+pass, only genuine transitions are emitted.
 
 The `message` field packs adjacent context so a chartplotter banner is
 actionable on its own:
@@ -253,7 +253,11 @@ the endpoints. These endpoints are served:
   the forecasts omit).
 - `GET /signalk/v2/api/weather/warnings` returns region-aware severe-weather
   alerts: keyless NWS CAP active alerts for US waters, keyless Met.no MetAlerts
-  for Norwegian waters, and an empty list elsewhere.
+  for Norwegian waters, and a Signal K `Not supported!` error elsewhere.
+
+Forecast and observation requests honor the Signal K `startDate` and
+`maxCount` options. Nonempty custom requests are rejected because this provider
+does not define custom response fields.
 
 Forecasts are mapped to the same SI units used everywhere else in this plugin
 (Kelvin for temperatures, m/s for wind speed, radians for wind direction,

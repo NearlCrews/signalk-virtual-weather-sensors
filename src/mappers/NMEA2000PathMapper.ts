@@ -196,7 +196,7 @@ const CANONICAL_LEAF_META: ReadonlyArray<Meta> = [
     units: 'K',
     displayName: 'Apparent wind chill',
     description:
-      'Wind chill computed against the apparent wind the moving vessel experiences. Falls back to the theoretical (true-wind) value when vessel-motion data is unavailable; in that case this leaf equals environment.outside.theoreticalWindChillTemperature.',
+      'Wind chill computed against the apparent wind the moving vessel experiences. Omitted when the required fresh vessel-motion data is unavailable.',
   }),
 ];
 
@@ -307,7 +307,7 @@ export class NMEA2000PathMapper {
     });
 
     // Carries the observation timestamp through to consumers; emission-time
-    // restamping for re-broadcast happens at the plugin entry point.
+    // Cached rebroadcasts retain this provider observation timestamp.
     return buildValuesDelta(values, sanitizedData.timestamp, this.sourceRef);
   }
 
@@ -355,19 +355,22 @@ export class NMEA2000PathMapper {
   }
 
   private addEnhancedTemperaturePaths(values: PathValue[], data: WeatherData): void {
-    // windChill is the theoretical (true-wind) wind chill. The apparent-wind
-    // chill leaf gets the vessel-motion-corrected value when nav data allowed
-    // it to be derived, falling back to the theoretical value otherwise (when
-    // the vessel is not moving, apparent wind equals true wind).
+    // windChill is the theoretical (true-wind) wind chill. Apparent wind chill
+    // is emitted only when fresh vessel motion data allowed it to be derived.
     values.push(
       pv(SIGNALK_PATHS.ENVIRONMENT.OUTSIDE.DEW_POINT_TEMPERATURE, data.dewPoint),
       pv(SIGNALK_PATHS.ENVIRONMENT.OUTSIDE.THEORETICAL_WIND_CHILL_TEMPERATURE, data.windChill),
-      pv(
-        SIGNALK_PATHS.ENVIRONMENT.OUTSIDE.APPARENT_WIND_CHILL_TEMPERATURE,
-        data.apparentWindChill ?? data.windChill
-      ),
       pv(SIGNALK_PATHS.ENVIRONMENT.OUTSIDE.HEAT_INDEX_TEMPERATURE, data.heatIndex)
     );
+
+    if (data.apparentWindChill !== undefined) {
+      values.push(
+        pv(
+          SIGNALK_PATHS.ENVIRONMENT.OUTSIDE.APPARENT_WIND_CHILL_TEMPERATURE,
+          data.apparentWindChill
+        )
+      );
+    }
 
     if (data.realFeel !== undefined) {
       values.push(pv(SIGNALK_PATHS.ENVIRONMENT.WEATHER.REAL_FEEL, data.realFeel));

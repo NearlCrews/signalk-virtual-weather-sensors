@@ -11,7 +11,7 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { PluginInstance } from '../../plugin/instance.js';
-import { registerPanelRoutes } from '../../plugin/panelRoutes.js';
+import { PANEL_OPENAPI, registerPanelRoutes } from '../../plugin/panelRoutes.js';
 
 // Build a minimal PluginInstance stub with only the fields panelRoutes reads.
 function makeInstance(): PluginInstance {
@@ -62,7 +62,7 @@ function makeRes() {
 // Minimal express-shaped router that captures handlers so tests can call them.
 function makeRouter() {
   const handlers = new Map<string, (...args: unknown[]) => unknown>();
-  return {
+  const router = {
     get: vi.fn((path: string, handler: (...args: unknown[]) => unknown) => {
       handlers.set(`GET ${path}`, handler);
     }),
@@ -73,6 +73,7 @@ function makeRouter() {
       return handlers.get(`${method} ${path}`);
     },
   };
+  return router;
 }
 
 describe('panelRoutes: /api/test-key rate limiter', () => {
@@ -101,8 +102,8 @@ describe('panelRoutes: /api/test-key rate limiter', () => {
     vi.useRealTimers();
   });
 
-  it('returns 429 after TEST_KEY_RATE_LIMIT (10) calls in the same minute window', async () => {
-    // TEST_KEY_RATE_LIMIT is 10 (module-private constant in panelRoutes.ts).
+  it('returns 429 after TEST_KEY_RATE_LIMIT calls in the same minute window', async () => {
+    // TEST_KEY_RATE_LIMIT is 3 (module-private constant in panelRoutes.ts).
     // registering once constructs fresh testKeyHits state because each
     // registerPanelRoutes call closes over a new local array.
     const router = makeRouter();
@@ -115,15 +116,15 @@ describe('panelRoutes: /api/test-key rate limiter', () => {
     const longKey = 'A'.repeat(20);
     const req = { body: { apiKey: longKey } };
 
-    // Fire TEST_KEY_RATE_LIMIT (10) requests that should all succeed (or fail
+    // Fire TEST_KEY_RATE_LIMIT requests that should all succeed (or fail
     // with an AccuWeather error, never 429).
-    for (let i = 0; i < 10; i++) {
+    for (let i = 0; i < 3; i++) {
       const res = makeRes();
       await handler(req, res);
       expect(res.capturedStatus).not.toBe(429);
     }
 
-    // The 11th request (index 10) must be rate-limited.
+    // The next request must be rate-limited.
     const res = makeRes();
     await handler(req, res);
     expect(res.capturedStatus).toBe(429);
@@ -142,8 +143,8 @@ describe('panelRoutes: /api/test-key rate limiter', () => {
     const longKey = 'A'.repeat(20);
     const req = { body: { apiKey: longKey } };
 
-    // Exhaust the window (10 calls).
-    for (let i = 0; i < 10; i++) {
+    // Exhaust the window.
+    for (let i = 0; i < 3; i++) {
       const res = makeRes();
       await handler(req, res);
     }
@@ -155,5 +156,14 @@ describe('panelRoutes: /api/test-key rate limiter', () => {
     const res = makeRes();
     await handler(req, res);
     expect(res.capturedStatus).not.toBe(429);
+  });
+});
+
+describe('panel REST OpenAPI document', () => {
+  it('advertises the plugin route base and both panel operations', () => {
+    expect(PANEL_OPENAPI.openapi).toBe('3.0.3');
+    expect(PANEL_OPENAPI.servers).toEqual([{ url: '/plugins/signalk-virtual-weather-sensors' }]);
+    expect(PANEL_OPENAPI.paths).toHaveProperty('/api/status.get');
+    expect(PANEL_OPENAPI.paths).toHaveProperty('/api/test-key.post');
   });
 });

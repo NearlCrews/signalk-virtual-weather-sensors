@@ -65,12 +65,7 @@ export async function readBoundedJson<T>(
     }
   }
 
-  const text = await response.text();
-  if (text.length > maxBytes) {
-    throw new Error(
-      `${ERROR_CODES.NETWORK.RESPONSE_TOO_LARGE}: ${label} is ${text.length} characters (max ${maxBytes})`
-    );
-  }
+  const text = await readBoundedText(response, maxBytes, label);
 
   try {
     return JSON.parse(text) as T;
@@ -79,6 +74,51 @@ export async function readBoundedJson<T>(
       `${ERROR_CODES.NETWORK.API_INVALID_RESPONSE}: failed to parse ${label} as JSON - ${toErrorMessage(error)}`
     );
   }
+}
+
+async function readBoundedText(
+  response: Response,
+  maxBytes: number,
+  label: string
+): Promise<string> {
+  if (!response.body) {
+    const text = await response.text();
+    const byteLength = new TextEncoder().encode(text).byteLength;
+    if (byteLength > maxBytes) {
+      throw new Error(
+        `${ERROR_CODES.NETWORK.RESPONSE_TOO_LARGE}: ${label} is ${byteLength} bytes (max ${maxBytes})`
+      );
+    }
+    return text;
+  }
+
+  const reader = response.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let byteLength = 0;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      byteLength += value.byteLength;
+      if (byteLength > maxBytes) {
+        await reader.cancel();
+        throw new Error(
+          `${ERROR_CODES.NETWORK.RESPONSE_TOO_LARGE}: ${label} exceeds ${maxBytes} bytes`
+        );
+      }
+      chunks.push(value);
+    }
+  } finally {
+    reader.releaseLock();
+  }
+
+  const bytes = new Uint8Array(byteLength);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return new TextDecoder().decode(bytes);
 }
 
 /**

@@ -4,14 +4,12 @@ import { useCallback, useState } from 'react';
 // bounds.
 import {
   CONFIG_DEFAULTS,
-  DEFAULT_MERGE_PROVIDERS,
   DEFAULT_NOTIFICATIONS,
-  DEFAULT_WEATHER_MODE,
-  DEFAULT_WEATHER_PROVIDER,
   providerRequiresApiKey,
+  resolveMergeProviders,
+  resolveWeatherMode,
+  resolveWeatherProvider,
   validateKeyLength,
-  type WeatherMode,
-  type WeatherProviderId,
 } from '../../constants/notifications-shared.js';
 import type {
   NotificationsConfig,
@@ -42,29 +40,57 @@ export interface SaveAction {
  * the resync path so a new field is added in one place, not two.
  */
 function formStateFromConfig(c: unknown): PanelFormState {
-  const cfg = (c ?? {}) as {
-    weatherProvider?: WeatherProviderId;
-    weatherMode?: WeatherMode;
-    mergeProviders?: ReadonlyArray<WeatherProviderId>;
-    accuWeatherApiKey?: string;
-    openMeteoBaseUrl?: string;
-    marineData?: boolean;
-    updateFrequency?: number;
-    emissionInterval?: number;
-    dailyApiQuota?: number;
-    notifications?: Partial<NotificationsFormState>;
-  };
+  const cfg = (typeof c === 'object' && c !== null ? c : {}) as Record<string, unknown>;
+  const accuWeatherApiKey = typeof cfg.accuWeatherApiKey === 'string' ? cfg.accuWeatherApiKey : '';
+  const weatherProvider = resolveWeatherProvider(
+    cfg.weatherProvider,
+    accuWeatherApiKey.trim().length > 0
+  );
+  const weatherMode = resolveWeatherMode(cfg.weatherMode);
+  const notifications =
+    typeof cfg.notifications === 'object' && cfg.notifications !== null
+      ? (cfg.notifications as Record<string, unknown>)
+      : {};
+  const boundedNumber = (value: unknown, fallback: number, min: number, max: number): number =>
+    typeof value === 'number' && Number.isFinite(value)
+      ? Math.min(max, Math.max(min, value))
+      : fallback;
+  const bool = (value: unknown, fallback: boolean): boolean =>
+    typeof value === 'boolean' ? value : fallback;
+
   return {
-    weatherProvider: cfg.weatherProvider ?? DEFAULT_WEATHER_PROVIDER,
-    weatherMode: cfg.weatherMode ?? DEFAULT_WEATHER_MODE,
-    mergeProviders: cfg.mergeProviders ?? DEFAULT_MERGE_PROVIDERS,
-    accuWeatherApiKey: cfg.accuWeatherApiKey ?? '',
-    openMeteoBaseUrl: cfg.openMeteoBaseUrl ?? '',
-    marineData: cfg.marineData ?? false,
-    updateFrequency: cfg.updateFrequency ?? CONFIG_DEFAULTS.UPDATE_FREQUENCY,
-    emissionInterval: cfg.emissionInterval ?? CONFIG_DEFAULTS.EMISSION_INTERVAL,
-    dailyApiQuota: cfg.dailyApiQuota ?? CONFIG_DEFAULTS.DAILY_API_QUOTA,
-    notifications: { ...DEFAULT_NOTIFICATIONS, ...(cfg.notifications ?? {}) },
+    weatherProvider,
+    weatherMode,
+    mergeProviders: resolveMergeProviders(cfg.mergeProviders, weatherProvider),
+    accuWeatherApiKey,
+    openMeteoBaseUrl: typeof cfg.openMeteoBaseUrl === 'string' ? cfg.openMeteoBaseUrl : '',
+    marineData: bool(cfg.marineData, false),
+    updateFrequency: boundedNumber(
+      cfg.updateFrequency,
+      CONFIG_DEFAULTS.UPDATE_FREQUENCY,
+      CONFIG_DEFAULTS.UPDATE_FREQUENCY_MIN,
+      CONFIG_DEFAULTS.UPDATE_FREQUENCY_MAX
+    ),
+    emissionInterval: boundedNumber(
+      cfg.emissionInterval,
+      CONFIG_DEFAULTS.EMISSION_INTERVAL,
+      CONFIG_DEFAULTS.EMISSION_INTERVAL_MIN,
+      CONFIG_DEFAULTS.EMISSION_INTERVAL_MAX
+    ),
+    dailyApiQuota: boundedNumber(
+      cfg.dailyApiQuota,
+      CONFIG_DEFAULTS.DAILY_API_QUOTA,
+      CONFIG_DEFAULTS.DAILY_API_QUOTA_MIN,
+      CONFIG_DEFAULTS.DAILY_API_QUOTA_MAX
+    ),
+    notifications: {
+      enabled: bool(notifications.enabled, DEFAULT_NOTIFICATIONS.enabled),
+      wind: bool(notifications.wind, DEFAULT_NOTIFICATIONS.wind),
+      visibility: bool(notifications.visibility, DEFAULT_NOTIFICATIONS.visibility),
+      heat: bool(notifications.heat, DEFAULT_NOTIFICATIONS.heat),
+      cold: bool(notifications.cold, DEFAULT_NOTIFICATIONS.cold),
+      weather: bool(notifications.weather, DEFAULT_NOTIFICATIONS.weather),
+    },
   };
 }
 
@@ -206,7 +232,15 @@ export function usePanelConfig(
     // and usually empty, so gating Save on key length there would block every
     // fresh install. This matches the rjsf schema, which no longer declares a
     // minLength on the now-optional key.
-    if (providerRequiresApiKey(form.weatherProvider)) {
+    const keyedProviderSelected =
+      form.weatherMode === 'single'
+        ? providerRequiresApiKey(form.weatherProvider)
+        : form.mergeProviders.some(providerRequiresApiKey);
+    const keyMustBeValid =
+      form.weatherMode === 'single'
+        ? keyedProviderSelected
+        : keyedProviderSelected && trimmedKey !== '';
+    if (keyMustBeValid) {
       const keyLengthError = validateKeyLength(trimmedKey);
       if (keyLengthError) {
         setKeyError(keyLengthError);

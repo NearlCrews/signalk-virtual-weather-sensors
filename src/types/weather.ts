@@ -76,8 +76,7 @@ export interface WeatherData {
   /**
    * Apparent wind chill temperature in Kelvin: wind chill computed from the
    * apparent wind (true wind plus vessel motion). Present only when vessel
-   * navigation data allows the apparent wind to be derived; the mapper falls
-   * back to `windChill` for the apparent-wind-chill leaf when it is absent.
+   * navigation data allows the apparent wind to be derived.
    */
   readonly apparentWindChill?: number;
 

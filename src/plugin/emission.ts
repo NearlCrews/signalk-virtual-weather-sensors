@@ -4,7 +4,7 @@
  * interval, rebuilding the cached delta only when new weather data arrives.
  */
 
-import { type Delta, type PathValue, type ServerAPI, SKVersion } from '@signalk/server-api';
+import { type PathValue, type ServerAPI, SKVersion } from '@signalk/server-api';
 import { PLUGIN } from '../constants/index.js';
 import type { NMEA2000PathMapper } from '../mappers/NMEA2000PathMapper.js';
 import { isMarineDataEmpty } from '../mappers/OpenMeteoMarineMapper.js';
@@ -47,9 +47,8 @@ export function setupEnhancedEmissionSystem(
 
 /**
  * Single emission tick: refreshes the cached delta when weather data has
- * changed, builds a fresh outbound delta with the current emission timestamp
- * (not the cached observation time), and skips emission entirely when the
- * service reports the upstream data has gone stale.
+ * changed, preserves the provider's observation timestamp on rebroadcast, and
+ * skips emission entirely when the service reports the upstream data has gone stale.
  * @private
  */
 function emitWeatherTick(instance: PluginInstance, app: ServerAPI): void {
@@ -69,9 +68,8 @@ function emitWeatherTick(instance: PluginInstance, app: ServerAPI): void {
   setBanner(instance, app, banner.kind, banner.message);
 
   // Staleness gates emission, not just the banner: quota exhaustion alone
-  // keeps broadcasting cached in-window data on the keep-alive cadence so
-  // NMEA2000 consumers do not drop the virtual sensor, but data past the
-  // staleness watchdog must stop being restamped with fresh timestamps.
+  // keeps broadcasting cached in-window data on the configured cadence, but
+  // every rebroadcast retains the original provider measurement timestamp.
   if (instance.weatherService.isDataStale()) {
     return;
   }
@@ -91,11 +89,7 @@ function emitWeatherTick(instance: PluginInstance, app: ServerAPI): void {
     return;
   }
 
-  app.handleMessage(
-    PLUGIN.NAME,
-    withEmissionTimestamp(instance, instance.cachedDelta),
-    SKVersion.v1
-  );
+  app.handleMessage(PLUGIN.NAME, instance.cachedDelta, SKVersion.v1);
 
   // Notifications ride a separate delta so consumers walking the values delta
   // do not see a `notifications.*` leaf interleaved with measurements. The
@@ -127,8 +121,8 @@ function emitWeatherTick(instance: PluginInstance, app: ServerAPI): void {
  * Emit the optional marine (sea-state) delta. No-op when the marine layer is
  * disabled, before the first marine fetch, or for an inland point where the
  * model has no data (so the marine meta is never shipped without real data).
- * The cached delta is restamped each tick like the weather delta, preserving
- * its distinct marine `$source`, and the meta block ships exactly once.
+ * The cached delta preserves its marine observation timestamp and distinct
+ * `$source`, and the meta block ships exactly once.
  * @private
  */
 function emitMarineTick(instance: PluginInstance, app: ServerAPI): void {
@@ -150,11 +144,7 @@ function emitMarineTick(instance: PluginInstance, app: ServerAPI): void {
   }
   if (!instance.cachedMarineDelta) return;
 
-  app.handleMessage(
-    PLUGIN.NAME,
-    withEmissionTimestamp(instance, instance.cachedMarineDelta),
-    SKVersion.v1
-  );
+  app.handleMessage(PLUGIN.NAME, instance.cachedMarineDelta, SKVersion.v1);
 
   if (!instance.marineMetaEmitted) {
     app.handleMessage(PLUGIN.NAME, mapper.buildMetaDelta(), SKVersion.v1);
@@ -180,9 +170,8 @@ function refreshCachedDelta(
     instance.cachedWeatherDataRef = weatherData;
     return instance.notifier?.evaluate(weatherData) ?? [];
   } catch (error) {
-    // Mapper failure: drop the cached delta so we stop emitting stale data with
-    // a fresh timestamp (which would hide the failure from operators). Pin
-    // cachedWeatherDataRef to this snapshot so the emission tick's ref-equality
+    // Mapper failure: drop the cached delta so we stop emitting invalid data.
+    // Pin cachedWeatherDataRef to this snapshot so the emission tick's ref-equality
     // guard skips re-mapping (and re-logging) the same failing data every tick;
     // the next fetch yields a new snapshot that re-attempts the mapping.
     const errorMessage = toErrorMessage(error);
@@ -194,29 +183,4 @@ function refreshCachedDelta(
     setBanner(instance, app, 'error', `Weather mapping failed: ${errorMessage}`);
     return null;
   }
-}
-
-/**
- * Returns a Delta clone with every update's timestamp restamped to the
- * current emission time, preserving the immutability of the cached delta
- * so handleMessage callers can safely retain references.
- * @private
- */
-function withEmissionTimestamp(instance: PluginInstance, cached: Delta): Delta {
-  // The cached delta is always a single-update values delta built by
-  // `buildValuesDelta`, so restamping is a rebuild through the same helper,
-  // which stamps the current wall-clock time when no timestamp is passed. The
-  // original `$source` (the active provider's) is preserved so re-broadcasts
-  // cannot change provenance.
-  const update = cached.updates[0];
-  if (update === undefined || !('values' in update) || update.$source === undefined) {
-    // Defensive: every cached delta is a single values update built by
-    // buildValuesDelta with an explicit $source, so this shape should be
-    // unreachable. Returning the original un-restamped would re-broadcast a
-    // stale timestamp silently, so log if it ever happens rather than passing
-    // it through unnoticed.
-    instance.logger('warn', 'withEmissionTimestamp: cached delta is not a values update');
-    return cached;
-  }
-  return buildValuesDelta(update.values, undefined, update.$source);
 }

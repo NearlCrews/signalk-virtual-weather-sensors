@@ -78,11 +78,11 @@ export default function StatusDashboard({
 
   return (
     <div>
-      <div style={S.card}>
+      <div className="svws-status-card" style={S.card}>
         <div style={S.cardIcon} aria-hidden="true">
           ⛅
         </div>
-        <div style={S.cardInfo}>
+        <div className="svws-card-info" style={S.cardInfo}>
           <div style={S.cardTitle}>{PLUGIN_DISPLAY_NAME}</div>
           <div style={S.cardMeta}>{meta}</div>
         </div>
@@ -95,7 +95,7 @@ export default function StatusDashboard({
         {/* Only the freshness line is a polite live region. The stats grid
             below opts out (aria-live="off") so a 10-second poll announces at
             most the age, not a wall of every stat. */}
-        <span role="status" style={S.staleMarker}>
+        <span className="svws-stale-marker" role="status" style={S.staleMarker}>
           {stale ? `updated ${Math.round(staleAgeMs / 1000)} s ago` : ''}
         </span>
       </div>

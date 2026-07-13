@@ -45,16 +45,18 @@ const SF_LOCATION_RESPONSE = {
  * environment.wind.angleApparent gets omitted from the delta).
  */
 function buildAppWithVessel(position: { latitude: number; longitude: number }) {
+  const timestamp = new Date().toISOString();
   return createMockSignalKApp({
     selfPaths: {
       'navigation.position': {
         value: { latitude: position.latitude, longitude: position.longitude },
+        timestamp,
       },
       // ~5 knots, under VESSEL_SPEED.MAX
-      'navigation.speedOverGround': { value: 2.57 },
+      'navigation.speedOverGround': { value: 2.57, timestamp },
       // ~0 rad (north), valid 0..2π
-      'navigation.courseOverGroundTrue': { value: 0 },
-      'navigation.headingTrue': { value: 0 },
+      'navigation.courseOverGroundTrue': { value: 0, timestamp },
+      'navigation.headingTrue': { value: 0, timestamp },
     },
   });
 }

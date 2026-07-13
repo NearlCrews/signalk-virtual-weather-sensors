@@ -30,7 +30,7 @@ export interface NotificationValue {
  * Shape returned by the admin-UI panel's `/api/status` REST endpoint. Shared
  * between the producer (src/index.ts:registerPanelRoutes) and the consumer
  * (src/configpanel/PluginConfigurationPanel.jsx via JSDoc) so a typo on the
- * producer side fails compile-time rather than silently shipping.
+ * producer side fails at compile time rather than silently shipping.
  */
 export interface PanelStatusResponse {
   readonly running: boolean;

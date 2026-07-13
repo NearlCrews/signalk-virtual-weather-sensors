@@ -28,7 +28,10 @@ Reproducible end-to-end check of `signalk-virtual-weather-sensors` running again
 
 ## 2. Path-by-path verification (Data Browser)
 
-Open **Server -> Data Browser**. Filter by `vessels.self`. For each path below confirm the listed value appears with `$source: accuweather` and a recent `timestamp`.
+Open **Server -> Data Browser**. Filter by `vessels.self`. For each path below
+confirm the listed value appears with `$source: accuweather` and the provider's
+observation `timestamp`. The timestamp stays unchanged between weather fetches
+even though the cached delta is rebroadcast at the configured interval.
 
 ### Canonical `environment.outside.*` (must be present)
 
@@ -36,7 +39,8 @@ Open **Server -> Data Browser**. Filter by `vessels.self`. For each path below c
 - [ ] `environment.outside.pressure` (Pa, roughly 95000 to 105000)
 - [ ] `environment.outside.relativeHumidity` (ratio 0 to 1)
 - [ ] `environment.outside.dewPointTemperature` (K)
-- [ ] `environment.outside.apparentWindChillTemperature` (K)
+- [ ] `environment.outside.apparentWindChillTemperature` (K, present only when
+  fresh vessel motion and course data allow apparent wind to be calculated)
 - [ ] `environment.outside.theoreticalWindChillTemperature` (K, wind chill from the true wind)
 - [ ] `environment.outside.heatIndexTemperature` (K, computed NWS heat index, not AccuWeather RealFeel)
 - [ ] `environment.outside.airDensity` (kg/m3, roughly 1.0 to 1.4)
@@ -109,6 +113,8 @@ Enable **Emit sea state** in **Weather source**, save, and (for a coastal or off
 ## 5. Cleanup
 
 - [ ] In **Plugin Config**, toggle **Active** off. Submit. The banner switches to `Stopped`.
+- [ ] Any active `notifications.environment.*` paths owned by the plugin return
+  to `state: normal` when the plugin stops.
 - [ ] All `accuweather`-sourced paths in the Data Browser stop updating; their `timestamp` ages and they fall out of the panel after a server-configured retention window.
 - [ ] To uninstall completely: `rm ~/.signalk/node_modules/signalk-virtual-weather-sensors` and restart the server. The plugin entry disappears from **Plugin Config**.
 - [ ] If desired, `rm ~/.signalk/plugin-config-data/signalk-virtual-weather-sensors.json` to clear the persisted API key.

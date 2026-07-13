@@ -18,7 +18,7 @@ function makeClient(onRequestCounted?: () => void): RetryingHttpClient {
 }
 
 describe('RetryingHttpClient', () => {
-  it('returns parsed JSON and fires onRequestCounted once per landed response', async () => {
+  it('returns parsed JSON and fires onRequestCounted once per attempt', async () => {
     const onRequestCounted = vi.fn();
     vi.mocked(globalThis.fetch).mockResolvedValue(
       createMockFetchResponse({ ok: 1 }) as unknown as Response
@@ -44,10 +44,22 @@ describe('RetryingHttpClient', () => {
       new URL('https://example.test/x')
     );
     expect(result).toEqual({ ok: 2 });
-    // Both landed responses are counted: an error response from the upstream still
-    // consumed quota, so onRequestCounted fires on the 503 AND the 200.
+    // Both attempts are counted because an upstream error response still
+    // consumed quota.
     expect(onRequestCounted).toHaveBeenCalledTimes(2);
     expect(globalThis.fetch).toHaveBeenCalledTimes(2);
+  });
+
+  it('counts attempts when fetch rejects before receiving a response', async () => {
+    const onRequestCounted = vi.fn();
+    vi.mocked(globalThis.fetch).mockRejectedValue(new Error('getaddrinfo ENOTFOUND'));
+
+    await expect(
+      makeClient(onRequestCounted).request(new URL('https://example.test/x'))
+    ).rejects.toThrow('getaddrinfo ENOTFOUND');
+
+    expect(globalThis.fetch).toHaveBeenCalledTimes(3);
+    expect(onRequestCounted).toHaveBeenCalledTimes(3);
   });
 
   it('throws API_UNAUTHORIZED and calls fetch exactly once on a 401 response', async () => {

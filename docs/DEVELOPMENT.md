@@ -9,7 +9,7 @@ the release process, see [maintainers/RELEASE.md](maintainers/RELEASE.md).
 
 ### Core Technologies
 
-#### TypeScript 6.0+
+#### TypeScript 7.0+
 - **Purpose**: Primary development language with strict type safety
 - **Configuration**: [`tsconfig.json`](../tsconfig.json)
 - **Features Used**:
@@ -89,7 +89,7 @@ export default function createPlugin(app: ServerAPI): Plugin {
 
 ### Code Quality
 
-#### Biome 2.4+
+#### Biome 2.5+
 - **Purpose**: Modern, fast linting and formatting (replaces ESLint + Prettier)
 - **Configuration**: [`biome.json`](../biome.json)
 - **Features**:
@@ -125,6 +125,13 @@ export default function createPlugin(app: ServerAPI): Plugin {
   - Watch mode for development
   - UI mode for interactive testing
   - Parallel test execution
+
+#### Playwright 1.61+
+- **Purpose**: Real-browser checks for configuration-panel interaction and
+  responsive layout
+- **Configuration**: [`vitest.browser.config.ts`](../vitest.browser.config.ts)
+- **Browser**: Chromium, using `CHROMIUM_PATH`, `/usr/bin/chromium`, or the
+  browser installed by Playwright
 
 **Test Coverage Requirements:** 80% for branches, functions, lines, and statements.
 
@@ -353,6 +360,8 @@ npm run clean              # Remove build artifacts
 npm run test               # Run all tests once (registry/CI safe)
 npm run test:watch         # Run tests in watch mode
 npm run test:run           # Run all tests once (alias of test, used by validate)
+npm run test:browser       # Run focused panel tests in headless Chromium
+npm run screenshots:panel  # Refresh packaged panel screenshots from current UI code
 npm run test:coverage      # Generate coverage report
 npm run test:ui            # Interactive test UI
 npm run mutation-test      # Stryker.js mutation-test pass (slow, opt-in; not in CI)
@@ -390,9 +399,11 @@ process, coding standards, and commit conventions.
 ## Testing Strategy
 
 The suite covers unit behavior, service integration, calculation accuracy,
-edge and boundary conditions, and error handling. **Total: 576 tests** across
-44 test files. (`npm test` prints the current totals; the `vitest.config.ts`
-coverage gate holds at 80% for branches, functions, lines, and statements.)
+edge and boundary conditions, error handling, and real-browser panel behavior.
+**Total: 592 tests** across 46 test files, including 590 Node.js tests and 2
+Chromium tests. (`npm test` and `npm run test:browser` print the current totals;
+the `vitest.config.ts` coverage gate holds at 80% for branches, functions,
+lines, and statements.)
 
 Coverage spans these areas:
 
@@ -423,6 +434,8 @@ Coverage spans these areas:
   per-band message format, and the `MAX_MESSAGE_LENGTH` ceiling.
 - **Integration**: an end-to-end smoke against a stubbed `global.fetch`
   (happy-path delta shape, 429 retry, 401 unauthorized).
+- **Browser UI**: number-field validation and narrow-display overflow in a real
+  Chromium rendering engine.
 
 ### Running Specific Tests
 
@@ -430,6 +443,7 @@ Coverage spans these areas:
 npx vitest run src/__tests__/calculators/WindCalculator.test.ts   # one file
 npx vitest run -t "wind calculations"                              # by pattern
 npm run test:ui                                                    # UI mode
+npm run test:browser                                               # Chromium panel checks
 ```
 
 ## Performance Considerations
@@ -473,7 +487,7 @@ This plugin adheres to the [Signal K 1.8.2 specification](https://signalk.org/sp
 | Source Metadata | Yes | Per-provider `$source` (`SourceRef` brand) on every update: each provider declares its own `sourceRef` (`open-meteo` by default, `met-no`, `accuweather`, or `vws-merged` in merge mode), with `open-meteo-marine` on the sea-state deltas |
 | Meta | Yes | One-shot meta delta on plugin start (`NMEA2000PathMapper.buildMetaDelta()`) describing units and labels for non-canonical paths |
 | Status Reporting | Yes | `app.setPluginStatus` / `app.setPluginError`. Live banner string from `WeatherService.formatStatusBanner()`: `Running, last update Nm ago (N updates, K API requests, K/Q today)`, with a `Running [quota 90% used]` warning prefix and a `setPluginError` quota-exhausted state. `emitWeatherTick` re-pushes the banner on every fresh tick so the age and quota counters stay current. A `setBanner()` dedupe layer coalesces consecutive identical `(kind, message)` pushes to a single SK call. |
-| Notifications | Yes | Opt-in `notifications.environment.*` deltas per SK 1.8.2 notifications.html. 11 distinct hazard paths (`wind.gale|storm|hurricane`, `visibility.low|veryLow`, `heat.caution|high|extreme`, `cold.caution|extreme`, `weather.severe`). Value shape `{ state, method, message, timestamp }`. Transition state machine in `WeatherNotifier`: a band is emitted only on entry / exit, so unchanged snapshots never write to the bus. The one exception is the first evaluation after a plugin start or reset, which emits every enabled band's current state (including `normal`) once, so a hazard latched by a previous plugin instance clears after a restart. N2K Alert PGN 126983 / 126985 bridging requires the separate `signalk-to-nmea2000` plugin. |
+| Notifications | Yes | Opt-in `notifications.environment.*` deltas per SK 1.8.2 notifications.html. 11 distinct hazard paths (`wind.gale|storm|hurricane`, `visibility.low|veryLow`, `heat.caution|high|extreme`, `cold.caution|extreme`, `weather.severe`). Value shape `{ state, method, message, timestamp }`. Transition state machine in `WeatherNotifier`: a band is emitted only on entry or exit, so unchanged snapshots never write to the bus. The first evaluation after a plugin start or reset emits every owned path once, using `normal` for disabled or inactive bands. Category disable and plugin stop also clear owned paths. N2K Alert PGN 126983 / 126985 bridging requires the separate `signalk-to-nmea2000` plugin. |
 | `handleMessage` versioning | Yes | `app.handleMessage(id, delta, SKVersion.v1)` |
 | Logging channel separation | Yes | `debug` and `info` go through `app.debug` (gated by the server's `DEBUG=signalk-virtual-weather-sensors` setting); `warn` and `error` go through `app.error` so they surface in production logs without enabling DEBUG (see `createLogger` in `src/plugin/logging.ts`). `app.setPluginError` is reserved for the Admin UI status banner, separate from log output. |
 

@@ -21,12 +21,12 @@ const provider: ForecastCapableProvider = {
   getHourlyForecast: vi.fn(
     async () =>
       [
-        { date: 'h1', type: 'point' },
-        { date: 'h2', type: 'point' },
-        { date: 'h3', type: 'point' },
+        { date: '2026-06-17T12:00:00Z', type: 'point' },
+        { date: '2026-06-17T13:00:00Z', type: 'point' },
+        { date: '2026-06-17T14:00:00Z', type: 'point' },
       ] as never
   ),
-  getDailyForecast: vi.fn(async () => [{ date: 'd1', type: 'daily' }] as never),
+  getDailyForecast: vi.fn(async () => [{ date: '2026-06-18T00:00:00Z', type: 'daily' }] as never),
 };
 
 describe('WeatherProviderAdapter', () => {
@@ -51,6 +51,57 @@ describe('WeatherProviderAdapter', () => {
     const p = new WeatherProviderAdapter(provider).toProvider();
     const result = await p.methods.getForecasts(position, 'point', { maxCount: 2 });
     expect(result).toHaveLength(2);
+  });
+
+  it('orders forecasts ascending before applying maxCount', async () => {
+    const reversedProvider = {
+      ...provider,
+      getHourlyForecast: vi.fn(
+        async () =>
+          [
+            { date: '2026-06-17T14:00:00Z', type: 'point' },
+            { date: '2026-06-17T12:00:00Z', type: 'point' },
+            { date: '2026-06-17T13:00:00Z', type: 'point' },
+          ] as never
+      ),
+    };
+    const p = new WeatherProviderAdapter(reversedProvider).toProvider();
+    const result = await p.methods.getForecasts(position, 'point', { maxCount: 2 });
+    expect(result.map((entry) => entry.date)).toEqual([
+      '2026-06-17T12:00:00Z',
+      '2026-06-17T13:00:00Z',
+    ]);
+  });
+
+  it('honors startDate and a zero maxCount', async () => {
+    const p = new WeatherProviderAdapter(provider).toProvider();
+    const filtered = await p.methods.getForecasts(position, 'point', {
+      startDate: '2026-06-17T13:00:00Z',
+    });
+    expect(filtered.map((entry) => entry.date)).toEqual([
+      '2026-06-17T13:00:00Z',
+      '2026-06-17T14:00:00Z',
+    ]);
+    await expect(p.methods.getForecasts(position, 'point', { maxCount: 0 })).resolves.toEqual([]);
+  });
+
+  it('rejects unsupported custom options and invalid positions', async () => {
+    const p = new WeatherProviderAdapter(provider).toProvider();
+    await expect(
+      p.methods.getForecasts(position, 'point', { custom: { units: 'imperial' } })
+    ).rejects.toThrow('Not supported!');
+    await expect(p.methods.getObservations({ latitude: 91, longitude: 0 })).rejects.toThrow(
+      'Invalid weather request position'
+    );
+  });
+
+  it('rejects invalid provider record dates', async () => {
+    const invalidProvider = {
+      ...provider,
+      getHourlyForecast: vi.fn(async () => [{ date: 'not-a-date', type: 'point' }] as never),
+    };
+    const p = new WeatherProviderAdapter(invalidProvider).toProvider();
+    await expect(p.methods.getForecasts(position, 'point')).rejects.toThrow('invalid date');
   });
 
   it('maps daily forecasts via the provider getDailyForecast', async () => {

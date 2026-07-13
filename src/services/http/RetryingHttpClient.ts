@@ -5,7 +5,7 @@
  * retry, exponential backoff, and Retry-After honoring an upstream with a strict
  * quota and intermittent 429/503 responses needs. Generic over the response
  * shape and free of any provider-specific identifier: the caller supplies the
- * URL, the timeout, retry budget, User-Agent, and an optional per-landed-response
+ * URL, the timeout, retry budget, User-Agent, and an optional per-attempt
  * counting hook. Error messages are tagged with the same `ERROR_CODES` substrings
  * the rest of the plugin classifies on.
  */
@@ -41,7 +41,7 @@ export interface RetryingHttpClientOptions {
   readonly retryDelayMs: number;
   /** `User-Agent` header sent on every request. */
   readonly userAgent: string;
-  /** Called once per landed response (success or error status), for quota counting. */
+  /** Called once before every fetch attempt, for conservative quota counting. */
   readonly onRequestCounted?: () => void;
   /** Logger for debug and warn lines; defaults to a no-op. */
   readonly logger?: Logger;
@@ -93,6 +93,12 @@ export class RetryingHttpClient {
         maxAttempts: this.retryAttempts,
       });
 
+      // Count before dispatch. A request that reaches the provider but times
+      // out before headers still consumes quota, and cannot be distinguished
+      // from a local transport failure after fetch rejects. Conservative
+      // counting prevents retries from exceeding the configured cap.
+      this.onRequestCounted();
+
       const response = await fetch(url.toString(), {
         method: 'GET',
         headers: {
@@ -101,13 +107,6 @@ export class RetryingHttpClient {
         },
         signal: controller.signal,
       });
-
-      // Counted after the response lands so timeouts and network errors do
-      // not consume quota (an upstream quota typically only charges for requests
-      // that reach the service). Error responses (401, 403, 429, 503) still
-      // count because they came back from the upstream. Off the emission hot
-      // path: at most once per fetch, default cadence 30 minutes.
-      this.onRequestCounted();
 
       if (!response.ok) {
         await this.handleApiError(response, attempt);

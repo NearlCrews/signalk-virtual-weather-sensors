@@ -201,12 +201,28 @@ describe('SignalKService', () => {
           value: Math.PI,
           timestamp: new Date().toISOString(),
         },
+        'navigation.magneticVariation': {
+          value: 0.2,
+          timestamp: new Date().toISOString(),
+        },
       });
 
       const service = new SignalKService(mockApp as never, mockLogger);
       const course = service.getVesselCourseOverGroundTrue();
 
-      expect(course).toBe(Math.PI);
+      expect(course).toBeCloseTo(Math.PI + 0.2, 6);
+    });
+
+    it('does not label a magnetic course as true without variation', () => {
+      const mockApp = createMockApp({
+        'navigation.courseOverGroundMagnetic': {
+          value: Math.PI,
+          timestamp: new Date().toISOString(),
+        },
+      });
+
+      const service = new SignalKService(mockApp as never, mockLogger);
+      expect(service.getVesselCourseOverGroundTrue()).toBeNull();
     });
 
     it('should fallback to heading true', () => {
@@ -473,6 +489,27 @@ describe('SignalKService', () => {
       expect(age).not.toBeNull();
       expect(age).toBeGreaterThanOrEqual(0);
       expect(age).toBeLessThan(5);
+    });
+
+    it('uses the source measurement timestamp and rejects stale navigation data', () => {
+      const staleTimestamp = new Date(Date.now() - 31_000).toISOString();
+      const mockApp = createMockApp({
+        'navigation.position': {
+          value: { latitude: 37.0, longitude: -122.0 },
+          timestamp: staleTimestamp,
+        },
+      });
+
+      const service = new SignalKService(mockApp as never, mockLogger);
+      const data = service.getVesselNavigationData();
+
+      expect(data.position).toBeUndefined();
+      expect(data.dataAge).toBeUndefined();
+      expect(mockLogger).toHaveBeenCalledWith(
+        'warn',
+        expect.stringContaining('stale or future'),
+        expect.objectContaining({ timestamp: staleTimestamp })
+      );
     });
   });
 

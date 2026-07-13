@@ -58,8 +58,20 @@ describe('mapNwsAlertsToWarnings', () => {
     // is later than 09:00+01:00 (08:00Z).
     const warnings = mapNwsAlertsToWarnings({
       features: [
-        { properties: { event: 'Later', onset: '2026-06-17T12:00:00-05:00' } },
-        { properties: { event: 'Earlier', onset: '2026-06-17T09:00:00+01:00' } },
+        {
+          properties: {
+            event: 'Later',
+            onset: '2026-06-17T12:00:00-05:00',
+            ends: '2026-06-17T19:00:00-05:00',
+          },
+        },
+        {
+          properties: {
+            event: 'Earlier',
+            onset: '2026-06-17T09:00:00+01:00',
+            ends: '2026-06-17T12:00:00+01:00',
+          },
+        },
       ],
     });
     expect(warnings.map((w) => w.type)).toEqual(['Earlier', 'Later']);

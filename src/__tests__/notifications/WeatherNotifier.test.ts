@@ -64,10 +64,12 @@ function readValue(pv: { value: unknown }): NotificationValue {
 }
 
 describe('WeatherNotifier: master enable', () => {
-  it('emits nothing when notifications.enabled is false', () => {
+  it('clears every owned path once when notifications.enabled is false', () => {
     const notifier = makeNotifier({ enabled: false });
     const out = notifier.evaluate(snapshot({ beaufortScale: 12 }));
-    expect(out).toEqual([]);
+    expect(out).toHaveLength(Object.keys(NOTIFICATION_PATHS).length);
+    expect(out.every((entry) => readValue(entry).state === 'normal')).toBe(true);
+    expect(notifier.evaluate(snapshot({ beaufortScale: 12 }))).toEqual([]);
   });
 
   it('emits when notifications.enabled is true and a band is active', () => {
@@ -202,10 +204,12 @@ describe('WeatherNotifier: severe condition (WeatherIcon)', () => {
 });
 
 describe('WeatherNotifier: per-category toggles', () => {
-  it('does not emit wind notifications when wind is disabled', () => {
+  it('clears wind notifications when wind is disabled', () => {
     const notifier = makeNotifier({ wind: false });
     const out = notifier.evaluate(snapshot({ beaufortScale: 12 }));
-    expect(out.find((pv) => pv.path.startsWith('notifications.environment.wind.'))).toBeUndefined();
+    const wind = out.filter((pv) => pv.path.startsWith('notifications.environment.wind.'));
+    expect(wind).toHaveLength(3);
+    expect(wind.every((entry) => readValue(entry).state === 'normal')).toBe(true);
   });
 
   it('still emits other categories when only wind is disabled', () => {
@@ -214,7 +218,9 @@ describe('WeatherNotifier: per-category toggles', () => {
       snapshot({ beaufortScale: 12, visibility: 500, heatStressIndex: 4 })
     );
     const paths = out.map((pv) => pv.path);
-    expect(paths).not.toContain(NOTIFICATION_PATHS.WIND_GALE);
+    const gale = out.find((pv) => pv.path === NOTIFICATION_PATHS.WIND_GALE);
+    if (!gale) throw new Error('expected a wind clearing normal');
+    expect(readValue(gale).state).toBe('normal');
     expect(paths).toContain(NOTIFICATION_PATHS.VISIBILITY_LOW);
     expect(paths).toContain(NOTIFICATION_PATHS.HEAT_EXTREME);
   });
@@ -295,9 +301,20 @@ describe('WeatherNotifier: restart clearing (unprimed first evaluate)', () => {
     expect(readValue(gale).state).toBe('normal');
   });
 
-  it('emits nothing, even unprimed, when the master switch is off', () => {
+  it('emits clearing normals, even unprimed, when the master switch is off', () => {
     const notifier = makeNotifier({ enabled: false });
-    expect(notifier.evaluate(snapshot({}))).toEqual([]);
+    const out = notifier.evaluate(snapshot({}));
+    expect(out).toHaveLength(Object.keys(NOTIFICATION_PATHS).length);
+    expect(out.every((entry) => readValue(entry).state === 'normal')).toBe(true);
+  });
+
+  it('clearAll normalizes every path regardless of the active configuration', () => {
+    const notifier = makeNotifier({ wind: false, heat: false });
+    const out = notifier.clearAll();
+    expect(new Set(out.map((entry) => entry.path))).toEqual(
+      new Set(Object.values(NOTIFICATION_PATHS))
+    );
+    expect(out.every((entry) => readValue(entry).state === 'normal')).toBe(true);
   });
 });
 

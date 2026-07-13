@@ -248,9 +248,21 @@ export function validateConfiguration(config: Partial<PluginConfiguration>): Val
     config.weatherProvider,
     (config.accuWeatherApiKey ?? '').trim().length > 0
   );
+  const mode = resolveWeatherMode(config.weatherMode);
+  const mergeProviders = resolveMergeProviders(config.mergeProviders, provider);
+  const hasApiKey = (config.accuWeatherApiKey ?? '').trim().length > 0;
   validateWeatherProvider(config, errors);
   validateModeAndMergeProviders(config, warnings);
-  validateApiKey(config, provider, errors, warnings);
+  if (mode === 'single') {
+    validateApiKey(config, provider, errors, warnings);
+  } else {
+    const keyedProvider = mergeProviders.find(providerRequiresApiKey);
+    if (keyedProvider && hasApiKey) {
+      validateApiKey(config, keyedProvider, errors, warnings);
+    } else if (keyedProvider) {
+      warnings.push('AccuWeather will be excluded from merged mode until a valid API key is set');
+    }
+  }
   validateOpenMeteoBaseUrl(config, errors);
   for (const rule of NUMERIC_CONFIG_RULES) {
     validateNumericConfigField(config, rule, errors, warnings);

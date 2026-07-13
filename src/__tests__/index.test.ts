@@ -59,6 +59,7 @@ vi.mock('../services/WeatherService.js', () => {
 vi.mock('../notifications/WeatherNotifier.js', () => {
   class StubWeatherNotifier {
     public evaluate = vi.fn(() => []);
+    public clearAll = vi.fn(() => []);
     public reset = vi.fn();
     public getActiveCount = vi.fn(() => 0);
   }
@@ -69,7 +70,13 @@ vi.mock('../mappers/NMEA2000PathMapper.js', () => {
   class StubPathMapper {
     public mapToSignalKPaths = vi.fn(() => ({
       context: 'vessels.self',
-      updates: [{ values: [{ path: 'environment.outside.temperature', value: 283.15 }] }],
+      updates: [
+        {
+          timestamp: '2026-07-13T12:00:00.000Z',
+          $source: 'accuweather',
+          values: [{ path: 'environment.outside.temperature', value: 283.15 }],
+        },
+      ],
     }));
     public buildMetaDelta = vi.fn(() => ({
       context: 'vessels.self',
@@ -251,6 +258,25 @@ describe('plugin entry: meta delta is shipped exactly once per lifetime', () => 
 
     await plugin.stop();
   });
+
+  it('preserves the provider observation timestamp across cached rebroadcasts', async () => {
+    stubState.getCurrentWeatherData = () => ({ temperature: 283.15 });
+    const app = buildMockApp();
+    const plugin = createPlugin(app as never);
+
+    await plugin.start(baseSettings, () => {});
+    await vi.advanceTimersByTimeAsync(3500);
+
+    const valueUpdates = app.handleMessage.mock.calls
+      .map((call) => call[1]?.updates?.[0])
+      .filter((update) => Array.isArray(update?.values));
+    expect(valueUpdates.length).toBeGreaterThanOrEqual(3);
+    expect(new Set(valueUpdates.map((update) => update.timestamp))).toEqual(
+      new Set(['2026-07-13T12:00:00.000Z'])
+    );
+
+    await plugin.stop();
+  });
 });
 
 describe('plugin entry: emission-tick error branches (O6)', () => {
@@ -288,7 +314,7 @@ describe('plugin entry: emission-tick error branches (O6)', () => {
     );
     expect(staleCalls.length).toBe(1);
     expect(String(staleCalls[0]?.[0])).toContain('15 minutes ago');
-    // Stale data must not keep broadcasting with fresh timestamps.
+    // Stale data must not keep broadcasting.
     expect(app.handleMessage).not.toHaveBeenCalled();
 
     await plugin.stop();

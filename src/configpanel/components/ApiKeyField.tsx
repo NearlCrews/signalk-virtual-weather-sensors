@@ -1,5 +1,5 @@
 import type * as React from 'react';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { API_KEY_MIN_LENGTH, validateKeyLength } from '../../constants/notifications-shared.js';
 import { fetchJson, toErrorText } from '../api-base.js';
 import { S } from '../styles.js';
@@ -17,6 +17,19 @@ interface Props {
   onChange: (next: string) => void;
 }
 
+async function requestKeyTest(apiKey: string, signal: AbortSignal): Promise<TestState> {
+  const { ok, status, body } = await fetchJson('/test-key', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ apiKey }),
+    signal,
+  });
+  const data = (body ?? {}) as { ok?: boolean; message?: string };
+  return ok && data.ok
+    ? { state: 'ok', message: data.message || 'API key works.' }
+    : { state: 'error', message: data.message || `Test failed (HTTP ${status}).` };
+}
+
 /**
  * API key input with an inline Test button. Testing POSTs the candidate key
  * to /api/test-key (one AccuWeather call per click); the result renders in a
@@ -27,6 +40,14 @@ export default function ApiKeyField({ value, keyError, onChange }: Props): React
   // `state` is always paired with a `message`, so one object eliminates a
   // class of bugs where the two get out of sync between setters.
   const [testKey, setTestKey] = useState<TestState>({ state: null, message: '' });
+  const controllerRef = useRef<AbortController | null>(null);
+
+  useEffect(
+    () => () => {
+      controllerRef.current?.abort();
+    },
+    []
+  );
 
   const doTestKey = async (): Promise<void> => {
     const trimmed = value.trim();
@@ -35,27 +56,21 @@ export default function ApiKeyField({ value, keyError, onChange }: Props): React
       setTestKey({ state: 'error', message: keyLengthError });
       return;
     }
+    controllerRef.current?.abort();
+    const controller = new AbortController();
+    controllerRef.current = controller;
     setTestKey({ state: 'pending', message: 'Testing key against AccuWeather...' });
     try {
-      const { ok, status, body } = await fetchJson('/test-key', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ apiKey: trimmed }),
-      });
-      const data = (body ?? {}) as { ok?: boolean; message?: string };
-      if (ok && data.ok) {
-        setTestKey({ state: 'ok', message: data.message || 'API key works.' });
-      } else {
-        setTestKey({
-          state: 'error',
-          message: data.message || `Test failed (HTTP ${status}).`,
-        });
-      }
+      const result = await requestKeyTest(trimmed, controller.signal);
+      if (!controller.signal.aborted) setTestKey(result);
     } catch (err) {
+      if (controller.signal.aborted) return;
       setTestKey({
         state: 'error',
         message: `Network error: ${toErrorText(err)}`,
       });
+    } finally {
+      if (controllerRef.current === controller) controllerRef.current = null;
     }
   };
 
@@ -75,6 +90,7 @@ export default function ApiKeyField({ value, keyError, onChange }: Props): React
           placeholder="paste your AccuWeather developer API key"
           value={value}
           onChange={(e) => {
+            controllerRef.current?.abort();
             onChange(e.target.value);
             // A result describes the key it was produced for; a new key
             // invalidates it.

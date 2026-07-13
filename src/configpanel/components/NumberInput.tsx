@@ -1,6 +1,5 @@
 import type * as React from 'react';
 import { useState } from 'react';
-import { clampNumber } from '../api-base.js';
 import { S } from '../styles.js';
 
 interface Props {
@@ -16,8 +15,9 @@ interface Props {
 /**
  * Integer input that holds a raw-text draft while the user edits, so the
  * field can be cleared mid-edit instead of snapping back to a number on every
- * keystroke. Commits a clamped, truncated integer on blur or Enter; an
- * unparseable or empty draft reverts to the last committed value.
+ * keystroke. Commits a valid integer on blur or Enter and keeps an invalid
+ * draft visible with an inline explanation so the value is never changed
+ * silently.
  */
 export default function NumberInput({
   id,
@@ -28,14 +28,26 @@ export default function NumberInput({
   onChange,
 }: Props): React.ReactElement {
   const [draft, setDraft] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   const commit = (): void => {
     if (draft === null) return;
     const n = Number(draft);
-    if (draft.trim() !== '' && Number.isFinite(n)) {
-      onChange(clampNumber(Math.trunc(n), min, max));
+    if (draft.trim() === '' || !Number.isFinite(n)) {
+      setError(`Enter a whole number from ${min} to ${max}.`);
+      return;
     }
+    if (!Number.isInteger(n)) {
+      setError('Enter a whole number.');
+      return;
+    }
+    if (n < min || n > max) {
+      setError(`Enter a value from ${min} to ${max}.`);
+      return;
+    }
+    onChange(n);
     setDraft(null);
+    setError(null);
   };
 
   return (
@@ -47,7 +59,12 @@ export default function NumberInput({
         max={max}
         style={S.inputNumber}
         value={draft ?? String(value)}
-        onChange={(e) => setDraft(e.target.value)}
+        onChange={(e) => {
+          setDraft(e.target.value);
+          setError(null);
+        }}
+        aria-invalid={error !== null}
+        aria-describedby={error ? `${id}-error` : undefined}
         onBlur={commit}
         onKeyDown={(e) => {
           if (e.key === 'Enter') commit();
@@ -60,6 +77,11 @@ export default function NumberInput({
         }}
       />
       <span style={S.unitsHint}>{units}</span>
+      {error ? (
+        <span id={`${id}-error`} role="alert" style={S.fieldError}>
+          {error}
+        </span>
+      ) : null}
     </>
   );
 }

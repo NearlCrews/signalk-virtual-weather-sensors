@@ -1,7 +1,7 @@
 /**
  * Unit tests for WarningsService: region dispatch (NWS for US points, MetAlerts
- * for Norwegian-waters points, empty elsewhere with no network call), URL
- * construction, and best-effort behavior on a fetch failure.
+ * for Norwegian-waters points, explicit unsupported coverage elsewhere, URL
+ * construction, and explicit behavior on a fetch failure.
  */
 
 import { beforeEach, describe, expect, it, type Mock, vi } from 'vitest';
@@ -42,20 +42,18 @@ describe('WarningsService', () => {
     expect(url).toContain('api.weather.gov/alerts/active?point=25.7743,-80.1937');
   });
 
-  it('returns empty without a network call outside all covered regions', async () => {
+  it('reports unsupported coverage without a network call outside covered regions', async () => {
     const service = new WarningsService();
-    const warnings = await service.getWarnings(OPEN_OCEAN);
-    expect(warnings).toEqual([]);
+    await expect(service.getWarnings(OPEN_OCEAN)).rejects.toThrow('Not supported!');
     expect(global.fetch as Mock).not.toHaveBeenCalled();
   });
 
-  it('returns empty on a fetch failure (best-effort)', async () => {
+  it('reports an NWS fetch failure instead of returning a false clear', async () => {
     (global.fetch as Mock).mockResolvedValueOnce(
       createMockFetchResponse('err', { ok: false, status: 500 })
     );
     const service = new WarningsService();
-    const warnings = await service.getWarnings(MIAMI);
-    expect(warnings).toEqual([]);
+    await expect(service.getWarnings(MIAMI)).rejects.toThrow('NWS warnings unavailable');
   });
 
   it('fetches MetAlerts for a Norwegian-waters position and maps the result', async () => {
@@ -82,11 +80,12 @@ describe('WarningsService', () => {
     expect(headers['User-Agent']).toContain('github.com');
   });
 
-  it('returns an empty list when the MetAlerts fetch fails', async () => {
+  it('reports when the MetAlerts fetch fails', async () => {
     (global.fetch as Mock).mockRejectedValueOnce(new Error('network'));
     const svc = new WarningsService();
-    const warnings = await svc.getWarnings({ latitude: 62.5, longitude: 6.0 });
-    expect(warnings).toEqual([]);
+    await expect(svc.getWarnings({ latitude: 62.5, longitude: 6.0 })).rejects.toThrow(
+      'MET Norway warnings unavailable'
+    );
   });
 
   it('dispatches to MetAlerts at the inclusive SW corner of NORDIC_BOX', async () => {

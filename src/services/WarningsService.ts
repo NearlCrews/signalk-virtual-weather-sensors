@@ -4,10 +4,9 @@
  * There is no single free global alerts feed, so warnings are sourced by
  * region: NWS CAP for US waters (keyless, requires an identifying User-Agent),
  * and Met.no MetAlerts for Norwegian waters (keyless, same contact User-Agent
- * requirement). Points outside a covered region return an empty list, which is
- * honest rather than fabricating an alert. Every fetch is best-effort: a feed
- * outage or an edge point the feed does not cover yields [] (and a log line),
- * never a thrown error to the consumer.
+ * requirement). Unsupported regions and upstream failures are reported
+ * explicitly so consumers can distinguish unavailable warning coverage from a
+ * successful lookup that found no active warnings.
  */
 
 import type { WeatherWarning } from '@signalk/server-api';
@@ -52,7 +51,7 @@ export class WarningsService {
     this.requestTimeoutMs = options?.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS;
   }
 
-  /** Warnings for a position, dispatched by region. Empty list outside covered regions. */
+  /** Warnings for a position, dispatched by region. */
   public async getWarnings(location: GeoLocation): Promise<WeatherWarning[]> {
     if (this.inUsCoverage(location)) {
       return this.fetchNws(location);
@@ -60,7 +59,9 @@ export class WarningsService {
     if (this.inNordicCoverage(location)) {
       return this.fetchMetAlerts(location);
     }
-    return [];
+    throw new Error(
+      'Not supported! Weather warnings are currently available only in NWS and MET Norway coverage areas.'
+    );
   }
 
   private inBox(
@@ -81,7 +82,7 @@ export class WarningsService {
     return this.inBox(location, NORDIC_BOX);
   }
 
-  /** Fetch and map NWS active alerts, best-effort (empty on any failure). */
+  /** Fetch and map NWS active alerts. */
   private async fetchNws(location: GeoLocation): Promise<WeatherWarning[]> {
     const point = toCoordKey(location);
     const url = `https://api.weather.gov/alerts/active?point=${point}`;
@@ -92,15 +93,16 @@ export class WarningsService {
       });
       return mapNwsAlertsToWarnings(response);
     } catch (error) {
-      this.logger('warn', 'NWS warnings fetch failed; returning no warnings', {
+      const message = toErrorMessage(error);
+      this.logger('warn', 'NWS warnings fetch failed', {
         point,
-        error: toErrorMessage(error),
+        error: message,
       });
-      return [];
+      throw new Error(`NWS warnings unavailable: ${message}`, { cause: error });
     }
   }
 
-  /** Fetch and map Met.no MetAlerts active alerts, best-effort (empty on any failure). */
+  /** Fetch and map Met.no MetAlerts active alerts. */
   private async fetchMetAlerts(location: GeoLocation): Promise<WeatherWarning[]> {
     const lat = location.latitude.toFixed(4);
     const lon = location.longitude.toFixed(4);
@@ -112,11 +114,12 @@ export class WarningsService {
       });
       return mapMetAlertsToWarnings(response);
     } catch (error) {
-      this.logger('warn', 'MetAlerts warnings fetch failed; returning no warnings', {
+      const message = toErrorMessage(error);
+      this.logger('warn', 'MetAlerts warnings fetch failed', {
         point: `${lat},${lon}`,
-        error: toErrorMessage(error),
+        error: message,
       });
-      return [];
+      throw new Error(`MET Norway warnings unavailable: ${message}`, { cause: error });
     }
   }
 }

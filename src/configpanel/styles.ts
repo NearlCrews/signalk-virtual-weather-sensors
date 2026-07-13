@@ -1,4 +1,5 @@
 import type { CSSProperties } from 'react';
+import { RESPONSIVE_STYLE } from './responsive.js';
 
 // Design tokens for the federated config panel.
 //
@@ -206,6 +207,7 @@ ${NIGHT_TOKENS}}
     transition: none;
   }
 }
+${RESPONSIVE_STYLE}
 `;
 
 // Shared bases for style pairs that differ only in a couple of declarations.
@@ -287,6 +289,7 @@ export const S = {
   card: {
     display: 'flex',
     alignItems: 'center',
+    flexWrap: 'wrap',
     gap: 14,
     padding: '14px 18px',
     background: 'var(--svws-surface)',
@@ -380,6 +383,8 @@ export const S = {
     fontWeight: 400,
     fontSize: 'var(--svws-font-small)',
     color: 'var(--svws-text-muted)',
+    overflowWrap: 'anywhere',
+    textAlign: 'right',
   },
   chevron: {
     display: 'inline-block',
@@ -414,6 +419,11 @@ export const S = {
   unitsHint: {
     fontSize: 'var(--svws-font-body)',
     color: 'var(--svws-text-muted)',
+  },
+  fieldError: {
+    flexBasis: '100%',
+    fontSize: 'var(--svws-font-small)',
+    color: 'var(--svws-danger-fg)',
   },
   help: {
     fontSize: 'var(--svws-font-small)',

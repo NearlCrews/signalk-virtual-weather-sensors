@@ -44,6 +44,10 @@ function str(value: unknown): string {
   return typeof value === 'string' ? value.trim() : '';
 }
 
+function isValidTimestamp(value: string): boolean {
+  return value.length > 0 && Number.isFinite(Date.parse(value));
+}
+
 /**
  * Sort warnings by ascending start time. Compares parsed epoch milliseconds
  * rather than the raw strings: NWS CAP timestamps carry a local UTC offset
@@ -81,7 +85,12 @@ export function mapNwsAlertsToWarnings(response: NwsAlertsResponse): WeatherWarn
         type: str(p.event),
       };
     })
-    .filter((warning) => warning.type.length > 0 && warning.startTime.length > 0);
+    .filter(
+      (warning) =>
+        warning.type.length > 0 &&
+        isValidTimestamp(warning.startTime) &&
+        isValidTimestamp(warning.endTime)
+    );
   return warnings.sort(byStartAscending);
 }
 
@@ -112,6 +121,11 @@ export function mapMetAlertsToWarnings(response: MetAlertsResponse): WeatherWarn
         type: str(p.eventAwarenessName) || str(p.event),
       };
     })
-    .filter((warning) => warning.type.length > 0 && warning.startTime.length > 0);
+    .filter(
+      (warning) =>
+        warning.type.length > 0 &&
+        isValidTimestamp(warning.startTime) &&
+        isValidTimestamp(warning.endTime)
+    );
   return warnings.sort(byStartAscending);
 }

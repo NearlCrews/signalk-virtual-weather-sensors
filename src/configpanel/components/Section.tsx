@@ -31,6 +31,7 @@ export default function Section({
     <div>
       <button
         type="button"
+        className="svws-section-header"
         style={S.sectionHeader}
         onClick={onToggle}
         aria-expanded={open}
@@ -44,7 +45,11 @@ export default function Section({
           ▸
         </span>
         {title}
-        {!open && summary ? <span style={S.sectionSummary}>{summary}</span> : null}
+        {!open && summary ? (
+          <span className="svws-section-summary" style={S.sectionSummary}>
+            {summary}
+          </span>
+        ) : null}
       </button>
       <div id={id} style={S.sectionBody} hidden={!open}>
         {children}

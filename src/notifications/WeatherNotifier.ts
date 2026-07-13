@@ -44,6 +44,9 @@ const VISUAL_ONLY: ReadonlyArray<NotificationMethod> = Object.freeze(['visual'])
 const VISUAL_AND_SOUND: ReadonlyArray<NotificationMethod> = Object.freeze(['visual', 'sound']);
 /** A resolved (`normal`) notification clears with no method: there is nothing to present. */
 const NO_METHODS: ReadonlyArray<NotificationMethod> = Object.freeze([]);
+const ALL_NOTIFICATION_PATHS: ReadonlyArray<string> = Object.freeze(
+  Object.values(NOTIFICATION_PATHS)
+);
 
 /**
  * Returns the appropriate `method` list for a given state. A `normal` (cleared)
@@ -383,15 +386,22 @@ export class WeatherNotifier {
    * notifier allocates nothing.
    */
   public evaluate(data: WeatherData): PathValue[] {
-    if (!this.config.enabled) return [];
+    if (!this.config.enabled) {
+      return this.primed ? [] : this.clearAll();
+    }
 
     const transitions: PathValue[] = [];
 
     if (this.config.wind) this.evaluateWind(data, transitions);
+    else this.clearBands(WIND_BANDS, transitions);
     if (this.config.visibility) this.evaluateVisibility(data, transitions);
+    else this.clearBands(VISIBILITY_BANDS, transitions);
     if (this.config.heat) this.evaluateHeat(data, transitions);
+    else this.clearBands(HEAT_BANDS, transitions);
     if (this.config.cold) this.evaluateCold(data, transitions);
+    else this.clearBands(COLD_BANDS, transitions);
     if (this.config.weather) this.evaluateSevereCondition(data, transitions);
+    else this.maybeTransition(NOTIFICATION_PATHS.WEATHER_SEVERE, 'normal', () => '', transitions);
 
     if (transitions.length > 0) {
       this.logger('info', 'Weather notifications transitioned', {
@@ -413,6 +423,28 @@ export class WeatherNotifier {
   public reset(): void {
     this.lastState.clear();
     this.primed = false;
+  }
+
+  /**
+   * Emit an explicit normal state for every path owned by this plugin. This is
+   * used on disable and stop so alarms cannot remain latched in the server's
+   * full model when their category is no longer evaluated.
+   */
+  public clearAll(): PathValue[] {
+    const transitions: PathValue[] = [];
+    for (const path of ALL_NOTIFICATION_PATHS) {
+      this.lastState.set(path, 'normal');
+      transitions.push(
+        pv(path, {
+          state: 'normal',
+          method: NO_METHODS,
+          message: '',
+          timestamp: new Date().toISOString(),
+        } satisfies NotificationValue)
+      );
+    }
+    this.primed = true;
+    return transitions;
   }
 
   /**
@@ -568,9 +600,8 @@ export class WeatherNotifier {
    * contain many paths in `normal` state, but `getActiveCount` still returns
    * 0 because it counts only non-normal entries. On the unprimed first
    * evaluate after a (re)start the leading `normal` IS emitted, clearing any
-   * notification a previous plugin instance left latched. Bands disabled in
-   * config are never evaluated, so a stale alarm on a band the operator
-   * disabled across the restart stays untouched by design.
+   * notification a previous plugin instance left latched. Disabled categories
+   * are explicitly evaluated as normal so configuration changes also clear them.
    *
    * The message producer and the transition timestamp are computed lazily so
    * the steady-state case allocates no strings.

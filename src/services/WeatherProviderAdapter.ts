@@ -18,6 +18,7 @@ import type {
 import { PLUGIN } from '../constants/index.js';
 import type { ForecastCapableProvider } from '../providers/WeatherProvider.js';
 import type { GeoLocation, Logger } from '../types/index.js';
+import { isValidCoordinates } from '../utils/conversions.js';
 import type { WarningsService } from './WarningsService.js';
 
 export class WeatherProviderAdapter {
@@ -46,31 +47,25 @@ export class WeatherProviderAdapter {
     options?: WeatherReqParams
   ): Promise<SKWeatherData[]> {
     this.logger('debug', 'Weather provider forecast request', { type });
-    const location: GeoLocation = { latitude: position.latitude, longitude: position.longitude };
+    const location = this.toLocation(position);
     const forecasts =
       type === 'daily'
         ? await this.provider.getDailyForecast(location)
         : await this.provider.getHourlyForecast(location);
 
-    // Only `maxCount` is honored: the provider interface exposes no offset or
-    // window parameter, so `options.startDate`/`custom` are not forwarded here
-    // rather than silently approximated.
-    const maxCount = options?.maxCount;
-    return typeof maxCount === 'number' && maxCount > 0 ? forecasts.slice(0, maxCount) : forecasts;
+    return this.applyOptions(forecasts, options, 'ascending');
   }
 
   private async getObservations(
     position: Position,
-    // `maxCount` is moot: this returns exactly one current observation, so there
-    // is nothing to cap.
-    _options?: WeatherReqParams
+    options?: WeatherReqParams
   ): Promise<SKWeatherData[]> {
     this.logger('debug', 'Weather provider observation request');
     // Honor the caller-supplied position (the endpoint passes an arbitrary
     // lat/lon, not the vessel position), fetching current conditions there.
-    const location: GeoLocation = { latitude: position.latitude, longitude: position.longitude };
+    const location = this.toLocation(position);
     // A single current observation; descending date order is trivially satisfied.
-    return [await this.provider.getObservation(location)];
+    return this.applyOptions([await this.provider.getObservation(location)], options, 'descending');
   }
 
   private async getWarnings(position: Position): Promise<WeatherWarning[]> {
@@ -82,8 +77,53 @@ export class WeatherProviderAdapter {
     }
     this.logger('debug', 'Weather provider warnings request');
     return this.warningsService.getWarnings({
-      latitude: position.latitude,
-      longitude: position.longitude,
+      ...this.toLocation(position),
     });
+  }
+
+  private toLocation(position: Position): GeoLocation {
+    if (!isValidCoordinates(position.latitude, position.longitude)) {
+      throw new Error('Invalid weather request position');
+    }
+    return { latitude: position.latitude, longitude: position.longitude };
+  }
+
+  private applyOptions(
+    records: SKWeatherData[],
+    options: WeatherReqParams | undefined,
+    order: 'ascending' | 'descending'
+  ): SKWeatherData[] {
+    if (options?.custom && Object.keys(options.custom).length > 0) {
+      throw new Error('Not supported! Custom weather request parameters are not supported.');
+    }
+
+    const datedRecords = records.map((record) => {
+      const timestampMs = Date.parse(record.date);
+      if (!Number.isFinite(timestampMs)) {
+        throw new Error('Weather provider returned a record with an invalid date');
+      }
+      return { record, timestampMs };
+    });
+    datedRecords.sort((a, b) =>
+      order === 'ascending' ? a.timestampMs - b.timestampMs : b.timestampMs - a.timestampMs
+    );
+
+    let filtered = datedRecords;
+    if (options?.startDate !== undefined) {
+      const startMs = Date.parse(options.startDate);
+      if (!Number.isFinite(startMs)) {
+        throw new Error('Invalid weather request startDate');
+      }
+      filtered = filtered.filter(({ timestampMs }) => timestampMs >= startMs);
+    }
+
+    if (options?.maxCount !== undefined) {
+      if (!Number.isInteger(options.maxCount) || options.maxCount < 0) {
+        throw new Error('Invalid weather request maxCount');
+      }
+      filtered = filtered.slice(0, options.maxCount);
+    }
+
+    return filtered.map(({ record }) => record);
   }
 }

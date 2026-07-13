@@ -899,7 +899,7 @@ describe('WeatherService - Fetch Skip and Error Escalation', () => {
     expect(service.getServiceStatus().updateCount).toBe(0);
   });
 
-  it('omits apparentWindAngle and falls back to true wind speed when SOG/COG/heading are absent', async () => {
+  it('omits apparent wind when SOG, COG, and heading are absent', async () => {
     const config = createTestConfig({ dailyApiQuota: 0 });
     // Position only: no speedOverGround, courseOverGroundTrue, or headingTrue.
     const positionOnlyVessel = {
@@ -923,10 +923,9 @@ describe('WeatherService - Fetch Skip and Error Escalation', () => {
     await service.forceUpdate();
 
     const data = service.getCurrentWeatherData();
-    // With no heading/course, the angle path is omitted entirely...
     expect(data?.apparentWindAngle).toBeUndefined();
-    // ...while the speed falls back to the true wind speed.
-    expect(data?.apparentWindSpeed).toBe(weatherData.windSpeed);
+    expect(data?.apparentWindSpeed).toBeUndefined();
+    expect(data?.apparentWindChill).toBeUndefined();
 
     await service.stop();
   });
@@ -967,10 +966,9 @@ describe('WeatherService - Fetch Skip and Error Escalation', () => {
 
     expect(mockWindCalculator.calculateWindAnalysis).toHaveBeenCalledTimes(1);
     const data = service.getCurrentWeatherData();
-    // Fallback: speed is the true wind speed, angle is the heading-derived value
-    // (normalizeAngle stub passes windDirection - heading = PI - 0 = PI through).
-    expect(data?.apparentWindSpeed).toBe(weatherData.windSpeed);
-    expect(data?.apparentWindAngle).toBe(weatherData.windDirection);
+    expect(data?.apparentWindSpeed).toBeUndefined();
+    expect(data?.apparentWindAngle).toBeUndefined();
+    expect(data?.apparentWindChill).toBeUndefined();
 
     await service.stop();
   });

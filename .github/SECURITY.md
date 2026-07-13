@@ -6,8 +6,8 @@ We actively support the following versions with security updates:
 
 | Version | Supported |
 | ------- | --------- |
-| 1.9.x   | Yes       |
-| < 1.9   | No        |
+| 1.12.x  | Yes       |
+| < 1.12  | No        |
 
 ## Reporting a Vulnerability
 
@@ -49,9 +49,10 @@ When using this plugin:
    logs and bug reports, and rotate it if exposed. The plugin masks the key
    in its own log output.
 3. **Network Security**: ensure your Signal K server is properly secured and
-   limit access to trusted networks. The plugin's panel endpoints
-   (`/api/status` and the rate-limited `/api/test-key`) are reachable by any
-   client that can reach the server.
+   limit access to trusted networks. The plugin's panel endpoints inherit
+   Signal K's admin protection for the `/plugins` route tree. If server
+   security is disabled, any client that can reach the server can also reach
+   these endpoints.
 4. **Access Control**: limit access to your Signal K admin interface.
 5. **Monitor Logs**: watch for unusual activity in the Signal K logs.
 
@@ -78,8 +79,12 @@ the only personal data any of them receives is the vessel's GPS coordinates:
   fetch current conditions; no API key is sent.
 - **Open-Meteo Marine** (optional, keyless): when the marine layer is enabled,
   receives only the vessel's coordinates for sea-state data; no API key is sent.
+- **Met.no Locationforecast** (optional, keyless): receives only the vessel's
+  coordinates for current conditions and forecasts; no API key is sent.
 - **NWS CAP warnings** (keyless): for US waters, receives only the vessel's
   coordinates to look up active alerts; no API key is sent.
+- **Met.no MetAlerts** (keyless): for Norwegian waters, receives only the
+  vessel's coordinates to look up active alerts; no API key is sent.
 - **AccuWeather** (optional, key-gated): when AccuWeather is the selected
   source, requests carry the configured API key and the vessel's GPS
   coordinates (to resolve the AccuWeather location for the current position).

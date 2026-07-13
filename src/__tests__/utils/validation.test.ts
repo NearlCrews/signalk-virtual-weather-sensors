@@ -415,4 +415,22 @@ describe('validateApiKey is capability-driven', () => {
     const r = validateConfiguration({ weatherProvider: 'open-meteo', accuWeatherApiKey: '' });
     expect(r.errors).not.toContain('AccuWeather API key is required');
   });
+  it('allows merged mode without a key and warns that AccuWeather is excluded', () => {
+    const r = validateConfiguration({
+      weatherMode: 'merged',
+      mergeProviders: ['open-meteo', 'accuweather'],
+      accuWeatherApiKey: '',
+    });
+    expect(r.isValid).toBe(true);
+    expect(r.warnings.some((warning) => warning.includes('excluded from merged mode'))).toBe(true);
+  });
+  it('rejects a malformed nonempty AccuWeather key in merged mode', () => {
+    const r = validateConfiguration({
+      weatherMode: 'merged',
+      mergeProviders: ['open-meteo', 'accuweather'],
+      accuWeatherApiKey: 'short',
+    });
+    expect(r.isValid).toBe(false);
+    expect(r.errors.some((error) => error.includes('too short'))).toBe(true);
+  });
 });

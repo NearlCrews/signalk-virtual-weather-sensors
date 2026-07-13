@@ -10,7 +10,11 @@ export default defineConfig({
     silent: false,
     // Keep test discovery inside the project's own src/: agent worktrees under
     // .claude/ carry their own src/__tests__ copies that would otherwise run.
-    exclude: [...configDefaults.exclude, '.claude/**'],
+    exclude: [
+      ...configDefaults.exclude,
+      '.claude/**',
+      'src/__tests__/configpanel/**/*.browser.test.tsx',
+    ],
     coverage: {
       provider: 'v8',
       reporter: ['text', 'json', 'html', 'lcov'],
