@@ -163,7 +163,9 @@ its migration notes before changing that version.
 ## Continuous integration
 
 - `ci.yml` runs the full release verification on Node 24.18 and a separate,
-  blocking type-check, test, and build lane on Node 20.18.
+  blocking type-check and production-build lane on the Node 20.18 runtime
+  floor. Current Vitest and Rolldown require Node 20.19 or newer, so tests run
+  on the supported development runtimes instead.
 - `plugin-ci.yml` pins the official Signal K reusable workflow and tests Node
   22 and 24, Signal K 2.24 and current, armv7, packaging, and installation.
 - `codeql.yml` runs the extended JavaScript and TypeScript query suite.

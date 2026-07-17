@@ -63,5 +63,6 @@ jobs:
         run: npm install --global npm@11.18.0
       - run: npm ci
       - run: npm run type-check
-      - run: npm run test:run
+      # Current Vitest and Rolldown require Node 20.19 or newer. Keep this lane
+      # focused on the package's exact Node 20.18 runtime floor.
       - run: npm run build

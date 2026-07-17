@@ -20,7 +20,7 @@ for (const path of workflowPaths) {
 
 const ci = await readFile('.github/workflows/ci.yml', 'utf8');
 if (!ci.includes('node-version: 20.18.0') || !ci.includes('npm run build')) {
-  failures.push('ci.yml must retain a blocking Node 20.18 build and test lane.');
+  failures.push('ci.yml must retain a blocking Node 20.18 type-check and build lane.');
 }
 
 const pluginCi = await readFile('.github/workflows/plugin-ci.yml', 'utf8');
