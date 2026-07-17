@@ -42,6 +42,9 @@ No configuration migration is required.
   metadata, status banners, URLs, and panel error responses at every log level.
 - Concurrent Met.no document requests and AccuWeather forecast cache misses
   now share one upstream request instead of spending duplicate calls.
+- The Signal K integration check now validates the package identity before
+  building request paths, preventing package metadata from redirecting its
+  smoke-test requests.
 
 ### Changed
 

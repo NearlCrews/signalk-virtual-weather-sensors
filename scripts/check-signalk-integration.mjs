@@ -1,9 +1,13 @@
 import { readFile } from 'node:fs/promises';
 
 const packageJson = JSON.parse(await readFile('package.json', 'utf8'));
+const pluginId = 'signalk-virtual-weather-sensors';
+if (packageJson.name !== pluginId) {
+  throw new Error(`Expected package.json name ${pluginId}.`);
+}
 const baseUrl = new URL(process.env.SIGNALK_URL ?? 'http://127.0.0.1:3000');
 const authorization = process.env.SIGNALK_AUTHORIZATION?.trim();
-const remotePath = `/${packageJson.name}/remoteEntry.js`;
+const remotePath = `/${pluginId}/remoteEntry.js`;
 const requestOptions = () => ({
   ...(authorization ? { headers: { Authorization: authorization } } : {}),
   signal: AbortSignal.timeout(10_000),
@@ -25,11 +29,11 @@ if (!pluginsResponse.ok) {
 }
 const plugins = await pluginsResponse.json();
 const installedPlugin = Array.isArray(plugins)
-  ? plugins.find((plugin) => plugin.packageName === packageJson.name)
+  ? plugins.find((plugin) => plugin.packageName === pluginId)
   : undefined;
-if (!installedPlugin) throw new Error(`Signal K did not load ${packageJson.name}.`);
+if (!installedPlugin) throw new Error(`Signal K did not load ${pluginId}.`);
 if (installedPlugin.data?.enabled !== true) {
-  throw new Error(`Signal K did not enable ${packageJson.name}.`);
+  throw new Error(`Signal K did not enable ${pluginId}.`);
 }
 for (const keyword of ['signalk-node-server-plugin', 'signalk-plugin-configurator']) {
   if (!installedPlugin.keywords?.includes(keyword)) {
@@ -38,7 +42,7 @@ for (const keyword of ['signalk-node-server-plugin', 'signalk-plugin-configurato
 }
 
 const statusResponse = await fetch(
-  new URL(`/plugins/${packageJson.name}/api/status`, baseUrl),
+  new URL(`/plugins/${pluginId}/api/status`, baseUrl),
   requestOptions()
 );
 if (!statusResponse.ok) {
