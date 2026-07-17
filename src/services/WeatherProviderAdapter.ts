@@ -22,6 +22,7 @@ import { isValidCoordinates } from '../utils/conversions.js';
 import type { WarningsService } from './WarningsService.js';
 
 export class WeatherProviderAdapter {
+  private readonly activeRequests = new Set<Promise<unknown>>();
   constructor(
     private readonly provider: ForecastCapableProvider,
     private readonly warningsService?: WarningsService,
@@ -34,11 +35,29 @@ export class WeatherProviderAdapter {
       name: this.provider.name,
       methods: {
         pluginId: PLUGIN.NAME,
-        getObservations: this.getObservations.bind(this),
-        getForecasts: this.getForecasts.bind(this),
-        getWarnings: this.getWarnings.bind(this),
+        getObservations: (...args) => this.track(this.getObservations(...args)),
+        getForecasts: (...args) => this.track(this.getForecasts(...args)),
+        getWarnings: (...args) => this.track(this.getWarnings(...args)),
       },
     };
+  }
+
+  public async waitForIdle(timeoutMs = 1000): Promise<void> {
+    if (this.activeRequests.size === 0) return;
+    let timeout: NodeJS.Timeout | undefined;
+    await Promise.race([
+      Promise.allSettled([...this.activeRequests]),
+      new Promise<void>((resolve) => {
+        timeout = setTimeout(resolve, timeoutMs);
+      }),
+    ]);
+    if (timeout) clearTimeout(timeout);
+  }
+
+  private track<T>(request: Promise<T>): Promise<T> {
+    this.activeRequests.add(request);
+    request.finally(() => this.activeRequests.delete(request)).catch(() => {});
+    return request;
   }
 
   private async getForecasts(
@@ -48,6 +67,10 @@ export class WeatherProviderAdapter {
   ): Promise<SKWeatherData[]> {
     this.logger('debug', 'Weather provider forecast request', { type });
     const location = this.toLocation(position);
+    this.validateOptions(options);
+    if (type !== 'daily' && type !== 'point') {
+      throw new Error('Invalid weather forecast type');
+    }
     const forecasts =
       type === 'daily'
         ? await this.provider.getDailyForecast(location)
@@ -64,6 +87,7 @@ export class WeatherProviderAdapter {
     // Honor the caller-supplied position (the endpoint passes an arbitrary
     // lat/lon, not the vessel position), fetching current conditions there.
     const location = this.toLocation(position);
+    this.validateOptions(options);
     // A single current observation; descending date order is trivially satisfied.
     return this.applyOptions([await this.provider.getObservation(location)], options, 'descending');
   }
@@ -93,10 +117,6 @@ export class WeatherProviderAdapter {
     options: WeatherReqParams | undefined,
     order: 'ascending' | 'descending'
   ): SKWeatherData[] {
-    if (options?.custom && Object.keys(options.custom).length > 0) {
-      throw new Error('Not supported! Custom weather request parameters are not supported.');
-    }
-
     const datedRecords = records.map((record) => {
       const timestampMs = Date.parse(record.date);
       if (!Number.isFinite(timestampMs)) {
@@ -125,5 +145,20 @@ export class WeatherProviderAdapter {
     }
 
     return filtered.map(({ record }) => record);
+  }
+
+  private validateOptions(options: WeatherReqParams | undefined): void {
+    if (options?.custom && Object.keys(options.custom).length > 0) {
+      throw new Error('Not supported! Custom weather request parameters are not supported.');
+    }
+    if (options?.startDate !== undefined && !Number.isFinite(Date.parse(options.startDate))) {
+      throw new Error('Invalid weather request startDate');
+    }
+    if (
+      options?.maxCount !== undefined &&
+      (!Number.isInteger(options.maxCount) || options.maxCount < 0)
+    ) {
+      throw new Error('Invalid weather request maxCount');
+    }
   }
 }

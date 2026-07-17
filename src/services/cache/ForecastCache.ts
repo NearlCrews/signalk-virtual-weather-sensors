@@ -15,6 +15,7 @@ interface CacheEntry {
 
 export class ForecastCache {
   private readonly cache = new Map<string, CacheEntry>();
+  private readonly inFlight = new Map<string, Promise<unknown>>();
   private readonly quotaReachedError: () => Error;
   private readonly logger: Logger;
 
@@ -47,6 +48,9 @@ export class ForecastCache {
       return cached.data as T;
     }
 
+    const existing = this.inFlight.get(key);
+    if (existing !== undefined) return existing as Promise<T>;
+
     if (quotaExhausted) {
       if (cached) {
         this.logger('warn', 'Quota reached, serving stale forecast', { key });
@@ -55,10 +59,15 @@ export class ForecastCache {
       throw this.quotaReachedError();
     }
 
-    const data = await fetcher();
-    this.cache.set(key, { data, expiresAt: now + ttlMs });
-    this.prune(now);
-    return data;
+    const request = fetcher()
+      .then((data) => {
+        this.cache.set(key, { data, expiresAt: now + ttlMs });
+        this.prune(now);
+        return data;
+      })
+      .finally(() => this.inFlight.delete(key));
+    this.inFlight.set(key, request);
+    return request;
   }
 
   /**

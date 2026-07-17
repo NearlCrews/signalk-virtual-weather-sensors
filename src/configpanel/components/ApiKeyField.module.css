@@ -1,0 +1,6 @@
+.result {
+  min-height: 1.25em;
+  margin: 0;
+  color: var(--snui-color-success);
+  font-size: 0.9em;
+}

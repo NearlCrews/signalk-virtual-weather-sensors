@@ -12,7 +12,7 @@
 import { PLUGIN } from '../constants/index.js';
 import { mapOpenMeteoMarineToMarineData } from '../mappers/OpenMeteoMarineMapper.js';
 import type { GeoLocation, Logger, MarineData, OpenMeteoMarineResponse } from '../types/index.js';
-import { toErrorMessage } from '../utils/conversions.js';
+import { isAbortError, toErrorMessage } from '../utils/conversions.js';
 import { DEFAULT_REQUEST_TIMEOUT_MS, fetchJson, normalizeBaseUrl } from '../utils/http.js';
 import { assertValidCoordinates } from '../utils/validation.js';
 
@@ -39,6 +39,7 @@ export interface OpenMeteoMarineOptions {
   readonly baseUrl?: string;
   /** Override the per-request timeout in milliseconds. */
   readonly requestTimeoutMs?: number;
+  readonly signal?: AbortSignal | undefined;
 }
 
 export class OpenMeteoMarineService {
@@ -46,11 +47,13 @@ export class OpenMeteoMarineService {
   private readonly baseUrl: string;
   private readonly requestTimeoutMs: number;
   private requestCount = 0;
+  private readonly signal: AbortSignal | undefined;
 
   constructor(logger: Logger = () => {}, options?: OpenMeteoMarineOptions) {
     this.logger = logger;
     this.baseUrl = normalizeBaseUrl(options?.baseUrl, DEFAULT_BASE_URL);
     this.requestTimeoutMs = options?.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS;
+    this.signal = options?.signal;
     this.logger('info', 'OpenMeteoMarineService initialized', { baseUrl: this.baseUrl });
   }
 
@@ -63,6 +66,7 @@ export class OpenMeteoMarineService {
       const response = await fetchJson<OpenMeteoMarineResponse>(url, {
         timeoutMs: this.requestTimeoutMs,
         headers: { 'User-Agent': `${PLUGIN.NAME}/${PLUGIN.VERSION}` },
+        signal: this.signal,
       });
       const marine = mapOpenMeteoMarineToMarineData(response);
       this.logger('debug', 'Open-Meteo marine retrieved', {
@@ -71,6 +75,10 @@ export class OpenMeteoMarineService {
       });
       return marine;
     } catch (error) {
+      if (isAbortError(error)) {
+        this.requestCount--;
+        throw error;
+      }
       // Log at debug, not error: the marine layer is best-effort, and the
       // orchestrator (WeatherService.refreshMarineData) surfaces the single
       // operator-facing `warn`. This line just adds the request location for

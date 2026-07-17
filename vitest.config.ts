@@ -8,8 +8,9 @@ export default defineConfig({
     setupFiles: ['./src/__tests__/setup.ts'],
     passWithNoTests: false,
     silent: false,
-    // Keep test discovery inside the project's own src/: agent worktrees under
-    // .claude/ carry their own src/__tests__ copies that would otherwise run.
+    // Keep unit discovery inside src/. Playwright owns tests/browser/, and
+    // agent worktrees under .claude/ may carry their own test copies.
+    include: ['src/**/*.test.{ts,tsx}'],
     exclude: [
       ...configDefaults.exclude,
       '.claude/**',

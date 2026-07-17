@@ -1,0 +1,15 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "rootDir": ".",
+    "jsx": "react-jsx",
+    "lib": ["DOM", "DOM.Iterable", "ES2023"],
+    "types": ["node", "react", "react-dom", "vite/client"],
+    "declaration": false,
+    "declarationMap": false,
+    "sourceMap": false,
+    "noEmit": true
+  },
+  "include": ["fixtures/browser/**/*.ts", "fixtures/browser/**/*.tsx", "tests/browser/**/*.ts"],
+  "exclude": ["node_modules", "dist", "public"]
+}

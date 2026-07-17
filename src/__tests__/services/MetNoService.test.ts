@@ -52,7 +52,7 @@ describe('MetNoService', () => {
     expect(svc.sourceRef).toBe('met-no');
     expect(svc.getRequestCount()).toBe(1);
     expect(svc.getRequestCountLast24h()).toBe(0);
-    expect(svc.getCacheStats().size).toBe(0);
+    expect(svc.getCacheStats().size).toBe(1);
   });
 });
 
@@ -121,6 +121,19 @@ describe('MetNoService v2 capability', () => {
     expect(hourly[0]?.type).toBe('point');
     expect(daily[0]?.type).toBe('daily');
     // Three v2 calls at the same position share one upstream fetch (the document memo).
+    expect((global.fetch as Mock).mock.calls).toHaveLength(1);
+    expect(svc.getRequestCount()).toBe(1);
+  });
+  it('coalesces concurrent current and v2 requests for the same position', async () => {
+    (global.fetch as Mock).mockResolvedValue(createMockFetchResponse(FORECAST_SAMPLE));
+    const svc = new MetNoService(() => {});
+    const position = { latitude: 60, longitude: 11 };
+    await Promise.all([
+      svc.fetchCurrentWeather(position),
+      svc.getObservation(position),
+      svc.getHourlyForecast(position),
+      svc.getDailyForecast(position),
+    ]);
     expect((global.fetch as Mock).mock.calls).toHaveLength(1);
     expect(svc.getRequestCount()).toBe(1);
   });

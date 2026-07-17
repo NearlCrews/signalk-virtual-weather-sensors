@@ -18,28 +18,27 @@ service; AccuWeather is an optional source for users who have an API key.
 > for safety-of-life decisions: always cross-check official forecasts and
 > warnings against your primary instruments.
 
-## What's new in 1.12.0
+## What's new in 1.13.0
 
-Signal K correctness, safer provider and notification behavior, a smoother
-configuration panel, and a fully current TypeScript 7 development toolchain.
+Shared panel components, more resilient provider failover, durable quota
+controls, truthful observation freshness, and a current development toolchain.
 No configuration migration is required.
 
-- **Observation age is truthful.** Cached rebroadcasts retain the provider
-  observation timestamp, navigation inputs must be fresh, and magnetic
-  readings are converted to true only with fresh variation data.
-- **Synthetic wind is no longer guessed.** Apparent wind and apparent wind
-  chill are omitted when the required vessel motion or heading is unavailable.
-- **Alerts clear reliably.** Disabling a category, disabling notifications, or
-  stopping the plugin publishes `normal` for every notification path it owns.
-- **Weather APIs and network handling are stricter.** Signal K v2 options,
-  sorting, coordinates, warning times, response byte limits, retries, quotas,
-  OpenAPI documentation, and panel rate limits are enforced at their
-  boundaries.
-- **The panel is smoother on every display.** Polls and API-key tests are
-  single-flight and cancellable, invalid numbers receive inline feedback, and
-  narrow marine screens receive a responsive layout verified in Chromium.
+- **The panel now shares the Signal K component system.** Configuration uses
+  `signalk-nearlcrews-ui` 0.3.0 for themes, fields, status, layout, and
+  accessible interactions across desktop and embedded marine displays.
+- **Merged weather is more resilient.** Current observations and forecasts
+  fail over in configured order, stale or time-skewed inputs are excluded, and
+  a quota-limited provider does not block healthy keyless sources.
+- **Quota use survives restarts.** AccuWeather requests are reserved atomically
+  in an exact rolling 24-hour window and persisted in the plugin data directory.
+- **Marine and atmospheric data fail independently.** Each layer has its own
+  refresh schedule and freshness gate, so one outage does not freeze the other.
+- **Shutdown and diagnostics are safer.** Active network work is cancelled,
+  provider registration remains consistent, and sensitive values are redacted
+  from logs, banners, URLs, and panel errors.
 
-See the [v1.12.0 changelog entry](CHANGELOG.md#v1120), or the
+See the [v1.13.0 changelog entry](CHANGELOG.md#v1130), or the
 [changelog](CHANGELOG.md) for the full list.
 
 ## What it does
@@ -81,10 +80,11 @@ severe conditions.
 - **Severe-weather notifications** (opt-in, off by default) for wind,
   visibility, heat, cold, and severe conditions, with actionable context in
   every message.
-- **React configuration panel** in the admin UI with a live status
-  dashboard, an inline API key test, unsaved-changes tracking, and light,
-  dark, and night-red themes, with a JSON-schema form fallback for older
-  admin UIs.
+- **Shared Signal K configuration panel** built with
+  `signalk-nearlcrews-ui`, with a live status dashboard, an inline API key
+  test, accessible validation and reordering, unsaved-change tracking, and
+  light, dark, and night-red themes. Older admin UIs retain the JSON-schema
+  form fallback.
 - **NMEA2000 path alignment** for bridging onto a physical bus via a
   companion emitter plugin.
 - **Per-provider `$source` on every delta** (`open-meteo`, `met-no`,
@@ -115,7 +115,8 @@ since the last fetch.
   active weather provider for the vessel's current location).
 - The configuration panel needs Signal K admin UI 2.27.0 or newer. On older
   servers the plugin still works and falls back to the standard settings
-  form.
+  form. The custom panel also requires native CSS `@scope`, available in
+  Chromium and Edge 118+, Firefox 146+, and Safari 17.4+.
 
 ## Installation
 
@@ -246,8 +247,9 @@ See [docs/troubleshooting.md](docs/troubleshooting.md) for the full guide.
 
 ## Development
 
-This project targets Node 20.18 or newer, supports `@signalk/server-api` 2.24 or
-newer, and develops against version 2.30 with TypeScript 7.
+This project runs on Node 20.18 or newer and supports `@signalk/server-api`
+2.24 through 2.x. Development uses Node 24.18, npm 11.18, Signal K server API
+2.30, and TypeScript 7.
 
 ```bash
 git clone https://github.com/NearlCrews/signalk-virtual-weather-sensors.git
@@ -255,11 +257,12 @@ cd signalk-virtual-weather-sensors
 npm install          # install dependencies
 npm run build        # compile the plugin and bundle the config panel
 npm test             # Vitest suite, single run
-npm run test:browser # config-panel checks in headless Chromium
+npm run test:browser # build and test the federated panel in Chromium
 npm run type-check   # type-check the plugin and the panel
-npm run lint         # Biome check
+npm run lint         # code, documentation, and spelling checks
 npm run lint:fix     # lint and auto-fix
-npm run validate     # type-check, lint, and tests in one pass
+npm run verify       # full non-browser validation
+npm run verify:release # full cross-browser release validation
 ```
 
 Run `npm run validate` before committing. See the

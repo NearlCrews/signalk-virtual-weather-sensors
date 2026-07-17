@@ -11,6 +11,7 @@ import {
   calculateAbsoluteHumidity,
   degreesToRadians,
   normalizeAngle0To2Pi,
+  normalizeIsoTimestamp,
 } from '../utils/conversions.js';
 
 export type SKOutside = NonNullable<SKWeatherData['outside']>;
@@ -63,9 +64,11 @@ export function buildSunBlock(
   sunrise: string | undefined,
   sunset: string | undefined
 ): SKSun | undefined {
+  const normalizedSunrise = normalizeIsoTimestamp(sunrise);
+  const normalizedSunset = normalizeIsoTimestamp(sunset);
   const sun: SKSun = {
-    ...(typeof sunrise === 'string' && { sunrise }),
-    ...(typeof sunset === 'string' && { sunset }),
+    ...(normalizedSunrise !== '' && { sunrise: normalizedSunrise }),
+    ...(normalizedSunset !== '' && { sunset: normalizedSunset }),
   };
   return Object.keys(sun).length > 0 ? sun : undefined;
 }

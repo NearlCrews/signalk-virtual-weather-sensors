@@ -13,6 +13,7 @@ import { validateKeyLength } from '../constants/notifications-shared.js';
 import { AccuWeatherService } from '../services/AccuWeatherService.js';
 import type { PanelStatusResponse } from '../types/index.js';
 import { msToWholeMinutes, toErrorMessage } from '../utils/conversions.js';
+import { redactSensitiveText } from '../utils/redaction.js';
 import type { PluginInstance } from './instance.js';
 
 export const PANEL_OPENAPI = {
@@ -121,7 +122,10 @@ export function registerPanelRoutes(router: IRouter, instance: PluginInstance): 
       // stack-derived text leak to a LAN-side caller.
       const fullMessage = toErrorMessage(error);
       instance.logger('error', 'Test-key endpoint failed', { error: fullMessage });
-      res.status(500).json({ ok: false, message: sanitizeClientErrorMessage(fullMessage) });
+      res.status(500).json({
+        ok: false,
+        message: sanitizeClientErrorMessage(redactSensitiveText(fullMessage, [apiKey])),
+      });
     }
   });
 }
@@ -158,6 +162,9 @@ async function testApiKey(apiKey: string): Promise<{ ok: boolean; message: strin
     await probe.verifyApiKey(TEST_KEY_LOCATION);
     return { ok: true, message: 'API key verified against AccuWeather.' };
   } catch (error) {
-    return { ok: false, message: sanitizeClientErrorMessage(toErrorMessage(error)) };
+    return {
+      ok: false,
+      message: sanitizeClientErrorMessage(redactSensitiveText(toErrorMessage(error), [apiKey])),
+    };
   }
 }

@@ -1,6 +1,6 @@
 {
   "name": "signalk-virtual-weather-sensors",
-  "version": "1.12.0",
+  "version": "1.13.0",
   "description": "Signal K plugin: keyless Open-Meteo, Met.no, or AccuWeather marine weather as 30+ environment deltas, severe-weather notifications, NMEA2000-ready",
   "keywords": [
     "signalk-node-server-plugin",
@@ -62,7 +62,7 @@
   "license": "Apache-2.0",
   "repository": {
     "type": "git",
-    "url": "https://github.com/NearlCrews/signalk-virtual-weather-sensors.git"
+    "url": "git+https://github.com/NearlCrews/signalk-virtual-weather-sensors.git"
   },
   "bugs": {
     "url": "https://github.com/NearlCrews/signalk-virtual-weather-sensors/issues"
@@ -75,82 +75,118 @@
   "engines": {
     "node": ">=20.18"
   },
+  "devEngines": {
+    "runtime": {
+      "name": "node",
+      "version": ">=22.18",
+      "onFail": "warn"
+    },
+    "packageManager": {
+      "name": "npm",
+      "version": "^11.18.0",
+      "onFail": "warn"
+    }
+  },
+  "packageManager": "npm@11.18.0",
   "type": "module",
   "peerDependencies": {
-    "@signalk/server-api": ">=2.24.0"
+    "@signalk/server-api": ">=2.24.0 <3"
   },
   "overrides": {
     "qs": "^6.15.2"
   },
   "devDependencies": {
-    "@babel/core": "^8.0.1",
-    "@babel/preset-react": "^8.0.1",
-    "@babel/preset-typescript": "^8.0.1",
-    "@biomejs/biome": "^2.5.3",
-    "@signalk/server-api": "^2.30.0",
+    "@axe-core/playwright": "^4.12.1",
+    "@biomejs/biome": "2.5.4",
+    "@playwright/test": "^1.61.1",
+    "@signalk/server-api": "2.30.0",
     "@signalk/signalk-schema": "^1.8.2",
+    "@size-limit/file": "12.1.0",
     "@stryker-mutator/core": "^9.6.1",
-    "@stryker-mutator/typescript-checker": "^9.6.1",
     "@stryker-mutator/vitest-runner": "^9.6.1",
     "@types/express": "^5.0.6",
-    "@types/node": "^26.1.1",
+    "@types/node": "20.19.43",
     "@types/react": "^19.2.17",
     "@types/react-dom": "^19.2.3",
-    "@vitest/browser-playwright": "^4.1.10",
+    "@vitejs/plugin-react": "^6.0.3",
     "@vitest/coverage-v8": "^4.1.10",
     "@vitest/ui": "^4.1.10",
     "ajv": "^8.20.0",
     "ajv-draft-04": "^1.0.0",
     "ajv-formats": "^3.0.1",
-    "babel-loader": "^10.1.1",
+    "cspell": "10.0.1",
     "esbuild": "^0.28.1",
-    "husky": "^9.1.7",
-    "lint-staged": "^17.0.8",
-    "playwright": "^1.61.1",
-    "react": "^19.2.7",
-    "react-dom": "^19.2.7",
+    "esbuild-loader": "^4.5.0",
+    "knip": "6.27.0",
+    "markdownlint-cli2": "0.23.1",
+    "publint": "0.3.21",
+    "react": "19.2.7",
+    "react-dom": "19.2.7",
+    "signalk-nearlcrews-ui": "0.3.0",
+    "size-limit": "12.1.0",
     "tsx": "^4.23.1",
-    "typescript": "^7.0.2",
-    "vitest": "^4.1.10",
+    "typescript": "7.0.2",
+    "vite": "^8.1.5",
+    "vitest": "4.1.10",
     "webpack": "^5.108.4",
     "webpack-cli": "^7.2.1"
   },
   "scripts": {
-    "build": "npm run clean && npm run build:types && npm run build:bundle && npm run build:panel",
+    "build": "npm run clean && npm run build:types && npm run build:bundle && npm run build:panel && npm run check:panel",
     "build:types": "tsc --noEmit false --declaration --emitDeclarationOnly --outDir dist",
     "build:bundle": "node esbuild.config.js",
-    "build:panel": "webpack",
+    "build:panel": "node scripts/build-panel.mjs",
+    "check:panel": "node scripts/check-panel-bundle.mjs",
     "dev": "tsx watch src/index.ts",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:ui": "vitest --ui",
-    "test:browser": "vitest run --config vitest.browser.config.ts",
-    "screenshots:panel": "node scripts/capture-panel-screenshots.mjs",
+    "test:browser": "npm run build && npm run test:browser:built",
+    "test:browser:built": "playwright test --project=chromium",
+    "test:browser:cross": "npm run build && npm run test:browser:cross:built",
+    "test:browser:cross:built": "node scripts/run-browser-matrix.mjs",
+    "test:integration": "node scripts/check-signalk-integration.mjs",
+    "screenshots:panel": "npm run build && node scripts/capture-panel-screenshots.mjs",
     "test:coverage": "vitest run --coverage",
     "test:run": "vitest run",
     "mutation-test": "stryker run",
-    "type-check": "tsc --noEmit && npm run type-check:panel",
+    "type-check": "tsc --noEmit && npm run type-check:panel && npm run type-check:browser",
     "type-check:panel": "tsc -p tsconfig.panel.json --noEmit",
-    "lint": "biome check .",
+    "type-check:browser": "tsc -p tsconfig.browser.json --noEmit",
+    "lint": "npm run lint:code && npm run lint:docs && npm run spellcheck",
+    "lint:code": "biome lint .",
+    "lint:docs": "markdownlint-cli2 \"*.md\" \".github/*.md\" \"docs/*.md\" \"docs/decisions/*.md\" \"docs/maintainers/*.md\"",
+    "spellcheck": "cspell --no-progress --show-suggestions README.md CHANGELOG.md CLAUDE.md \".github/**/*.{md,yml,yaml}\" \"docs/*.md\" \"docs/decisions/*.md\" \"docs/maintainers/*.md\"",
+    "ci:biome": "biome ci .",
+    "ci:workflows": "node scripts/check-workflows.mjs",
+    "boundaries": "node scripts/check-boundaries.mjs",
+    "deadcode": "knip",
     "lint:fix": "biome check --write .",
     "format": "biome format --write .",
+    "format:check": "biome format .",
     "clean": "node scripts/clean.mjs",
-    "validate": "npm run type-check && npm run lint && npm run test:run",
+    "size": "size-limit",
+    "package:check": "publint --pack npm --strict && node scripts/check-package.mjs",
+    "validate": "npm run verify",
+    "verify:commit": "npm run ci:biome && npm run lint:docs && npm run spellcheck && npm run ci:workflows && npm run boundaries && npm run deadcode",
+    "verify:fast": "npm run verify:commit && npm run type-check",
+    "verify": "npm run verify:fast && npm run test:coverage && npm run build && npm run size && npm run package:check && npm run audit:runtime",
+    "verify:browser": "npm run verify && npm run test:browser:built",
+    "verify:release": "npm run verify && npm run test:browser:cross:built && npm run audit:full",
     "security-audit": "npm audit --audit-level=moderate",
-    "prepublishOnly": "npm run validate && npm run build",
-    "hooks": "husky",
-    "create-release": "gh release create v$npm_package_version --generate-notes",
-    "release": "git rev-parse \"v$npm_package_version\" >/dev/null 2>&1 && { echo \"tag v$npm_package_version already exists\"; exit 1; } ; git tag v$npm_package_version && git push --tags && git push && npm run create-release"
+    "audit:runtime": "npm audit --omit=dev --audit-level=high",
+    "audit:full": "npm audit --audit-level=high",
+    "release:check": "node scripts/check-release.mjs",
+    "prepublishOnly": "npm run release:check && npm run verify:release",
+    "hooks": "git config core.hooksPath .githooks && chmod +x .githooks/pre-commit .githooks/pre-push"
   },
-  "lint-staged": {
-    "*.{ts,tsx}": [
-      "biome check --write",
-      "biome format --write"
-    ],
-    "*.{json,md}": [
-      "biome format --write"
-    ]
-  },
+  "size-limit": [
+    {
+      "name": "Plugin server bundle",
+      "path": "dist/index.js",
+      "limit": "180 kB"
+    }
+  ],
   "allowScripts": {
     "esbuild@0.28.1": true
   }

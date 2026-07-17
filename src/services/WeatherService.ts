@@ -21,6 +21,7 @@ import {
 } from '../types/index.js';
 import {
   elapsedSinceMs,
+  isAbortError,
   isApiQuotaReached,
   msToWholeMinutes,
   toErrorMessage,
@@ -75,6 +76,7 @@ export interface WeatherServiceOptions {
   readonly signalKService?: SignalKService | undefined;
   readonly setBanner?: BannerSink | undefined;
   readonly marineService?: OpenMeteoMarineService | undefined;
+  readonly signal?: AbortSignal | undefined;
 }
 
 /**
@@ -99,11 +101,17 @@ export class WeatherService {
   // in-flight fetch instead of starting a second one (see updateWeatherData).
   private updateInFlight: Promise<void> | null = null;
   private initialUpdateTimer: NodeJS.Timeout | null = null;
+  private marineUpdateTimer: NodeJS.Timeout | null = null;
+  private initialMarineUpdateTimer: NodeJS.Timeout | null = null;
+  private marineUpdateInFlight: Promise<void> | null = null;
 
   private currentWeatherData: WeatherData | null = null;
   /** Last successful marine snapshot; null until the first marine fetch (or when disabled). */
   private currentMarineData: MarineData | null = null;
   private lastUpdate: Date | null = null;
+  private lastObservationMs: number | null = null;
+  private lastMarineUpdate: Date | null = null;
+  private lastMarineObservationMs: number | null = null;
 
   // Performance monitoring
   private updateCount = 0;
@@ -129,6 +137,7 @@ export class WeatherService {
    * the service falls back to the bare `app.setPlugin*` API.
    */
   private readonly setBanner: BannerSink;
+  private readonly signal: AbortSignal | undefined;
 
   constructor(
     app: ServerAPI,
@@ -136,7 +145,8 @@ export class WeatherService {
     logger: Logger = () => {},
     options: WeatherServiceOptions = {}
   ) {
-    const { windCalculator, weatherProvider, signalKService, setBanner, marineService } = options;
+    const { windCalculator, weatherProvider, signalKService, setBanner, marineService, signal } =
+      options;
     this.app = app;
     this.config = config;
     this.logger = logger;
@@ -164,6 +174,7 @@ export class WeatherService {
     this.signalKService = signalKService ?? new SignalKService(this.app, this.logger);
     this.windCalculator = windCalculator ?? new WindCalculator(this.logger);
     this.marineService = marineService ?? null;
+    this.signal = signal;
 
     this.logger('info', 'WeatherService initialized successfully');
   }
@@ -184,6 +195,7 @@ export class WeatherService {
       // Start periodic weather data updates
       // Emission is handled by the plugin entry point (index.ts) via NMEA2000PathMapper
       this.setupWeatherUpdates();
+      this.setupMarineUpdates();
 
       // Perform initial weather update after brief delay. Track the handle so
       // a stop() within the delay window doesn't leave the callback firing
@@ -197,6 +209,18 @@ export class WeatherService {
           });
         });
       }, PLUGIN.INITIAL_UPDATE_DELAY_MS);
+
+      if (this.marineService) {
+        this.initialMarineUpdateTimer = setTimeout(() => {
+          this.initialMarineUpdateTimer = null;
+          if (this.state !== 'running') return;
+          this.updateMarineData().catch((error) => {
+            if (!isAbortError(error)) {
+              this.logger('warn', 'Initial marine update failed', { error: toErrorMessage(error) });
+            }
+          });
+        }, PLUGIN.INITIAL_UPDATE_DELAY_MS);
+      }
 
       this.state = 'running';
       this.logger('info', 'WeatherService started successfully');
@@ -241,6 +265,16 @@ export class WeatherService {
         clearTimeout(this.initialUpdateTimer);
         this.initialUpdateTimer = null;
       }
+      if (this.marineUpdateTimer) {
+        clearInterval(this.marineUpdateTimer);
+        this.marineUpdateTimer = null;
+      }
+      if (this.initialMarineUpdateTimer) {
+        clearTimeout(this.initialMarineUpdateTimer);
+        this.initialMarineUpdateTimer = null;
+      }
+
+      await this.waitForActiveUpdates();
 
       // Clear cached weather payload but preserve the AccuWeather location-key
       // cache: its entries stay valid for the configured locationCacheTimeout,
@@ -249,6 +283,9 @@ export class WeatherService {
       this.currentWeatherData = null;
       this.currentMarineData = null;
       this.lastUpdate = null;
+      this.lastObservationMs = null;
+      this.lastMarineUpdate = null;
+      this.lastMarineObservationMs = null;
       this.signalKService.clearCache();
 
       this.state = 'stopped';
@@ -290,23 +327,63 @@ export class WeatherService {
    * the previous snapshot so a transient marine outage does not blank the data.
    * @private
    */
-  private async refreshMarineData(position: {
-    readonly latitude: number;
-    readonly longitude: number;
-  }): Promise<void> {
-    if (!this.marineService) return;
+  private updateMarineData(): Promise<void> {
+    if (!this.marineService) return Promise.resolve();
+    if (this.marineUpdateInFlight !== null) return this.marineUpdateInFlight;
+    const run = this.runMarineUpdate().finally(() => {
+      this.marineUpdateInFlight = null;
+    });
+    this.marineUpdateInFlight = run;
+    return run;
+  }
+
+  private async runMarineUpdate(): Promise<void> {
     try {
-      const marine = await this.marineService.fetchMarine(position);
+      const position = this.signalKService.getVesselNavigationData().position;
+      if (!position) throw new Error('No position available for marine data');
+      const marine = await this.marineService?.fetchMarine(position);
+      if (!marine) return;
       // Drop the result if stop() ran during the fetch: stop() clears
       // currentMarineData, and writing here would resurrect a stale snapshot on
       // a torn-down service (mirrors the weather-update guard above).
       if (this.state !== 'running' && this.state !== 'starting') return;
       this.currentMarineData = marine;
+      this.lastMarineUpdate = new Date();
+      this.lastMarineObservationMs = Date.parse(marine.timestamp);
     } catch (error) {
+      if (isAbortError(error) && this.state === 'stopping') return;
       this.logger('warn', 'Marine data fetch failed; keeping last marine snapshot', {
         error: toErrorMessage(error),
       });
     }
+  }
+
+  private setupMarineUpdates(): void {
+    if (!this.marineService) return;
+    const interval = this.addJitter(this.config.updateFrequency * 60_000);
+    this.marineUpdateTimer = setInterval(() => {
+      this.updateMarineData().catch((error) => {
+        if (!isAbortError(error)) {
+          this.logger('warn', 'Scheduled marine update failed', { error: toErrorMessage(error) });
+        }
+      });
+    }, interval);
+  }
+
+  private async waitForActiveUpdates(): Promise<void> {
+    if (!this.signal?.aborted) return;
+    const active = [this.updateInFlight, this.marineUpdateInFlight].filter(
+      (operation): operation is Promise<void> => operation !== null
+    );
+    if (active.length === 0) return;
+    let timeout: NodeJS.Timeout | undefined;
+    await Promise.race([
+      Promise.allSettled(active),
+      new Promise<void>((resolve) => {
+        timeout = setTimeout(resolve, 1000);
+      }),
+    ]);
+    if (timeout) clearTimeout(timeout);
   }
 
   /** Milliseconds since the last successful weather fetch, or null if none yet. */
@@ -330,8 +407,23 @@ export class WeatherService {
    * before the first fetch (there is nothing stale to withhold).
    */
   public isDataStale(): boolean {
-    const ageMs = this.getDataAgeMs();
-    return ageMs !== null && ageMs > this.maxStalenessMs();
+    const fetchAgeMs = this.getDataAgeMs();
+    const observationAgeMs = elapsedSinceMs(this.lastObservationMs);
+    return (
+      (fetchAgeMs !== null && fetchAgeMs > this.maxStalenessMs()) ||
+      (observationAgeMs !== null &&
+        observationAgeMs > (this.weatherProvider.maxObservationAgeMs ?? 3 * 60 * 60 * 1000))
+    );
+  }
+
+  public isMarineDataStale(): boolean {
+    if (!this.currentMarineData) return false;
+    const fetchAgeMs = elapsedSinceMs(this.lastMarineUpdate?.getTime() ?? null);
+    const observationAgeMs = elapsedSinceMs(this.lastMarineObservationMs);
+    return (
+      (fetchAgeMs !== null && fetchAgeMs > this.maxStalenessMs()) ||
+      (observationAgeMs !== null && observationAgeMs > 3 * 60 * 60 * 1000)
+    );
   }
 
   /**
@@ -345,8 +437,10 @@ export class WeatherService {
     if (this.isQuotaExhausted()) {
       return { kind: 'error', message: this.formatQuotaExhaustedMessage() };
     }
-    const ageMs = this.getDataAgeMs();
-    if (ageMs !== null && ageMs > this.maxStalenessMs()) {
+    const fetchAgeMs = this.getDataAgeMs();
+    const observationAgeMs = elapsedSinceMs(this.lastObservationMs);
+    const ageMs = Math.max(fetchAgeMs ?? 0, observationAgeMs ?? 0);
+    if (this.isDataStale()) {
       return { kind: 'error', message: this.formatStaleMessage(ageMs) };
     }
     return { kind: 'status', message: this.formatStatusBanner() };
@@ -368,7 +462,7 @@ export class WeatherService {
   /**
    * Rolling 24h request count for the admin-UI panel's `/api/status` endpoint.
    * Delegates to the active weather provider's rolling-24h accessor; keyless
-   * providers report 0, AccuWeather counts through its hourly buckets, and the
+   * providers report 0, AccuWeather counts exact request timestamps, and the
    * merging provider sums its children.
    */
   public getRequestCountLast24h(): number {
@@ -459,6 +553,9 @@ export class WeatherService {
    * stale-data error path then surfaces the pause to operators.
    */
   public isQuotaExhausted(): boolean {
+    if (this.weatherProvider.isCurrentWeatherFetchBlocked) {
+      return this.weatherProvider.isCurrentWeatherFetchBlocked();
+    }
     return isApiQuotaReached(this.getRequestCountLast24h(), this.config.dailyApiQuota);
   }
 
@@ -501,7 +598,7 @@ export class WeatherService {
    */
   public async forceUpdate(): Promise<void> {
     this.logger('info', 'Forcing immediate weather update');
-    await this.updateWeatherData();
+    await Promise.all([this.updateWeatherData(), this.updateMarineData()]);
   }
 
   /**
@@ -624,16 +721,11 @@ export class WeatherService {
       const isFirstSuccessfulUpdate = this.lastUpdate === null;
       this.currentWeatherData = enhancedWeatherData;
       this.lastUpdate = new Date();
+      this.lastObservationMs = Date.parse(enhancedWeatherData.timestamp);
       this.updateCount++;
       // Reset failure streaks on any successful fetch so transient outages do
       // not leave the plugin in an error state once recovery happens.
       this.consecutiveFailures = 0;
-
-      // Optional sea-state layer: fetched on the same cadence and position as
-      // the weather update. Best-effort, so a marine failure (inland point,
-      // marine host down) only logs and keeps the last marine snapshot; it never
-      // fails the weather update or trips the error banner.
-      await this.refreshMarineData(position);
 
       // Cold-start UX: the plugin entry pushes "Running, awaiting first update"
       // during start(), and the emission timer wouldn't re-push the banner
@@ -667,6 +759,7 @@ export class WeatherService {
         });
       }
     } catch (error) {
+      if (isAbortError(error) && this.state === 'stopping') return;
       this.errorCount++;
       this.consecutiveFailures++;
       const errorMessage = toErrorMessage(error);

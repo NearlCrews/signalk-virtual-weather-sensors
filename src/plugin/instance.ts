@@ -8,6 +8,7 @@ import type { Delta, ServerAPI, SourceRef } from '@signalk/server-api';
 import type { MarinePathMapper } from '../mappers/MarinePathMapper.js';
 import type { NMEA2000PathMapper } from '../mappers/NMEA2000PathMapper.js';
 import type { WeatherNotifier } from '../notifications/WeatherNotifier.js';
+import type { WeatherProviderAdapter } from '../services/WeatherProviderAdapter.js';
 import type { WeatherService } from '../services/WeatherService.js';
 import type { Logger, MarineData, PluginState, WeatherData } from '../types/index.js';
 
@@ -19,6 +20,8 @@ export type BannerKind = 'status' | 'error';
  */
 export interface PluginInstance {
   weatherService: WeatherService | null;
+  weatherProviderAdapter: WeatherProviderAdapter | null;
+  lifecycleController: AbortController | null;
   pathMapper: NMEA2000PathMapper | null;
   /** Null unless the optional marine layer is enabled. */
   marinePathMapper: MarinePathMapper | null;
@@ -64,14 +67,15 @@ export function setBanner(
   kind: BannerKind,
   message: string
 ): void {
+  const safeMessage = instance.logger.redact?.(message) ?? message;
   const last = instance.lastBanner;
-  if (last !== null && last.kind === kind && last.message === message) {
+  if (last !== null && last.kind === kind && last.message === safeMessage) {
     return;
   }
   if (kind === 'status') {
-    app.setPluginStatus(message);
+    app.setPluginStatus(safeMessage);
   } else {
-    app.setPluginError(message);
+    app.setPluginError(safeMessage);
   }
-  instance.lastBanner = { kind, message };
+  instance.lastBanner = { kind, message: safeMessage };
 }

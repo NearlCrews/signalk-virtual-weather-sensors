@@ -16,7 +16,7 @@ import {
   degreesToRadians,
   kmhToMS,
   normalizeAngle0To2Pi,
-  normalizeIsoTimestamp,
+  requireObservationTimestamp,
 } from '../utils/conversions.js';
 
 /** Convert an optional degree bearing to radians normalized to [0, 2pi). */
@@ -45,7 +45,10 @@ export function mapOpenMeteoMarineToMarineData(response: OpenMeteoMarineResponse
   const surfaceCurrentDirection = toRadians(current.ocean_current_direction);
 
   return {
-    timestamp: normalizeIsoTimestamp(current.time),
+    timestamp:
+      current.time === undefined
+        ? ''
+        : requireObservationTimestamp(current.time, 'Open-Meteo marine conditions'),
     ...(significantWaveHeight !== undefined && { significantWaveHeight }),
     ...(waveDirection !== undefined && { waveDirection }),
     ...(wavePeriod !== undefined && { wavePeriod }),

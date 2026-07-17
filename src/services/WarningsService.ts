@@ -18,7 +18,7 @@ import {
   type NwsAlertsResponse,
 } from '../mappers/WarningsMapper.js';
 import type { GeoLocation, Logger } from '../types/index.js';
-import { isWithinBounds, toCoordKey, toErrorMessage } from '../utils/conversions.js';
+import { isAbortError, isWithinBounds, toCoordKey, toErrorMessage } from '../utils/conversions.js';
 import { DEFAULT_REQUEST_TIMEOUT_MS, fetchJson } from '../utils/http.js';
 
 /**
@@ -40,15 +40,18 @@ const NORDIC_BOX = { latMin: 54, latMax: 82, lonMin: -12, lonMax: 37 } as const;
 
 export interface WarningsOptions {
   readonly requestTimeoutMs?: number;
+  readonly signal?: AbortSignal | undefined;
 }
 
 export class WarningsService {
   private readonly logger: Logger;
   private readonly requestTimeoutMs: number;
+  private readonly signal: AbortSignal | undefined;
 
   constructor(logger: Logger = () => {}, options?: WarningsOptions) {
     this.logger = logger;
     this.requestTimeoutMs = options?.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS;
+    this.signal = options?.signal;
   }
 
   /** Warnings for a position, dispatched by region. */
@@ -90,9 +93,11 @@ export class WarningsService {
       const response = await fetchJson<NwsAlertsResponse>(url, {
         timeoutMs: this.requestTimeoutMs,
         headers: { 'User-Agent': PLUGIN.CONTACT_USER_AGENT },
+        signal: this.signal,
       });
       return mapNwsAlertsToWarnings(response);
     } catch (error) {
+      if (isAbortError(error)) throw error;
       const message = toErrorMessage(error);
       this.logger('warn', 'NWS warnings fetch failed', {
         point,
@@ -111,9 +116,11 @@ export class WarningsService {
       const response = await fetchJson<MetAlertsResponse>(url, {
         timeoutMs: this.requestTimeoutMs,
         headers: { 'User-Agent': PLUGIN.CONTACT_USER_AGENT },
+        signal: this.signal,
       });
       return mapMetAlertsToWarnings(response);
     } catch (error) {
+      if (isAbortError(error)) throw error;
       const message = toErrorMessage(error);
       this.logger('warn', 'MetAlerts warnings fetch failed', {
         point: `${lat},${lon}`,

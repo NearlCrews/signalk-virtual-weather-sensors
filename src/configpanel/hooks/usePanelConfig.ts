@@ -29,7 +29,7 @@ export type PanelFormState = Omit<Mutable<PluginConfiguration>, 'notifications'>
   notifications: NotificationsFormState;
 };
 
-export interface SaveAction {
+interface SaveAction {
   message: string;
   isError: boolean;
 }

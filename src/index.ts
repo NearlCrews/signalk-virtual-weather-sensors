@@ -5,6 +5,7 @@
  * Signal K deltas on a fixed interval.
  */
 
+import { join } from 'node:path';
 import { type Plugin, type ServerAPI, SKVersion } from '@signalk/server-api';
 import { DEFAULT_CONFIG, ERROR_CODES, PLUGIN } from './constants/index.js';
 import { MarinePathMapper } from './mappers/MarinePathMapper.js';
@@ -35,6 +36,8 @@ import { ConfigurationValidator } from './utils/validation.js';
 export default function createPlugin(app: ServerAPI): Plugin {
   const instance: PluginInstance = {
     weatherService: null,
+    weatherProviderAdapter: null,
+    lifecycleController: null,
     pathMapper: null,
     marinePathMapper: null,
     cachedMarineDelta: null,
@@ -72,6 +75,10 @@ export default function createPlugin(app: ServerAPI): Plugin {
           return;
         }
 
+        if (instance.weatherProviderRegistered && !unregisterWeatherProvider(instance, app)) {
+          throw new Error('A previous weather provider registration could not be removed');
+        }
+
         const config = initializePlugin(instance, settings);
         await startServices(instance, config, app);
         finalizePluginStart(instance, config, app);
@@ -89,9 +96,15 @@ export default function createPlugin(app: ServerAPI): Plugin {
 
         instance.state = 'stopping';
 
-        unregisterWeatherProvider(instance, app);
+        instance.lifecycleController?.abort(new DOMException('Plugin stopping', 'AbortError'));
+
+        const unregistered = unregisterWeatherProvider(instance, app);
 
         await cleanup(instance, app);
+
+        if (!unregistered) {
+          throw new Error('Unable to unregister the Signal K weather provider');
+        }
 
         const uptime = elapsedSinceMs(instance.startTime?.getTime() ?? null) ?? 0;
 
@@ -181,7 +194,10 @@ function isPluginAlreadyRunning(instance: PluginInstance): boolean {
 function initializePlugin(instance: PluginInstance, settings: unknown): PluginConfiguration {
   instance.state = 'starting';
   instance.startTime = new Date();
-  return validateAndNormalizeSettings(settings, instance.logger);
+  instance.lifecycleController = new AbortController();
+  const config = validateAndNormalizeSettings(settings, instance.logger);
+  instance.logger.addSensitiveValue?.(config.accuWeatherApiKey);
+  return config;
 }
 
 async function startServices(
@@ -202,16 +218,19 @@ async function startServices(
   // AccuWeather when chosen with a key). For AccuWeather this is one shared
   // instance so the current-conditions loop and the on-demand forecast adapter
   // draw from a single rolling-24h quota window.
-  const provider = createWeatherProvider(config, instance.logger);
+  const provider = createWeatherProvider(config, instance.logger, {
+    signal: instance.lifecycleController?.signal,
+    quotaStatePath: getQuotaStatePath(app, instance.logger),
+  });
   instance.sourceRef = toSourceRef(provider.sourceRef);
   // Optional sea-state layer (keyless Open-Meteo Marine), independent of the
   // atmospheric provider. A self-hosted Open-Meteo instance serves /v1/marine on
   // the same host, so pass the configured base URL through when it is set.
   const marineService = config.marineData
-    ? new OpenMeteoMarineService(
-        instance.logger,
-        config.openMeteoBaseUrl ? { baseUrl: config.openMeteoBaseUrl } : undefined
-      )
+    ? new OpenMeteoMarineService(instance.logger, {
+        ...(config.openMeteoBaseUrl && { baseUrl: config.openMeteoBaseUrl }),
+        signal: instance.lifecycleController?.signal,
+      })
     : undefined;
   if (marineService) {
     instance.marinePathMapper = new MarinePathMapper(instance.logger);
@@ -220,6 +239,7 @@ async function startServices(
     weatherProvider: provider,
     setBanner: bannerSink,
     marineService,
+    signal: instance.lifecycleController?.signal,
   });
   instance.pathMapper = new NMEA2000PathMapper(instance.sourceRef, instance.logger);
   // Construct the notifier even when notifications are disabled at the master
@@ -240,9 +260,10 @@ async function startServices(
     // the v2 provider alongside forecasts and observations.
     const adapter = new WeatherProviderAdapter(
       provider,
-      new WarningsService(instance.logger),
+      new WarningsService(instance.logger, { signal: instance.lifecycleController?.signal }),
       instance.logger
     );
+    instance.weatherProviderAdapter = adapter;
     app.registerWeatherProvider(adapter.toProvider());
     instance.weatherProviderRegistered = true;
     instance.logger('info', 'Registered Signal K weather provider', { provider: provider.name });
@@ -285,6 +306,7 @@ async function handleStartupError(
   app: ServerAPI
 ): Promise<void> {
   instance.state = 'error';
+  instance.lifecycleController?.abort(new DOMException('Plugin startup failed', 'AbortError'));
   const errorMessage = toErrorMessage(error);
 
   instance.logger('error', 'Failed to start plugin', {
@@ -313,16 +335,22 @@ async function handleStartupError(
  * chain tolerates an older server.
  * @private
  */
-function unregisterWeatherProvider(instance: PluginInstance, app: ServerAPI): void {
-  if (!instance.weatherProviderRegistered) return;
+function unregisterWeatherProvider(instance: PluginInstance, app: ServerAPI): boolean {
+  if (!instance.weatherProviderRegistered) return true;
+  if (typeof app.weatherApi?.unRegister !== 'function') {
+    instance.logger('error', 'Server cannot unregister the active weather provider');
+    return false;
+  }
   try {
-    app.weatherApi?.unRegister(PLUGIN.NAME);
+    app.weatherApi.unRegister(PLUGIN.NAME);
+    instance.weatherProviderRegistered = false;
+    return true;
   } catch (error) {
     instance.logger('error', 'Error unregistering weather provider', {
       error: toErrorMessage(error),
     });
+    return false;
   }
-  instance.weatherProviderRegistered = false;
 }
 
 /**
@@ -344,6 +372,11 @@ async function cleanup(instance: PluginInstance, app: ServerAPI): Promise<void> 
       });
     }
     instance.weatherService = null;
+  }
+
+  if (instance.weatherProviderAdapter) {
+    await instance.weatherProviderAdapter.waitForIdle();
+    instance.weatherProviderAdapter = null;
   }
 
   instance.pathMapper = null;
@@ -369,8 +402,19 @@ async function cleanup(instance: PluginInstance, app: ServerAPI): Promise<void> 
   instance.cachedMarineDelta = null;
   instance.cachedMarineDataRef = null;
   instance.marineMetaEmitted = false;
-  instance.weatherProviderRegistered = false;
   instance.lastBanner = null;
+  instance.lifecycleController = null;
+}
+
+function getQuotaStatePath(app: ServerAPI, logger: Logger): string | undefined {
+  try {
+    return join(app.getDataDirPath(), `${PLUGIN.NAME}-accuweather-quota.json`);
+  } catch (error) {
+    logger('warn', 'AccuWeather quota state will not persist across restarts', {
+      error: toErrorMessage(error),
+    });
+    return undefined;
+  }
 }
 
 /**

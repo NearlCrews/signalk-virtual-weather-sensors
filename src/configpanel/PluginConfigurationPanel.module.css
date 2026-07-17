@@ -1,0 +1,29 @@
+.compatibility {
+  box-sizing: border-box;
+  max-width: 56rem;
+  margin-inline: auto;
+  padding: 1rem;
+  border: 1px solid #b42318;
+  border-radius: 0.5rem;
+  color: #7a271a;
+  background: #fef3f2;
+  font-family: system-ui, sans-serif;
+}
+
+.compatibility h2 {
+  margin-block: 0 0.5rem;
+  font-size: 1.125rem;
+}
+
+.compatibility p {
+  margin: 0;
+}
+
+.actionStatus {
+  color: var(--snui-color-text-muted);
+}
+
+.actionError {
+  color: var(--snui-color-danger);
+  font-weight: 600;
+}

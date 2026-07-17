@@ -62,6 +62,32 @@ describe('RetryingHttpClient', () => {
     expect(onRequestCounted).toHaveBeenCalledTimes(3);
   });
 
+  it('does not retry a plugin-lifecycle cancellation', async () => {
+    const controller = new AbortController();
+    const beforeRequest = vi.fn();
+    vi.mocked(globalThis.fetch).mockImplementation(
+      (_url, init) =>
+        new Promise((_resolve, reject) => {
+          init?.signal?.addEventListener('abort', () => {
+            reject(new DOMException('Plugin stopping', 'AbortError'));
+          });
+        })
+    );
+    const client = new RetryingHttpClient({
+      requestTimeoutMs: 1000,
+      retryAttempts: 3,
+      retryDelayMs: 1,
+      userAgent: 'test/1.0',
+      beforeRequest,
+      signal: controller.signal,
+    });
+    const request = client.request(new URL('https://example.test/x'));
+    controller.abort(new DOMException('Plugin stopping', 'AbortError'));
+    await expect(request).rejects.toThrow('Plugin stopping');
+    expect(globalThis.fetch).toHaveBeenCalledTimes(1);
+    expect(beforeRequest).toHaveBeenCalledTimes(1);
+  });
+
   it('throws API_UNAUTHORIZED and calls fetch exactly once on a 401 response', async () => {
     vi.mocked(globalThis.fetch).mockResolvedValue(
       createMockFetchResponse(

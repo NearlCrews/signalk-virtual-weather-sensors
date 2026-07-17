@@ -34,6 +34,7 @@ import {
   optionalCelsiusToKelvin,
   optionalPercentageToRatio,
   percentageToRatio,
+  requireObservationTimestamp,
   truncateToCodePoints,
 } from '../utils/conversions.js';
 
@@ -215,7 +216,10 @@ export function mapAccuWeatherCurrentToWeatherData(
     // into enhancedConditions) carries the icon code for severe-condition
     // classification.
     description: capString(conditions.WeatherText, ACCUWEATHER.MAX_DESCRIPTION_LENGTH),
-    timestamp: capString(conditions.LocalObservationDateTime, ACCUWEATHER.MAX_LABEL_LENGTH),
+    timestamp: requireObservationTimestamp(
+      conditions.LocalObservationDateTime,
+      'AccuWeather current conditions'
+    ),
     // Optional fields decoded above: spread last so only present keys land.
     ...enhancedTemps,
     ...enhancedConditions,

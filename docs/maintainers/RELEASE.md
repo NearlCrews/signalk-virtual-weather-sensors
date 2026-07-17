@@ -1,323 +1,89 @@
 # Release Checklist
 
-This document outlines the steps for creating a new release of Signal K Virtual Weather Sensors.
+Publishing requires explicit final approval. Do not create a release tag or
+publish to npm until that approval has been given for the prepared commit.
 
-## Fast path (what we actually do)
+## Prepare
 
-Recent 1.4.x and 1.5.x releases used this short flow:
+1. Start from an up-to-date `main` branch with a clean worktree.
+2. Update the version in `package.json` and `package-lock.json` without creating
+   a tag.
+3. Move the Unreleased changelog entries into a dated version section with an
+   `<a id="vXYZ"></a>` anchor.
+4. Replace the README `What's new` section with the new release summary.
+5. Update documentation and run `npm run screenshots:panel` when the panel has
+   changed.
+6. Confirm package metadata, app icon, screenshots, keywords, and Signal K
+   scoring inputs.
 
-1. On `main`: bump `package.json` version, add a `## [X.Y.Z]` section in `CHANGELOG.md` with an `<a id="vXYZ"></a>` anchor above it, and overwrite the README `## What's new in X.Y.Z` section from that CHANGELOG entry (a one-sentence lead, 3 to 5 bolded bullets, and the closing changelog links; update the heading version and the `#vXYZ` anchor). The README always carries only the latest release; full history stays in `CHANGELOG.md`.
-2. Run `npm run validate && npm run test:browser && npm run build` locally.
-3. Commit on `main`: `chore: release vX.Y.Z`.
-4. Run `npm run release`. This script tags `vX.Y.Z`, pushes the tag and the main commit, then runs `npm run create-release` (`gh release create vX.Y.Z --generate-notes`).
-5. The GitHub Release `published` event fires `.github/workflows/publish.yml`, which re-runs `type-check` and `test:run`, verifies `package.json` version matches the tag, and publishes to npm with provenance.
+## Verify
 
-The longer release-branch + PR workflow below is aspirational best practice for larger releases (breaking changes, coordinated multi-PR work) and is not enforced for routine patch and minor bumps.
-
-## Pre-Release Checklist
-
-### Code Quality
-
-- [ ] All tests pass (`npm run test:run`)
-- [ ] Chromium panel tests pass (`npm run test:browser`)
-- [ ] Linting passes with no errors (`npm run lint`)
-- [ ] Type checking passes (`npm run type-check`)
-- [ ] Full validation passes (`npm run validate`)
-- [ ] Test coverage is adequate (`npm run test:coverage`)
-- [ ] No security vulnerabilities (`npm run security-audit`)
-
-### Documentation
-
-- [ ] `README.md` is up to date with new features
-- [ ] README `## What's new in X.Y.Z` section overwritten with the new release summary
-- [ ] Packaged panel screenshots match the current UI (`npm run screenshots:panel`)
-- [ ] `CHANGELOG.md` is updated with version and changes
-- [ ] `DEVELOPMENT.md` reflects current development practices
-- [ ] All code has JSDoc comments for public APIs
-- [ ] Migration guide added (if breaking changes)
-
-### Version Update
-
-- [ ] Update version in `package.json`
-- [ ] Update version references in documentation
-- [ ] Ensure `CHANGELOG.md` has correct version and date
-
-### Build Verification
-
-- [ ] Clean build succeeds (`npm run build`)
-- [ ] Built package contains expected files
-- [ ] Test local installation of built package
-- [ ] Verify package size is reasonable (`npm pack --dry-run`)
-
-## Release Process
-
-### 1. Prepare Release Branch
+Use Node 24.18 and npm 11.18:
 
 ```bash
-# Ensure main branch is up to date
-git checkout main
-git pull origin main
-
-# Create release branch
-git checkout -b release/vX.Y.Z
-```
-
-### 2. Update Version and Changelog
-
-```bash
-# Update package.json version
-npm version [major|minor|patch] --no-git-tag-version
-
-# Update CHANGELOG.md with version and date
-# Add release notes and notable changes
-```
-
-### 3. Commit and Push
-
-```bash
-# Commit changes
-git add package.json CHANGELOG.md
-git commit -m "chore: prepare release vX.Y.Z"
-
-# Push release branch
-git push origin release/vX.Y.Z
-```
-
-### 4. Create Pull Request
-
-- Create PR from `release/vX.Y.Z` to `main`
-- Ensure all CI checks pass
-- Get approval from maintainers
-- Merge using "Squash and merge"
-
-### 5. Create GitHub Release
-
-```bash
-# Pull latest main
-git checkout main
-git pull origin main
-
-# Create and push tag
-git tag -a vX.Y.Z -m "Release vX.Y.Z"
-git push origin vX.Y.Z
-```
-
-### 6. Publish GitHub Release
-
-- Go to GitHub Releases: https://github.com/NearlCrews/signalk-virtual-weather-sensors/releases/new
-- Select the tag `vX.Y.Z`
-- Release title: `vX.Y.Z`
-- Copy release notes from `CHANGELOG.md`
-- Click "Publish release"
-
-**Note:** Publishing the GitHub release will automatically trigger the npm publish workflow via the `publish.yml` GitHub Action.
-
-### 7. Verify npm Publication
-
-The GitHub Action will automatically:
-- Run validation checks
-- Build the package
-- Publish to npm with provenance
-- Verify the package is installable
-
-Check the [Actions tab](https://github.com/NearlCrews/signalk-virtual-weather-sensors/actions) to monitor progress.
-
-After the workflow completes:
-
-```bash
-# Verify package is available
-npm view signalk-virtual-weather-sensors
-
-# Test installation
-mkdir test-install
-cd test-install
-npm init -y
-npm install signalk-virtual-weather-sensors
-```
-
-## Post-Release Checklist
-
-### Verification
-
-- [ ] npm package is published and available
-- [ ] Package version on npm matches release
-- [ ] GitHub release is published
-- [ ] CI/CD workflow completed successfully
-- [ ] Package badges updated in README
-- [ ] Test installation from npm works
-
-### Communication
-
-- [ ] Announce release on Signal K forums (if applicable)
-- [ ] Update Signal K app store (if applicable)
-- [ ] Close any resolved issues
-- [ ] Update project boards
-
-### Documentation
-
-- [ ] Verify npm page displays correctly
-- [ ] Check that README renders properly on npm
-- [ ] Ensure documentation links work
-- [ ] Update any external documentation
-
-## Hotfix Release Process
-
-For urgent bug fixes that need immediate release:
-
-### 1. Create Hotfix Branch
-
-```bash
-# Branch from the tag that needs fixing
-git checkout -b hotfix/vX.Y.Z+1 vX.Y.Z
-
-# Or branch from main if it's the latest
-git checkout -b hotfix/vX.Y.Z+1 main
-```
-
-### 2. Apply Fix
-
-```bash
-# Make necessary changes
-# Update version to patch increment
-npm version patch --no-git-tag-version
-
-# Update CHANGELOG.md with hotfix notes
-```
-
-### 3. Test and Verify
-
-```bash
-npm run validate
-npm run build
-npm run test:run
-```
-
-### 4. Release
-
-```bash
-# Commit changes
-git commit -am "fix: [description of hotfix]"
-
-# Merge to main
-git checkout main
-git merge --no-ff hotfix/vX.Y.Z+1
-
-# Tag and push
-git tag -a vX.Y.Z+1 -m "Hotfix vX.Y.Z+1"
-git push origin main
-git push origin vX.Y.Z+1
-```
-
-### 5. Create GitHub Release
-
-Follow steps 6-7 from standard release process.
-
-## Rollback Process
-
-If a release needs to be rolled back:
-
-### npm Deprecation
-
-```bash
-# Deprecate the problematic version
-npm deprecate signalk-virtual-weather-sensors@X.Y.Z "This version has been deprecated due to [reason]. Please use version X.Y.Z-1 instead."
-```
-
-### GitHub Release
-
-- Edit the GitHub release
-- Mark as "pre-release" or delete if necessary
-- Add deprecation notice to release notes
-
-### Communication
-
-- Notify users via GitHub issue
-- Post on Signal K forums
-- Update README with warning (if needed)
-
-## Version Numbering
-
-Follow [Semantic Versioning](https://semver.org/):
-
-- **MAJOR** (X.0.0): Breaking changes
-- **MINOR** (0.X.0): New features, backward compatible
-- **PATCH** (0.0.X): Bug fixes, backward compatible
-
-## Pre-Release Versions
-
-For alpha/beta releases:
-
-```bash
-# Alpha release
-npm version prerelease --preid=alpha
-# Results in: X.Y.Z-alpha.0
-
-# Beta release
-npm version prerelease --preid=beta
-# Results in: X.Y.Z-beta.0
-```
-
-Publish with tag:
-```bash
-npm publish --tag beta
-```
-
-## Useful Commands
-
-```bash
-# Check what will be included in package
-npm pack --dry-run
-
-# View current package info on npm
-npm view signalk-virtual-weather-sensors
-
-# Check for outdated dependencies
-npm outdated
-
-# Update dependencies (careful with breaking changes)
-npm update
-
-# Security audit
+npm ci
+npx playwright install --with-deps chromium firefox webkit
+npm run verify:release
+npm update --dry-run --json
+npm audit --omit=dev
 npm audit
+npm pack --dry-run --json --ignore-scripts
 ```
 
-## Troubleshooting
+Also verify:
 
-### Build Fails
+- The blocking Node 20.18 compatibility lane passes.
+- The official Signal K plugin workflow passes on the release commit.
+- Signal K 2.24 and current integration lanes pass.
+- The armv7 result is green. Although upstream marks it advisory, this project
+  treats it as release-blocking.
+- CodeQL completes successfully and no open alert is introduced.
+- The built panel uses host-shared React and stays within its approved bundle
+  budget.
+- Runtime and full dependency audits have no high-severity findings.
 
-1. Clean and rebuild: `npm run clean && npm run build`
-2. Delete `node_modules` and reinstall: `rm -rf node_modules && npm install`
-3. Check Node.js version: `node --version` (should be >= 20.18, per `package.json#engines`)
+## Approval and release
 
-### Tests Fail
+1. Present the exact commit, version, changelog, verification results, package
+   contents, and any accepted size or compatibility exceptions.
+2. Obtain explicit final approval to tag and publish.
+3. Create the annotated `vX.Y.Z` tag on the approved commit and push only that
+   tag.
+4. Create and publish the GitHub Release from that tag.
 
-1. Run specific failing test: `npm run test -- [test-file]`
-2. Check for environment issues
-3. Verify all dependencies installed correctly
+Publishing the GitHub Release triggers `.github/workflows/publish.yml`. The
+workflow verifies the tag and commit, runs `verify:release`, packs once, uploads
+the exact tarball, and publishes that downloaded artifact from a separate job
+with npm provenance.
 
-### npm Publish Fails
+The local approval guard is intentionally explicit:
 
-1. Ensure you're logged in: `npm whoami`
-2. Check npm token is set in GitHub secrets
-3. Verify package name is not taken
-4. Check for 2FA requirements
+```bash
+SVWS_RELEASE_APPROVED=true npm run release:check
+```
 
-### CI/CD Fails
+Set it only after final approval. The repository has no script that tags,
+pushes, or creates a release automatically.
 
-1. Check GitHub Actions logs
-2. Verify secrets are configured correctly
-3. Check workflow file syntax
-4. Ensure branch protections aren't blocking
+## Post-publish verification
 
-## Notes
+After both workflow jobs complete successfully:
 
-- Always create releases from `main` branch
-- Never force push to `main`
-- Keep the CHANGELOG.md up to date with every release
-- Test installations on clean environments
-- Monitor npm download statistics and GitHub issues after release
-- Consider security implications of every release
+```bash
+npm view signalk-virtual-weather-sensors version dist-tags time --json
+npm view signalk-virtual-weather-sensors dist.integrity dist.shasum --json
+```
 
----
+Then confirm:
 
-**For questions about the release process, consult the [DEVELOPMENT.md](../DEVELOPMENT.md) or open a discussion on GitHub.**
+- The npm version and GitHub Release tag match.
+- Provenance is present on npm.
+- The package installs in a clean temporary Signal K environment.
+- `dist/index.js`, declarations, `public/remoteEntry.js`, panel chunks, CSS,
+  icons, screenshots, README, license, and changelog are present.
+- The published commit has green CI, Signal K plugin CI, browser, CodeQL, and
+  publish results.
+- The installed plugin registers, serves its status API and panel remote, and
+  degrades cleanly when optional Weather API support is unavailable.
+
+Do not call the release complete while any required job is queued or running.

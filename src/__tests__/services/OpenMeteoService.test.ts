@@ -141,9 +141,9 @@ describe('OpenMeteoService v2 capability', () => {
 
     expect(results).toHaveLength(3);
     expect(results[0].type).toBe('point');
-    expect(results[0].date).toBe('2026-06-16T00:00');
-    expect(results[1].date).toBe('2026-06-16T01:00');
-    expect(results[2].date).toBe('2026-06-16T02:00');
+    expect(results[0].date).toBe('2026-06-16T00:00:00.000Z');
+    expect(results[1].date).toBe('2026-06-16T01:00:00.000Z');
+    expect(results[2].date).toBe('2026-06-16T02:00:00.000Z');
     // Temperature should be Kelvin
     expect(results[0].outside?.temperature).toBeCloseTo(291.15, 2);
     expect(svc.getRequestCount()).toBe(1);
@@ -172,9 +172,9 @@ describe('OpenMeteoService v2 capability', () => {
 
     expect(results).toHaveLength(3);
     expect(results[0].type).toBe('daily');
-    expect(results[0].date).toBe('2026-06-16');
-    expect(results[1].date).toBe('2026-06-17');
-    expect(results[2].date).toBe('2026-06-18');
+    expect(results[0].date).toBe('2026-06-16T00:00:00.000Z');
+    expect(results[1].date).toBe('2026-06-17T00:00:00.000Z');
+    expect(results[2].date).toBe('2026-06-18T00:00:00.000Z');
     expect(svc.getRequestCount()).toBe(1);
   });
 
@@ -210,7 +210,7 @@ describe('OpenMeteoService v2 capability', () => {
     const obs = await svc.getObservation(GREENWICH);
 
     expect(obs.type).toBe('observation');
-    expect(obs.date).toBe('2026-06-16T19:00Z');
+    expect(obs.date).toBe('2026-06-16T19:00:00.000Z');
     expect(obs.outside?.temperature).toBeCloseTo(293.15, 2);
     expect(svc.getRequestCount()).toBe(1);
   });

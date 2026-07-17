@@ -28,9 +28,9 @@ import {
   estimateWetBulbGlobeTemperature,
   millibarsToPA,
   normalizeAngle0To2Pi,
-  normalizeIsoTimestamp,
   optionalPercentageToRatio,
   percentageToRatio,
+  requireObservationTimestamp,
 } from '../utils/conversions.js';
 import { requireNumber } from './mapperUtils.js';
 
@@ -178,7 +178,7 @@ export function mapMetNoCurrentToWeatherData(response: MetNoLocationforecastResp
   const heatStressIndex = calculateHeatStressIndex(wetBulbGlobeTemperature);
 
   // Met.no emits ISO 8601 with a trailing Z, so the call is a passthrough.
-  const timestamp = normalizeIsoTimestamp(entry.time);
+  const timestamp = requireObservationTimestamp(entry.time, 'Met.no current conditions');
 
   const next1h = entry.data?.next_1_hours;
 

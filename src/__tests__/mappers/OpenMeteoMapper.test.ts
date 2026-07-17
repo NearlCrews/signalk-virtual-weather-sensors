@@ -42,14 +42,14 @@ describe('mapOpenMeteoCurrentToWeatherData', () => {
     expect(data.dewPoint).toBeCloseTo(283.15, 2);
     // The GMT wall-clock string is normalized to an RFC 3339 UTC instant (Z
     // appended) so a strict consumer does not read it as local time.
-    expect(data.timestamp).toBe('2026-06-16T19:00Z');
+    expect(data.timestamp).toBe('2026-06-16T19:00:00.000Z');
   });
 
   it('leaves an already-zoned timestamp untouched', () => {
     const withOffset = mapOpenMeteoCurrentToWeatherData(sample({ time: '2026-06-16T19:00+02:00' }));
-    expect(withOffset.timestamp).toBe('2026-06-16T19:00+02:00');
+    expect(withOffset.timestamp).toBe('2026-06-16T17:00:00.000Z');
     const withZulu = mapOpenMeteoCurrentToWeatherData(sample({ time: '2026-06-16T19:00Z' }));
-    expect(withZulu.timestamp).toBe('2026-06-16T19:00Z');
+    expect(withZulu.timestamp).toBe('2026-06-16T19:00:00.000Z');
   });
 
   it('derives Beaufort, gust factor, cloud cover, and apparent temperature', () => {

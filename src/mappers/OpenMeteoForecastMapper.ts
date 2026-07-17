@@ -23,9 +23,11 @@ import type { OpenMeteoCurrentResponse, OpenMeteoForecastResponse } from '../typ
 import {
   asOptionalNumber,
   millibarsToPA,
-  normalizeIsoTimestamp,
+  normalizeUtcDate,
   optionalCelsiusToKelvin,
   optionalPercentageToRatio,
+  requireIsoTimestamp,
+  requireObservationTimestamp,
 } from '../utils/conversions.js';
 import { WMO_DESCRIPTIONS } from './OpenMeteoMapper.js';
 import {
@@ -75,7 +77,7 @@ export function mapOpenMeteoHourlyToForecasts(
       h?.wind_gusts_10m?.[i]
     );
     return {
-      date,
+      date: requireIsoTimestamp(date, 'Open-Meteo hourly forecast'),
       type: 'point',
       ...(description !== undefined && { description }),
       outside,
@@ -118,7 +120,7 @@ export function mapOpenMeteoDailyToForecasts(response: OpenMeteoForecastResponse
     const sun = buildSunBlock(d?.sunrise?.[i], d?.sunset?.[i]);
 
     return {
-      date,
+      date: normalizeUtcDate(date) || requireIsoTimestamp(date, 'Open-Meteo daily forecast'),
       type: 'daily',
       ...(description !== undefined && { description }),
       outside,
@@ -133,7 +135,7 @@ export function mapOpenMeteoDailyToForecasts(response: OpenMeteoForecastResponse
  * The observation carries pressure (from `pressure_msl`) in addition to
  * the fields shared with the hourly mapper. Every field is conditionally spread
  * so a missing field is omitted rather than emitted as zero. The required `date`
- * field is set via `normalizeIsoTimestamp` (returns '' when absent, never undefined).
+ * field is validated and normalized to a canonical UTC instant.
  */
 export function mapOpenMeteoCurrentToObservation(
   response: OpenMeteoCurrentResponse
@@ -168,7 +170,7 @@ export function mapOpenMeteoCurrentToObservation(
 
   const wind = buildWindFromMs(c?.wind_speed_10m, c?.wind_direction_10m, c?.wind_gusts_10m);
 
-  const date = normalizeIsoTimestamp(c?.time);
+  const date = requireObservationTimestamp(c?.time, 'Open-Meteo observation');
   return {
     date,
     type: 'observation',

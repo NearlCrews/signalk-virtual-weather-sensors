@@ -69,6 +69,17 @@ describe('createWeatherProvider', () => {
     // Single-source degrade: the returned provider is not the merged wrapper.
     expect(p.sourceRef).not.toBe('vws-merged');
   });
+  it('uses the actual surviving selection when the configured primary is unavailable', () => {
+    const p = createWeatherProvider(
+      sanitizeConfiguration({
+        weatherProvider: 'accuweather',
+        weatherMode: 'merged',
+        mergeProviders: ['met-no'],
+      }),
+      () => {}
+    );
+    expect(p.sourceRef).toBe('met-no');
+  });
   it('excludes accuweather from mergeProviders selection when no key is configured', () => {
     // mergeProviders explicitly lists accuweather, but no key: should merge
     // only the keyless providers.

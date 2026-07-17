@@ -41,7 +41,9 @@ export interface RetryingHttpClientOptions {
   readonly retryDelayMs: number;
   /** `User-Agent` header sent on every request. */
   readonly userAgent: string;
-  /** Called once before every fetch attempt, for conservative quota counting. */
+  /** Called once immediately before every fetch attempt. It may reject dispatch. */
+  readonly beforeRequest?: () => void;
+  /** @deprecated Use `beforeRequest`. */
   readonly onRequestCounted?: () => void;
   /** Logger for debug and warn lines; defaults to a no-op. */
   readonly logger?: Logger;
@@ -49,6 +51,8 @@ export interface RetryingHttpClientOptions {
   readonly maxResponseBytes?: number;
   /** Label used in size and parse error messages; defaults to `'response'`. */
   readonly responseLabel?: string;
+  /** Plugin-lifecycle cancellation signal shared by all requests and retry delays. */
+  readonly signal?: AbortSignal | undefined;
 }
 
 /**
@@ -62,20 +66,22 @@ export class RetryingHttpClient {
   private readonly retryAttempts: number;
   private readonly retryDelayMs: number;
   private readonly userAgent: string;
-  private readonly onRequestCounted: () => void;
+  private readonly beforeRequest: () => void;
   private readonly logger: Logger;
   private readonly maxResponseBytes: number;
   private readonly responseLabel: string;
+  private readonly signal: AbortSignal | undefined;
 
   constructor(options: RetryingHttpClientOptions) {
     this.requestTimeoutMs = options.requestTimeoutMs;
     this.retryAttempts = options.retryAttempts;
     this.retryDelayMs = options.retryDelayMs;
     this.userAgent = options.userAgent;
-    this.onRequestCounted = options.onRequestCounted ?? (() => {});
+    this.beforeRequest = options.beforeRequest ?? options.onRequestCounted ?? (() => {});
     this.logger = options.logger ?? (() => {});
     this.maxResponseBytes = options.maxResponseBytes ?? DEFAULT_MAX_RESPONSE_BYTES;
     this.responseLabel = options.responseLabel ?? 'response';
+    this.signal = options.signal;
   }
 
   /**
@@ -83,72 +89,78 @@ export class RetryingHttpClient {
    * timeout until the attempt budget is spent.
    */
   public async request<T>(url: URL, attempt = 1): Promise<T> {
+    this.signal?.throwIfAborted();
+    // Keep local quota rejection outside the retry catch. A rejected reservation
+    // is not an upstream failure and must never consume retry attempts.
+    this.beforeRequest();
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), this.requestTimeoutMs);
+    let timedOut = false;
+    const timeout = setTimeout(() => {
+      timedOut = true;
+      controller.abort();
+    }, this.requestTimeoutMs);
+    const abortFromParent = (): void => controller.abort(this.signal?.reason);
+    this.signal?.addEventListener('abort', abortFromParent, { once: true });
 
     try {
-      this.logger('debug', 'Making API request', {
-        url: this.sanitizeUrlForLogging(url),
-        attempt,
-        maxAttempts: this.retryAttempts,
-      });
-
-      // Count before dispatch. A request that reaches the provider but times
-      // out before headers still consumes quota, and cannot be distinguished
-      // from a local transport failure after fetch rejects. Conservative
-      // counting prevents retries from exceeding the configured cap.
-      this.onRequestCounted();
-
-      const response = await fetch(url.toString(), {
-        method: 'GET',
-        headers: {
-          Accept: 'application/json',
-          'User-Agent': this.userAgent,
-        },
-        signal: controller.signal,
-      });
-
-      if (!response.ok) {
-        await this.handleApiError(response, attempt);
-      }
-
-      // The timeout must stay armed across this call: `fetch` resolves at
-      // headers-received, and without the signal the body read would be
-      // bounded only by undici's 300 s inactivity default instead of the
-      // configured requestTimeout.
-      return await readBoundedJson<T>(response, this.maxResponseBytes, this.responseLabel);
+      return await this.performAttempt<T>(url, attempt, controller.signal);
     } catch (error) {
-      if (error instanceof Error && error.name === 'AbortError') {
-        if (attempt < this.retryAttempts) {
-          this.logger('warn', 'Request timeout, retrying', {
-            attempt,
-            url: this.sanitizeUrlForLogging(url),
-          });
-          await this.delay(this.retryDelayMs * attempt);
-          return this.request<T>(url, attempt + 1);
-        }
+      return this.handleRequestError<T>(error, url, attempt, timedOut);
+    } finally {
+      clearTimeout(timeout);
+      this.signal?.removeEventListener('abort', abortFromParent);
+    }
+  }
+
+  private async performAttempt<T>(url: URL, attempt: number, signal: AbortSignal): Promise<T> {
+    this.logger('debug', 'Making API request', {
+      url: this.sanitizeUrlForLogging(url),
+      attempt,
+      maxAttempts: this.retryAttempts,
+    });
+    const response = await fetch(url.toString(), {
+      method: 'GET',
+      headers: { Accept: 'application/json', 'User-Agent': this.userAgent },
+      signal,
+    });
+    if (!response.ok) await this.handleApiError(response, attempt);
+    // The attempt timeout remains armed while the response body is read.
+    return readBoundedJson<T>(response, this.maxResponseBytes, this.responseLabel);
+  }
+
+  private async handleRequestError<T>(
+    error: unknown,
+    url: URL,
+    attempt: number,
+    timedOut: boolean
+  ): Promise<T> {
+    if (error instanceof Error && error.name === 'AbortError') {
+      if (this.signal?.aborted) this.signal.throwIfAborted();
+      if (!timedOut) throw error;
+      if (attempt >= this.retryAttempts) {
         throw new Error(
           `${ERROR_CODES.NETWORK.API_TIMEOUT}: Request timeout after ${this.retryAttempts} attempts`
         );
       }
-
-      if (attempt < this.retryAttempts && this.isRetryableError(error)) {
-        const retryAfterMs = (error as { retryAfterMs?: number | null }).retryAfterMs;
-        const delayMs = retryAfterMs ?? this.retryDelayMs * attempt;
-        this.logger('warn', 'Retryable error, attempting retry', {
-          attempt,
-          delayMs,
-          honoredRetryAfter: retryAfterMs != null,
-          error: toErrorMessage(error),
-        });
-        await this.delay(delayMs);
-        return this.request<T>(url, attempt + 1);
-      }
-
-      throw error;
-    } finally {
-      clearTimeout(timeout);
+      this.logger('warn', 'Request timeout, retrying', {
+        attempt,
+        url: this.sanitizeUrlForLogging(url),
+      });
+      await this.delay(this.retryDelayMs * attempt);
+      return this.request<T>(url, attempt + 1);
     }
+
+    if (attempt >= this.retryAttempts || !this.isRetryableError(error)) throw error;
+    const retryAfterMs = (error as { retryAfterMs?: number | null }).retryAfterMs;
+    const delayMs = retryAfterMs ?? this.retryDelayMs * attempt;
+    this.logger('warn', 'Retryable error, attempting retry', {
+      attempt,
+      delayMs,
+      honoredRetryAfter: retryAfterMs != null,
+      error: toErrorMessage(error),
+    });
+    await this.delay(delayMs);
+    return this.request<T>(url, attempt + 1);
   }
 
   /**
@@ -301,6 +313,18 @@ export class RetryingHttpClient {
    * @private
    */
   private delay(ms: number): Promise<void> {
-    return new Promise((resolve) => setTimeout(resolve, ms));
+    this.signal?.throwIfAborted();
+    return new Promise((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        this.signal?.removeEventListener('abort', onAbort);
+        resolve();
+      }, ms);
+      const onAbort = (): void => {
+        clearTimeout(timeout);
+        this.signal?.removeEventListener('abort', onAbort);
+        reject(this.signal?.reason ?? new DOMException('Aborted', 'AbortError'));
+      };
+      this.signal?.addEventListener('abort', onAbort, { once: true });
+    });
   }
 }

@@ -7,9 +7,9 @@
  * defaults, or key validation bounds.
  *
  * Lives in plain TypeScript: the panel's webpack build resolves it through
- * @babel/preset-typescript plus the `extensionAlias` mapping of `.js`
- * specifiers onto `.ts` sources, and the Node runtime build (esbuild, tsc)
- * compiles it like any other module.
+ * esbuild-loader plus the `extensionAlias` mapping of `.js` specifiers onto
+ * `.ts` sources, and the Node runtime build (esbuild, tsc) compiles it like
+ * any other module.
  *
  * Property declaration order in NOTIFICATION_LABELS doubles as the rendering
  * order in the panel's toggle list and SHOULD match the property order in the

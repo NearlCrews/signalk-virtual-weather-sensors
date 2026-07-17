@@ -24,9 +24,9 @@ import {
   estimateWetBulbGlobeTemperature,
   millibarsToPA,
   normalizeAngle0To2Pi,
-  normalizeIsoTimestamp,
   optionalPercentageToRatio,
   percentageToRatio,
+  requireObservationTimestamp,
 } from '../utils/conversions.js';
 import { requireNumber } from './mapperUtils.js';
 
@@ -155,7 +155,7 @@ export function mapOpenMeteoCurrentToWeatherData(response: OpenMeteoCurrentRespo
     airDensityEnhanced,
     wetBulbGlobeTemperature,
     heatStressIndex,
-    timestamp: normalizeIsoTimestamp(current.time),
+    timestamp: requireObservationTimestamp(current.time, 'Open-Meteo current conditions'),
     ...extractOptionalFields(current, windSpeed),
   };
 }

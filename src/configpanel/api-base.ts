@@ -15,11 +15,6 @@ export function toErrorText(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }
 
-/** Clamp `value` into the inclusive [min, max] range. */
-export function clampNumber(value: number, min: number, max: number): number {
-  return Math.min(max, Math.max(min, value));
-}
-
 export interface JsonResponse {
   readonly ok: boolean;
   readonly status: number;

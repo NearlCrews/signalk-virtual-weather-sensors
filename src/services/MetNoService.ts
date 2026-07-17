@@ -28,9 +28,10 @@ import type {
   MetNoLocationforecastResponse,
   WeatherData,
 } from '../types/index.js';
-import { toCoordKey, toErrorMessage } from '../utils/conversions.js';
+import { isAbortError, toCoordKey, toErrorMessage } from '../utils/conversions.js';
 import { DEFAULT_REQUEST_TIMEOUT_MS, fetchJson, normalizeBaseUrl } from '../utils/http.js';
 import { assertValidCoordinates } from '../utils/validation.js';
+import { CoalescingTtlCache } from './cache/CoalescingTtlCache.js';
 
 /** Default Met.no host. */
 const DEFAULT_BASE_URL = 'https://api.met.no';
@@ -55,6 +56,7 @@ export interface MetNoOptions {
   readonly baseUrl?: string;
   /** Override the per-request timeout in milliseconds. */
   readonly requestTimeoutMs?: number;
+  readonly signal?: AbortSignal | undefined;
 }
 
 export class MetNoService implements ForecastCapableProvider {
@@ -62,6 +64,7 @@ export class MetNoService implements ForecastCapableProvider {
   public readonly name = 'Met.no';
   /** `$source` stamped on Met.no-sourced deltas, distinct from Open-Meteo and AccuWeather. */
   public readonly sourceRef = 'met-no';
+  public readonly maxObservationAgeMs = 3 * 60 * 60 * 1000;
   /** Forecast horizon this provider declares; read by the v2 adapter to size its result arrays. */
   public readonly forecastCapabilities = {
     hourlyHours: HOURLY_FORECAST_HOURS,
@@ -73,26 +76,26 @@ export class MetNoService implements ForecastCapableProvider {
   private readonly requestTimeoutMs: number;
   /** Cumulative attempted-fetch count (incremented before each request), for the status banner. */
   private requestCount = 0;
-  private memo?: { key: string; expiresAt: number; doc: MetNoLocationforecastResponse };
+  private readonly documentCache: CoalescingTtlCache<MetNoLocationforecastResponse>;
+  private readonly signal: AbortSignal | undefined;
 
   constructor(logger: Logger = () => {}, options?: MetNoOptions) {
     this.logger = logger;
     this.baseUrl = normalizeBaseUrl(options?.baseUrl, DEFAULT_BASE_URL);
     this.requestTimeoutMs = options?.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS;
+    this.signal = options?.signal;
+    this.documentCache = new CoalescingTtlCache(
+      DOCUMENT_MEMO_TTL_MS,
+      DOCUMENT_MEMO_TTL_MS,
+      this.logger
+    );
 
     this.logger('info', 'MetNoService initialized', { baseUrl: this.baseUrl });
   }
 
   public async fetchCurrentWeather(location: GeoLocation): Promise<WeatherData> {
-    assertValidCoordinates(location, 'Met.no request');
-    const url = this.buildUrl(location);
-
     try {
-      this.requestCount++;
-      const response = await fetchJson<MetNoLocationforecastResponse>(url, {
-        timeoutMs: this.requestTimeoutMs,
-        headers: { 'User-Agent': PLUGIN.CONTACT_USER_AGENT },
-      });
+      const response = await this.fetchForecastDocument(location, 'Met.no request');
       const weatherData = mapMetNoCurrentToWeatherData(response);
 
       this.logger('info', 'Met.no weather retrieved', {
@@ -103,6 +106,7 @@ export class MetNoService implements ForecastCapableProvider {
 
       return weatherData;
     } catch (error) {
+      if (isAbortError(error)) throw error;
       this.logger('error', 'Failed to fetch Met.no weather', {
         location: `${location.latitude},${location.longitude}`,
         error: toErrorMessage(error),
@@ -137,19 +141,22 @@ export class MetNoService implements ForecastCapableProvider {
   ): Promise<MetNoLocationforecastResponse> {
     assertValidCoordinates(location, context);
     const key = toCoordKey(location);
-    const now = Date.now();
-    if (this.memo && this.memo.key === key && this.memo.expiresAt > now) {
-      return this.memo.doc;
-    }
     try {
-      this.requestCount++;
-      const doc = await fetchJson<MetNoLocationforecastResponse>(this.buildUrl(location), {
-        timeoutMs: this.requestTimeoutMs,
-        headers: { 'User-Agent': PLUGIN.CONTACT_USER_AGENT },
+      return await this.documentCache.get(key, async () => {
+        this.requestCount++;
+        try {
+          return await fetchJson<MetNoLocationforecastResponse>(this.buildUrl(location), {
+            timeoutMs: this.requestTimeoutMs,
+            headers: { 'User-Agent': PLUGIN.CONTACT_USER_AGENT },
+            signal: this.signal,
+          });
+        } catch (error) {
+          if (isAbortError(error)) this.requestCount--;
+          throw error;
+        }
       });
-      this.memo = { key, expiresAt: now + DOCUMENT_MEMO_TTL_MS, doc };
-      return doc;
     } catch (error) {
+      if (isAbortError(error)) throw error;
       this.logger('error', 'Failed to fetch Met.no forecast', {
         location: `${location.latitude},${location.longitude}`,
         error: toErrorMessage(error),
@@ -178,6 +185,10 @@ export class MetNoService implements ForecastCapableProvider {
 
   /** Met.no needs no location-key cache (it takes lat/lon directly). */
   public getCacheStats(): { size: number } {
-    return { size: 0 };
+    return { size: this.documentCache.size() };
+  }
+
+  public isCurrentWeatherFetchBlocked(): boolean {
+    return false;
   }
 }

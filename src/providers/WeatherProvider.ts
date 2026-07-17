@@ -28,6 +28,9 @@ export interface CurrentWeatherProvider {
    */
   readonly sourceRef: string;
 
+  /** Maximum acceptable age of a current observation from this provider. */
+  readonly maxObservationAgeMs?: number;
+
   /** Fetch and transform current conditions for a position into SI `WeatherData`. */
   fetchCurrentWeather(location: GeoLocation): Promise<WeatherData>;
 
@@ -45,6 +48,9 @@ export interface CurrentWeatherProvider {
 
   /** Location-cache size, for the status panel. Zero-sized for cacheless providers. */
   getCacheStats(): { size: number };
+
+  /** True only when this provider cannot make a current request right now. */
+  isCurrentWeatherFetchBlocked?(): boolean;
 }
 
 /** Forecast window a provider declares about itself, read by the v2 adapter. */

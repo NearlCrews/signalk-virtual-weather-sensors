@@ -1,5 +1,5 @@
 {
-  "$schema": "https://biomejs.dev/schemas/2.5.3/schema.json",
+  "$schema": "https://biomejs.dev/schemas/2.5.4/schema.json",
   "vcs": {
     "enabled": true,
     "clientKind": "git",
@@ -10,14 +10,25 @@
     "includes": [
       "src/**/*.ts",
       "src/**/*.tsx",
-      "!src/__tests__/configpanel/**/*.browser.test.tsx",
+      "src/**/*.css",
+      "tests/**/*.ts",
+      "fixtures/**/*.ts",
+      "fixtures/**/*.tsx",
+      "fixtures/**/*.html",
       "scripts/**/*.mjs",
       "*.ts",
       "*.js",
+      "*.cjs",
+      "*.mjs",
       "*.json",
       "!**/node_modules",
       "!**/dist",
       "!**/coverage",
+      "!**/playwright-report",
+      "!**/public",
+      "!**/test-results",
+      "!**/.tmp",
+      "!docs/superpowers",
       "!package-lock.json"
     ]
   },

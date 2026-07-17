@@ -29,6 +29,7 @@ import type {
   WeatherData,
 } from '../types/index.js';
 import {
+  isAbortError,
   isApiQuotaReached,
   isValidHumidity,
   isValidPressure,
@@ -42,6 +43,7 @@ import { assertValidCoordinates, validateAccuWeatherResponse } from '../utils/va
 import { CoalescingTtlCache } from './cache/CoalescingTtlCache.js';
 import { ForecastCache } from './cache/ForecastCache.js';
 import { RetryingHttpClient } from './http/RetryingHttpClient.js';
+import { RequestWindowStore } from './quota/RequestWindowStore.js';
 import { RollingRequestWindow } from './quota/RollingRequestWindow.js';
 
 /** Validation pattern for AccuWeather location keys (URL path segment). */
@@ -60,6 +62,7 @@ export class AccuWeatherService implements CurrentWeatherProvider {
   public readonly name = 'AccuWeather';
   /** `$source` stamped on AccuWeather-sourced deltas. */
   public readonly sourceRef = 'accuweather';
+  public readonly maxObservationAgeMs = 2 * 60 * 60 * 1000;
 
   private readonly config: AccuWeatherConfig;
   private readonly logger: Logger;
@@ -75,7 +78,8 @@ export class AccuWeatherService implements CurrentWeatherProvider {
    * buckets for quota checks. See `RollingRequestWindow` for the rotation and
    * backward-jump rationale.
    */
-  private readonly requestWindow = new RollingRequestWindow();
+  private readonly requestWindow: RollingRequestWindow;
+  private readonly requestWindowStore: RequestWindowStore | undefined;
   /**
    * On-demand forecast cache, keyed by `${kind}:${locationKey}`. Separate from
    * locationCache because forecasts have their own per-kind TTLs and are pulled
@@ -85,12 +89,19 @@ export class AccuWeatherService implements CurrentWeatherProvider {
   /**
    * Retrying JSON-over-HTTP client. Owns the abort-timeout, retry, backoff, and
    * Retry-After path; the rolling request window is counted through its
-   * `onRequestCounted` hook so an error response from AccuWeather still charges
+   * `beforeRequest` hook so an error response from AccuWeather still charges
    * quota the same way the inline fetch path did.
    */
   private readonly http: RetryingHttpClient;
 
-  constructor(apiKey: string, logger: Logger = () => {}, config?: Partial<AccuWeatherConfig>) {
+  constructor(
+    apiKey: string,
+    logger: Logger = () => {},
+    options?: Partial<AccuWeatherConfig> & {
+      readonly quotaStatePath?: string | undefined;
+      readonly signal?: AbortSignal | undefined;
+    }
+  ) {
     // Validate before any field assignment so a throw cannot leave the instance
     // in a partially-constructed state. Callers always discard the reference on
     // throw today, but the invariant is cheaper to keep than to defend.
@@ -100,6 +111,7 @@ export class AccuWeatherService implements CurrentWeatherProvider {
       );
     }
 
+    const { quotaStatePath, signal, ...config } = options ?? {};
     this.config = {
       apiKey,
       locationCacheTimeout: DEFAULT_CONFIG.LOCATION_CACHE_TIMEOUT,
@@ -110,6 +122,10 @@ export class AccuWeatherService implements CurrentWeatherProvider {
     };
 
     this.logger = logger;
+    this.requestWindowStore = quotaStatePath
+      ? new RequestWindowStore(quotaStatePath, this.logger)
+      : undefined;
+    this.requestWindow = new RollingRequestWindow(Date.now(), this.requestWindowStore?.load());
     this.locationCache = new CoalescingTtlCache<AccuWeatherLocation>(
       this.config.locationCacheTimeout * 1000,
       CACHE_PRUNE_INTERVAL_MS,
@@ -121,10 +137,16 @@ export class AccuWeatherService implements CurrentWeatherProvider {
       retryAttempts: this.config.retryAttempts,
       retryDelayMs: this.config.retryDelay,
       userAgent: `${PLUGIN.NAME}/${PLUGIN.VERSION}`,
-      onRequestCounted: () => this.requestWindow.record(),
+      beforeRequest: () => {
+        if (!this.requestWindow.tryAcquire(this.config.dailyApiQuota)) {
+          throw this.quotaReachedError();
+        }
+        this.requestWindowStore?.save(this.requestWindow.snapshot());
+      },
       logger: this.logger,
       maxResponseBytes: DEFAULT_MAX_RESPONSE_BYTES,
       responseLabel: 'AccuWeather response',
+      signal,
     });
 
     this.logger('info', 'AccuWeatherService initialized', {
@@ -177,6 +199,7 @@ export class AccuWeatherService implements CurrentWeatherProvider {
 
       return weatherData;
     } catch (error) {
+      if (isAbortError(error)) throw error;
       this.logger('error', 'Failed to fetch weather data', {
         location: `${location.latitude},${location.longitude}`,
         error: toErrorMessage(error),
@@ -513,13 +536,15 @@ export class AccuWeatherService implements CurrentWeatherProvider {
   }
 
   /**
-   * HTTP fetch attempts in the rolling last 24 hours. Backed by 24 hourly
-   * buckets that rotate as time advances, so memory stays constant regardless
-   * of uptime. Delegates to `RollingRequestWindow.countLast24h`, which rotates
-   * before summing so a quota check made between fetches still reflects buckets
-   * that have aged out.
+   * HTTP fetch attempts in the exact rolling last 24 hours. Delegates to
+   * `RollingRequestWindow.countLast24h`, which prunes expired timestamps before
+   * returning the count.
    */
   public getRequestCountLast24h(): number {
     return this.requestWindow.countLast24h();
+  }
+
+  public isCurrentWeatherFetchBlocked(): boolean {
+    return this.isQuotaExhausted();
   }
 }

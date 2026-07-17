@@ -52,11 +52,11 @@ export function setupEnhancedEmissionSystem(
  * @private
  */
 function emitWeatherTick(instance: PluginInstance, app: ServerAPI): void {
-  if (!instance.weatherService || !instance.pathMapper) {
-    return;
-  }
+  if (!instance.weatherService) return;
   const weatherData = instance.weatherService.getCurrentWeatherData();
-  if (!weatherData) {
+
+  if (!weatherData || !instance.pathMapper) {
+    emitMarineTick(instance, app);
     return;
   }
 
@@ -71,6 +71,7 @@ function emitWeatherTick(instance: PluginInstance, app: ServerAPI): void {
   // keeps broadcasting cached in-window data on the configured cadence, but
   // every rebroadcast retains the original provider measurement timestamp.
   if (instance.weatherService.isDataStale()) {
+    emitMarineTick(instance, app);
     return;
   }
 
@@ -112,8 +113,6 @@ function emitWeatherTick(instance: PluginInstance, app: ServerAPI): void {
     instance.metaEmitted = true;
   }
 
-  // Optional sea-state layer rides the same keep-alive cadence and is reached
-  // only past the staleness gate above, so marine data ages out with weather.
   emitMarineTick(instance, app);
 }
 
@@ -131,6 +130,7 @@ function emitMarineTick(instance: PluginInstance, app: ServerAPI): void {
 
   const marine = instance.weatherService?.getCurrentMarineData();
   if (!marine) return;
+  if (instance.weatherService?.isMarineDataStale()) return;
 
   // Cheap pointer compare first: the steady-state tick (unchanged snapshot)
   // skips the per-field emptiness scan, which only runs on a genuinely new

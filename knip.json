@@ -1,0 +1,20 @@
+{
+  "$schema": "https://unpkg.com/knip@6/schema.json",
+  "entry": [
+    "src/configpanel/PluginConfigurationPanel.tsx",
+    "fixtures/browser/main.tsx",
+    "fixtures/browser/vite.config.ts"
+  ],
+  "project": [
+    "src/**/*.{ts,tsx}",
+    "tests/**/*.ts",
+    "fixtures/**/*.{ts,tsx}",
+    "scripts/*.mjs",
+    "*.{ts,js,cjs,mjs}"
+  ],
+  "ignoreDependencies": ["@signalk/signalk-schema"],
+  "ignoreExportsUsedInFile": true,
+  "rules": {
+    "duplicates": "off"
+  }
+}

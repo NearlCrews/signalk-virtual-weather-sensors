@@ -26,39 +26,62 @@
  */
 
 const path = require('node:path');
-const { ModuleFederationPlugin } = require('webpack').container;
+const webpack = require('webpack');
+const { ModuleFederationPlugin } = webpack.container;
 const packageJson = require('./package.json');
 
 const containerName = packageJson.name.replace(/[-@/]/g, '_');
 
+class NormalizeCssModuleWhitespacePlugin {
+  apply(compiler) {
+    compiler.hooks.compilation.tap('NormalizeCssModuleWhitespacePlugin', (compilation) => {
+      const hooks = webpack.css.CssModulesPlugin.getCompilationHooks(compilation);
+      hooks.renderModulePackage.tap('NormalizeCssModuleWhitespacePlugin', (source) => {
+        const content = source.source().toString();
+        const normalized = `${content.trimEnd()}\n`;
+        return normalized === content ? source : new webpack.sources.RawSource(normalized);
+      });
+    });
+  }
+}
+
 module.exports = {
-  entry: './src/configpanel/index.tsx',
+  entry: {},
   mode: 'production',
-  experiments: { outputModule: true },
+  devtool: false,
+  experiments: { css: true, outputModule: true },
   output: {
     path: path.resolve(__dirname, 'public'),
     clean: true,
+    filename: '[name].js',
+    chunkFilename: '[name].[contenthash].mjs',
+    cssChunkFilename: '[name].[contenthash].css',
     module: true,
     chunkFormat: 'module',
+    uniqueName: containerName,
   },
   module: {
     rules: [
       {
         test: /\.[jt]sx?$/,
-        loader: 'babel-loader',
+        loader: 'esbuild-loader',
         exclude: /node_modules/,
         options: {
-          presets: [
-            // Babel 8 removed the isTSX and allExtensions options: preset-typescript
-            // now detects JSX from the .tsx extension, which is what the panel uses.
-            '@babel/preset-typescript',
-            // development: false pins the production JSX runtime (jsx/jsxs from
-            // react/jsx-runtime), the one the federated React singleton provides.
-            // Babel 8's preset-react otherwise defaults to the dev runtime (jsxDEV)
-            // when NODE_ENV is unset at build time, which the host does not expose
-            // and which fails at runtime with "jsxDEV is not a function".
-            ['@babel/preset-react', { runtime: 'automatic', development: false }],
-          ],
+          loader: 'tsx',
+          target: 'es2023',
+          jsx: 'automatic',
+        },
+      },
+      {
+        test: /\.module\.css$/,
+        type: 'css/module',
+        parser: {
+          container: false,
+          dashedIdents: false,
+          namedExports: false,
+        },
+        generator: {
+          localIdentName: 'svws_[name]__[local]--[hash:base64:5]',
         },
       },
     ],
@@ -73,6 +96,7 @@ module.exports = {
     },
   },
   plugins: [
+    new NormalizeCssModuleWhitespacePlugin(),
     new ModuleFederationPlugin({
       name: containerName,
       library: { type: 'module' },
@@ -80,14 +104,14 @@ module.exports = {
       exposes: {
         './PluginConfigurationPanel': './src/configpanel/PluginConfigurationPanel',
       },
-      // `singleton` ensures React state hooks work across the host UI / panel
-      // boundary. `requiredVersion` comes from devDependencies so the
-      // federation share-scope check matches what we built against; a future
-      // host React bump only needs the devDep version raised.
+      // `singleton` ensures React state hooks work across the host UI and panel
+      // boundary. The host must supply React 19. The shared UI package stays
+      // inside this remote and is intentionally absent from this share map.
       shared: {
         react: {
           singleton: true,
-          requiredVersion: packageJson.devDependencies.react,
+          requiredVersion: '>=19.2.0 <20.0.0',
+          import: false,
         },
       },
     }),

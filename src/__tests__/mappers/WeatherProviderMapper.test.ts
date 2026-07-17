@@ -30,7 +30,7 @@ const fullHour: AccuWeatherHourlyForecast = {
 describe('mapHourlyToForecasts', () => {
   it('maps a full hour to an SI point forecast', () => {
     const [f] = mapHourlyToForecasts([fullHour]);
-    expect(f?.date).toBe('2026-05-28T12:00:00+00:00');
+    expect(f?.date).toBe('2026-05-28T12:00:00.000Z');
     expect(f?.type).toBe('point');
     expect(f?.description).toBe('Partly sunny');
     expect(f?.outside?.temperature).toBeCloseTo(293.15, 2);
@@ -83,10 +83,13 @@ describe('mapHourlyToForecasts', () => {
 
   it('preserves ascending input order', () => {
     const out = mapHourlyToForecasts([
-      { DateTime: 'a', Temperature: { Value: 1, Unit: 'C' } },
-      { DateTime: 'b', Temperature: { Value: 2, Unit: 'C' } },
+      { DateTime: '2026-05-28T12:00:00Z', Temperature: { Value: 1, Unit: 'C' } },
+      { DateTime: '2026-05-28T13:00:00Z', Temperature: { Value: 2, Unit: 'C' } },
     ]);
-    expect(out.map((f) => f.date)).toEqual(['a', 'b']);
+    expect(out.map((f) => f.date)).toEqual([
+      '2026-05-28T12:00:00.000Z',
+      '2026-05-28T13:00:00.000Z',
+    ]);
   });
 });
 
@@ -113,7 +116,7 @@ describe('mapDailyToForecasts', () => {
 
   it('maps a daily entry to SI daily WeatherData', () => {
     const [f] = mapDailyToForecasts(resp);
-    expect(f?.date).toBe('2026-05-28T07:00:00+00:00');
+    expect(f?.date).toBe('2026-05-28T07:00:00.000Z');
     expect(f?.type).toBe('daily');
     expect(f?.description).toBe('Showers');
     expect(f?.outside?.minTemperature).toBeCloseTo(283.15, 2);
@@ -127,15 +130,15 @@ describe('mapDailyToForecasts', () => {
     expect(f?.wind?.speedTrue).toBeCloseTo(5, 2);
     expect(f?.wind?.directionTrue).toBeCloseTo(Math.PI, 5);
     expect(f?.wind?.gust).toBeCloseTo(10, 2);
-    expect(f?.sun?.sunrise).toBe('2026-05-28T05:00:00+00:00');
-    expect(f?.sun?.sunset).toBe('2026-05-28T20:00:00+00:00');
+    expect(f?.sun?.sunrise).toBe('2026-05-28T05:00:00.000Z');
+    expect(f?.sun?.sunset).toBe('2026-05-28T20:00:00.000Z');
   });
 
   it('handles a minimal daily entry without a Day block', () => {
     const [f] = mapDailyToForecasts({
       DailyForecasts: [
         {
-          Date: 'd',
+          Date: '2026-05-29T07:00:00Z',
           Temperature: { Minimum: { Value: 5, Unit: 'C' }, Maximum: { Value: 9, Unit: 'C' } },
         },
       ],
@@ -169,7 +172,7 @@ describe('mapCurrentToObservation', () => {
   it('maps the observation envelope with pressure, tendency, and wind', () => {
     const obs = mapCurrentToObservation(current);
     expect(obs.type).toBe('observation');
-    expect(obs.date).toBe('2026-06-17T12:00:00+00:00');
+    expect(obs.date).toBe('2026-06-17T12:00:00.000Z');
     expect(obs.description).toBe('Mostly cloudy');
     expect(obs.outside?.temperature).toBeCloseTo(291.15, 2);
     expect(obs.outside?.dewPointTemperature).toBeCloseTo(285.15, 2);
@@ -189,7 +192,7 @@ describe('mapCurrentToObservation', () => {
 
   it('omits absent blocks', () => {
     const sparse = {
-      LocalObservationDateTime: 't',
+      LocalObservationDateTime: '2026-06-17T12:00:00Z',
       Temperature: { Metric: { Value: 10, Unit: 'C' } },
     } as unknown as AccuWeatherCurrentConditions;
     const obs = mapCurrentToObservation(sparse);

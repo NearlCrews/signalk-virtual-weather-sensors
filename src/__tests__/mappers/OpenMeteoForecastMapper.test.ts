@@ -24,7 +24,7 @@ describe('OpenMeteoForecastMapper', () => {
     });
     expect(out).toHaveLength(2);
     expect(out[0]?.type).toBe('point');
-    expect(out[0]?.date).toBe('2026-06-22T00:00');
+    expect(out[0]?.date).toBe('2026-06-22T00:00:00.000Z');
     expect(out[0]?.outside?.temperature).toBeCloseTo(293.15, 2);
     expect(out[0]?.outside?.relativeHumidity).toBeCloseTo(0.5, 5);
     expect(out[0]?.outside?.cloudCover).toBeCloseTo(0.25, 5);
@@ -40,7 +40,7 @@ describe('OpenMeteoForecastMapper', () => {
     expect(typeof out[0]?.outside?.absoluteHumidity).toBe('number');
     // precipitationVolume: 1.5 mm -> 0.0015 m
     expect(out[0]?.outside?.precipitationVolume).toBeCloseTo(0.0015, 6);
-    expect(out[1]?.date).toBe('2026-06-22T01:00');
+    expect(out[1]?.date).toBe('2026-06-22T01:00:00.000Z');
   });
 
   it('maps the daily block to min/max temps and sun, with precipitation and wind', () => {
@@ -60,7 +60,7 @@ describe('OpenMeteoForecastMapper', () => {
     expect(out[0]?.type).toBe('daily');
     expect(out[0]?.outside?.minTemperature).toBeCloseTo(285.15, 2);
     expect(out[0]?.outside?.maxTemperature).toBeCloseTo(297.15, 2);
-    expect(out[0]?.sun?.sunrise).toBe('2026-06-22T05:00');
+    expect(out[0]?.sun?.sunrise).toBe('2026-06-22T05:00:00.000Z');
     // precipitationVolume: 3 mm -> 0.003 m
     expect(out[0]?.outside?.precipitationVolume).toBeCloseTo(0.003, 6);
     // Wind block present because wind_speed_10m_max was provided

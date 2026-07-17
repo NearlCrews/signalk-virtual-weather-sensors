@@ -7,6 +7,64 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+<a id="v1130"></a>
+
+## [1.13.0] - 2026-07-17
+
+Shared panel components, more resilient provider failover, durable quota
+controls, truthful observation freshness, and a current development toolchain.
+No configuration migration is required.
+
+### Fixed
+
+- Invalid cadence drafts now block Save, open the cadence section, and focus
+  the invalid field instead of persisting the previous valid number.
+- Merge-provider reorder controls retain keyboard focus at list bounds and
+  continue announcing the resulting primary and provider order.
+- Provider timestamps are validated and normalized to canonical UTC instants.
+  Future observations are rejected, stale observations stop emission, merged
+  observations exclude sources outside the allowed time skew, and synthesized
+  data carries the oldest accepted observation time.
+- Merged mode now uses the actual surviving provider when configured sources
+  are unavailable. Observations, hourly forecasts, and daily forecasts fail
+  over in configured order, and request options are validated before an
+  upstream call can consume quota.
+- AccuWeather quota enforcement now uses an exact, atomic rolling 24-hour
+  window that persists across plugin restarts. A quota-limited child no longer
+  blocks healthy keyless providers in merged mode.
+- Atmospheric and marine refreshes now run independently, with separate
+  freshness checks, so one upstream outage cannot freeze or indefinitely
+  rebroadcast the other data set.
+- Plugin shutdown now cancels active fetches, response reads, and retry delays,
+  waits for active operations, and preserves registration state when the
+  server cannot unregister the Weather API provider.
+- Sensitive values are redacted consistently from log messages, structured
+  metadata, status banners, URLs, and panel error responses at every log level.
+- Concurrent Met.no document requests and AccuWeather forecast cache misses
+  now share one upstream request instead of spending duplicate calls.
+
+### Changed
+
+- Migrated the federated configuration panel to `signalk-nearlcrews-ui` 0.3.0
+  for shared themes, layouts, fields, status components, action bars, and
+  accessible interaction patterns. The former local theme and component
+  framework has been removed. Fresh profiles now start in Light without
+  persisting an implicit choice, while existing Light, Dark, Night, Auto, and
+  legacy preferences remain unchanged.
+- Browser tests now load the built Module Federation remote with a
+  host-provided React share scope. Chromium, Firefox, WebKit, narrow embedded
+  panels, coarse pointers, legacy theme migration, native CSS `@scope`
+  compatibility, Axe checks, and save behavior are covered.
+- Aligned development with Node 24.18 and npm 11.18 while retaining a blocking
+  Node 20.18 runtime compatibility lane. Dependencies use their latest
+  compatible releases, including TypeScript 7, React 19.2, Vite 8, Vitest 4,
+  Playwright 1.61, and Biome 2.5. The panel uses esbuild-loader so the latest
+  JSX toolchain also runs on the Node 20 compatibility floor.
+- Added layered formatting, documentation, spelling, dependency-boundary,
+  dead-code, package-content, bundle, audit, browser, and release checks.
+  GitHub Actions are commit-pinned, and the publish workflow promotes the
+  exact verified tarball into a separate least-privilege publish job.
+
 <a id="v1120"></a>
 
 ## [1.12.0] - 2026-07-13

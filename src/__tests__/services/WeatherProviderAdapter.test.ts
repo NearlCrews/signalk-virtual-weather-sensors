@@ -94,6 +94,14 @@ describe('WeatherProviderAdapter', () => {
       'Invalid weather request position'
     );
   });
+  it('validates request options before spending an upstream call', async () => {
+    const getHourlyForecast = vi.fn(provider.getHourlyForecast);
+    const p = new WeatherProviderAdapter({ ...provider, getHourlyForecast }).toProvider();
+    await expect(
+      p.methods.getForecasts(position, 'point', { startDate: 'not-a-date' })
+    ).rejects.toThrow('startDate');
+    expect(getHourlyForecast).not.toHaveBeenCalled();
+  });
 
   it('rejects invalid provider record dates', async () => {
     const invalidProvider = {

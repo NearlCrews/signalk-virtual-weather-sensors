@@ -26,8 +26,11 @@ import type { MetNoLocationforecastResponse, MetNoTimeseriesEntry } from '../typ
 import {
   asOptionalNumber,
   millibarsToPA,
+  normalizeUtcDate,
   optionalCelsiusToKelvin,
   optionalPercentageToRatio,
+  requireIsoTimestamp,
+  requireObservationTimestamp,
 } from '../utils/conversions.js';
 import { MET_NO_DESCRIPTIONS } from './MetNoMapper.js';
 import { buildSkOutsideSI, buildWindFromMs } from './skV2Envelope.js';
@@ -75,7 +78,10 @@ function mapEntry(entry: MetNoTimeseriesEntry, type: 'point' | 'observation'): S
   const description = base !== undefined ? MET_NO_DESCRIPTIONS.get(base) : undefined;
 
   return {
-    date: entry.time ?? '',
+    date:
+      type === 'observation'
+        ? requireObservationTimestamp(entry.time, 'Met.no observation')
+        : requireIsoTimestamp(entry.time, 'Met.no hourly forecast'),
     type,
     ...(description !== undefined && { description }),
     outside,
@@ -118,7 +124,7 @@ function buildDailyEntry(day: string, acc: DayAcc): SKWeatherData {
   const maxTemperatureK = acc.maxC !== -Infinity ? optionalCelsiusToKelvin(acc.maxC) : undefined;
   const minTemperatureK = acc.minC !== Infinity ? optionalCelsiusToKelvin(acc.minC) : undefined;
   return {
-    date: day,
+    date: normalizeUtcDate(day),
     type: 'daily',
     ...(acc.description !== undefined && { description: acc.description }),
     outside: {
@@ -182,13 +188,13 @@ export function mapMetNoToHourlyForecasts(
 
 /**
  * Map the first timeseries entry to a single `observation` WeatherData entry.
- * Returns a degenerate envelope when the timeseries is empty so the v2 surface
- * degrades gracefully rather than throwing.
+ * Throws when the response has no observation rather than emitting an invalid
+ * empty timestamp into the v2 surface.
  */
 export function mapMetNoToObservation(response: MetNoLocationforecastResponse): SKWeatherData {
   const first = response.properties?.timeseries?.[0];
   if (first === undefined) {
-    return { date: '', type: 'observation', outside: {} };
+    throw new Error('INVALID_WEATHER_DATA: Met.no response has no observation');
   }
   return mapEntry(first, 'observation');
 }

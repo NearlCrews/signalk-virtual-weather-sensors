@@ -29,12 +29,12 @@ serves, and any implementation ideas you have.
 
 1. Fork the repository and create a feature branch from `main`.
 2. Follow the [development guide](../docs/DEVELOPMENT.md) for setup, build,
-   and test commands. Optional: enable the Biome pre-commit hook with
+   and test commands. Optional: enable the repository Git hooks with
    `npm run hooks` (it is not auto-installed).
 3. Make focused commits with clear messages (see below).
 4. Add tests for any new functionality and keep the existing suite green.
-5. Run `npm run validate` (type-check, lint, and tests) and `npm run build`
-   before pushing.
+5. Run `npm run verify:browser` before pushing. Run `npm run verify:release`
+   when panel behavior or release infrastructure changes.
 6. Update documentation (`README.md`, `CHANGELOG.md`, `docs/`) as needed.
 7. Open a pull request with a clear description of the change. For changes
    that touch emitted Signal K paths or NMEA2000 alignment, see the
@@ -49,8 +49,8 @@ serves, and any implementation ideas you have.
 - Keep modules focused and small. Shared cross-boundary constants belong in
   `src/constants/notifications-shared.ts`; shared types in
   `src/types/index.ts`.
-- Lint and format with Biome (`npm run lint`, or `npm run lint:fix` to
-  auto-fix).
+- Run `npm run lint` for Biome, Markdown, and spelling checks. Use
+  `npm run lint:fix` for auto-fixable code issues.
 - Do not edit `dist/` or `public/`; they are generated build output.
 - Tests live in `src/__tests__/`, mirroring the source structure, and run
   on Vitest (`npm test` for a single run, `npm run test:watch` for the

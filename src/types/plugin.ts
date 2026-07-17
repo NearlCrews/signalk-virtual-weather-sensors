@@ -62,4 +62,8 @@ export type LogLevel = 'debug' | 'info' | 'warn' | 'error';
 /**
  * Logger function signature used across all services
  */
-export type Logger = (level: LogLevel, message: string, metadata?: Record<string, unknown>) => void;
+export interface Logger {
+  (level: LogLevel, message: string, metadata?: Record<string, unknown>): void;
+  addSensitiveValue?(value: string): void;
+  redact?(value: string): string;
+}

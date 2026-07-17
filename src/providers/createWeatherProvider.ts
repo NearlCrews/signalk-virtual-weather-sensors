@@ -16,7 +16,7 @@ import {
 import type { Logger, PluginConfiguration } from '../types/index.js';
 import { createCurrentWeatherProvider } from './createCurrentWeatherProvider.js';
 import { MergingWeatherProvider } from './MergingWeatherProvider.js';
-import { PROVIDER_CATALOG } from './providerCatalog.js';
+import { PROVIDER_CATALOG, type ProviderRuntimeOptions } from './providerCatalog.js';
 import { type CurrentWeatherProvider, supportsForecasts } from './WeatherProvider.js';
 
 /** Provider ids available given the config: keyless always, keyed only when a key is present. */
@@ -31,10 +31,11 @@ function availableProviderIds(config: PluginConfiguration): WeatherProviderId[] 
 
 export function createWeatherProvider(
   config: PluginConfiguration,
-  logger: Logger = () => {}
+  logger: Logger = () => {},
+  runtime?: ProviderRuntimeOptions
 ): CurrentWeatherProvider {
   if (resolveWeatherMode(config.weatherMode) === 'single') {
-    return createCurrentWeatherProvider(config, logger);
+    return createCurrentWeatherProvider(config, logger, runtime);
   }
   // Honor the operator's explicit provider selection and order, intersected with
   // the providers that are actually available given the current config. A keyed
@@ -42,24 +43,28 @@ export function createWeatherProvider(
   const preference = resolveMergeProviders(config.mergeProviders, config.weatherProvider);
   const available = availableProviderIds(config);
   const ordered = preference.filter((id) => available.includes(id));
-  if (ordered.length <= 1) {
-    // Fewer than two selected providers are available. Degrade to single rather
-    // than a one-child "merge", and log it so the operator can correct the config.
-    logger(
-      'warn',
-      'Merged mode: fewer than two selected providers are available, using single-source'
+  if (ordered.length === 0) {
+    throw new Error(
+      'INVALID_CONFIGURATION: merged mode has no available selected weather provider'
     );
-    return createCurrentWeatherProvider(config, logger);
   }
-  const children = ordered.map((id) => PROVIDER_CATALOG[id].construct(config, logger));
-  const forecastChild = children.find(supportsForecasts);
-  if (!forecastChild) {
+  if (ordered.length === 1) {
+    const survivor = ordered[0];
+    if (survivor === undefined) throw new Error('Unreachable provider selection state');
+    logger('warn', `Merged mode: only ${survivor} is available, using it as a single source`);
+    return PROVIDER_CATALOG[survivor].construct(config, logger, runtime);
+  }
+  const children = ordered.map((id) => PROVIDER_CATALOG[id].construct(config, logger, runtime));
+  const forecastChildren = children.filter(supportsForecasts);
+  if (forecastChildren.length === 0) {
     // No forecast-capable child. Not reachable today: Open-Meteo is always
     // available and forecast-capable (and Met.no is too since phase 2), so a
     // forecast child always exists. Degrade to single rather than a merge that
     // cannot serve the v2 forecast surface, and log it.
     logger('warn', 'Merged mode: no forecast-capable provider, using single-source');
-    return createCurrentWeatherProvider(config, logger);
+    const primary = ordered[0];
+    if (primary === undefined) throw new Error('Unreachable provider selection state');
+    return PROVIDER_CATALOG[primary].construct(config, logger, runtime);
   }
-  return new MergingWeatherProvider(children, forecastChild, logger);
+  return new MergingWeatherProvider(children, forecastChildren, logger);
 }

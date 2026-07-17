@@ -23,6 +23,8 @@ import {
   millibarsToPA,
   optionalCelsiusToKelvin,
   optionalPercentageToRatio,
+  requireIsoTimestamp,
+  requireObservationTimestamp,
 } from '../utils/conversions.js';
 import {
   buildSkOutsideSI,
@@ -133,7 +135,7 @@ export function mapHourlyToForecasts(
     );
 
     return {
-      date: hour.DateTime,
+      date: requireIsoTimestamp(hour.DateTime, 'AccuWeather hourly forecast'),
       type: 'point',
       ...(typeof hour.IconPhrase === 'string' && { description: hour.IconPhrase }),
       outside,
@@ -179,7 +181,7 @@ export function mapDailyToForecasts(response: AccuWeatherDailyForecastResponse):
     );
 
     return {
-      date: day.Date,
+      date: requireIsoTimestamp(day.Date, 'AccuWeather daily forecast'),
       type: 'daily',
       ...(typeof half?.IconPhrase === 'string' && { description: half.IconPhrase }),
       outside,
@@ -230,7 +232,7 @@ export function mapCurrentToObservation(c: AccuWeatherCurrentConditions): SKWeat
   );
 
   return {
-    date: c.LocalObservationDateTime,
+    date: requireObservationTimestamp(c.LocalObservationDateTime, 'AccuWeather observation'),
     type: 'observation',
     ...(typeof c.WeatherText === 'string' && { description: c.WeatherText }),
     outside,

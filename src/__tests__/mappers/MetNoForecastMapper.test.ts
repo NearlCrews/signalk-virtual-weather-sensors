@@ -39,7 +39,7 @@ describe('MetNoForecastMapper', () => {
     const out = mapMetNoToHourlyForecasts(HOURLY);
     expect(out).toHaveLength(2);
     expect(out[0]?.type).toBe('point');
-    expect(out[0]?.date).toBe('2026-06-22T12:00:00Z');
+    expect(out[0]?.date).toBe('2026-06-22T12:00:00.000Z');
     expect(out[0]?.outside?.temperature).toBeCloseTo(293.15, 2);
     expect(out[0]?.outside?.relativeHumidity).toBeCloseTo(0.5, 5);
     expect(out[0]?.outside?.pressure).toBeCloseTo(101300, 0);
@@ -48,19 +48,18 @@ describe('MetNoForecastMapper', () => {
     expect(out[0]?.wind?.speedTrue).toBeCloseTo(5, 5);
     expect(out[0]?.wind?.directionTrue).toBeCloseTo(Math.PI / 2, 5);
     expect(out[0]?.description).toBe('Cloudy'); // symbol_code 'cloudy' maps to 'Cloudy'
-    expect(out[1]?.date).toBe('2026-06-22T13:00:00Z');
+    expect(out[1]?.date).toBe('2026-06-22T13:00:00.000Z');
   });
   it('maps the first entry to a single observation', () => {
     const obs = mapMetNoToObservation(HOURLY);
     expect(obs.type).toBe('observation');
-    expect(obs.date).toBe('2026-06-22T12:00:00Z');
+    expect(obs.date).toBe('2026-06-22T12:00:00.000Z');
     expect(obs.outside?.temperature).toBeCloseTo(293.15, 2);
   });
-  it('returns a degenerate envelope when the timeseries is empty', () => {
-    const obs = mapMetNoToObservation({ properties: { timeseries: [] } });
-    expect(obs.type).toBe('observation');
-    expect(obs.date).toBe('');
-    expect(obs.outside).toEqual({});
+  it('rejects an empty observation response', () => {
+    expect(() => mapMetNoToObservation({ properties: { timeseries: [] } })).toThrow(
+      'INVALID_WEATHER_DATA'
+    );
   });
   it('derives per-UTC-day min and max temperature from the 6-hour windows', () => {
     const six = (time: string, max: number, min: number, precip: number) => ({
@@ -90,7 +89,7 @@ describe('MetNoForecastMapper', () => {
     });
     expect(out).toHaveLength(1);
     expect(out[0]?.type).toBe('daily');
-    expect(out[0]?.date).toBe('2026-06-23');
+    expect(out[0]?.date).toBe('2026-06-23T00:00:00.000Z');
     expect(out[0]?.outside?.maxTemperature).toBeCloseTo(297.15, 2); // 24 C, the off-grid 99 ignored
     expect(out[0]?.outside?.minTemperature).toBeCloseTo(281.15, 2); // 8 C, the off-grid -99 ignored
     expect(out[0]?.outside?.precipitationVolume).toBeCloseTo(0.003, 6); // (1+0+2+0) mm to m, off-grid excluded

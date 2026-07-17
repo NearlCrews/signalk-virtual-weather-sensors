@@ -79,6 +79,7 @@ Thumbs.db
 
 # Optional npm cache
 .npm
+.cache/
 
 # Optional eslint cache
 .eslintcache
@@ -90,6 +91,9 @@ Thumbs.db
 # Temporary folders
 tmp/
 temp/
+.tmp/
+playwright-report/
+test-results/
 
 # Config files with sensitive information
 config/local.js

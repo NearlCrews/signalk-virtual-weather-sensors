@@ -3,63 +3,85 @@ name: Publish to npm
 on:
   release:
     types: [published]
-  workflow_dispatch:
-    inputs:
-      tag:
-        description: Tag to publish (e.g. v1.4.2)
-        required: true
 
 permissions:
   contents: read
-  id-token: write
+
+concurrency:
+  group: publish-${{ github.event.release.tag_name }}
+  cancel-in-progress: false
 
 jobs:
-  publish:
+  build:
+    if: github.event.release.prerelease == false
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v7
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
         with:
-          ref: ${{ github.event.release.tag_name || inputs.tag }}
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v6
+          fetch-depth: 0
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
-          node-version: 20.x
-          cache: npm
-          registry-url: https://registry.npmjs.org
-
-      - name: Install dependencies
-        run: npm ci --ignore-scripts
-
-      - name: Verify tag is reachable from main
+          node-version: 24.18.0
+          package-manager-cache: false
+      - name: Install supported npm
+        working-directory: ${{ runner.temp }}
+        run: npm install --global npm@11.18.0
+      - name: Verify the release tag matches package.json
         env:
-          TAG: ${{ github.event.release.tag_name || inputs.tag }}
+          TAG_NAME: ${{ github.event.release.tag_name }}
         run: |
-          git fetch origin main --depth=200
-          if ! git merge-base --is-ancestor "$TAG" origin/main; then
-            echo "::error::Tag $TAG is not reachable from origin/main; refusing to publish."
+          PKG_VERSION="$(node -p "require('./package.json').version")"
+          EXPECTED_TAG="v${PKG_VERSION}"
+          if [ "$TAG_NAME" != "$EXPECTED_TAG" ]; then
+            echo "Release tag ($TAG_NAME) does not match expected tag ($EXPECTED_TAG)" >&2
             exit 1
           fi
-
-      - name: Type check
-        run: npm run type-check
-
-      - name: Run tests
-        run: npm run test:run
-
-      - name: Verify tag matches package.json version
-        env:
-          TAG: ${{ github.event.release.tag_name || inputs.tag }}
+      - name: Verify the release commit is on main
         run: |
-          PKG_VERSION=$(node -p "require('./package.json').version")
-          TAG_VERSION=${TAG#v}
-          if [ "$PKG_VERSION" != "$TAG_VERSION" ]; then
-            echo "::error::package.json version $PKG_VERSION does not match release tag $TAG"
-            exit 1
-          fi
+          git fetch origin main --no-tags
+          git merge-base --is-ancestor "$GITHUB_SHA" origin/main
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium firefox webkit
+      - name: Confirm release approval gate
+        run: npm run release:check
+        env:
+          SVWS_RELEASE_APPROVED: 'true'
+      - run: npm run verify:release
+      - name: Pack the verified plugin once
+        id: pack
+        run: |
+          mkdir artifacts
+          npm pack --json --ignore-scripts --pack-destination artifacts > pack.json
+          FILENAME="$(node -p "JSON.parse(require('fs').readFileSync('pack.json', 'utf8'))[0].filename")"
+          echo "filename=$FILENAME" >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: npm-package
+          path: artifacts/${{ steps.pack.outputs.filename }}
+          if-no-files-found: error
+          retention-days: 7
 
-      - name: Publish to npm
-        run: npm publish --provenance --access public
+  publish-npm:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: npm-package
+          path: artifacts
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: 24.18.0
+          registry-url: https://registry.npmjs.org/
+          package-manager-cache: false
+      - name: Install supported npm
+        working-directory: ${{ runner.temp }}
+        run: npm install --global npm@11.18.0
+      - run: npm publish ./artifacts/*.tgz --provenance --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

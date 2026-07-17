@@ -14,25 +14,37 @@ import type { CurrentWeatherProvider } from './WeatherProvider.js';
 
 export interface ProviderCatalogEntry {
   /** Build the provider from validated config. */
-  construct(config: PluginConfiguration, logger: Logger): CurrentWeatherProvider;
+  construct(
+    config: PluginConfiguration,
+    logger: Logger,
+    runtime?: ProviderRuntimeOptions
+  ): CurrentWeatherProvider;
+}
+
+export interface ProviderRuntimeOptions {
+  readonly signal?: AbortSignal | undefined;
+  readonly quotaStatePath?: string | undefined;
 }
 
 export const PROVIDER_CATALOG: Readonly<Record<WeatherProviderId, ProviderCatalogEntry>> =
   Object.freeze({
     'open-meteo': {
-      construct: (config, logger) =>
-        new OpenMeteoService(
-          logger,
-          config.openMeteoBaseUrl ? { baseUrl: config.openMeteoBaseUrl } : undefined
-        ),
+      construct: (config, logger, runtime) =>
+        new OpenMeteoService(logger, {
+          ...(config.openMeteoBaseUrl && { baseUrl: config.openMeteoBaseUrl }),
+          signal: runtime?.signal,
+        }),
     },
     accuweather: {
-      construct: (config, logger) =>
+      construct: (config, logger, runtime) =>
         new AccuWeatherService(config.accuWeatherApiKey, logger, {
           dailyApiQuota: config.dailyApiQuota,
+          quotaStatePath: runtime?.quotaStatePath,
+          signal: runtime?.signal,
         }),
     },
     'met-no': {
-      construct: (_config, logger) => new MetNoService(logger),
+      construct: (_config, logger, runtime) =>
+        new MetNoService(logger, { signal: runtime?.signal }),
     },
   });

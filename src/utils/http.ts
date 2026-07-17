@@ -32,6 +32,8 @@ export interface FetchJsonOptions {
   readonly headers?: Record<string, string>;
   /** Response-body size cap in bytes; defaults to 1 MiB. */
   readonly maxBytes?: number;
+  /** Plugin-lifecycle cancellation signal. */
+  readonly signal?: AbortSignal | undefined;
 }
 
 /** Map an HTTP status onto the plugin's tagged error-code substring. */
@@ -128,9 +130,16 @@ async function readBoundedText(
  * caller's own update cadence provides the next attempt.
  */
 export async function fetchJson<T>(url: URL | string, options: FetchJsonOptions): Promise<T> {
-  const { timeoutMs, headers, maxBytes = DEFAULT_MAX_RESPONSE_BYTES } = options;
+  const { timeoutMs, headers, maxBytes = DEFAULT_MAX_RESPONSE_BYTES, signal } = options;
+  signal?.throwIfAborted();
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  let timedOut = false;
+  const timeout = setTimeout(() => {
+    timedOut = true;
+    controller.abort();
+  }, timeoutMs);
+  const abortFromParent = (): void => controller.abort(signal?.reason);
+  signal?.addEventListener('abort', abortFromParent, { once: true });
 
   try {
     const response = await fetch(typeof url === 'string' ? url : url.toString(), {
@@ -148,10 +157,13 @@ export async function fetchJson<T>(url: URL | string, options: FetchJsonOptions)
     return await readBoundedJson<T>(response, maxBytes);
   } catch (error) {
     if (error instanceof Error && error.name === 'AbortError') {
+      if (signal?.aborted) signal.throwIfAborted();
+      if (!timedOut) throw error;
       throw new Error(`${ERROR_CODES.NETWORK.API_TIMEOUT}: request timed out after ${timeoutMs}ms`);
     }
     throw error;
   } finally {
     clearTimeout(timeout);
+    signal?.removeEventListener('abort', abortFromParent);
   }
 }

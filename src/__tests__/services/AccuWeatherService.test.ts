@@ -533,23 +533,22 @@ describe('AccuWeatherService', () => {
       expect(windowService.getRequestCountLast24h()).toBe(0);
     });
 
-    it('zeroes the window on a backward clock jump and counts only fresh requests', async () => {
+    it('retains requests conservatively on a backward clock jump', async () => {
       successPair();
       await windowService.fetchCurrentWeather({ latitude: 37.7749, longitude: -122.4194 });
       expect(windowService.getRequestCountLast24h()).toBe(2);
 
       // Wall clock jumps backward 6 hours (an NTP correction). The prior
-      // buckets are labelled against the now-future hour index, so their
-      // counts no longer correspond to the previous 24 hours of real time.
-      // We zero the window: undercounting briefly is far safer than capping
-      // fetches against ghost requests for up to a full day.
+      // Existing request timestamps are now in the future, so the limiter
+      // retains them conservatively instead of briefly undercounting usage.
       vi.setSystemTime(new Date(Date.now() - 6 * ONE_HOUR_MS));
       successPair();
       await windowService.fetchCurrentWeather({ latitude: 40.7128, longitude: -74.006 });
-      expect(windowService.getRequestCountLast24h()).toBe(2);
+      expect(windowService.getRequestCountLast24h()).toBe(4);
 
-      // 24 hours past the corrected time, every bucket has aged out.
-      vi.setSystemTime(new Date(Date.now() + 24 * ONE_HOUR_MS));
+      // Thirty hours past the corrected time, even the retained future
+      // timestamps have aged out of the exact rolling window.
+      vi.setSystemTime(new Date(Date.now() + 30 * ONE_HOUR_MS));
       expect(windowService.getRequestCountLast24h()).toBe(0);
     });
 
@@ -712,7 +711,7 @@ describe('AccuWeatherService', () => {
     });
 
     it('throws a rate-limit error when quota is exhausted and nothing is cached', async () => {
-      const gated = new AccuWeatherService('test-api-key', mockLogger, { dailyApiQuota: 1 });
+      const gated = new AccuWeatherService('test-api-key', mockLogger, { dailyApiQuota: 2 });
       const fetchMock = fetch as unknown as Mock;
       fetchMock
         .mockResolvedValueOnce(mockResponse(locationPayload))

@@ -343,15 +343,15 @@ describe('asOptionalNumber', () => {
 });
 
 describe('normalizeIsoTimestamp', () => {
-  it('appends Z to a bare wall-clock string', () => {
-    expect(normalizeIsoTimestamp('2026-06-16T19:00')).toBe('2026-06-16T19:00Z');
-    expect(normalizeIsoTimestamp('2026-06-16T19:00:30')).toBe('2026-06-16T19:00:30Z');
+  it('canonicalizes a bare UTC wall-clock string', () => {
+    expect(normalizeIsoTimestamp('2026-06-16T19:00')).toBe('2026-06-16T19:00:00.000Z');
+    expect(normalizeIsoTimestamp('2026-06-16T19:00:30')).toBe('2026-06-16T19:00:30.000Z');
   });
 
-  it('leaves an already-zoned timestamp untouched', () => {
-    expect(normalizeIsoTimestamp('2026-06-16T19:00Z')).toBe('2026-06-16T19:00Z');
-    expect(normalizeIsoTimestamp('2026-06-16T19:00+02:00')).toBe('2026-06-16T19:00+02:00');
-    expect(normalizeIsoTimestamp('2026-06-16T19:00-0500')).toBe('2026-06-16T19:00-0500');
+  it('converts zoned timestamps to canonical UTC', () => {
+    expect(normalizeIsoTimestamp('2026-06-16T19:00Z')).toBe('2026-06-16T19:00:00.000Z');
+    expect(normalizeIsoTimestamp('2026-06-16T19:00+02:00')).toBe('2026-06-16T17:00:00.000Z');
+    expect(normalizeIsoTimestamp('2026-06-16T19:00-0500')).toBe('2026-06-17T00:00:00.000Z');
   });
 
   it('returns an empty string when the time is absent', () => {

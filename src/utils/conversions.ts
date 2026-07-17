@@ -1,10 +1,18 @@
 import type { Timestamp } from '@signalk/server-api';
-import { API_QUOTA, MAGNUS, UNITS, VALIDATION_LIMITS } from '../constants/index.js';
+import { API_QUOTA, ERROR_CODES, MAGNUS, UNITS, VALIDATION_LIMITS } from '../constants/index.js';
 import type { GeoLocation } from '../types/navigation.js';
 
 /** Extract a string message from any thrown value: `Error.message` or `String(value)`. */
 export function toErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+/** True for DOM and Node abort errors produced by lifecycle cancellation. */
+export function isAbortError(error: unknown): boolean {
+  return (
+    error instanceof Error &&
+    (error.name === 'AbortError' || (error as NodeJS.ErrnoException).code === 'ABORT_ERR')
+  );
 }
 
 /** Cast a plain ISO 8601 string to the branded `@signalk/server-api` Timestamp type. */
@@ -40,26 +48,58 @@ export function asOptionalNumber(value: unknown): number | undefined {
   return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
 }
 
-/** Return the value when it is a string, otherwise an empty string. */
-function asStringOrEmpty(value: unknown): string {
-  return typeof value === 'string' ? value : '';
-}
-
 /** Matches a zone designator at the end of an ISO 8601 string: Z, z, or ±hh:mm / ±hhmm. */
 const ISO_ZONE_RE = /([Zz]|[+-]\d{2}:?\d{2})$/;
 
+/** Maximum tolerated provider clock lead for a current observation. */
+export const MAX_OBSERVATION_FUTURE_MS = 5 * 60 * 1000;
+
 /**
- * Normalize a bare ISO 8601 string to an RFC 3339 UTC instant. Some APIs
- * return a wall-clock string like `2024-01-01T12:00` with no zone designator,
- * which a strict consumer would read as local time and so misreport observation
- * age. Append `Z` when no `Z`/`±hh:mm` offset is already present. Returns ''
- * when the value is absent so callers fall back to the emission wall-clock time.
+ * Normalize an ISO 8601 value to a canonical RFC 3339 UTC instant. Provider
+ * values without a zone are defined by their APIs as UTC, so add `Z` before
+ * parsing. Invalid or absent input returns an empty string.
  */
 export function normalizeIsoTimestamp(value: unknown): string {
-  const time = asStringOrEmpty(value);
+  if (typeof value !== 'string') return '';
+  const time = value.trim();
   if (time === '') return '';
-  // Already carries a zone designator at the end (Z, or a ±hh:mm / ±hhmm offset)?
-  return ISO_ZONE_RE.test(time) ? time : `${time}Z`;
+  const zoned = ISO_ZONE_RE.test(time) ? time : `${time}Z`;
+  const epochMs = Date.parse(zoned);
+  return Number.isFinite(epochMs) ? new Date(epochMs).toISOString() : '';
+}
+
+/** Normalize a calendar date to UTC midnight, or return an empty string when invalid. */
+export function normalizeUtcDate(value: unknown): string {
+  if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value.trim())) return '';
+  const date = value.trim();
+  const normalized = normalizeIsoTimestamp(`${date}T00:00:00Z`);
+  return normalized.startsWith(date) ? normalized : '';
+}
+
+/** Require a provider timestamp to be a valid canonical RFC 3339 instant. */
+export function requireIsoTimestamp(value: unknown, context: string): string {
+  const normalized = normalizeIsoTimestamp(value);
+  if (normalized === '') {
+    throw new Error(
+      `${ERROR_CODES.DATA.INVALID_WEATHER_DATA}: ${context} has an invalid timestamp`
+    );
+  }
+  return normalized;
+}
+
+/** Require a current observation timestamp and reject an implausible future value. */
+export function requireObservationTimestamp(
+  value: unknown,
+  context: string,
+  now = Date.now()
+): string {
+  const normalized = requireIsoTimestamp(value, context);
+  if (Date.parse(normalized) > now + MAX_OBSERVATION_FUTURE_MS) {
+    throw new Error(
+      `${ERROR_CODES.DATA.INVALID_WEATHER_DATA}: ${context} timestamp is in the future`
+    );
+  }
+  return normalized;
 }
 
 /**

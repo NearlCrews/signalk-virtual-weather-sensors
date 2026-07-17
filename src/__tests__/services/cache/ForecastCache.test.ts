@@ -28,4 +28,19 @@ describe('ForecastCache', () => {
       'rate-limited'
     );
   });
+  it('coalesces concurrent misses, including a caller that observes exhausted quota', async () => {
+    const c = new ForecastCache(rateLimit);
+    let resolveFetch: ((value: string) => void) | undefined;
+    const fetcher = vi.fn(
+      () =>
+        new Promise<string>((resolve) => {
+          resolveFetch = resolve;
+        })
+    );
+    const first = c.fetchCached('k', 1000, false, fetcher, 0);
+    const second = c.fetchCached('k', 1000, true, fetcher, 0);
+    resolveFetch?.('shared');
+    await expect(Promise.all([first, second])).resolves.toEqual(['shared', 'shared']);
+    expect(fetcher).toHaveBeenCalledTimes(1);
+  });
 });

@@ -1,0 +1,19 @@
+{
+  "config": {
+    "default": true,
+    "MD013": false,
+    "MD022": false,
+    "MD024": {
+      "siblings_only": true
+    },
+    "MD031": false,
+    "MD032": false,
+    "MD033": false,
+    "MD034": false,
+    "MD038": false,
+    "MD040": false,
+    "MD056": false,
+    "MD060": false
+  },
+  "ignores": ["docs/superpowers/**", "public/**"]
+}
