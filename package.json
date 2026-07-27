@@ -93,6 +93,9 @@
     "@signalk/server-api": ">=2.24.0 <3"
   },
   "overrides": {
+    "markdownlint-cli2": {
+      "js-yaml": "5.2.2"
+    },
     "qs": "^6.15.2"
   },
   "devDependencies": {
