@@ -98,6 +98,9 @@ export function createMockConfig(
   overrides: Partial<import('../types/index.js').PluginConfiguration> = {}
 ): import('../types/index.js').PluginConfiguration {
   return {
+    weatherProvider: 'accuweather',
+    openMeteoBaseUrl: '',
+    marineData: false,
     accuWeatherApiKey: 'testapikey123456789012345',
     updateFrequency: 5,
     emissionInterval: 5,

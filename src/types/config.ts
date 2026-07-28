@@ -47,7 +47,8 @@ export interface PluginConfiguration {
 
   /**
    * AccuWeather API key. Empty string when using a keyless provider
-   * (`open-meteo`); required only when `weatherProvider` is `accuweather`.
+   * (`open-meteo`); required when single mode selects `accuweather`, and
+   * optional in merged mode where it controls whether AccuWeather participates.
    */
   readonly accuWeatherApiKey: string;
 
@@ -74,8 +75,9 @@ export interface PluginConfiguration {
   /**
    * Daily AccuWeather API call cap (rolling 24 hours). The free tier allows 50
    * calls/day; this value lets operators surface that limit and stop fetching
-   * when it is reached. Set to 0 to disable the cap (no quota tracking, no
-   * warnings, no auto-pause).
+   * when it is reached. It applies whenever AccuWeather participates, including
+   * merged mode. Set to 0 to disable the cap (no quota tracking, no warnings,
+   * no auto-pause).
    */
   readonly dailyApiQuota: number;
 

@@ -1,5 +1,7 @@
 const SENSITIVE_KEY_PATTERN = /apikey|api_key|password|secret|token/i;
 const MAX_DEPTH = 5;
+/** Per-string ceiling for logs, banners, and client-safe error messages. */
+export const MAX_REDACTED_TEXT_LENGTH = 4096;
 
 function replaceLiteral(value: string, secret: string): string {
   return secret.length >= 4 ? value.split(secret).join('[REDACTED]') : value;
@@ -14,7 +16,9 @@ export function redactSensitiveText(value: string, secrets: Iterable<string> = [
     .replace(/(bearer\s+)[a-z0-9._~+/-]+=*/gi, '$1[REDACTED]')
     .replace(/:\/\/[^/@\s]+:[^/@\s]+@/g, '://[REDACTED]@');
   for (const secret of secrets) redacted = replaceLiteral(redacted, secret);
-  return redacted;
+  return redacted.length > MAX_REDACTED_TEXT_LENGTH
+    ? `${redacted.slice(0, MAX_REDACTED_TEXT_LENGTH - 3)}...`
+    : redacted;
 }
 
 /** Recursively redact structured data for every log level. */

@@ -18,27 +18,29 @@ service; AccuWeather is an optional source for users who have an API key.
 > for safety-of-life decisions: always cross-check official forecasts and
 > warnings against your primary instruments.
 
-## What's new in 1.13.0
+## What's new in 1.13.1
 
-Shared panel components, more resilient provider failover, durable quota
-controls, truthful observation freshness, and a current development toolchain.
-No configuration migration is required.
+Stricter configuration safety, more resilient provider boundaries, clearer
+merged-source behavior, and an updated shared configuration panel. No
+configuration migration is required.
 
-- **The panel now shares the Signal K component system.** Configuration uses
-  `signalk-nearlcrews-ui` 0.3.0 for themes, fields, status, layout, and
-  accessible interactions across desktop and embedded marine displays.
-- **Merged weather is more resilient.** Current observations and forecasts
-  fail over in configured order, stale or time-skewed inputs are excluded, and
-  a quota-limited provider does not block healthy keyless sources.
-- **Quota use survives restarts.** AccuWeather requests are reserved atomically
-  in an exact rolling 24-hour window and persisted in the plugin data directory.
-- **Marine and atmospheric data fail independently.** Each layer has its own
-  refresh schedule and freshness gate, so one outage does not freeze the other.
-- **Shutdown and diagnostics are safer.** Active network work is cancelled,
-  provider registration remains consistent, and sensitive values are redacted
-  from logs, banners, URLs, and panel errors.
+- **Configuration errors are caught before restart.** Runtime, fallback-form,
+  and custom-panel validation now agree on API keys, integer settings, merged
+  providers, and safe Open-Meteo base URLs.
+- **Merged-source status is truthful.** AccuWeather is excluded from a mixed
+  blend until a valid key is set, an AccuWeather-only blend cannot start
+  without a key, and quota controls appear only when AccuWeather can fetch.
+- **Provider boundaries are hardened.** Malformed AccuWeather records, invalid
+  Met.no timestamps, malformed retry delays, unsafe quota-state files, and
+  invalid panel status responses are rejected cleanly.
+- **Operational edge cases are safer.** Exact rate-limit and cache boundaries,
+  startup-error reporting, banner length limits, and diagnostic redaction are
+  now covered by regression tests.
+- **The shared panel is updated.** `signalk-nearlcrews-ui` 0.4.1 improves
+  Night-theme contrast, loading controls, focus handling, responsive overflow,
+  and cross-browser action-bar behavior.
 
-See the [v1.13.0 changelog entry](CHANGELOG.md#v1130), or the
+See the [v1.13.1 changelog entry](CHANGELOG.md#v1131), or the
 [changelog](CHANGELOG.md) for the full list.
 
 ## What it does
@@ -110,7 +112,8 @@ since the last fetch.
 - Node.js 20.18 or newer.
 - No API key for the default Open-Meteo source. An AccuWeather API key from
   [developer.accuweather.com](https://developer.accuweather.com/) is optional,
-  needed only if you select AccuWeather as the source.
+  needed if you select AccuWeather as the single source or want it to
+  participate in a merged source.
 - A GPS position published on `navigation.position` (the plugin queries the
   active weather provider for the vessel's current location).
 - The configuration panel needs Signal K admin UI 2.27.0 or newer. On older
@@ -147,12 +150,12 @@ In the Signal K admin UI, open **Server, then Plugin Config**, find
 |---------|-------------|---------|-------|
 | Weather source | Open-Meteo (free, keyless, global), Met.no (free, keyless, global), or AccuWeather (needs a key, adds RealFeel, plain-language text, pressure tendency, and precipitation type). In merge mode this source is the primary that sets source priority and backs forecasts. | Open-Meteo | Open-Meteo, Met.no, or AccuWeather |
 | Provider mode | Single source, or merge available providers into a synthetic `vws-merged` source that blends current conditions. | Single source | Single or Merge |
-| AccuWeather API Key | Required only when the source is AccuWeather. Get a key from AccuWeather. | none | n/a |
+| AccuWeather API Key | Required when single mode selects AccuWeather. In merge mode, setting a key enables AccuWeather in the blend. | none | n/a |
 | Open-Meteo base URL | Optional. Leave blank for the free public service (non-commercial use). Self-hosted or paid users can enter a custom endpoint. | none | n/a |
 | Emit sea state | Adds a keyless Open-Meteo Marine layer (waves, swell, sea temperature, and current) on `environment.water.*` and `environment.current`. Coastal and offshore only. | off | boolean |
-| Weather Update Frequency | Minutes between weather fetches. With AccuWeather selected, the default 30 makes 48 calls/day, within the default 50/day quota. | 30 | 1 to 60 |
+| Weather Update Frequency | Minutes between weather fetches. When AccuWeather participates, the default 30 makes 48 calls/day, within the default 50/day quota. | 30 | 1 to 60 |
 | Broadcast Interval | Seconds between cached delta re-emissions for NMEA2000 listeners. The provider observation timestamp is retained. | 5 | 1 to 60 |
-| Daily API Call Quota | Cap on AccuWeather calls per rolling 24-hour window. 0 disables the cap. Open-Meteo is keyless and uncapped. | 50 | 0 to 1000 |
+| Daily API Call Quota | Cap on AccuWeather calls per rolling 24-hour window whenever it participates, including merge mode. 0 disables the cap. Open-Meteo and Met.no are keyless and uncapped. | 50 | 0 to 1000 |
 | Severe-weather notifications | Master toggle plus per-category sub-toggles (wind, visibility, heat, cold, severe conditions). | master off, sub-toggles on | boolean |
 
 ## What it emits

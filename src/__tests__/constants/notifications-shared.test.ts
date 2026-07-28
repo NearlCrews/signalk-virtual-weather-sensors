@@ -9,10 +9,46 @@ import {
   resolveMergeProviders,
   resolveWeatherMode,
   resolveWeatherProvider,
+  selectionRequiresApiKey,
+  validateApiKeyCandidate,
+  validateOpenMeteoBaseUrlCandidate,
   WEATHER_MODE_IDS,
   WEATHER_PROVIDER_IDS,
   WEATHER_PROVIDER_LABELS,
 } from '../../constants/notifications-shared.js';
+
+describe('validateApiKeyCandidate', () => {
+  it('rejects placeholders before the minimum-length check', () => {
+    expect(validateApiKeyCandidate('your-api-key')).toContain('placeholder');
+  });
+
+  it('rejects too-short and whitespace-containing keys', () => {
+    expect(validateApiKeyCandidate('short')).toContain('at least');
+    expect(validateApiKeyCandidate(`${'A'.repeat(20)} bad`)).toContain('whitespace');
+  });
+
+  it('accepts plausible punctuation-bearing keys', () => {
+    expect(validateApiKeyCandidate('abc123-def456_ghi789.jkl012')).toBeNull();
+  });
+});
+
+describe('validateOpenMeteoBaseUrlCandidate', () => {
+  it('accepts blank and path-based http(s) overrides', () => {
+    expect(validateOpenMeteoBaseUrlCandidate('')).toBeNull();
+    expect(validateOpenMeteoBaseUrlCandidate('https://meteo.example.test/proxy')).toBeNull();
+  });
+
+  it('rejects unsafe or incorrectly joined overrides', () => {
+    for (const value of [
+      'ftp://meteo.example.test',
+      'https://user:password@meteo.example.test',
+      'https://meteo.example.test?token=value',
+      'https://meteo.example.test#forecast',
+    ]) {
+      expect(validateOpenMeteoBaseUrlCandidate(value)).not.toBeNull();
+    }
+  });
+});
 
 describe('resolveWeatherProvider honors the id list', () => {
   it('accepts every known id, not just a hardcoded pair', () => {
@@ -30,6 +66,20 @@ describe('providerRequiresApiKey', () => {
   it('marks accuweather keyed and open-meteo keyless', () => {
     expect(providerRequiresApiKey('accuweather')).toBe(true);
     expect(providerRequiresApiKey('open-meteo')).toBe(false);
+  });
+});
+
+describe('selectionRequiresApiKey', () => {
+  it('follows the selected provider in single mode', () => {
+    expect(selectionRequiresApiKey('single', 'accuweather', ['open-meteo'])).toBe(true);
+    expect(selectionRequiresApiKey('single', 'open-meteo', ['accuweather'])).toBe(false);
+  });
+
+  it('requires a key only when every merged provider is keyed', () => {
+    expect(selectionRequiresApiKey('merged', 'open-meteo', ['accuweather'])).toBe(true);
+    expect(selectionRequiresApiKey('merged', 'accuweather', ['accuweather', 'open-meteo'])).toBe(
+      false
+    );
   });
 });
 

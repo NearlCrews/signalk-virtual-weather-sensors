@@ -7,7 +7,7 @@ const sourceFiles = [];
 async function collect(directory) {
   for (const entry of await readdir(directory, { withFileTypes: true })) {
     const path = resolve(directory, entry.name);
-    if (entry.isDirectory()) await collect(path);
+    if (entry.isDirectory() && entry.name !== '__tests__') await collect(path);
     else if (/\.tsx?$/.test(entry.name)) sourceFiles.push(path);
   }
 }

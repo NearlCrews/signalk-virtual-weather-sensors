@@ -9,7 +9,9 @@ import {
   resolveMergeProviders,
   resolveWeatherMode,
   resolveWeatherProvider,
-  validateKeyLength,
+  selectionRequiresApiKey,
+  validateApiKeyCandidate,
+  validateOpenMeteoBaseUrlCandidate,
 } from '../../constants/notifications-shared.js';
 import type {
   NotificationsConfig,
@@ -28,6 +30,8 @@ export type NotificationsFormState = Mutable<NotificationsConfig>;
 export type PanelFormState = Omit<Mutable<PluginConfiguration>, 'notifications'> & {
   notifications: NotificationsFormState;
 };
+
+export type SaveBlockerId = 'svws-apikey' | 'svws-ombase';
 
 interface SaveAction {
   message: string;
@@ -123,6 +127,23 @@ function formsEqual(a: PanelFormState, b: PanelFormState): boolean {
 const RESTART_POLL_ATTEMPTS = 4;
 const RESTART_POLL_DELAY_MS = 1500;
 
+function apiKeyErrorFor(form: PanelFormState, trimmedKey: string): string | null {
+  const selectedProviders =
+    form.weatherMode === 'single' ? [form.weatherProvider] : form.mergeProviders;
+  const validateKey =
+    selectionRequiresApiKey(form.weatherMode, form.weatherProvider, form.mergeProviders) ||
+    (selectedProviders.some(providerRequiresApiKey) && trimmedKey !== '');
+  return validateKey ? validateApiKeyCandidate(trimmedKey) : null;
+}
+
+function baseUrlErrorFor(form: PanelFormState): string | null {
+  const openMeteoActive =
+    form.weatherMode === 'single'
+      ? form.weatherProvider === 'open-meteo'
+      : form.mergeProviders.includes('open-meteo');
+  return openMeteoActive ? validateOpenMeteoBaseUrlCandidate(form.openMeteoBaseUrl) : null;
+}
+
 // The plugin is restarting after a save, so /api/status may be briefly
 // unreachable: poll a few times before giving up, then report what the
 // status actually says rather than an optimistic "Saved." that could lie.
@@ -157,15 +178,18 @@ export interface UsePanelConfigResult {
   saving: boolean;
   // Save outcome for the footer status line; null until the first save.
   action: SaveAction | null;
-  // Inline blocker shown by ApiKeyField when Save rejects a too-short key.
+  // Inline blocker shown by ApiKeyField when Save rejects an invalid key.
   keyError: string | null;
+  // Inline blocker shown by the Open-Meteo field when its URL cannot be used.
+  baseUrlError: string | null;
   setField: <K extends keyof PanelFormState>(key: K, value: PanelFormState[K]) => void;
   setNotification: (key: keyof NotificationsFormState, value: boolean) => void;
   discard: () => void;
   clearKeyError: () => void;
-  // Resolves false when save was blocked by key validation (the caller opens
-  // the API key section so the inline error is visible), true otherwise.
-  doSave: () => Promise<boolean>;
+  clearBaseUrlError: () => void;
+  // Identifies the field that blocked a save, or null after submission, so the
+  // caller can open the Weather source section and focus the inline error.
+  doSave: () => Promise<SaveBlockerId | null>;
 }
 
 /**
@@ -189,6 +213,7 @@ export function usePanelConfig(
   const [saving, setSaving] = useState(false);
   const [action, setAction] = useState<SaveAction | null>(null);
   const [keyError, setKeyError] = useState<string | null>(null);
+  const [baseUrlError, setBaseUrlError] = useState<string | null>(null);
 
   // Resync when the host supplies a new configuration object (e.g. after a
   // save and restart), using the render-time previous-props pattern: React
@@ -220,34 +245,27 @@ export function usePanelConfig(
   const discard = useCallback((): void => {
     setForm(savedForm);
     setKeyError(null);
+    setBaseUrlError(null);
     setAction(null);
   }, [savedForm]);
 
   const clearKeyError = useCallback((): void => setKeyError(null), []);
+  const clearBaseUrlError = useCallback((): void => setBaseUrlError(null), []);
 
-  const doSave = useCallback(async (): Promise<boolean> => {
+  const doSave = useCallback(async (): Promise<SaveBlockerId | null> => {
     const trimmedKey = form.accuWeatherApiKey.trim();
-    // The key is only required (and only validated) when the active provider
-    // requires one. Under the keyless Open-Meteo default the field is hidden
-    // and usually empty, so gating Save on key length there would block every
-    // fresh install. This matches the rjsf schema, which no longer declares a
-    // minLength on the now-optional key.
-    const keyedProviderSelected =
-      form.weatherMode === 'single'
-        ? providerRequiresApiKey(form.weatherProvider)
-        : form.mergeProviders.some(providerRequiresApiKey);
-    const keyMustBeValid =
-      form.weatherMode === 'single'
-        ? keyedProviderSelected
-        : keyedProviderSelected && trimmedKey !== '';
-    if (keyMustBeValid) {
-      const keyLengthError = validateKeyLength(trimmedKey);
-      if (keyLengthError) {
-        setKeyError(keyLengthError);
-        return false;
-      }
+    const keyFormatError = apiKeyErrorFor(form, trimmedKey);
+    if (keyFormatError) {
+      setKeyError(keyFormatError);
+      return 'svws-apikey';
     }
     setKeyError(null);
+    const baseUrlError = baseUrlErrorFor(form);
+    if (baseUrlError) {
+      setBaseUrlError(baseUrlError);
+      return 'svws-ombase';
+    }
+    setBaseUrlError(null);
     setSaving(true);
     setAction({ message: 'Saving...', isError: false });
     try {
@@ -273,7 +291,7 @@ export function usePanelConfig(
     } finally {
       setSaving(false);
     }
-    return true;
+    return null;
   }, [form, hostSave, refreshStatus]);
 
   return {
@@ -283,10 +301,12 @@ export function usePanelConfig(
     saving,
     action,
     keyError,
+    baseUrlError,
     setField,
     setNotification,
     discard,
     clearKeyError,
+    clearBaseUrlError,
     doSave,
   };
 }

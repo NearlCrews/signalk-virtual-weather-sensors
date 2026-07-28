@@ -7,6 +7,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+<a id="v1131"></a>
+
+## [1.13.1] - 2026-07-27
+
+Stricter configuration safety, more resilient provider boundaries, clearer
+merged-source behavior, and an updated shared configuration panel. No
+configuration migration is required.
+
+### Fixed
+
+- Aligned runtime and panel validation for API keys, merged-provider
+  availability, integer settings, and Open-Meteo base URLs so invalid
+  configurations are blocked before restart.
+- Hardened provider and panel response parsing against malformed AccuWeather
+  records, invalid Met.no daily timestamps, malformed `Retry-After` values,
+  inconsistent quota-state files, and invalid status payloads.
+- Corrected exact-boundary expiration in the key-test rate limiter and location
+  cache, bounded admin banner text, preserved startup failures in panel status,
+  and made merged-mode quota controls reflect whether AccuWeather can actually
+  fetch.
+- Updated development dependency resolutions for `brace-expansion`,
+  `fast-uri`, and `js-yaml` to releases that address denial-of-service and
+  URL authority parsing advisories.
+
+### Changed
+
+- Upgraded the shared configuration panel to `signalk-nearlcrews-ui` 0.4.1
+  for improved Night-theme contrast, loading-button readability, focus
+  handling, responsive overflow guards, and cross-browser action-bar styling.
+  The exposed panel now uses one async chunk and compact production CSS module
+  identifiers, reducing its compressed size while remaining within the
+  documented bundle ceiling.
+- Refreshed React, Node types, Playwright, Biome, Size Limit, Knip, webpack,
+  workflow actions, and supporting development tools to their latest
+  compatible releases while retaining the Node 20.18 runtime compatibility
+  lane.
+
 <a id="v1130"></a>
 
 ## [1.13.0] - 2026-07-17

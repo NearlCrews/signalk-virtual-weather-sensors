@@ -14,8 +14,8 @@ import {
 import {
   CONFIG_DEFAULTS,
   NOTIFICATION_BAND_KEYS,
-  providerRequiresApiKey,
   QUOTA_WARN_RATIO,
+  selectionRequiresApiKey,
 } from '../constants/notifications-shared.js';
 import IntegerField from './components/IntegerField.js';
 import NotificationToggles from './components/NotificationToggles.js';
@@ -59,10 +59,12 @@ function SupportedPluginConfigurationPanel({ configuration, save }: Props): Reac
     saving,
     action,
     keyError,
+    baseUrlError,
     setField,
     setNotification,
     discard,
     clearKeyError,
+    clearBaseUrlError,
     doSave,
   } = usePanelConfig(configuration, save, refresh);
 
@@ -96,7 +98,11 @@ function SupportedPluginConfigurationPanel({ configuration, save }: Props): Reac
     return () => window.removeEventListener('beforeunload', onBeforeUnload);
   }, [dirty]);
 
-  const requiresKey = providerRequiresApiKey(savedForm.weatherProvider);
+  const requiresKey = selectionRequiresApiKey(
+    savedForm.weatherMode,
+    savedForm.weatherProvider,
+    savedForm.mergeProviders
+  );
   const firstRun =
     status !== null && !status.running && requiresKey && savedForm.accuWeatherApiKey.trim() === '';
   const autoOpened = useRef(false);
@@ -117,10 +123,10 @@ function SupportedPluginConfigurationPanel({ configuration, save }: Props): Reac
 
     const saveResult = doSave();
     requestAnimationFrame(() => actionStatusRef.current?.focus());
-    void saveResult.then((ok) => {
-      if (!ok) {
+    void saveResult.then((blockerId) => {
+      if (blockerId) {
         setOpenSections((previous) => ({ ...previous, apiKey: true }));
-        requestAnimationFrame(() => document.getElementById('svws-apikey')?.focus());
+        requestAnimationFrame(() => document.getElementById(blockerId)?.focus());
       }
     });
   };
@@ -193,7 +199,9 @@ function SupportedPluginConfigurationPanel({ configuration, save }: Props): Reac
             showKeyField={src.showKeyField}
             openMeteoActive={src.openMeteoActive}
             keyError={keyError}
+            baseUrlError={baseUrlError}
             clearKeyError={clearKeyError}
+            clearBaseUrlError={clearBaseUrlError}
           />
         </CollapsibleSection>
 

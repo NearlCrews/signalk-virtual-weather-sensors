@@ -6,8 +6,8 @@ We actively support the following versions with security updates:
 
 | Version | Supported |
 | ------- | --------- |
-| 1.12.x  | Yes       |
-| < 1.12  | No        |
+| 1.13.x  | Yes       |
+| < 1.13  | No        |
 
 ## Reporting a Vulnerability
 
@@ -86,8 +86,9 @@ the only personal data any of them receives is the vessel's GPS coordinates:
 - **Met.no MetAlerts** (keyless): for Norwegian waters, receives only the
   vessel's coordinates to look up active alerts; no API key is sent.
 - **AccuWeather** (optional, key-gated): when AccuWeather is the selected
-  source, requests carry the configured API key and the vessel's GPS
-  coordinates (to resolve the AccuWeather location for the current position).
+  source or is enabled in a merged source, requests carry the configured API
+  key and the vessel's GPS coordinates to resolve the AccuWeather location for
+  the current position.
 
 The plugin sends no other personal data and no account credentials. It does not
 store historical weather data, and all external responses are validated and

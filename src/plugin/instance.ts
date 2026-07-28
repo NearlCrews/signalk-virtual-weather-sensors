@@ -15,6 +15,9 @@ import type { Logger, MarineData, PluginState, WeatherData } from '../types/inde
 /** Distinguishes a banner string pushed via setPluginStatus from one pushed via setPluginError. */
 export type BannerKind = 'status' | 'error';
 
+/** Keep upstream error text from flooding the Signal K admin status area. */
+const MAX_BANNER_LENGTH = 512;
+
 /**
  * Plugin instance state
  */
@@ -67,7 +70,11 @@ export function setBanner(
   kind: BannerKind,
   message: string
 ): void {
-  const safeMessage = instance.logger.redact?.(message) ?? message;
+  const redacted = instance.logger.redact?.(message) ?? message;
+  const safeMessage =
+    redacted.length > MAX_BANNER_LENGTH
+      ? `${redacted.slice(0, MAX_BANNER_LENGTH - 3)}...`
+      : redacted;
   const last = instance.lastBanner;
   if (last !== null && last.kind === kind && last.message === safeMessage) {
     return;

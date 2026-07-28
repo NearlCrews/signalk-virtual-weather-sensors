@@ -16,7 +16,6 @@ import {
 // directly from there (the panel, the schema, and the runtime all do), so a
 // wider re-export surface here would only invite drift.
 export {
-  API_KEY_MIN_LENGTH,
   CONFIG_DEFAULTS,
   resolveWeatherProvider,
   WEATHER_PROVIDER_IDS,

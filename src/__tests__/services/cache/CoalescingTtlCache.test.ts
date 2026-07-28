@@ -14,6 +14,13 @@ describe('CoalescingTtlCache', () => {
     expect(await c.get('k', async () => 'a', 0)).toBe('a');
     expect(await c.get('k', async () => 'b', 2000)).toBe('b');
   });
+  it('prunes unrelated entries at the exact ttl boundary', async () => {
+    const c = new CoalescingTtlCache<string>(1000, 0, () => {}, 0);
+    await c.get('old', async () => 'a', 0);
+    await c.get('new', async () => 'b', 1000);
+    expect(c.size()).toBe(1);
+    expect(c.peekStale('old')).toBeUndefined();
+  });
   it('coalesces concurrent cold lookups onto a single fetch', async () => {
     const c = new CoalescingTtlCache<string>(1000, 5000, () => {}, 0);
     let calls = 0;

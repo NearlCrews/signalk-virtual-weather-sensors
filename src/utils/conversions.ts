@@ -29,11 +29,12 @@ export function msToWholeMinutes(ms: number): number {
 /**
  * Milliseconds elapsed from a stored epoch timestamp to now, clamped at zero so
  * a backward wall-clock or NTP jump cannot surface a negative age. Returns null
- * when `sinceMs` is null (nothing recorded yet). Shared by the service-level
- * data-age accessors so the clamp rationale lives in one place.
+ * when `sinceMs` is null or non-finite (nothing trustworthy recorded yet).
+ * Shared by the service-level data-age accessors so the clamp rationale lives
+ * in one place.
  */
 export function elapsedSinceMs(sinceMs: number | null): number | null {
-  return sinceMs === null ? null : Math.max(0, Date.now() - sinceMs);
+  return sinceMs === null || !Number.isFinite(sinceMs) ? null : Math.max(0, Date.now() - sinceMs);
 }
 
 /**

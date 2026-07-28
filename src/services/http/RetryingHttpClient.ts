@@ -171,14 +171,16 @@ export class RetryingHttpClient {
     const retryAfter = response.headers.get('Retry-After');
     if (!retryAfter) return null;
 
-    // Try parsing as seconds (integer)
-    const seconds = Number.parseInt(retryAfter, 10);
-    if (!Number.isNaN(seconds) && seconds > 0) {
+    // Delta-seconds must be an unsigned decimal integer. Number.parseInt()
+    // would incorrectly accept malformed prefixes such as "10seconds".
+    const trimmed = retryAfter.trim();
+    const seconds = /^\d+$/.test(trimmed) ? Number(trimmed) : Number.NaN;
+    if (Number.isFinite(seconds) && seconds > 0) {
       return Math.min(seconds * 1000, MAX_RETRY_AFTER_MS);
     }
 
     // Try parsing as HTTP date
-    const retryDate = new Date(retryAfter);
+    const retryDate = new Date(trimmed);
     if (!Number.isNaN(retryDate.getTime())) {
       const delayMs = retryDate.getTime() - Date.now();
       if (delayMs > 0) {

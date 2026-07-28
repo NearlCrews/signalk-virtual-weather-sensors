@@ -1,8 +1,11 @@
 import type * as React from 'react';
 import { useEffect, useRef, useState } from 'react';
 import { Button, Cluster, LabeledField, TextInput } from 'signalk-nearlcrews-ui';
-import { API_KEY_MIN_LENGTH, validateKeyLength } from '../../constants/notifications-shared.js';
-import { fetchJson, toErrorText } from '../api-base.js';
+import {
+  API_KEY_MIN_LENGTH,
+  validateApiKeyCandidate,
+} from '../../constants/notifications-shared.js';
+import { asJsonObject, fetchJson, toErrorText } from '../api-base.js';
 import styles from './ApiKeyField.module.css';
 
 interface TestState {
@@ -23,10 +26,11 @@ async function requestKeyTest(apiKey: string, signal: AbortSignal): Promise<Test
     body: JSON.stringify({ apiKey }),
     signal,
   });
-  const data = (body ?? {}) as { ok?: boolean; message?: string };
-  return ok && data.ok
-    ? { state: 'ok', message: data.message || 'API key works.' }
-    : { state: 'error', message: data.message || `Test failed (HTTP ${status}).` };
+  const data = asJsonObject(body);
+  const message = typeof data.message === 'string' ? data.message : '';
+  return ok && data.ok === true
+    ? { state: 'ok', message: message || 'API key works.' }
+    : { state: 'error', message: message || `Test failed (HTTP ${status}).` };
 }
 
 export default function ApiKeyField({ value, keyError, onChange }: Props): React.ReactElement {
@@ -42,9 +46,9 @@ export default function ApiKeyField({ value, keyError, onChange }: Props): React
 
   const doTestKey = async (): Promise<void> => {
     const trimmed = value.trim();
-    const keyLengthError = validateKeyLength(trimmed);
-    if (keyLengthError) {
-      setTestKey({ state: 'error', message: keyLengthError });
+    const keyFormatError = validateApiKeyCandidate(trimmed);
+    if (keyFormatError) {
+      setTestKey({ state: 'error', message: keyFormatError });
       return;
     }
     controllerRef.current?.abort();

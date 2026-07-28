@@ -158,18 +158,7 @@ describe('mapAccuWeatherCurrentToWeatherData', () => {
   });
 
   it('omits optional fields when blocks are absent', () => {
-    // A minimal record without any of the optional enhanced blocks.
-    const minimal = {
-      Temperature: { Metric: { Value: 20 } },
-      Pressure: { Metric: { Value: 1013 } },
-      RelativeHumidity: 50,
-      Wind: { Speed: { Metric: { Value: 18 } }, Direction: { Degrees: 90 } },
-      DewPoint: { Metric: { Value: 10 } },
-      WeatherText: 'Clear',
-      WeatherIcon: 1,
-      LocalObservationDateTime: '2026-06-22T12:00:00Z',
-    } as unknown as AccuWeatherCurrentConditions;
-    const wd = mapAccuWeatherCurrentToWeatherData(minimal);
+    const wd = mapAccuWeatherCurrentToWeatherData(conditions);
     expect(wd.realFeel).toBeUndefined();
     expect(wd.realFeelShade).toBeUndefined();
     expect(wd.wetBulbTemperature).toBeUndefined();

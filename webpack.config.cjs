@@ -60,6 +60,9 @@ module.exports = {
     chunkFormat: 'module',
     uniqueName: containerName,
   },
+  optimization: {
+    splitChunks: false,
+  },
   module: {
     rules: [
       {
@@ -81,7 +84,7 @@ module.exports = {
           namedExports: false,
         },
         generator: {
-          localIdentName: 'svws_[name]__[local]--[hash:base64:5]',
+          localIdentName: 'svws_[hash:base64:7]',
         },
       },
     ],

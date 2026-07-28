@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { PanelStatusResponse } from '../../types/index.js';
-import { fetchJson, toErrorText } from '../api-base.js';
+import { asJsonObject, fetchJson, toErrorText } from '../api-base.js';
 
 // 10 s poll: the status banner age advances per minute and the quota updates
 // on each fetch (default 30 min cadence), so anything faster is wasted.
@@ -35,6 +35,22 @@ export interface UseStatusResult {
   refresh: () => Promise<PanelStatusResponse | null>;
 }
 
+/** Validate the status endpoint at the browser trust boundary. */
+export function isPanelStatusResponse(value: unknown): value is PanelStatusResponse {
+  const status = asJsonObject(value);
+  const nonNegativeInteger = (candidate: unknown): boolean =>
+    Number.isSafeInteger(candidate) && (candidate as number) >= 0;
+  return (
+    typeof status.running === 'boolean' &&
+    typeof status.banner === 'string' &&
+    nonNegativeInteger(status.updates) &&
+    nonNegativeInteger(status.quotaUsedLast24h) &&
+    (status.lastUpdateMinutesAgo === null || nonNegativeInteger(status.lastUpdateMinutesAgo)) &&
+    nonNegativeInteger(status.activeNotifications) &&
+    typeof status.weatherProviderRegistered === 'boolean'
+  );
+}
+
 // One status fetch, with the failure folded into the result instead of a
 // throw, so the hook's refresh stays a single linear path. `text` is the raw
 // body so refresh can skip the setStatus write when nothing changed.
@@ -46,8 +62,10 @@ async function fetchStatus(signal: AbortSignal): Promise<{
   try {
     const { ok, status, text, body } = await fetchJson('/status', { signal });
     if (!ok) return { data: null, text: '', error: `HTTP ${status}` };
-    if (body === null) return { data: null, text: '', error: 'invalid JSON in status response' };
-    return { data: body as PanelStatusResponse, text, error: null };
+    if (!isPanelStatusResponse(body)) {
+      return { data: null, text: '', error: 'invalid status response' };
+    }
+    return { data: body, text, error: null };
   } catch (err) {
     return { data: null, text: '', error: toErrorText(err) };
   }

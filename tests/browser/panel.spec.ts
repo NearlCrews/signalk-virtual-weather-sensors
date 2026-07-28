@@ -1,5 +1,13 @@
 import { AxeBuilder } from '@axe-core/playwright';
-import { expect, test } from '@playwright/test';
+import { expect, type Page, test } from '@playwright/test';
+
+async function expectSaveBlockedAt(page: Page, fieldName: string): Promise<void> {
+  await page.getByRole('button', { name: 'Save configuration' }).click();
+  const field = page.getByRole('textbox', { name: fieldName, exact: true });
+  await expect(field).toBeFocused();
+  await expect(field).toHaveAttribute('aria-invalid', 'true');
+  await expect(page.locator('body')).not.toHaveAttribute('data-save-count', /\d/);
+}
 
 test.beforeEach(async ({ page }) => {
   await page.goto('/');
@@ -8,7 +16,7 @@ test.beforeEach(async ({ page }) => {
 });
 
 test('loads the production remote and never saves a stale number', async ({ page }) => {
-  await expect(page.locator('[data-snui-root]')).toHaveAttribute('data-snui-version', '0.3.0');
+  await expect(page.locator('[data-snui-root]')).toHaveAttribute('data-snui-version', '0.4.1');
   await page.getByRole('button', { name: /Fetch and emission cadence/ }).click();
 
   const updateFrequency = page.getByRole('spinbutton', {
@@ -60,12 +68,13 @@ test('uses Light for a fresh profile without persisting an implicit choice', asy
 test('blocks a missing AccuWeather key and focuses its field', async ({ page }) => {
   await page.getByRole('button', { name: /Weather source/ }).click();
   await page.getByRole('combobox', { name: 'Provider', exact: true }).selectOption('accuweather');
-  await page.getByRole('button', { name: 'Save configuration' }).click();
+  await expectSaveBlockedAt(page, 'API key');
+});
 
-  const apiKey = page.getByRole('textbox', { name: 'API key', exact: true });
-  await expect(apiKey).toBeFocused();
-  await expect(apiKey).toHaveAttribute('aria-invalid', 'true');
-  await expect(page.locator('body')).not.toHaveAttribute('data-save-count', /\d/);
+test('blocks an invalid Open-Meteo base URL and focuses its field', async ({ page }) => {
+  await page.getByRole('button', { name: /Weather source/ }).click();
+  await page.getByRole('textbox', { name: 'Open-Meteo base URL' }).fill('not a URL');
+  await expectSaveBlockedAt(page, 'Open-Meteo base URL');
 });
 
 test('keeps reorder controls focusable and announces the new merge order', async ({ page }) => {
@@ -73,6 +82,9 @@ test('keeps reorder controls focusable and announces the new merge order', async
   await page.getByRole('combobox', { name: 'Provider mode' }).selectOption('merged');
 
   await expect(page.getByRole('checkbox', { name: /Open-Meteo.*primary/ })).toBeChecked();
+  await expect(
+    page.getByText('Excluded from fetching until an AccuWeather key is set.')
+  ).toBeVisible();
   const moveDown = page.getByRole('button', { name: /Move Open-Meteo.* down/ });
   await moveDown.focus();
   await moveDown.click();
@@ -81,6 +93,14 @@ test('keeps reorder controls focusable and announces the new merge order', async
   await expect(page.getByRole('status').filter({ hasText: 'Merge order:' })).toContainText(
     /Merge order: 1 Met.no.*2 Open-Meteo/
   );
+});
+
+test('blocks a keyless merge when every selected provider needs a key', async ({ page }) => {
+  await page.getByRole('button', { name: /Weather source/ }).click();
+  await page.getByRole('combobox', { name: 'Provider mode' }).selectOption('merged');
+  await page.getByRole('checkbox', { name: /Open-Meteo/ }).uncheck();
+  await page.getByRole('checkbox', { name: /Met\.no/ }).uncheck();
+  await expectSaveBlockedAt(page, 'API key');
 });
 
 test('migrates the legacy theme preference and supports every theme', async ({ page }) => {

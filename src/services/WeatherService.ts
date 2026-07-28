@@ -349,7 +349,8 @@ export class WeatherService {
       if (this.state !== 'running' && this.state !== 'starting') return;
       this.currentMarineData = marine;
       this.lastMarineUpdate = new Date();
-      this.lastMarineObservationMs = Date.parse(marine.timestamp);
+      const observationMs = Date.parse(marine.timestamp);
+      this.lastMarineObservationMs = Number.isFinite(observationMs) ? observationMs : null;
     } catch (error) {
       if (isAbortError(error) && this.state === 'stopping') return;
       this.logger('warn', 'Marine data fetch failed; keeping last marine snapshot', {

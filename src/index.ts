@@ -315,16 +315,18 @@ async function handleStartupError(
     settingsKeys: typeof settings === 'object' && settings !== null ? Object.keys(settings) : [],
   });
 
-  // The admin UI plugin list already prefixes banner text with the plugin's
-  // display name, so no need to repeat 'signalk-virtual-weather-sensors' here.
-  setBanner(instance, app, 'error', `Startup failed: ${errorMessage}`);
-
   // Unregister before cleanup: if registration succeeded but a later start step
   // threw, cleanup alone would reset the flag without unregistering, leaking the
   // provider in the server (a later stop() would then skip unregistration).
   unregisterWeatherProvider(instance, app);
 
   await cleanup(instance, app);
+
+  // Cleanup resets banner dedupe state. Publish after it completes so the
+  // panel's /api/status endpoint retains the actual startup failure instead of
+  // falling back to "Plugin stopped". The admin UI already prefixes the plugin
+  // display name, so do not repeat the package name here.
+  setBanner(instance, app, 'error', `Startup failed: ${errorMessage}`);
 }
 
 /**

@@ -107,6 +107,35 @@ function buildMockApp(overrides: Record<string, unknown> = {}) {
   };
 }
 
+/** Capture the routes the plugin registers without spinning up Express. */
+function captureRoutes() {
+  const routes = new Map<string, (req: unknown, res: unknown) => void>();
+  const router = {
+    get: vi.fn((path: string, handler: (req: unknown, res: unknown) => void) => {
+      routes.set(`GET ${path}`, handler);
+    }),
+    post: vi.fn((path: string, handler: (req: unknown, res: unknown) => void) => {
+      routes.set(`POST ${path}`, handler);
+    }),
+  };
+  return { router, routes };
+}
+
+function makeRes() {
+  const body: { json?: unknown; status?: number } = {};
+  const res = {
+    json: vi.fn((payload: unknown) => {
+      body.json = payload;
+      return res;
+    }),
+    status: vi.fn((code: number) => {
+      body.status = code;
+      return res;
+    }),
+  };
+  return { res, body };
+}
+
 /**
  * Restore stubState to the no-data baseline. Runs in `beforeEach` of every
  * describe block that mutates stubState so a thrown test cannot leak its
@@ -358,35 +387,6 @@ describe('plugin entry: registerWithRouter exposes panel REST endpoints', () => 
     vi.useRealTimers();
   });
 
-  /** Capture the routes the plugin registers without spinning up Express. */
-  function captureRoutes() {
-    const routes = new Map<string, (req: unknown, res: unknown) => void>();
-    const router = {
-      get: vi.fn((path: string, handler: (req: unknown, res: unknown) => void) => {
-        routes.set(`GET ${path}`, handler);
-      }),
-      post: vi.fn((path: string, handler: (req: unknown, res: unknown) => void) => {
-        routes.set(`POST ${path}`, handler);
-      }),
-    };
-    return { router, routes };
-  }
-
-  function makeRes() {
-    const body: { json?: unknown; status?: number } = {};
-    const res = {
-      json: vi.fn((payload: unknown) => {
-        body.json = payload;
-        return res;
-      }),
-      status: vi.fn((code: number) => {
-        body.status = code;
-        return res;
-      }),
-    };
-    return { res, body };
-  }
-
   it('registers GET /api/status and POST /api/test-key', async () => {
     const app = buildMockApp();
     const plugin = createPlugin(app as never);
@@ -519,6 +519,26 @@ describe('plugin entry: registerWithRouter exposes panel REST endpoints', () => 
       vi.unstubAllGlobals();
     }
   });
+
+  it('keeps a startup failure visible through the panel status route', async () => {
+    const app = buildMockApp();
+    const plugin = createPlugin(app as never);
+    await plugin.start({ weatherProvider: 'accuweather' }, () => {});
+
+    const { router, routes } = captureRoutes();
+    plugin.registerWithRouter?.(router as never);
+    const handler = routes.get('GET /api/status');
+    if (!handler) throw new Error('status route not registered');
+    const { res, body } = makeRes();
+    handler({}, res);
+
+    const payload = body.json as Record<string, unknown>;
+    expect(payload.running).toBe(false);
+    expect(payload.banner).toContain('Startup failed');
+    expect(payload.banner).toContain('API key is required');
+
+    await plugin.stop();
+  });
 });
 
 describe('Weather provider registration', () => {
@@ -572,22 +592,10 @@ describe('Weather provider registration', () => {
     expect(provider.methods.pluginId).toBe('signalk-virtual-weather-sensors');
 
     // The /api/status endpoint must report weatherProviderRegistered: true.
-    const routes = new Map<string, (req: unknown, res: unknown) => void>();
-    const router = {
-      get: vi.fn((path: string, handler: (req: unknown, res: unknown) => void) => {
-        routes.set(`GET ${path}`, handler);
-      }),
-      post: vi.fn((_path: string, _handler: (req: unknown, res: unknown) => void) => {}),
-    };
+    const { router, routes } = captureRoutes();
     plugin.registerWithRouter?.(router as never);
 
-    const body: { json?: unknown } = {};
-    const res = {
-      json: vi.fn((payload: unknown) => {
-        body.json = payload;
-        return res;
-      }),
-    };
+    const { res, body } = makeRes();
     const handler = routes.get('GET /api/status');
     if (!handler) throw new Error('status route not registered');
     handler({}, res);
@@ -616,22 +624,10 @@ describe('Weather provider registration', () => {
     expect(provider.methods.pluginId).toBe('signalk-virtual-weather-sensors');
 
     // The /api/status endpoint must report weatherProviderRegistered: true.
-    const routes = new Map<string, (req: unknown, res: unknown) => void>();
-    const router = {
-      get: vi.fn((path: string, handler: (req: unknown, res: unknown) => void) => {
-        routes.set(`GET ${path}`, handler);
-      }),
-      post: vi.fn((_path: string, _handler: (req: unknown, res: unknown) => void) => {}),
-    };
+    const { router, routes } = captureRoutes();
     plugin.registerWithRouter?.(router as never);
 
-    const body: { json?: unknown } = {};
-    const res = {
-      json: vi.fn((payload: unknown) => {
-        body.json = payload;
-        return res;
-      }),
-    };
+    const { res, body } = makeRes();
     const handler = routes.get('GET /api/status');
     if (!handler) throw new Error('status route not registered');
     handler({}, res);
@@ -659,22 +655,10 @@ describe('Weather provider registration', () => {
     expect(provider.name).toContain('merged');
     expect(provider.methods.pluginId).toBe('signalk-virtual-weather-sensors');
 
-    const routes = new Map<string, (req: unknown, res: unknown) => void>();
-    const router = {
-      get: vi.fn((path: string, handler: (req: unknown, res: unknown) => void) => {
-        routes.set(`GET ${path}`, handler);
-      }),
-      post: vi.fn((_path: string, _handler: (req: unknown, res: unknown) => void) => {}),
-    };
+    const { router, routes } = captureRoutes();
     plugin.registerWithRouter?.(router as never);
 
-    const body: { json?: unknown } = {};
-    const res = {
-      json: vi.fn((payload: unknown) => {
-        body.json = payload;
-        return res;
-      }),
-    };
+    const { res, body } = makeRes();
     const handler = routes.get('GET /api/status');
     if (!handler) throw new Error('status route not registered');
     handler({}, res);

@@ -19,15 +19,20 @@ export class RequestWindowStore {
   public load(): RequestWindowSnapshot | undefined {
     try {
       const parsed = JSON.parse(readFileSync(this.path, 'utf8')) as Partial<StoredRequestWindow>;
+      const cumulative = parsed.cumulative;
+      const timestamps = parsed.timestamps;
       if (
         parsed.version !== 1 ||
-        !Number.isSafeInteger(parsed.cumulative) ||
-        !Array.isArray(parsed.timestamps) ||
-        !parsed.timestamps.every(Number.isFinite)
+        typeof cumulative !== 'number' ||
+        !Number.isSafeInteger(cumulative) ||
+        cumulative < 0 ||
+        !Array.isArray(timestamps) ||
+        !timestamps.every((timestamp) => Number.isSafeInteger(timestamp) && timestamp >= 0) ||
+        cumulative < timestamps.length
       ) {
         throw new Error('invalid request-window document');
       }
-      return { cumulative: parsed.cumulative as number, timestamps: parsed.timestamps as number[] };
+      return { cumulative, timestamps };
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
         this.logger('warn', 'Ignoring unreadable AccuWeather quota state', {

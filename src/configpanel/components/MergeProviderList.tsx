@@ -91,8 +91,10 @@ export default function MergeProviderList({
     id: WeatherProviderId,
     isIncluded: boolean
   ): { disabled: boolean; note: string | undefined } => {
-    if (providerRequiresApiKey(id) && !hasAccuWeatherKey && !isIncluded) {
-      return { disabled: true, note: 'Needs an AccuWeather key. Set it below first.' };
+    if (providerRequiresApiKey(id) && !hasAccuWeatherKey) {
+      return isIncluded
+        ? { disabled: false, note: 'Excluded from fetching until an AccuWeather key is set.' }
+        : { disabled: true, note: 'Needs an AccuWeather key. Set it below first.' };
     }
     if (isIncluded && included.length === 1) {
       return { disabled: true, note: 'At least one provider must stay in the merge.' };

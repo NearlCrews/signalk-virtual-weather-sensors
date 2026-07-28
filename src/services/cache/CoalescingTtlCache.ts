@@ -101,7 +101,7 @@ export class CoalescingTtlCache<V> {
 
     let pruned = 0;
     for (const [key, entry] of this.entries.entries()) {
-      if (now - entry.timestamp > this.ttlMs) {
+      if (now - entry.timestamp >= this.ttlMs) {
         this.entries.delete(key);
         pruned++;
       }

@@ -50,6 +50,37 @@ describe('RetryingHttpClient', () => {
     expect(globalThis.fetch).toHaveBeenCalledTimes(2);
   });
 
+  it('ignores a malformed Retry-After delta instead of accepting its numeric prefix', async () => {
+    const logger = vi.fn();
+    vi.mocked(globalThis.fetch)
+      .mockResolvedValueOnce(
+        createMockFetchResponse(
+          {},
+          {
+            ok: false,
+            status: 503,
+            statusText: 'unavailable',
+            extraHeaders: { 'Retry-After': '10seconds' },
+          }
+        ) as unknown as Response
+      )
+      .mockResolvedValueOnce(createMockFetchResponse({ ok: 2 }) as unknown as Response);
+    const client = new RetryingHttpClient({
+      requestTimeoutMs: 1000,
+      retryAttempts: 2,
+      retryDelayMs: 1,
+      userAgent: 'test/1.0',
+      logger,
+    });
+
+    await expect(client.request(new URL('https://example.test/x'))).resolves.toEqual({ ok: 2 });
+    expect(logger).toHaveBeenCalledWith(
+      'warn',
+      'Retryable error, attempting retry',
+      expect.objectContaining({ delayMs: 1, honoredRetryAfter: false })
+    );
+  });
+
   it('counts attempts when fetch rejects before receiving a response', async () => {
     const onRequestCounted = vi.fn();
     vi.mocked(globalThis.fetch).mockRejectedValue(new Error('getaddrinfo ENOTFOUND'));

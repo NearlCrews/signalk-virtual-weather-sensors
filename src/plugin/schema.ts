@@ -95,7 +95,7 @@ export function pluginSchema() {
         type: 'string',
         title: 'AccuWeather API Key',
         description:
-          'Required only when the weather source is AccuWeather. Get your API key at https://developer.accuweather.com/',
+          'Required when single mode selects AccuWeather. In merge mode, setting a key enables AccuWeather in the blend. Get your API key at https://developer.accuweather.com/',
         default: '',
       },
       openMeteoBaseUrl: {
@@ -134,7 +134,7 @@ export function pluginSchema() {
         type: 'integer',
         title: 'Daily API Call Quota',
         description:
-          'Cap on AccuWeather calls in any rolling 24-hour window (applies only when AccuWeather is the weather source). Defaults to 50/day; set to 0 to disable the cap and quota warnings.',
+          'Cap on AccuWeather calls in any rolling 24-hour window (applies whenever AccuWeather participates, including merge mode). Defaults to 50/day; set to 0 to disable the cap and quota warnings.',
         default: CONFIG_DEFAULTS.DAILY_API_QUOTA,
         minimum: CONFIG_DEFAULTS.DAILY_API_QUOTA_MIN,
         maximum: CONFIG_DEFAULTS.DAILY_API_QUOTA_MAX,

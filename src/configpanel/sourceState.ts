@@ -77,11 +77,11 @@ export function deriveSourceState(form: PanelFormState): SourceState {
   // blend), but the cadence section's quota and AccuWeather-specific help still
   // key off whether AccuWeather is actually in play.
   const singleNeedsKey = providerRequiresApiKey(form.weatherProvider);
-  // In merged mode AccuWeather is in play when any included provider needs a
-  // key; the shared predicate is the single source for that, so the merge list
-  // and this derivation cannot drift on which providers are keyed.
+  // In merged mode AccuWeather is in play only when a keyed provider is
+  // included and a key is present. The runtime excludes AccuWeather from the
+  // blend without a key, so the quota controls must do the same.
   const accuWeatherInPlay = merged
-    ? form.mergeProviders.some(providerRequiresApiKey)
+    ? hasAccuWeatherKey && form.mergeProviders.some(providerRequiresApiKey)
     : singleNeedsKey;
   // The key field is shown when single mode picks a keyed provider, or in
   // merged mode regardless, so the operator can add a key to enable

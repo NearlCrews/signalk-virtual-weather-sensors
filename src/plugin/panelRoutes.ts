@@ -9,7 +9,7 @@
 
 import type { IRouter, Request, Response } from 'express';
 import { TEST_KEY_LOCATION } from '../constants/index.js';
-import { validateKeyLength } from '../constants/notifications-shared.js';
+import { validateApiKeyCandidate } from '../constants/notifications-shared.js';
 import { AccuWeatherService } from '../services/AccuWeatherService.js';
 import type { PanelStatusResponse } from '../types/index.js';
 import { msToWholeMinutes, toErrorMessage } from '../utils/conversions.js';
@@ -90,7 +90,7 @@ export function registerPanelRoutes(router: IRouter, instance: PluginInstance): 
 
   router.post('/api/test-key', async (req: Request, res: Response) => {
     const now = Date.now();
-    while (testKeyHits.length > 0 && now - (testKeyHits[0] as number) > TEST_KEY_WINDOW_MS) {
+    while (testKeyHits.length > 0 && now - (testKeyHits[0] as number) >= TEST_KEY_WINDOW_MS) {
       testKeyHits.shift();
     }
     if (testKeyHits.length >= TEST_KEY_RATE_LIMIT) {
@@ -105,9 +105,9 @@ export function registerPanelRoutes(router: IRouter, instance: PluginInstance): 
     // routers run; the body is therefore the parsed JSON object.
     const body = (req.body ?? {}) as { apiKey?: unknown };
     const apiKey = typeof body.apiKey === 'string' ? body.apiKey.trim() : '';
-    const keyLengthError = validateKeyLength(apiKey);
-    if (keyLengthError) {
-      res.status(400).json({ ok: false, message: keyLengthError });
+    const keyFormatError = validateApiKeyCandidate(apiKey);
+    if (keyFormatError) {
+      res.status(400).json({ ok: false, message: keyFormatError });
       return;
     }
     testKeyHits.push(now);

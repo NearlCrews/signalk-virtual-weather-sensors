@@ -70,11 +70,12 @@ describe('validateConfiguration / sanitizeConfiguration', () => {
     expect(result.isValid).toBe(false);
   });
 
-  it('warns when API key contains whitespace or control characters', () => {
+  it('rejects API keys that contain whitespace or control characters', () => {
     const result = validateConfiguration({
       accuWeatherApiKey: 'abc123def456 ghi789jkl012mnop3456',
     });
-    expect(result.warnings.some((w) => w.includes('whitespace or control characters'))).toBe(true);
+    expect(result.isValid).toBe(false);
+    expect(result.errors.some((e) => e.includes('whitespace or control characters'))).toBe(true);
   });
 
   it('does not warn on punctuation in API keys (some legacy keys contain them)', () => {
@@ -97,6 +98,18 @@ describe('validateConfiguration / sanitizeConfiguration', () => {
       emissionInterval: Number.NaN,
     });
     expect(r2.isValid).toBe(false);
+  });
+
+  it('rejects fractional values for integer configuration fields', () => {
+    for (const config of [
+      { updateFrequency: 1.5 },
+      { emissionInterval: 2.25 },
+      { dailyApiQuota: 49.5 },
+    ]) {
+      const result = validateConfiguration(config);
+      expect(result.isValid).toBe(false);
+      expect(result.errors.some((error) => error.includes('integer'))).toBe(true);
+    }
   });
 
   it('warns on excessive intervals', () => {
@@ -165,6 +178,30 @@ describe('validateConfiguration / sanitizeConfiguration', () => {
       const result = validateConfiguration({
         weatherProvider: 'open-meteo',
         openMeteoBaseUrl: 'https://meteo.example.test',
+      });
+      expect(result.isValid).toBe(true);
+    });
+
+    it('rejects credentials, query strings, and fragments in Open-Meteo base URLs', () => {
+      for (const openMeteoBaseUrl of [
+        'https://user:password@meteo.example.test',
+        'https://meteo.example.test?token=value',
+        'https://meteo.example.test#forecast',
+      ]) {
+        const result = validateConfiguration({
+          weatherProvider: 'open-meteo',
+          openMeteoBaseUrl,
+        });
+        expect(result.isValid).toBe(false);
+        expect(result.errors.some((error) => error.includes('base URL'))).toBe(true);
+      }
+    });
+
+    it('ignores an unused Open-Meteo base URL for an AccuWeather-only selection', () => {
+      const result = validateConfiguration({
+        weatherProvider: 'accuweather',
+        accuWeatherApiKey: 'A'.repeat(20),
+        openMeteoBaseUrl: 'not a URL',
       });
       expect(result.isValid).toBe(true);
     });
@@ -250,6 +287,14 @@ describe('validateAccuWeatherResponse', () => {
 
   it('rejects empty arrays', () => {
     expect(validateAccuWeatherResponse([]).isValid).toBe(false);
+  });
+
+  it('rejects a non-object response item without throwing', () => {
+    for (const response of [[null], ['invalid'], [[]]]) {
+      const result = validateAccuWeatherResponse(response);
+      expect(result.isValid).toBe(false);
+      expect(result.errors.some((error) => error.includes('must be an object'))).toBe(true);
+    }
   });
 
   it('reports each missing required field', () => {
@@ -424,6 +469,16 @@ describe('validateApiKey is capability-driven', () => {
     expect(r.isValid).toBe(true);
     expect(r.warnings.some((warning) => warning.includes('excluded from merged mode'))).toBe(true);
   });
+  it('requires a key when every selected merged provider needs one', () => {
+    const r = validateConfiguration({
+      weatherMode: 'merged',
+      weatherProvider: 'open-meteo',
+      mergeProviders: ['accuweather'],
+      accuWeatherApiKey: '',
+    });
+    expect(r.isValid).toBe(false);
+    expect(r.errors.some((error) => error.includes('required'))).toBe(true);
+  });
   it('rejects a malformed nonempty AccuWeather key in merged mode', () => {
     const r = validateConfiguration({
       weatherMode: 'merged',
@@ -431,6 +486,6 @@ describe('validateApiKey is capability-driven', () => {
       accuWeatherApiKey: 'short',
     });
     expect(r.isValid).toBe(false);
-    expect(r.errors.some((error) => error.includes('too short'))).toBe(true);
+    expect(r.errors.some((error) => error.includes('at least'))).toBe(true);
   });
 });

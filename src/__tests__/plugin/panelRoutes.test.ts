@@ -76,6 +76,28 @@ function makeRouter() {
   return router;
 }
 
+function setupTestKeyRoute() {
+  const router = makeRouter();
+  registerPanelRoutes(router as unknown as import('express').IRouter, makeInstance());
+  const handler = router.getHandler('POST', '/api/test-key');
+  if (!handler) throw new Error('POST /api/test-key handler not registered');
+  return {
+    handler,
+    req: { body: { apiKey: 'A'.repeat(20) } },
+  };
+}
+
+async function exhaustTestKeyWindow(
+  handler: (...args: unknown[]) => unknown,
+  req: { body: { apiKey: string } }
+): Promise<void> {
+  for (let i = 0; i < 3; i++) {
+    const res = makeRes();
+    await handler(req, res);
+    expect(res.capturedStatus).not.toBe(429);
+  }
+}
+
 describe('panelRoutes: /api/test-key rate limiter', () => {
   beforeEach(() => {
     // The route handler uses global fetch only when a valid key is submitted
@@ -106,23 +128,10 @@ describe('panelRoutes: /api/test-key rate limiter', () => {
     // TEST_KEY_RATE_LIMIT is 3 (module-private constant in panelRoutes.ts).
     // registering once constructs fresh testKeyHits state because each
     // registerPanelRoutes call closes over a new local array.
-    const router = makeRouter();
-    registerPanelRoutes(router as unknown as import('express').IRouter, makeInstance());
-
-    const handler = router.getHandler('POST', '/api/test-key');
-    if (!handler) throw new Error('POST /api/test-key handler not registered');
-
-    // A key that clears the length guard (>= 20 chars) so the limiter is tested.
-    const longKey = 'A'.repeat(20);
-    const req = { body: { apiKey: longKey } };
-
+    const { handler, req } = setupTestKeyRoute();
     // Fire TEST_KEY_RATE_LIMIT requests that should all succeed (or fail
     // with an AccuWeather error, never 429).
-    for (let i = 0; i < 3; i++) {
-      const res = makeRes();
-      await handler(req, res);
-      expect(res.capturedStatus).not.toBe(429);
-    }
+    await exhaustTestKeyWindow(handler, req);
 
     // The next request must be rate-limited.
     const res = makeRes();
@@ -134,23 +143,11 @@ describe('panelRoutes: /api/test-key rate limiter', () => {
   });
 
   it('allows calls again after the window resets (1 minute elapses)', async () => {
-    const router = makeRouter();
-    registerPanelRoutes(router as unknown as import('express').IRouter, makeInstance());
+    const { handler, req } = setupTestKeyRoute();
+    await exhaustTestKeyWindow(handler, req);
 
-    const handler = router.getHandler('POST', '/api/test-key');
-    if (!handler) throw new Error('POST /api/test-key handler not registered');
-
-    const longKey = 'A'.repeat(20);
-    const req = { body: { apiKey: longKey } };
-
-    // Exhaust the window.
-    for (let i = 0; i < 3; i++) {
-      const res = makeRes();
-      await handler(req, res);
-    }
-
-    // Advance past the 60-second window.
-    vi.advanceTimersByTime(61_000);
+    // At the exact 60-second boundary the oldest hit has expired.
+    vi.advanceTimersByTime(60_000);
 
     // After the window clears, the next call must not be rate-limited.
     const res = makeRes();

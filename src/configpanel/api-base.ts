@@ -24,6 +24,13 @@ export interface JsonResponse {
   readonly body: unknown;
 }
 
+/** Narrow a parsed JSON value to a plain object, excluding arrays and null. */
+export function asJsonObject(value: unknown): Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {};
+}
+
 /**
  * Fetch a panel API endpoint and parse the JSON body. A non-JSON body folds
  * into `body: null` instead of throwing so callers can still branch on the

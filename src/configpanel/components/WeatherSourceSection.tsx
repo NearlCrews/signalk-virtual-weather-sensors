@@ -20,7 +20,9 @@ interface Props {
   showKeyField: boolean;
   openMeteoActive: boolean;
   keyError: string | null;
+  baseUrlError: string | null;
   clearKeyError: () => void;
+  clearBaseUrlError: () => void;
 }
 
 export default function WeatherSourceSection({
@@ -31,7 +33,9 @@ export default function WeatherSourceSection({
   showKeyField,
   openMeteoActive,
   keyError,
+  baseUrlError,
   clearKeyError,
+  clearBaseUrlError,
 }: Props): React.ReactElement {
   return (
     <Stack gap={4}>
@@ -88,12 +92,17 @@ export default function WeatherSourceSection({
         <LabeledField
           label="Open-Meteo base URL"
           description="Weather data by Open-Meteo.com (CC BY 4.0), no API key required. Leave blank to use the public non-commercial service. Commercial users can enter a self-hosted or paid-service URL."
+          error={baseUrlError}
+          errorLive="polite"
         >
           <TextInput
             id="svws-ombase"
             value={form.openMeteoBaseUrl}
             placeholder="https://api.open-meteo.com"
-            onChange={(event) => setField('openMeteoBaseUrl', event.target.value)}
+            onChange={(event) => {
+              setField('openMeteoBaseUrl', event.target.value);
+              clearBaseUrlError();
+            }}
           />
         </LabeledField>
       ) : null}

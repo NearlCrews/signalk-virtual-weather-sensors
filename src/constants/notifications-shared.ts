@@ -169,6 +169,21 @@ export function resolveWeatherMode(explicit: unknown): WeatherMode {
 }
 
 /**
+ * True when the selected mode cannot start without an API key. In merged mode
+ * a key is required only when every selected provider is keyed; a keyless
+ * survivor otherwise keeps the blend operational.
+ */
+export function selectionRequiresApiKey(
+  mode: WeatherMode,
+  singleProvider: WeatherProviderId,
+  mergeProviders: ReadonlyArray<WeatherProviderId>
+): boolean {
+  return mode === 'single'
+    ? providerRequiresApiKey(singleProvider)
+    : mergeProviders.length > 0 && mergeProviders.every(providerRequiresApiKey);
+}
+
+/**
  * Default ordered provider list for merge mode: all known providers in catalog
  * order. Used as the merge-providers default in the schema and the sanitizer so
  * the schema and runtime cannot drift.
@@ -204,14 +219,52 @@ export function resolveMergeProviders(
 /** Minimum length for any plausible AccuWeather API key. */
 export const API_KEY_MIN_LENGTH = 20;
 
+/** Common placeholder strings users paste before adding their real key. */
+const API_KEY_PLACEHOLDER =
+  /^(?:your[_-]?api[_-]?key|api[_-]?key[_-]?here|x{3,}|test+|demo+|sample+)$/i;
+
+/** Disallowed control and whitespace characters in API keys. */
+// biome-ignore lint/suspicious/noControlCharactersInRegex: deliberately matching paste-error control chars
+const API_KEY_INVALID_CHARS = /[\s\x00-\x1f\x7f]/;
+
 /**
- * Shared minimum-length gate for a candidate API key. Returns the
- * operator-facing blocker message, or null when the key is long enough.
- * Used by the panel's Save and Test gates and the /api/test-key endpoint so
- * the wording cannot drift between them.
+ * Shared format gate for a candidate API key. Returns the operator-facing
+ * blocker message, or null when the key is plausible. Used by runtime startup,
+ * the panel's Save and Test gates, and the /api/test-key endpoint so accepted
+ * formats and wording cannot drift between them.
  */
-export function validateKeyLength(key: string): string | null {
-  return key.length < API_KEY_MIN_LENGTH
-    ? `API key must be at least ${API_KEY_MIN_LENGTH} characters.`
-    : null;
+export function validateApiKeyCandidate(key: string): string | null {
+  if (API_KEY_PLACEHOLDER.test(key)) {
+    return 'API key appears to be a placeholder. Enter your actual API key.';
+  }
+  if (key.length < API_KEY_MIN_LENGTH) {
+    return `API key must be at least ${API_KEY_MIN_LENGTH} characters.`;
+  }
+  if (API_KEY_INVALID_CHARS.test(key)) {
+    return 'API key cannot contain whitespace or control characters.';
+  }
+  return null;
+}
+
+/**
+ * Validate an optional Open-Meteo host override before endpoint paths are
+ * appended. Credentials are forbidden to keep them out of logs; query strings
+ * and fragments are forbidden because string-based endpoint joining would
+ * otherwise place `/v1/forecast` in the wrong URL component.
+ */
+export function validateOpenMeteoBaseUrlCandidate(raw: string): string | null {
+  const formatError =
+    'Open-Meteo base URL must be an http(s) URL without credentials, a query string, or a fragment';
+  const trimmed = raw.trim();
+  if (trimmed.length === 0) return null;
+  let parsed: URL;
+  try {
+    parsed = new URL(trimmed);
+  } catch {
+    return formatError;
+  }
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+    return formatError;
+  }
+  return parsed.username || parsed.password || parsed.search || parsed.hash ? formatError : null;
 }

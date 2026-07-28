@@ -148,6 +148,7 @@ Use current compatible releases. Do not force a major upgrade past a runtime,
 peer, or tool compatibility boundary. Useful checks are:
 
 ```bash
+npm outdated --json
 npm update --dry-run --json
 npm audit --omit=dev
 npm audit
@@ -156,6 +157,11 @@ npm audit
 TypeScript 7 intentionally takes precedence over tools that still require the
 TypeScript 6 compiler API. A tool that reports success without inspecting
 TypeScript modules is not an acceptable gate.
+
+`@types/node` tracks its current release for dependency compatibility and
+security maintenance. Node 20.18 remains the plugin runtime floor, so the
+blocking Node 20.18 type-check and production-build lane must stay green, and
+runtime code must not rely on APIs introduced after that floor.
 
 `signalk-nearlcrews-ui` is pinned exactly while it is in the 0.x series. Review
 its migration notes before changing that version.

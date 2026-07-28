@@ -4,9 +4,9 @@ The plugin surfaces every fault as a status banner in the Signal K Admin UI
 (Server -> Plugin Config) and in the server log. This guide maps each banner
 string to a cause and a fix.
 
-The API-key, rate-limit, and quota banners below apply only when AccuWeather is
-the selected weather source. The keyless sources (the default Open-Meteo and
-Met.no) have no per-key quota, so those banners do not appear under them.
+The API-key, rate-limit, and quota banners below apply whenever AccuWeather is
+the selected single source or participates in a merged source. The keyless
+sources (the default Open-Meteo and Met.no) have no per-key quota.
 
 ## `API_UNAUTHORIZED: Invalid API key` (HTTP 401)
 

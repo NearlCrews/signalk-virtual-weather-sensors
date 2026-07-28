@@ -26,6 +26,7 @@ import type { MetNoLocationforecastResponse, MetNoTimeseriesEntry } from '../typ
 import {
   asOptionalNumber,
   millibarsToPA,
+  normalizeIsoTimestamp,
   normalizeUtcDate,
   optionalCelsiusToKelvin,
   optionalPercentageToRatio,
@@ -142,13 +143,14 @@ function buildDailyEntry(day: string, acc: DayAcc): SKWeatherData {
  * within the cognitive-complexity limit.
  */
 function processGridWindow(entry: MetNoTimeseriesEntry, byDay: Map<string, DayAcc>): void {
-  const time = entry.time;
-  if (typeof time !== 'string') return;
+  const time = normalizeIsoTimestamp(entry.time);
+  if (time === '') return;
 
   const next6 = entry.data?.next_6_hours;
   if (next6?.details === undefined) return;
 
-  // Parse UTC hour as a number so '06' matches 6 in the numeric set.
+  // normalizeIsoTimestamp canonicalizes the instant to UTC before the string
+  // slices, so an offset timestamp cannot land in the wrong daily bucket.
   const hour = Number(time.slice(11, 13));
   if (!GRID_HOURS.has(hour)) return;
 

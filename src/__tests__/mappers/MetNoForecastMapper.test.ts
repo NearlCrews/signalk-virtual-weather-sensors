@@ -34,6 +34,32 @@ const HOURLY: MetNoLocationforecastResponse = {
   },
 };
 
+function sixHourEntry(
+  time: string,
+  options: {
+    max?: number;
+    min?: number;
+    precipitation?: number;
+    symbol?: string;
+  } = {}
+) {
+  const { max = 20, min = 10, precipitation, symbol } = options;
+  return {
+    time,
+    data: {
+      instant: { details: { air_temperature: (max + min) / 2 } },
+      next_6_hours: {
+        ...(symbol !== undefined && { summary: { symbol_code: symbol } }),
+        details: {
+          air_temperature_max: max,
+          air_temperature_min: min,
+          ...(precipitation !== undefined && { precipitation_amount: precipitation }),
+        },
+      },
+    },
+  };
+}
+
 describe('MetNoForecastMapper', () => {
   it('maps next_1_hours entries to ascending SI point forecasts', () => {
     const out = mapMetNoToHourlyForecasts(HOURLY);
@@ -62,28 +88,40 @@ describe('MetNoForecastMapper', () => {
     );
   });
   it('derives per-UTC-day min and max temperature from the 6-hour windows', () => {
-    const six = (time: string, max: number, min: number, precip: number) => ({
-      time,
-      data: {
-        instant: { details: { air_temperature: (max + min) / 2 } },
-        next_6_hours: {
-          summary: { symbol_code: 'rain' },
-          details: {
-            air_temperature_max: max,
-            air_temperature_min: min,
-            precipitation_amount: precip,
-          },
-        },
-      },
-    });
     const out = mapMetNoToDailyForecasts({
       properties: {
         timeseries: [
-          six('2026-06-23T00:00:00Z', 14, 8, 1),
-          six('2026-06-23T06:00:00Z', 20, 12, 0),
-          six('2026-06-23T12:00:00Z', 24, 15, 2),
-          six('2026-06-23T18:00:00Z', 18, 11, 0),
-          six('2026-06-23T03:00:00Z', 99, -99, 99), // off-grid hour, must be ignored
+          sixHourEntry('2026-06-23T00:00:00Z', {
+            max: 14,
+            min: 8,
+            precipitation: 1,
+            symbol: 'rain',
+          }),
+          sixHourEntry('2026-06-23T06:00:00Z', {
+            max: 20,
+            min: 12,
+            precipitation: 0,
+            symbol: 'rain',
+          }),
+          sixHourEntry('2026-06-23T12:00:00Z', {
+            max: 24,
+            min: 15,
+            precipitation: 2,
+            symbol: 'rain',
+          }),
+          sixHourEntry('2026-06-23T18:00:00Z', {
+            max: 18,
+            min: 11,
+            precipitation: 0,
+            symbol: 'rain',
+          }),
+          // Off-grid hour, must be ignored.
+          sixHourEntry('2026-06-23T03:00:00Z', {
+            max: 99,
+            min: -99,
+            precipitation: 99,
+            symbol: 'rain',
+          }),
         ],
       },
     });
@@ -96,22 +134,12 @@ describe('MetNoForecastMapper', () => {
     expect(out[0]?.description).toBe('Rain'); // from the 12:00 window symbol
   });
   it('uses the earliest window description when the day has no 12:00 window', () => {
-    const six = (time: string, symbol: string) => ({
-      time,
-      data: {
-        instant: { details: { air_temperature: 15 } },
-        next_6_hours: {
-          summary: { symbol_code: symbol },
-          details: { air_temperature_max: 20, air_temperature_min: 10, precipitation_amount: 0 },
-        },
-      },
-    });
     const out = mapMetNoToDailyForecasts({
       properties: {
         timeseries: [
-          six('2026-06-26T00:00:00Z', 'snow'), // earliest -> 'Snow'
-          six('2026-06-26T06:00:00Z', 'rain'), // should NOT overwrite
-          six('2026-06-26T18:00:00Z', 'cloudy'), // should NOT overwrite
+          sixHourEntry('2026-06-26T00:00:00Z', { precipitation: 0, symbol: 'snow' }),
+          sixHourEntry('2026-06-26T06:00:00Z', { precipitation: 0, symbol: 'rain' }),
+          sixHourEntry('2026-06-26T18:00:00Z', { precipitation: 0, symbol: 'cloudy' }),
         ],
       },
     });
@@ -120,21 +148,11 @@ describe('MetNoForecastMapper', () => {
     expect(out[0]?.description).toBe('Snow');
   });
   it('keeps an earlier description when the 12:00 window has no symbol_code', () => {
-    const six = (time: string, symbol?: string) => ({
-      time,
-      data: {
-        instant: { details: { air_temperature: 15 } },
-        next_6_hours: {
-          ...(symbol !== undefined && { summary: { symbol_code: symbol } }),
-          details: { air_temperature_max: 20, air_temperature_min: 10, precipitation_amount: 0 },
-        },
-      },
-    });
     const out = mapMetNoToDailyForecasts({
       properties: {
         timeseries: [
-          six('2026-06-26T00:00:00Z', 'snow'), // fallback description
-          six('2026-06-26T12:00:00Z'), // noon window without a symbol must not clobber it
+          sixHourEntry('2026-06-26T00:00:00Z', { precipitation: 0, symbol: 'snow' }),
+          sixHourEntry('2026-06-26T12:00:00Z', { precipitation: 0 }),
         ],
       },
     });
@@ -142,22 +160,12 @@ describe('MetNoForecastMapper', () => {
     expect(out[0]?.description).toBe('Snow');
   });
   it('lets a later window supply the description when noon has no symbol_code', () => {
-    const six = (time: string, symbol?: string) => ({
-      time,
-      data: {
-        instant: { details: { air_temperature: 15 } },
-        next_6_hours: {
-          ...(symbol !== undefined && { summary: { symbol_code: symbol } }),
-          details: { air_temperature_max: 20, air_temperature_min: 10, precipitation_amount: 0 },
-        },
-      },
-    });
     const out = mapMetNoToDailyForecasts({
       properties: {
         timeseries: [
-          six('2026-06-26T06:00:00Z'), // no symbol yet
-          six('2026-06-26T12:00:00Z'), // noon also empty; must not lock the day
-          six('2026-06-26T18:00:00Z', 'cloudy'), // only window with a symbol
+          sixHourEntry('2026-06-26T06:00:00Z', { precipitation: 0 }),
+          sixHourEntry('2026-06-26T12:00:00Z', { precipitation: 0 }),
+          sixHourEntry('2026-06-26T18:00:00Z', { precipitation: 0, symbol: 'cloudy' }),
         ],
       },
     });
@@ -165,23 +173,13 @@ describe('MetNoForecastMapper', () => {
     expect(out[0]?.description).toBe('Cloudy');
   });
   it('emits precipitationVolume of 0 when all 6-hour windows report 0 mm', () => {
-    const dryDay = (time: string) => ({
-      time,
-      data: {
-        instant: { details: { air_temperature: 15 } },
-        next_6_hours: {
-          summary: { symbol_code: 'clearsky' },
-          details: { air_temperature_max: 20, air_temperature_min: 10, precipitation_amount: 0 },
-        },
-      },
-    });
     const out = mapMetNoToDailyForecasts({
       properties: {
         timeseries: [
-          dryDay('2026-06-24T00:00:00Z'),
-          dryDay('2026-06-24T06:00:00Z'),
-          dryDay('2026-06-24T12:00:00Z'),
-          dryDay('2026-06-24T18:00:00Z'),
+          sixHourEntry('2026-06-24T00:00:00Z', { precipitation: 0, symbol: 'clearsky' }),
+          sixHourEntry('2026-06-24T06:00:00Z', { precipitation: 0, symbol: 'clearsky' }),
+          sixHourEntry('2026-06-24T12:00:00Z', { precipitation: 0, symbol: 'clearsky' }),
+          sixHourEntry('2026-06-24T18:00:00Z', { precipitation: 0, symbol: 'clearsky' }),
         ],
       },
     });
@@ -189,22 +187,23 @@ describe('MetNoForecastMapper', () => {
     expect(out[0]?.outside?.precipitationVolume).toBe(0);
   });
   it('omits precipitationVolume when no 6-hour window supplies the field', () => {
-    const noField = (time: string) => ({
-      time,
-      data: {
-        instant: { details: { air_temperature: 15 } },
-        next_6_hours: {
-          summary: { symbol_code: 'clearsky' },
-          details: { air_temperature_max: 20, air_temperature_min: 10 },
-        },
-      },
-    });
     const out = mapMetNoToDailyForecasts({
       properties: {
-        timeseries: [noField('2026-06-25T00:00:00Z'), noField('2026-06-25T12:00:00Z')],
+        timeseries: [
+          sixHourEntry('2026-06-25T00:00:00Z', { symbol: 'clearsky' }),
+          sixHourEntry('2026-06-25T12:00:00Z', { symbol: 'clearsky' }),
+        ],
       },
     });
     expect(out).toHaveLength(1);
     expect(out[0]?.outside?.precipitationVolume).toBeUndefined();
+  });
+  it('ignores an invalid daily-window timestamp', () => {
+    const out = mapMetNoToDailyForecasts({
+      properties: {
+        timeseries: [sixHourEntry('not-a-timestamp', { precipitation: 1, symbol: 'rain' })],
+      },
+    });
+    expect(out).toEqual([]);
   });
 });

@@ -1,5 +1,4 @@
 import {
-  API_KEY_MIN_LENGTH,
   BEAUFORT_LIMITS,
   CLOUD_CEILING_LIMITS_M,
   CONFIG_DEFAULTS,
@@ -21,6 +20,9 @@ import {
   providerRequiresApiKey,
   resolveMergeProviders,
   resolveWeatherMode,
+  selectionRequiresApiKey,
+  validateApiKeyCandidate,
+  validateOpenMeteoBaseUrlCandidate,
   WEATHER_MODE_IDS,
   type WeatherMode,
 } from '../constants/notifications-shared.js';
@@ -83,25 +85,10 @@ export interface ValidationResult {
   readonly warnings: ReadonlyArray<string>;
 }
 
-/** Disallowed control/whitespace characters in API keys (catches paste mistakes). */
-// biome-ignore lint/suspicious/noControlCharactersInRegex: deliberately matching paste-error control chars
-const API_KEY_INVALID_CHARS = /[\s\x00-\x1f\x7f]/;
-
-/** Common placeholder strings users paste before adding their real key */
-const API_KEY_PLACEHOLDER_PATTERNS: ReadonlyArray<RegExp> = [
-  /^your[_-]?api[_-]?key$/i,
-  /^api[_-]?key[_-]?here$/i,
-  /^xxx+$/i,
-  /^test+$/i,
-  /^demo+$/i,
-  /^sample+$/i,
-];
-
 function validateApiKey(
   config: Partial<PluginConfiguration>,
   provider: WeatherProviderId,
-  errors: string[],
-  warnings: string[]
+  errors: string[]
 ): void {
   // A keyless provider needs no API key. If one is present anyway it is simply
   // unused, so do not validate or block on it.
@@ -119,30 +106,9 @@ function validateApiKey(
     return;
   }
 
-  // Placeholder check runs BEFORE the min-length check: realistic placeholders
-  // ("your_api_key", "demo") are shorter than API_KEY_MIN_LENGTH, so checking
-  // length first would mask the more actionable "placeholder" message behind a
-  // generic "too short".
-  if (API_KEY_PLACEHOLDER_PATTERNS.some((pattern) => pattern.test(trimmedKey))) {
-    errors.push(
-      'AccuWeather API key appears to be a placeholder. Please enter your actual API key.'
-    );
-    return;
-  }
-
-  if (trimmedKey.length < API_KEY_MIN_LENGTH) {
-    errors.push(
-      `AccuWeather API key is too short (minimum ${API_KEY_MIN_LENGTH} characters). Get your key at https://developer.accuweather.com/`
-    );
-    return;
-  }
-
-  // Catch paste errors: spaces, tabs, control characters. Don't whitelist alphanumeric:
-  // legitimate keys vary in character set across AccuWeather generations.
-  if (API_KEY_INVALID_CHARS.test(trimmedKey)) {
-    warnings.push(
-      'AccuWeather API key contains whitespace or control characters. Please verify your key is correct.'
-    );
+  const candidateError = validateApiKeyCandidate(trimmedKey);
+  if (candidateError) {
+    errors.push(candidateError);
   }
 }
 
@@ -156,6 +122,7 @@ function validateApiKey(
 interface NumericConfigRule {
   readonly key: 'updateFrequency' | 'emissionInterval' | 'dailyApiQuota';
   readonly notFiniteError: string;
+  readonly notIntegerError: string;
   readonly min: number;
   readonly belowMinError: string;
   readonly max: number;
@@ -168,6 +135,7 @@ const NUMERIC_CONFIG_RULES: ReadonlyArray<NumericConfigRule> = [
   {
     key: 'updateFrequency',
     notFiniteError: 'Update frequency must be a finite number',
+    notIntegerError: 'Update frequency must be an integer',
     min: CONFIG_DEFAULTS.UPDATE_FREQUENCY_MIN,
     belowMinError: `Update frequency must be at least ${CONFIG_DEFAULTS.UPDATE_FREQUENCY_MIN} minute`,
     max: CONFIG_DEFAULTS.UPDATE_FREQUENCY_MAX,
@@ -176,6 +144,7 @@ const NUMERIC_CONFIG_RULES: ReadonlyArray<NumericConfigRule> = [
   {
     key: 'emissionInterval',
     notFiniteError: 'Emission interval must be a finite number',
+    notIntegerError: 'Emission interval must be an integer',
     min: CONFIG_DEFAULTS.EMISSION_INTERVAL_MIN,
     belowMinError: `Emission interval must be at least ${CONFIG_DEFAULTS.EMISSION_INTERVAL_MIN} second`,
     max: CONFIG_DEFAULTS.EMISSION_INTERVAL_MAX,
@@ -184,6 +153,7 @@ const NUMERIC_CONFIG_RULES: ReadonlyArray<NumericConfigRule> = [
   {
     key: 'dailyApiQuota',
     notFiniteError: 'Daily API quota must be a finite number',
+    notIntegerError: 'Daily API quota must be an integer',
     min: CONFIG_DEFAULTS.DAILY_API_QUOTA_MIN,
     belowMinError: 'Daily API quota must be 0 or greater (0 disables the cap)',
     max: CONFIG_DEFAULTS.DAILY_API_QUOTA_MAX,
@@ -205,6 +175,11 @@ function validateNumericConfigField(
     return;
   }
 
+  if (!Number.isInteger(value)) {
+    errors.push(rule.notIntegerError);
+    return;
+  }
+
   if (value < rule.min) {
     errors.push(rule.belowMinError);
   } else if (value > rule.max) {
@@ -220,20 +195,40 @@ function validateWeatherProvider(config: Partial<PluginConfiguration>, errors: s
   }
 }
 
-/** Reject a non-empty Open-Meteo base URL that is not a parseable http(s) URL. */
+/**
+ * Reject a non-empty Open-Meteo base URL that cannot be safely extended with
+ * the forecast and marine endpoint paths.
+ */
 function validateOpenMeteoBaseUrl(config: Partial<PluginConfiguration>, errors: string[]): void {
   const raw = config.openMeteoBaseUrl;
   if (typeof raw !== 'string') return;
-  const trimmed = raw.trim();
-  if (trimmed.length === 0) return;
-  let parsed: URL | null = null;
-  try {
-    parsed = new URL(trimmed);
-  } catch {
-    parsed = null;
+  const error = validateOpenMeteoBaseUrlCandidate(raw);
+  if (error) errors.push(error);
+}
+
+function validateSelectedProviderCredentials(
+  config: Partial<PluginConfiguration>,
+  mode: WeatherMode,
+  provider: WeatherProviderId,
+  mergeProviders: ReadonlyArray<WeatherProviderId>,
+  errors: string[],
+  warnings: string[]
+): void {
+  if (mode === 'single') {
+    validateApiKey(config, provider, errors);
+    return;
   }
-  if (!parsed || (parsed.protocol !== 'http:' && parsed.protocol !== 'https:')) {
-    errors.push('Open-Meteo base URL must be a valid http(s) URL');
+
+  const keyedProvider = mergeProviders.find(providerRequiresApiKey);
+  if (!keyedProvider) return;
+  if ((config.accuWeatherApiKey ?? '').trim().length > 0) {
+    validateApiKey(config, keyedProvider, errors);
+    return;
+  }
+  if (selectionRequiresApiKey(mode, provider, mergeProviders)) {
+    errors.push('AccuWeather API key is required because every selected provider needs a key');
+  } else {
+    warnings.push('AccuWeather will be excluded from merged mode until a valid API key is set');
   }
 }
 
@@ -250,20 +245,12 @@ export function validateConfiguration(config: Partial<PluginConfiguration>): Val
   );
   const mode = resolveWeatherMode(config.weatherMode);
   const mergeProviders = resolveMergeProviders(config.mergeProviders, provider);
-  const hasApiKey = (config.accuWeatherApiKey ?? '').trim().length > 0;
   validateWeatherProvider(config, errors);
   validateModeAndMergeProviders(config, warnings);
-  if (mode === 'single') {
-    validateApiKey(config, provider, errors, warnings);
-  } else {
-    const keyedProvider = mergeProviders.find(providerRequiresApiKey);
-    if (keyedProvider && hasApiKey) {
-      validateApiKey(config, keyedProvider, errors, warnings);
-    } else if (keyedProvider) {
-      warnings.push('AccuWeather will be excluded from merged mode until a valid API key is set');
-    }
-  }
-  validateOpenMeteoBaseUrl(config, errors);
+  validateSelectedProviderCredentials(config, mode, provider, mergeProviders, errors, warnings);
+  const openMeteoActive =
+    mode === 'single' ? provider === 'open-meteo' : mergeProviders.includes('open-meteo');
+  if (openMeteoActive) validateOpenMeteoBaseUrl(config, errors);
   for (const rule of NUMERIC_CONFIG_RULES) {
     validateNumericConfigField(config, rule, errors, warnings);
   }
@@ -458,7 +445,12 @@ export function validateAccuWeatherResponse(response: unknown): ValidationResult
     return { isValid: false, errors, warnings };
   }
 
-  const data = response[0] as Record<string, unknown>;
+  const first = response[0];
+  if (typeof first !== 'object' || first === null || Array.isArray(first)) {
+    errors.push('AccuWeather response item must be an object');
+    return { isValid: false, errors, warnings };
+  }
+  const data = first as Record<string, unknown>;
 
   validateRequiredFields(data, errors);
   validateMetricNumber(data, 'Temperature', 'Temperature', errors);
