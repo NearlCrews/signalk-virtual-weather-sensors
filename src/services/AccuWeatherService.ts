@@ -231,7 +231,7 @@ export class AccuWeatherService implements CurrentWeatherProvider {
 
   /**
    * Fetch the 5-day daily forecast for a position. Same caching and quota
-   * behaviour as fetchHourlyForecastRaw.
+   * behavior as fetchHourlyForecastRaw.
    */
   public async fetchDailyForecastRaw(
     location: GeoLocation

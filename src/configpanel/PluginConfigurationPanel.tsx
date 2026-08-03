@@ -155,7 +155,7 @@ function SupportedPluginConfigurationPanel({ configuration, save }: Props): Reac
     action?.isError || hasInvalidInteger ? styles.actionError : styles.actionStatus;
 
   return (
-    <PanelRoot legacyThemeStorageKeys={['svws-theme']} width="wide">
+    <PanelRoot width="wide">
       <Stack gap={4}>
         <Cluster justify="end">
           <ThemeToggle />
@@ -282,7 +282,7 @@ function SupportedPluginConfigurationPanel({ configuration, save }: Props): Reac
 
         <ActionBar
           data-panel-action-bar=""
-          sticky
+          sticky="bottom"
           statusRef={actionStatusRef}
           status={
             <span className={actionStatusClass} role="status">

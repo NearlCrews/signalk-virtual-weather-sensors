@@ -18,29 +18,26 @@ service; AccuWeather is an optional source for users who have an API key.
 > for safety-of-life decisions: always cross-check official forecasts and
 > warnings against your primary instruments.
 
-## What's new in 1.13.1
+## What's new in 1.13.2
 
-Stricter configuration safety, more resilient provider boundaries, clearer
-merged-source behavior, and an updated shared configuration panel. No
-configuration migration is required.
+Version 1.13.2 refreshes the shared configuration panel, dependencies, and
+project security gates without changing runtime behavior, emitted paths, or
+saved configurations.
 
-- **Configuration errors are caught before restart.** Runtime, fallback-form,
-  and custom-panel validation now agree on API keys, integer settings, merged
-  providers, and safe Open-Meteo base URLs.
-- **Merged-source status is truthful.** AccuWeather is excluded from a mixed
-  blend until a valid key is set, an AccuWeather-only blend cannot start
-  without a key, and quota controls appear only when AccuWeather can fetch.
-- **Provider boundaries are hardened.** Malformed AccuWeather records, invalid
-  Met.no timestamps, malformed retry delays, unsafe quota-state files, and
-  invalid panel status responses are rejected cleanly.
-- **Operational edge cases are safer.** Exact rate-limit and cache boundaries,
-  startup-error reporting, banner length limits, and diagnostic redaction are
-  now covered by regression tests.
-- **The shared panel is updated.** `signalk-nearlcrews-ui` 0.4.1 improves
-  Night-theme contrast, loading controls, focus handling, responsive overflow,
-  and cross-browser action-bar behavior.
+- **Shared marine UI 0.6.1.** Fresh profiles follow the shared Auto theme, and
+  obsolete plugin-specific theme storage is no longer read or migrated.
+- **Current compatible dependencies.** Direct development dependencies use
+  their latest compatible releases while the plugin retains its Node 20.18
+  runtime floor.
+- **Hardened automation.** GitHub workflows now combine immutable action pins,
+  isolated npm invocations, protected credentials and caches, update cooldowns,
+  local syntax checks, actionlint, and zizmor.
+- **Documented production remote.** The host-shared React panel and bundled UI
+  total 29,551 gzip bytes, below the revised 30,000-byte ceiling.
+- **Native ESM tooling.** Vitest aliases now resolve without relying on the
+  CommonJS-only `__dirname` global.
 
-See the [v1.13.1 changelog entry](CHANGELOG.md#v1131), or the
+See the [v1.13.2 changelog entry](CHANGELOG.md#v1132), or the
 [changelog](CHANGELOG.md) for the full list.
 
 ## What it does

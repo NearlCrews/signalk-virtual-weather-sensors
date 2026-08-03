@@ -129,7 +129,7 @@ function msRounded(ms: number): number {
   // which is also wrong by the user's expectation. Math.round is the lesser
   // surprise across the input distribution we actually emit: integer-rounded
   // upstream wind speeds round trivially, and the few midpoints that diverge
-  // skew toward the user's expected "round half up" behaviour.
+  // skew toward the user's expected "round half up" behavior.
   return Math.round(ms * 10) / 10;
 }
 

@@ -7,7 +7,7 @@ for publication steps.
 ## Supported environments
 
 - Plugin runtime: Node.js 20.18 or newer
-- Development: Node.js 24.18 and npm 11.18
+- Development: Node.js `^22.22.2 || ^24.15.0 || >=26.0.0` and npm 10.9.3 or newer
 - Language: TypeScript 7, strict mode, ES2023 target
 - Signal K: server 2.x with `@signalk/server-api` 2.24 or newer for Weather API
   registration
@@ -49,6 +49,10 @@ The panel uses `signalk-nearlcrews-ui` for themes, layout, fields, feedback,
 metrics, collapsible sections, and actions. Keep provider, quota, status, and
 save-confirmation behavior local to this plugin. Project CSS must stay in
 focused CSS modules and use public `--snui-*` tokens.
+
+The shared UI is pinned exactly at 0.6.1. Fresh profiles use Auto without
+writing an implicit preference. Retired plugin-specific theme keys are ignored;
+only `signalk-nearlcrews-ui.theme.v1` is authoritative.
 
 React is a host-provided Module Federation singleton with the range
 `>=19.2.0 <20.0.0` and `import: false`. The shared UI library is bundled into
@@ -175,6 +179,8 @@ its migration notes before changing that version.
 - `plugin-ci.yml` pins the official Signal K reusable workflow and tests Node
   22 and 24, Signal K 2.24 and current, armv7, packaging, and installation.
 - `codeql.yml` runs the extended JavaScript and TypeScript query suite.
+- `workflow-security.yml` runs actionlint and zizmor against workflow changes
+  and on a weekly schedule.
 - `publish.yml` verifies a release, packs once, uploads the exact tarball, and
   publishes that artifact in a separate job.
 

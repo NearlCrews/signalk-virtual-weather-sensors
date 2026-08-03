@@ -86,7 +86,7 @@ export const DEFAULT_CONFIG = {
   RETRY_DELAY: 1000, // milliseconds
   /**
    * Severe-weather notifications are opt-in (master off by default) so the
-   * existing measurement-only behaviour is preserved on upgrade. The per-
+   * existing measurement-only behavior is preserved on upgrade. The per-
    * category toggles default to true so a single flip of `enabled` lights up
    * the full set; operators can untick individual categories from the admin UI.
    * Values come from notifications-shared.ts so the federated panel and the
@@ -289,7 +289,7 @@ export const SIGNALK_PATHS = {
 
 /** Physical constants and conversion factors */
 export const UNITS = {
-  /** Temperature conversions. Pure data: the Fahrenheit converters are behaviour and live in conversions.ts. */
+  /** Temperature conversions. Pure data: the Fahrenheit converters are behavior and live in conversions.ts. */
   TEMPERATURE: {
     CELSIUS_TO_KELVIN: 273.15,
   },

@@ -1,11 +1,9 @@
-import { readFile } from 'node:fs/promises';
+import { readdir, readFile } from 'node:fs/promises';
 
-const workflowPaths = [
-  '.github/workflows/ci.yml',
-  '.github/workflows/codeql.yml',
-  '.github/workflows/plugin-ci.yml',
-  '.github/workflows/publish.yml',
-];
+const workflowDirectory = '.github/workflows';
+const workflowPaths = (await readdir(workflowDirectory))
+  .filter((name) => name.endsWith('.yml') || name.endsWith('.yaml'))
+  .map((name) => `${workflowDirectory}/${name}`);
 const failures = [];
 
 for (const path of workflowPaths) {
@@ -19,7 +17,7 @@ for (const path of workflowPaths) {
 }
 
 const ci = await readFile('.github/workflows/ci.yml', 'utf8');
-if (!ci.includes('node-version: 20.18.0') || !ci.includes('npm run build')) {
+if (!ci.includes('node-version: 20.18.0') || !ci.includes('run build')) {
   failures.push('ci.yml must retain a blocking Node 20.18 type-check and build lane.');
 }
 
@@ -36,10 +34,18 @@ const publish = await readFile('.github/workflows/publish.yml', 'utf8');
 for (const expected of [
   'actions/upload-artifact@',
   'actions/download-artifact@',
-  'npm pack --json --ignore-scripts',
-  'npm publish ./artifacts/*.tgz --provenance --access public',
+  '--json --ignore-scripts --pack-destination artifacts',
+  'publish ./artifacts/*.tgz',
+  '--provenance --access public',
 ]) {
   if (!publish.includes(expected)) failures.push(`publish.yml must include ${expected}.`);
+}
+
+const workflowSecurity = await readFile('.github/workflows/workflow-security.yml', 'utf8');
+for (const expected of ['actionlint@v1.7.12', 'zizmor-action@']) {
+  if (!workflowSecurity.includes(expected)) {
+    failures.push(`workflow-security.yml must include ${expected}.`);
+  }
 }
 if (failures.length > 0) {
   console.error(failures.join('\n'));
@@ -47,5 +53,5 @@ if (failures.length > 0) {
 }
 
 console.log(
-  'Workflow pins, compatibility lanes, integration coverage, and publish handoff passed.'
+  'Workflow pins, compatibility lanes, integration coverage, security, and publish handoff passed.'
 );

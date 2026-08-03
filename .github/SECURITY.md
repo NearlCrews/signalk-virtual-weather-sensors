@@ -60,14 +60,17 @@ When using this plugin:
 
 This project uses:
 
-- `npm audit` for vulnerability scanning (`npm run security-audit`)
+- Separate production and full dependency audits (`npm run audit:runtime` and
+  `npm run audit:full`)
 - Automated dependency updates via Dependabot for security patches
 - CodeQL static analysis on every push to `main`
+- Pinned GitHub Actions and automated workflow security analysis
 
 Run a security audit:
 
 ```bash
-npm audit
+npm run audit:runtime
+npm run audit:full
 ```
 
 ## Data Handling

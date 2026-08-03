@@ -261,7 +261,7 @@ does not define custom response fields.
 
 Forecasts are mapped to the same SI units used everywhere else in this plugin
 (Kelvin for temperatures, m/s for wind speed, radians for wind direction,
-ratio 0 to 1 for humidity and cloud cover, and metres for distance and
+ratio 0 to 1 for humidity and cloud cover, and meters for distance and
 precipitation depth). Registering the provider is also what makes the server
 list `weather` under `GET /signalk/v2/features`, which is how dashboards such as
 signalk-binnacle detect that forecast support is available.

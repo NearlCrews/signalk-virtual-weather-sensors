@@ -95,8 +95,8 @@ const NON_CANONICAL_META: ReadonlyArray<Meta> = [
     units: 'm',
     displayName: 'Precipitation, last hour',
     description: 'Liquid-equivalent precipitation depth accumulated over the past hour.',
-    // The SI unit is metres, but a marine consumer wants millimetres: a depth
-    // in metres would otherwise be categorised as a distance by the Signal K
+    // The SI unit is meters, but a marine consumer wants millimeters: a depth
+    // in meters would otherwise be categorized as a distance by the Signal K
     // unit-preferences system and rendered in miles/feet. Pinning a custom
     // display conversion keeps the data browser on mm regardless of preset.
     displayUnits: {
@@ -204,7 +204,7 @@ const CANONICAL_LEAF_META: ReadonlyArray<Meta> = [
  * Meta for each `notifications.environment.*` path the plugin emits. Lets
  * consumer UIs render the alert with a human label instead of the bare path,
  * and documents the threshold that activates each band so operators can map
- * SK notifications back to plugin behaviour without consulting the source.
+ * SK notifications back to plugin behavior without consulting the source.
  */
 const NOTIFICATION_META: ReadonlyArray<Meta> = [
   me(NOTIFICATION_PATHS.WIND_GALE, {

@@ -214,7 +214,7 @@ export class RetryingHttpClient {
       message = errorData.message || response.statusText;
     } catch (parseError) {
       // Surface malformed error bodies by default so operators see upstream
-      // misbehaviour without needing to enable debug logging.
+      // misbehavior without needing to enable debug logging.
       this.logger('warn', 'API error response was not JSON, falling back to statusText', {
         status: response.status,
         parseError: toErrorMessage(parseError),

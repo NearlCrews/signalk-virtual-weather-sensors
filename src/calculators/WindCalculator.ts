@@ -100,7 +100,7 @@ export class WindCalculator {
     const apparentSpeed = Math.sqrt(apparentWindX * apparentWindX + apparentWindY * apparentWindY);
     // The bow-relative apparent angle references true heading, not course:
     // the two differ by leeway and current set. When no separate heading is
-    // supplied it defaults to course (the prior behaviour).
+    // supplied it defaults to course (the prior behavior).
     const apparentAngle = normalizeAnglePiToPi(
       Math.atan2(apparentWindY, apparentWindX) - vesselHeading
     );

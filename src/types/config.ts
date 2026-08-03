@@ -6,7 +6,7 @@ import type { WeatherMode, WeatherProviderId } from '../constants/notifications-
 
 /**
  * Severe-weather notification controls. Master `enabled` is off by default so
- * the plugin preserves its measurement-only behaviour on upgrade; flipping
+ * the plugin preserves its measurement-only behavior on upgrade; flipping
  * `enabled` activates each per-category sub-toggle individually so operators
  * can suppress a category (e.g. wind alerts while at anchor) without losing
  * the others.

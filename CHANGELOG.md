@@ -7,6 +7,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+<a id="v1132"></a>
+
+## [1.13.2] - 2026-08-02
+
+This patch release updates the shared configuration panel and development
+toolchain without changing the Signal K configuration schema, runtime API,
+emitted paths, or stored values. No configuration migration is required.
+
+### Fixed
+
+- Updated the panel to the current shared UI contracts by selecting the
+  explicit bottom edge for its sticky action bar and removing the retired
+  plugin-specific theme migration option.
+- Resolved Vitest aliases from the native ESM module directory instead of the
+  CommonJS-only `__dirname` global, keeping the configuration valid as the
+  toolchain moves to native config loading.
+
+### Changed
+
+- Upgraded the bundled `signalk-nearlcrews-ui` package to 0.6.1. Fresh profiles
+  now follow the shared Auto theme, and the retired `svws-theme` preference is
+  ignored instead of being copied into shared storage.
+- Refreshed direct development dependencies to their latest compatible
+  releases while retaining the Node 20.18 runtime compatibility lane.
+- Hardened GitHub workflows with least-privilege checkout credentials, current
+  immutable action references, cache protections, dependency-update cooldowns,
+  automated actionlint and zizmor checks, and version-pinned npm invocations.
+- Recalibrated the documented configuration-panel ceiling to 30,000 gzip bytes
+  for shared UI 0.6.1. The current production assets total 29,551 gzip bytes.
+
 <a id="v1131"></a>
 
 ## [1.13.1] - 2026-07-27
@@ -576,7 +606,7 @@ and all 303 tests pass.
 - **Every status / error banner write routes through the entry-point dedupe.** `WeatherService` previously called `app.setPluginStatus` and `app.setPluginError` directly on the quota-exhausted path, the first-update path, and both branches of the fetch-failure path, bypassing the `setBanner()` wrapper in `index.ts` that owns the `(kind, message)` dedupe. A `BannerSink` callback supplied by the plugin entry now sinks every banner write through `setBanner` so identical consecutive messages land one banner per unique string.
 - **`WeatherService.formatStatusBanner()` surfaces the API-key-rejected state.** When a 401 has tripped `apiKeyRejected`, the banner returns `"API key rejected: update key in plugin settings"` instead of the running banner. The admin panel's `/api/status` `running` flag is also `false` in that state so the panel does not show a green indicator on a plugin that will never recover until the operator updates the key.
 - **Visibility and cloud ceiling carry `displayUnits` for nautical miles and feet.** Both paths previously rendered in statute miles via the Signal K distance category default. The `environment.weather.visibility` path now pins a custom conversion to nautical miles, and `environment.weather.cloudCeiling` pins a custom conversion to feet, matching marine and aviation convention regardless of the operator's distance-preference setting. The emitted values and `units` are unchanged.
-- **`environment.outside.apparentWindChillTemperature` carries a meta override.** The canonical leaf now ships an operator-visible description that documents the silent fallback to the theoretical wind chill when no vessel-motion data is available. The fallback behaviour and emission contract are unchanged.
+- **`environment.outside.apparentWindChillTemperature` carries a meta override.** The canonical leaf now ships an operator-visible description that documents the silent fallback to the theoretical wind chill when no vessel-motion data is available. The fallback behavior and emission contract are unchanged.
 - **Wind-chill formula attribution corrected.** The activation gates (`T <= 10 C`, wind >= 4.8 km/h) follow the NWS regime of the JAG/TI 2001 formula, not the stricter Environment Canada operational gates. The formula itself is identical between the two agencies; only the in-code comment moved.
 - **Threshold-direction documentation clarified for descending bands.** The `NOTIFICATION_THRESHOLDS` comment now distinguishes the ascending semantics (`>= threshold` activates) for wind and heat from the descending semantics (`< threshold` activates) for visibility and cold, so an operator reading the doc does not believe visibility of exactly 1 nm trips the band.
 
@@ -584,14 +614,14 @@ and all 303 tests pass.
 
 - **Three AccuWeather decode sites now reject non-numeric values.** `Ceiling.Metric.Value`, `Precip1hr.Metric.Value`, and `Past24HourTemperatureDeparture.Metric.Value` were assigned directly from the response with no `typeof` check, so a `null` from a partial response could slip through the optional-spread guard and land on `environment.weather.*` paths typed as numeric. Each is now decoded through the same defensive helper used for `uvIndex` and is omitted when not a number.
 - **The rolling 24h API-quota window zeroes on a backward clock jump.** The previous fix re-anchored the hour index but left the 24 hourly buckets carrying counts under their now-future labels, so up to 24 hours of subsequent reads could overcount and falsely trip the quota-exhausted state. A backward jump now clears every bucket: undercounting briefly is far safer than capping fetches against ghost requests.
-- **`AccuWeatherService` API-key validation runs before any field assignment.** A throw from the constructor previously left `this.config` already assigned with the bad key. Validation now happens first, so an instance that throws cannot leak a partially-initialised state.
+- **`AccuWeatherService` API-key validation runs before any field assignment.** A throw from the constructor previously left `this.config` already assigned with the bad key. Validation now happens first, so an instance that throws cannot leak a partially-initialized state.
 - **`WeatherService.getDataAgeMs()` and `SignalKService.getDataAge()` clamp at zero.** A backward wall-clock jump produced a negative age that rendered as `"last update -3m ago"` on the banner and slipped past staleness comparisons. Both accessors now floor at zero.
 - **`isWithinNMEA2000Ranges` no longer lets `NaN` slip the fast path.** `NaN < min` and `NaN > max` are both false per IEEE-754, so a `NaN` numeric field with every other field in range would short-circuit the sanitizer and land on the bus. Non-finite values now force the slow clamping path, which floors them to the configured minimum.
 - **`sanitizeLogMetadata` guards depth and cycles.** A cyclic metadata reference could stack-overflow the Node process when a `warn` or `error` was logged. The function now carries a depth cap and a `WeakSet` of seen objects, returning `[CIRCULAR]` for cycles and a sentinel for over-depth.
 - **Notifier method arrays are frozen.** `VISUAL_ONLY`, `VISUAL_AND_SOUND`, and `NO_METHODS` were shared module-scope references attached to every notification by `methodsFor`. They are now `Object.freeze`d so a downstream consumer that casts away the readonly contract cannot mutate the shared instance.
 - **Invalid-input wind-analysis fallback never surfaces a negative speed.** `trueWindSpeed || 0` would let `-5` through as the fallback because negative numbers are truthy. The fallback now clamps any non-finite or negative input to zero.
 - **WeatherIcon severity table covers flurry variants 19, 20, and 21.** Codes 19 (Flurries), 20 (Mostly cloudy with flurries), and 21 (Partly sunny with flurries) now warrant the same `warn` severity as code 22 (Snow). Codes 12 to 14 (rain showers) and 18 (Rain) remain absent: liquid precipitation without thunder is surfaced through the visibility band's rain-rate suffix, not as a standalone severe-weather alert.
-- **The dead `CONSECUTIVE_FAILURE_LIMIT` indirection is gone.** The static was set to 1, so the gate `consecutiveFailures >= 1` was true on every failure. The control flow is now unconditional with the same observable behaviour: dedupe in the new banner sink keeps repeated identical messages from flooding the admin UI.
+- **The dead `CONSECUTIVE_FAILURE_LIMIT` indirection is gone.** The static was set to 1, so the gate `consecutiveFailures >= 1` was true on every failure. The control flow is now unconditional with the same observable behavior: dedupe in the new banner sink keeps repeated identical messages from flooding the admin UI.
 - **Two dead exports in `src/utils/conversions.ts` are documented `@internal`.** `isWithinBounds` and `calculateSaturationVaporPressure` are still exported because the conversions test suite exercises them directly, but external callers should reach them through the domain-specific wrappers.
 
 ### Internal
@@ -609,8 +639,8 @@ re-expressed AccuWeather's past-hour precipitation accumulation as an `m/s`
 rate, which duplicated `environment.weather.precipitationLastHour` (the same
 underlying quantity) and made the Signal K data browser render it as a vessel
 speed in mph. The two surviving non-canonical paths most prone to
-mis-categorisation now ship a `displayUnits` hint so the data browser stops
-converting them: precipitation depth renders in millimetres instead of miles,
+miscategorization now ship a `displayUnits` hint so the data browser stops
+converting them: precipitation depth renders in millimeters instead of miles,
 and the 24-hour temperature departure renders as a Kelvin delta instead of an
 absolute Fahrenheit temperature. This release also fixes three
 latent bugs: severe-weather notification bands that could latch in an active
@@ -621,16 +651,16 @@ notification value shape, and all 265 tests pass.
 
 ### Changed
 
-- **Precipitation depth and 24h temperature departure carry a `displayUnits` meta hint.** The Signal K unit-preferences system categorises non-canonical paths by their SI base unit, so `environment.weather.precipitationLastHour` (`m`) was bucketed with distances and shown in miles, and `environment.weather.temperatureDeparture24h` (`K`) was treated as an absolute temperature and shown with the Kelvin-to-Fahrenheit offset applied. Both paths now pin a `displayUnits` conversion (millimetres and an identity Kelvin delta, respectively) so the data browser renders them correctly. The emitted values and `units` are unchanged.
-- **The severe-weather notification rain suffix is sourced from `precipitationLastHour`.** A past-hour accumulation in millimetres equals an average rate in mm/h over that window, so the `"rain X mm/h"` message text is unchanged.
+- **Precipitation depth and 24h temperature departure carry a `displayUnits` meta hint.** The Signal K unit-preferences system categorizes non-canonical paths by their SI base unit, so `environment.weather.precipitationLastHour` (`m`) was bucketed with distances and shown in miles, and `environment.weather.temperatureDeparture24h` (`K`) was treated as an absolute temperature and shown with the Kelvin-to-Fahrenheit offset applied. Both paths now pin a `displayUnits` conversion (millimeters and an identity Kelvin delta, respectively) so the data browser renders them correctly. The emitted values and `units` are unchanged.
+- **The severe-weather notification rain suffix is sourced from `precipitationLastHour`.** A past-hour accumulation in millimeters equals an average rate in mm/h over that window, so the `"rain X mm/h"` message text is unchanged.
 
 ### Removed
 
-- **`environment.weather.precipitationCurrent`.** AccuWeather's current-conditions response carries no instantaneous precipitation rate; this path was derived from the same past-hour accumulation as `precipitationLastHour` and converted to `m/s`, which both duplicated that path and collided with the speed category in the Signal K data browser. Consumers needing precipitation should read `environment.weather.precipitationLastHour` (liquid-equivalent depth over the past hour, in metres).
+- **`environment.weather.precipitationCurrent`.** AccuWeather's current-conditions response carries no instantaneous precipitation rate; this path was derived from the same past-hour accumulation as `precipitationLastHour` and converted to `m/s`, which both duplicated that path and collided with the speed category in the Signal K data browser. Consumers needing precipitation should read `environment.weather.precipitationLastHour` (liquid-equivalent depth over the past hour, in meters).
 
 ### Fixed
 
-- **Severe-weather notification bands no longer latch when their driver reading is absent.** When a partial AccuWeather response omitted the wet-bulb-globe block (so `heatStressIndex` was undefined) or the visibility block, the heat and visibility evaluators returned early without driving their bands, leaving a previously active `warn`, `alarm`, or `emergency` notification stuck on the bus with no exit edge. All four scalar evaluators (wind, visibility, heat, cold) now clear their bands to `normal` when the driver reading is missing, matching the existing behaviour of the severe-condition path.
+- **Severe-weather notification bands no longer latch when their driver reading is absent.** When a partial AccuWeather response omitted the wet-bulb-globe block (so `heatStressIndex` was undefined) or the visibility block, the heat and visibility evaluators returned early without driving their bands, leaving a previously active `warn`, `alarm`, or `emergency` notification stuck on the bus with no exit edge. All four scalar evaluators (wind, visibility, heat, cold) now clear their bands to `normal` when the driver reading is missing, matching the existing behavior of the severe-condition path.
 - **UV index is guarded against a non-numeric API value.** `transformWeatherData` assigned `uvIndex` directly from `UVIndexFloat` with no type check, and the response validator never probed that field, so a `null` from a partial response could reach `environment.weather.uvIndex`. The field is now decoded with the same `typeof` guard used for the other optional conditions, and is omitted when not a number.
 - **The rolling 24h API-quota window survives a backward clock jump.** An NTP correction that moved the wall clock backward left the window's hour index stranded in the future, so subsequent requests landed in a stale bucket and aged out at the wrong time, which could falsely trip or falsely clear the quota-exhausted state. A backward jump now re-anchors the window's hour index to the corrected time.
 
@@ -755,7 +785,7 @@ pass (was 267; 8 new for the enriched messages in `WeatherNotifier.test.ts`).
 
 - **Enriched notification messages.** Each `notifications.environment.*` band's `message` field now packs adjacent readings the operator can act on without subscribing to extra paths. Wind: `Gale-force wind: Bf9 from SW, 19 m/s, gusts 27 m/s, 998 hPa`. Visibility: `Reduced visibility: 0.8 km, ceiling 90 m, rain 2.5 mm/h`. Heat: `High heat stress: HSI 3, WBGT 32 C, RH 78%, RealFeel 35 C`. Cold: `Cold exposure caution: wind chill -2 C, air 1 C, wind 12 m/s`. Severe: `Thunderstorms: Severe thunderstorms approaching, 998 hPa`. Optional segments drop out cleanly when AccuWeather doesn't provide them (free-tier responses without a WindGust block omit `gusts ...`; calm winds where gust <= sustained likewise suppress it). Every message is capped at `MAX_MESSAGE_LENGTH = 80` chars (with `…` truncation on overflow) so it renders across the chartplotter fleet bridged via `signalk-to-nmea2000` to NMEA 2000 Alert PGN 126985 (Garmin GMI ~32, Raymarine ~80, B&G Zeus ~80, Furuno ~64). Wind direction renders as a 16-point cardinal label.
 - **Notification meta**. `NMEA2000PathMapper.buildMetaDelta()` now also ships meta entries for every `notifications.environment.*` path (displayName + description for each of the 11 bands) so plotters render the alert with a human label rather than the bare path.
-- **Shared config defaults module.** `src/constants/notifications-shared.js` now also exports `CONFIG_DEFAULTS` (UPDATE_FREQUENCY, EMISSION_INTERVAL, DAILY_API_QUOTA plus their min/max bounds) and `API_KEY_MIN_LENGTH`. The rjsf schema in `src/index.ts`, the runtime sanitiser in `src/utils/validation.ts`, and the federated React panel all import from one source: numeric defaults and the 20-char API-key floor can no longer drift between code paths.
+- **Shared config defaults module.** `src/constants/notifications-shared.js` now also exports `CONFIG_DEFAULTS` (UPDATE_FREQUENCY, EMISSION_INTERVAL, DAILY_API_QUOTA plus their min/max bounds) and `API_KEY_MIN_LENGTH`. The rjsf schema in `src/index.ts`, the runtime sanitizer in `src/utils/validation.ts`, and the federated React panel all import from one source: numeric defaults and the 20-char API-key floor can no longer drift between code paths.
 - **`isFiniteNumber` type guard** in `WeatherNotifier.ts` collapses the repeated `value !== undefined && Number.isFinite(value)` pattern.
 
 ### Changed
@@ -764,7 +794,7 @@ pass (was 267; 8 new for the enriched messages in `WeatherNotifier.test.ts`).
 - **Safety: consecutive-failure escalation.** Three consecutive non-auth fetch failures now trip `setPluginError("Weather updates failing (N consecutive): ...")` so operators see the underlying error before the 2x-staleness watchdog kicks in at twice the `updateFrequency`. (HIGH)
 - **Safety: mapper errors drop the cached delta.** A throw inside `mapToSignalKPaths` (during `emitWeatherTick`) now clears `instance.cachedDelta` and publishes an error banner instead of continuing to emit stale data with a fresh emission timestamp. (HIGH)
 - **AccuWeather request-count timing.** `requestCount` and the rolling-24h-window bucket no longer increment until after `fetch()` returns a response. Network timeouts and connection refusals no longer count against the operator's daily quota. (MED)
-- **`/api/test-key` rate limit.** The federated panel's key-test endpoint now caps at 10 requests per rolling 60 s with a 429 on overflow, and 500 responses go through a length-bounded sanitiser that strips control chars. Prevents a LAN-side client from draining the quota with `curl POST` floods. (MED)
+- **`/api/test-key` rate limit.** The federated panel's key-test endpoint now caps at 10 requests per rolling 60 s with a 429 on overflow, and 500 responses go through a length-bounded sanitizer that strips control chars. Prevents a LAN-side client from draining the quota with `curl POST` floods. (MED)
 - **`capString` truncation is now code-point safe.** AccuWeather descriptions with emoji or CJK supplementary characters at the truncation boundary no longer leave a lone surrogate that would break JSON-encoded downstream consumers. (LOW)
 - **`environment.weather.gustFactor` meta:** dropped `units: 'ratio'` because the value routinely exceeds 1 (gust > sustained); strict consumers that clamp ratio paths to [0, 1] for percent-style rendering would mis-render values above 1. Now follows the same convention as `uvIndex`, `beaufortScale`, `heatStressIndex` (no `units`, dimensionless).
 - **`environment.weather.temperatureDeparture24h` meta description** now explicitly states the value is a temperature DELTA (not absolute K) and warns consumers against applying a K-to-C subtraction.
@@ -784,7 +814,7 @@ pass (was 267; 8 new for the enriched messages in `WeatherNotifier.test.ts`).
 
 - **README, CLAUDE.md**: new notification-message sample table; the 80-char cap and the chartplotter rationale are documented; per-band fields list.
 - **DEVELOPMENT.md**: bundle size, Build Outputs (incl. the federated panel `public/`), Project Structure (now includes `configpanel/`, `notifications/`, `examples/`, `docs/`, `public/`, `webpack.config.cjs`), corrected SK-compliance row that previously claimed all log levels go through `app.debug` (warn/error actually go through `app.error`), refreshed Test Structure block.
-- **CONTRIBUTING.md, RELEASE.md**: `master` to `main` (default branch renamed 2026-05-12 was unreflected); added `configpanel/` and `notifications/` to file-organisation.
+- **CONTRIBUTING.md, RELEASE.md**: `master` to `main` (default branch renamed 2026-05-12 was unreflected); added `configpanel/` and `notifications/` to file organization.
 - **SECURITY.md**: supported versions 1.4.x to 1.5.x.
 - **docs/manual-server-test.md**: default `updateFrequency` 5 to 30; auth-rejection banner text matches the new "AccuWeather rejected the configured API key" escalation.
 - **docs/app-store-status.md**: noted that the snapshot is pinned to 1.3.2; current latest is 1.5.x.
@@ -861,7 +891,7 @@ Adds a federated React config panel: when the Signal K Admin UI v2.13+ sees the 
 
 ## [1.4.4] - 2026-05-12
 
-Maintenance release. Dev-deps and CI-action bumps only: the published `dist/` is byte-identical to 1.4.3 (no source code changed). Plugin behaviour, public API, and Signal K paths are unchanged.
+Maintenance release. Dev-deps and CI-action bumps only: the published `dist/` is byte-identical to 1.4.3 (no source code changed). Plugin behavior, public API, and Signal K paths are unchanged.
 
 ### Changed
 
@@ -1025,7 +1055,7 @@ Canonical `environment.outside.*` (temperature, pressure, relativeHumidity, dewP
 - Test helpers consolidated. `createMockSignalKApp` (in `setup.ts`) gained a typed `selfPaths` override map and is now used by both `index.test.ts` and the new integration test instead of three near-duplicate `buildMockApp` variants. `createMockFetchResponse` replaces the dead `createMockFetch` helper and provides the real Fetch API shape (Headers + content-length + text/json) that AccuWeatherService actually exercises. `getValuesFromDelta` is now the single source of truth for extracting values out of a delta and is imported by mapper, integration, and delta-schema tests.
 - `AccuWeatherService.getCacheStats()` no longer mixes location-cache state with HTTP-fetch state. The previous `{ size, requestCount }` return shape was a leaky abstraction. `getCacheStats()` is back to `{ size }`; the API request count is exposed as a dedicated top-level `apiRequestCount` field on `WeatherServiceStatus` and via `AccuWeatherService.getRequestCount()`. Two accessors collapsed to one source of truth.
 - Integration test stubs `global.fetch` via `vi.stubGlobal` / `vi.unstubAllGlobals` so the original is restored after each test instead of being permanently shadowed.
-- Verbose 19-line meta-schema relaxation comment in `delta-schema.test.ts` trimmed to the load-bearing WHY (spec prose vs schema requirement, ecosystem behaviour); the draft-04 empty-required-array detail is left as a self-explanatory code spread.
+- Verbose 19-line meta-schema relaxation comment in `delta-schema.test.ts` trimmed to the load-bearing WHY (spec prose vs schema requirement, ecosystem behavior); the draft-04 empty-required-array detail is left as a self-explanatory code spread.
 
 ### Build / dependencies
 

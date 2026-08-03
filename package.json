@@ -1,6 +1,6 @@
 {
   "name": "signalk-virtual-weather-sensors",
-  "version": "1.13.1",
+  "version": "1.13.2",
   "description": "Signal K plugin: keyless Open-Meteo, Met.no, or AccuWeather marine weather as 30+ environment deltas, severe-weather notifications, NMEA2000-ready",
   "keywords": [
     "signalk-node-server-plugin",
@@ -78,13 +78,13 @@
   "devEngines": {
     "runtime": {
       "name": "node",
-      "version": ">=22.18",
+      "version": "^22.22.2 || ^24.15.0 || >=26.0.0",
       "onFail": "warn"
     },
     "packageManager": {
       "name": "npm",
-      "version": "^11.18.0",
-      "onFail": "warn"
+      "version": ">=10.9.3",
+      "onFail": "error"
     }
   },
   "packageManager": "npm@11.18.0",
@@ -96,22 +96,25 @@
     "markdownlint-cli2": {
       "js-yaml": "5.2.2"
     },
+    "@rolldown/plugin-babel": {
+      "@babel/plugin-transform-runtime": "7.29.7"
+    },
     "qs": "^6.15.2"
   },
   "devDependencies": {
     "@axe-core/playwright": "^4.12.1",
-    "@biomejs/biome": "2.5.5",
-    "@playwright/test": "^1.62.0",
+    "@biomejs/biome": "2.5.6",
+    "@playwright/test": "^1.62.1",
     "@signalk/server-api": "2.30.0",
     "@signalk/signalk-schema": "^1.8.2",
-    "@size-limit/file": "13.0.1",
+    "@size-limit/file": "13.0.3",
     "@stryker-mutator/core": "^9.6.1",
     "@stryker-mutator/vitest-runner": "^9.6.1",
     "@types/express": "^5.0.6",
     "@types/node": "26.1.2",
-    "@types/react": "^19.2.17",
-    "@types/react-dom": "^19.2.3",
-    "@vitejs/plugin-react": "^6.0.4",
+    "@types/react": "^19.2.18",
+    "@types/react-dom": "^19.2.4",
+    "@vitejs/plugin-react": "^6.0.5",
     "@vitest/coverage-v8": "^4.1.10",
     "@vitest/ui": "^4.1.10",
     "ajv": "^8.20.0",
@@ -120,19 +123,19 @@
     "cspell": "10.0.1",
     "esbuild": "^0.28.1",
     "esbuild-loader": "^4.5.0",
-    "knip": "6.29.0",
+    "knip": "6.31.0",
     "markdownlint-cli2": "0.23.2",
     "publint": "0.3.22",
     "react": "19.2.8",
     "react-dom": "19.2.8",
-    "signalk-nearlcrews-ui": "0.4.1",
-    "size-limit": "13.0.1",
-    "tsx": "^4.23.1",
+    "signalk-nearlcrews-ui": "0.6.1",
+    "size-limit": "13.0.3",
+    "tsx": "^4.23.5",
     "typescript": "7.0.2",
-    "vite": "^8.1.5",
+    "vite": "^8.2.0",
     "vitest": "4.1.10",
-    "webpack": "^5.109.1",
-    "webpack-cli": "^7.2.1"
+    "webpack": "^5.109.2",
+    "webpack-cli": "^7.2.2"
   },
   "scripts": {
     "build": "npm run clean && npm run build:types && npm run build:bundle && npm run build:panel && npm run check:panel",
@@ -178,7 +181,7 @@
     "verify:release": "npm run verify && npm run test:browser:cross:built && npm run audit:full",
     "security-audit": "npm audit --audit-level=moderate",
     "audit:runtime": "npm audit --omit=dev --audit-level=high",
-    "audit:full": "npm audit --audit-level=high",
+    "audit:full": "npm audit --audit-level=moderate",
     "release:check": "node scripts/check-release.mjs",
     "prepublishOnly": "npm run release:check && npm run verify:release",
     "hooks": "git config core.hooksPath .githooks && chmod +x .githooks/pre-commit .githooks/pre-push"

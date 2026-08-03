@@ -1,6 +1,8 @@
 import { resolve } from 'node:path';
 import { configDefaults, defineConfig } from 'vitest/config';
 
+const sourceDirectory = resolve(import.meta.dirname, 'src');
+
 export default defineConfig({
   test: {
     globals: true,
@@ -54,13 +56,13 @@ export default defineConfig({
   },
   resolve: {
     alias: {
-      '@': resolve(__dirname, './src'),
-      '@/types': resolve(__dirname, './src/types'),
-      '@/services': resolve(__dirname, './src/services'),
-      '@/calculators': resolve(__dirname, './src/calculators'),
-      '@/mappers': resolve(__dirname, './src/mappers'),
-      '@/utils': resolve(__dirname, './src/utils'),
-      '@/constants': resolve(__dirname, './src/constants'),
+      '@': sourceDirectory,
+      '@/types': resolve(sourceDirectory, 'types'),
+      '@/services': resolve(sourceDirectory, 'services'),
+      '@/calculators': resolve(sourceDirectory, 'calculators'),
+      '@/mappers': resolve(sourceDirectory, 'mappers'),
+      '@/utils': resolve(sourceDirectory, 'utils'),
+      '@/constants': resolve(sourceDirectory, 'constants'),
     },
   },
 });

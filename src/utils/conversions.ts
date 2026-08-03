@@ -120,7 +120,7 @@ export function isApiQuotaReached(
   return used / quota >= ratio;
 }
 
-/** Fahrenheit to Celsius. Behaviour, not data, so it lives here, not in `UNITS`. */
+/** Fahrenheit to Celsius. Behavior, not data, so it lives here, not in `UNITS`. */
 const fahrenheitToCelsius = (fahrenheit: number): number => ((fahrenheit - 32) * 5) / 9;
 /** Celsius to Fahrenheit. */
 const celsiusToFahrenheit = (celsius: number): number => (celsius * 9) / 5 + 32;

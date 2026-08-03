@@ -16,7 +16,7 @@ test.beforeEach(async ({ page }) => {
 });
 
 test('loads the production remote and never saves a stale number', async ({ page }) => {
-  await expect(page.locator('[data-snui-root]')).toHaveAttribute('data-snui-version', '0.4.1');
+  await expect(page.locator('[data-snui-root]')).toHaveAttribute('data-snui-version', '0.6.1');
   await page.getByRole('button', { name: /Fetch and emission cadence/ }).click();
 
   const updateFrequency = page.getByRole('spinbutton', {
@@ -46,17 +46,17 @@ test('loads the production remote and never saves a stale number', async ({ page
   await expect(actionStatus).toContainText('Plugin restarted', { timeout: 5_000 });
 });
 
-test('uses Light for a fresh profile without persisting an implicit choice', async ({ page }) => {
+test('uses Auto for a fresh profile without persisting an implicit choice', async ({ page }) => {
   const root = page.locator('[data-snui-root]');
   const themeGroup = page.getByRole('radiogroup', { name: 'Panel theme' });
   const light = themeGroup.getByRole('radio', { name: 'Light' });
   const auto = themeGroup.getByRole('radio', { name: 'Auto' });
 
-  await expect(root).toHaveAttribute('data-snui-theme', 'light');
-  await expect(light).toBeChecked();
-  await expect(light).toHaveAttribute('tabindex', '0');
-  await expect(auto).not.toBeChecked();
-  await expect(auto).toHaveAttribute('tabindex', '-1');
+  await expect(root).not.toHaveAttribute('data-snui-theme');
+  await expect(auto).toBeChecked();
+  await expect(auto).toHaveAttribute('tabindex', '0');
+  await expect(light).not.toBeChecked();
+  await expect(light).toHaveAttribute('tabindex', '-1');
   expect(
     await page.evaluate(() => ({
       legacy: localStorage.getItem('svws-theme'),
@@ -103,17 +103,21 @@ test('blocks a keyless merge when every selected provider needs a key', async ({
   await expectSaveBlockedAt(page, 'API key');
 });
 
-test('migrates the legacy theme preference and supports every theme', async ({ page }) => {
+test('ignores the retired legacy preference and supports every theme', async ({ page }) => {
   await page.evaluate(() => {
     localStorage.removeItem('signalk-nearlcrews-ui.theme.v1');
     localStorage.setItem('svws-theme', 'night');
   });
   await page.reload();
   await expect(page.locator('body')).toHaveAttribute('data-fixture-ready', 'true');
-  await expect(page.locator('[data-snui-root]')).toHaveAttribute('data-snui-theme', 'night');
-  await expect
-    .poll(() => page.evaluate(() => localStorage.getItem('signalk-nearlcrews-ui.theme.v1')))
-    .toBe('night');
+  await expect(page.locator('[data-snui-root]')).not.toHaveAttribute('data-snui-theme');
+  await expect(page.getByRole('radio', { name: 'Auto' })).toBeChecked();
+  expect(
+    await page.evaluate(() => ({
+      legacy: localStorage.getItem('svws-theme'),
+      shared: localStorage.getItem('signalk-nearlcrews-ui.theme.v1'),
+    }))
+  ).toEqual({ legacy: 'night', shared: null });
 
   const themeGroup = page.getByRole('radiogroup', { name: 'Panel theme' });
   for (const [label, value] of [
