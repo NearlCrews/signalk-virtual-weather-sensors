@@ -18,27 +18,25 @@ service; AccuWeather is an optional source for users who have an API key.
 > for safety-of-life decisions: always cross-check official forecasts and
 > warnings against your primary instruments.
 
-## What's new in 1.13.2
+## What's new in 1.13.3
 
-Version 1.13.2 refreshes the shared configuration panel, dependencies, and
-project security gates without changing runtime behavior, emitted paths, or
-saved configurations.
+Version 1.13.3 bounds on-demand weather traffic, keeps sea-state emission
+independent from atmospheric mapping, and improves privacy and GPS startup
+behavior without changing emitted paths or saved configurations.
 
-- **Shared marine UI 0.6.1.** Fresh profiles follow the shared Auto theme, and
-  obsolete plugin-specific theme storage is no longer read or migrated.
-- **Current compatible dependencies.** Direct development dependencies use
-  their latest compatible releases while the plugin retains its Node 20.18
-  runtime floor.
-- **Hardened automation.** GitHub workflows now combine immutable action pins,
-  isolated npm invocations, protected credentials and caches, update cooldowns,
-  local syntax checks, actionlint, and zizmor.
-- **Documented production remote.** The host-shared React panel and bundled UI
-  total 29,551 gzip bytes, below the revised 30,000-byte ceiling.
-- **Native ESM tooling.** Vitest aliases now resolve without relying on the
-  CommonJS-only `__dirname` global.
+- **Bounded provider traffic.** Open-Meteo v2 responses are cached and
+  coalesced, and the Weather API adapter limits concurrent requests.
+- **Independent sea state.** Marine deltas continue during an atmospheric
+  mapper failure.
+- **Position privacy.** AccuWeather and Open-Meteo requests use coordinates
+  rounded to four decimal places, approximately 11 meters of latitude.
+- **Clear GPS startup.** Missing position data produces one stable waiting
+  status without inflating failure counters.
+- **Shared marine UI 0.6.2.** The exact shared UI patch is bundled in the
+  configuration panel.
 
-See the [v1.13.2 changelog entry](CHANGELOG.md#v1132), or the
-[changelog](CHANGELOG.md) for the full list.
+See the [v1.13.3 changelog entry](https://github.com/NearlCrews/signalk-virtual-weather-sensors/blob/main/CHANGELOG.md#v1133), or the
+[full changelog](https://github.com/NearlCrews/signalk-virtual-weather-sensors/blob/main/CHANGELOG.md).
 
 ## What it does
 
@@ -170,7 +168,7 @@ waves, swell, and sea temperature on `environment.water.*` and surface current
 on `environment.current`. A one-shot meta delta on start describes units and
 labels for the non-canonical paths.
 
-See [docs/signal-k-paths.md](docs/signal-k-paths.md) for the full path, PGN,
+See the [Signal K paths guide](https://github.com/NearlCrews/signalk-virtual-weather-sensors/blob/main/docs/signal-k-paths.md) for the full path, PGN,
 and notification reference.
 
 ## NMEA2000 integration
@@ -180,7 +178,7 @@ NMEA2000 bus, pair it with an emitter plugin such as
 [`signalk-nmea2000-emitter-cannon`](https://github.com/NearlCrews/signalk-nmea2000-emitter-cannon),
 which covers PGNs 130306 (wind), 130312 and 130316 (temperatures), 130313
 (humidity), and 130314 (pressure). See
-[docs/signal-k-paths.md](docs/signal-k-paths.md#nmea2000-pgn-coverage) for
+[Signal K paths guide](https://github.com/NearlCrews/signalk-virtual-weather-sensors/blob/main/docs/signal-k-paths.md#nmea2000-pgn-coverage) for
 the per-PGN path mapping.
 
 ## Weather API provider
@@ -206,10 +204,11 @@ Registering the provider is what makes the server list `weather` under
 [Binnacle](https://github.com/NearlCrews/signalk-binnacle) detect that
 forecast support is available. Forecasts and observations are mapped to SI
 units and cached on demand. Under AccuWeather they share the plugin's rolling
-24-hour API quota so a polling client cannot exhaust a key; Open-Meteo and
-Met.no are keyless and uncapped. Warnings are keyless and served independently
-of that quota. See
-[docs/signal-k-paths.md](docs/signal-k-paths.md#weather-api-provider) for
+24-hour API quota so a polling client cannot exhaust a key. Open-Meteo v2
+responses are cached by rounded position, Met.no shares its cached model
+document, and the adapter caps concurrent requests. Warnings are keyless and
+served independently of that quota. See the
+[Signal K paths guide](https://github.com/NearlCrews/signalk-virtual-weather-sensors/blob/main/docs/signal-k-paths.md#weather-api-provider) for
 the populated field reference.
 
 ## Notifications
@@ -220,7 +219,7 @@ per hazard band transition (entry and exit) across wind, visibility, heat,
 cold, and severe-condition categories. Each message packs actionable context
 (for example `Gale-force wind: Bf9 from SW, 19 m/s, gusts 27 m/s, 998 hPa`).
 Bridging to NMEA 2000 Alert PGNs requires the separate `signalk-to-nmea2000`
-plugin. See [docs/signal-k-paths.md](docs/signal-k-paths.md#notifications)
+plugin. See the [Signal K paths guide](https://github.com/NearlCrews/signalk-virtual-weather-sensors/blob/main/docs/signal-k-paths.md#notifications)
 for the full band, trigger, and message reference.
 
 ## Troubleshooting
@@ -234,16 +233,16 @@ Common issues, shown as a status banner in the admin UI:
 - **No position available**: confirm a GPS source publishes
   `navigation.position` in the Data Browser.
 
-See [docs/troubleshooting.md](docs/troubleshooting.md) for the full guide.
+See the [troubleshooting guide](https://github.com/NearlCrews/signalk-virtual-weather-sensors/blob/main/docs/troubleshooting.md) for the full guide.
 
 ## Documentation
 
-- [Signal K paths, PGNs, and notifications](docs/signal-k-paths.md)
-- [Troubleshooting](docs/troubleshooting.md)
-- [Development guide](docs/DEVELOPMENT.md)
-- [Changelog](CHANGELOG.md)
-- [Contributing](.github/CONTRIBUTING.md)
-- [Security policy](.github/SECURITY.md)
+- [Signal K paths, PGNs, and notifications](https://github.com/NearlCrews/signalk-virtual-weather-sensors/blob/main/docs/signal-k-paths.md)
+- [Troubleshooting](https://github.com/NearlCrews/signalk-virtual-weather-sensors/blob/main/docs/troubleshooting.md)
+- [Development guide](https://github.com/NearlCrews/signalk-virtual-weather-sensors/blob/main/docs/DEVELOPMENT.md)
+- [Changelog](https://github.com/NearlCrews/signalk-virtual-weather-sensors/blob/main/CHANGELOG.md)
+- [Contributing](https://github.com/NearlCrews/signalk-virtual-weather-sensors/blob/main/.github/CONTRIBUTING.md)
+- [Security policy](https://github.com/NearlCrews/signalk-virtual-weather-sensors/blob/main/.github/SECURITY.md)
 
 ## Development
 
@@ -266,14 +265,14 @@ npm run verify:release # full cross-browser release validation
 ```
 
 Run `npm run validate` before committing. See the
-[development guide](docs/DEVELOPMENT.md) for the full workflow, and
-[CONTRIBUTING.md](.github/CONTRIBUTING.md) for the pull request process. By
+[development guide](https://github.com/NearlCrews/signalk-virtual-weather-sensors/blob/main/docs/DEVELOPMENT.md) for the full workflow, and
+[CONTRIBUTING.md](https://github.com/NearlCrews/signalk-virtual-weather-sensors/blob/main/.github/CONTRIBUTING.md) for the pull request process. By
 taking part you agree to the
-[Code of Conduct](.github/CODE_OF_CONDUCT.md).
+[Code of Conduct](https://github.com/NearlCrews/signalk-virtual-weather-sensors/blob/main/.github/CODE_OF_CONDUCT.md).
 
 ## License
 
-Apache-2.0: see [LICENSE](LICENSE) for the full text. The software is
+Apache-2.0: see the [license](https://github.com/NearlCrews/signalk-virtual-weather-sensors/blob/main/LICENSE) for the full text. The software is
 provided "AS IS", without warranty of any kind. Treat the weather data and
 the notifications as advisory, and always carry independent means of
 forecasting and navigation.
@@ -303,4 +302,4 @@ Find this plugin useful? You can support its continued development by
 
 - [Report a bug](https://github.com/NearlCrews/signalk-virtual-weather-sensors/issues/new?template=bug_report.yml)
 - [Request a feature](https://github.com/NearlCrews/signalk-virtual-weather-sensors/issues/new?template=feature_request.yml)
-- [Security issues](.github/SECURITY.md)
+- [Security issues](https://github.com/NearlCrews/signalk-virtual-weather-sensors/blob/main/.github/SECURITY.md)

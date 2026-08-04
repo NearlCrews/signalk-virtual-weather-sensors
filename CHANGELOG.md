@@ -7,6 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+<a id="v1133"></a>
+
+## [1.13.3] - 2026-08-04
+
+This patch release bounds on-demand weather requests, preserves independent
+marine emission during atmospheric mapper failures, reduces coordinate
+precision sent upstream, and improves startup behavior while GPS is unavailable.
+No configuration migration is required.
+
+### Fixed
+
+- Cached and coalesced Open-Meteo v2 observations, hourly forecasts, and daily
+  forecasts, and capped concurrent Weather API requests.
+- Kept the optional marine layer emitting when atmospheric mapping fails.
+- Validated custom Open-Meteo hosts whenever the marine layer uses them.
+- Replaced repeated missing-position errors with a stable waiting-for-GPS
+  status that does not increment failure counters.
+- Replaced relative repository links in the packaged README with working
+  absolute links for Signal K App Store readers.
+
+### Changed
+
+- Rounded AccuWeather and Open-Meteo query coordinates to four decimal places,
+  approximately 11 meters of latitude, before sending them upstream.
+- Updated the shared configuration UI to 0.6.2 and publint to 0.3.23, and
+  removed an unused nested package override.
+
 <a id="v1132"></a>
 
 ## [1.13.2] - 2026-08-02

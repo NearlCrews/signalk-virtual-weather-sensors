@@ -59,6 +59,17 @@ describe('OpenMeteoService', () => {
     expect(calledUrl).toContain('weather_code');
   });
 
+  it('limits coordinates sent upstream to four decimal places', async () => {
+    (global.fetch as Mock).mockResolvedValueOnce(createMockFetchResponse(SAMPLE));
+    const service = new OpenMeteoService();
+
+    await service.fetchCurrentWeather({ latitude: 51.47791234, longitude: -0.00154321 });
+
+    const calledUrl = new URL(String((global.fetch as Mock).mock.calls[0][0]));
+    expect(calledUrl.searchParams.get('latitude')).toBe('51.4779');
+    expect(calledUrl.searchParams.get('longitude')).toBe('-0.0015');
+  });
+
   it('propagates a tagged error on a non-2xx status', async () => {
     (global.fetch as Mock).mockResolvedValueOnce(
       createMockFetchResponse('rate limited', { ok: false, status: 429 })
@@ -162,6 +173,25 @@ describe('OpenMeteoService v2 capability', () => {
     expect(calledUrl).toContain('forecast_days=2');
     expect(calledUrl).toContain('hourly=');
     expect(calledUrl).toContain('temperature_2m');
+  });
+
+  it('caches and coalesces hourly forecasts by rounded position', async () => {
+    (global.fetch as Mock).mockResolvedValue(createMockFetchResponse(HOURLY_SAMPLE));
+    const svc = new OpenMeteoService();
+    const first = { latitude: 51.47791, longitude: -0.00151 };
+    const sameRoundedPoint = { latitude: 51.47794, longitude: -0.00154 };
+
+    const [a, b] = await Promise.all([
+      svc.getHourlyForecast(first),
+      svc.getHourlyForecast(sameRoundedPoint),
+    ]);
+    const c = await svc.getHourlyForecast(first);
+
+    expect(a).toEqual(b);
+    expect(c).toEqual(a);
+    expect(global.fetch as Mock).toHaveBeenCalledTimes(1);
+    expect(svc.getRequestCount()).toBe(1);
+    expect(svc.getCacheStats()).toEqual({ size: 1 });
   });
 
   it('getDailyForecast returns ascending daily forecasts', async () => {

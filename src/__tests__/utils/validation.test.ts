@@ -206,6 +206,17 @@ describe('validateConfiguration / sanitizeConfiguration', () => {
       expect(result.isValid).toBe(true);
     });
 
+    it('validates the Open-Meteo base URL when the marine layer uses it', () => {
+      const result = validateConfiguration({
+        weatherProvider: 'accuweather',
+        accuWeatherApiKey: 'A'.repeat(20),
+        marineData: true,
+        openMeteoBaseUrl: 'https://meteo.example.test?token=value',
+      });
+      expect(result.isValid).toBe(false);
+      expect(result.errors.some((error) => error.includes('base URL'))).toBe(true);
+    });
+
     it('defaults an empty config to Open-Meteo', () => {
       expect(sanitizeConfiguration({}).weatherProvider).toBe('open-meteo');
     });

@@ -51,7 +51,7 @@ export function setupEnhancedEmissionSystem(
  * skips emission entirely when the service reports the upstream data has gone stale.
  * @private
  */
-function emitWeatherTick(instance: PluginInstance, app: ServerAPI): void {
+export function emitWeatherTick(instance: PluginInstance, app: ServerAPI): void {
   if (!instance.weatherService) return;
   const weatherData = instance.weatherService.getCurrentWeatherData();
 
@@ -82,11 +82,15 @@ function emitWeatherTick(instance: PluginInstance, app: ServerAPI): void {
   let notificationValues: PathValue[] | undefined;
   if (weatherData !== instance.cachedWeatherDataRef) {
     const refreshed = refreshCachedDelta(instance, app, weatherData, instance.pathMapper);
-    if (refreshed === null) return;
+    if (refreshed === null) {
+      emitMarineTick(instance, app);
+      return;
+    }
     notificationValues = refreshed;
   }
 
   if (!instance.cachedDelta) {
+    emitMarineTick(instance, app);
     return;
   }
 

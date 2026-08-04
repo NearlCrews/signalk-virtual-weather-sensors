@@ -16,7 +16,7 @@ test.beforeEach(async ({ page }) => {
 });
 
 test('loads the production remote and never saves a stale number', async ({ page }) => {
-  await expect(page.locator('[data-snui-root]')).toHaveAttribute('data-snui-version', '0.6.1');
+  await expect(page.locator('[data-snui-root]')).toHaveAttribute('data-snui-version', '0.6.2');
   await page.getByRole('button', { name: /Fetch and emission cadence/ }).click();
 
   const updateFrequency = page.getByRole('spinbutton', {

@@ -1,6 +1,6 @@
 {
   "name": "signalk-virtual-weather-sensors",
-  "version": "1.13.2",
+  "version": "1.13.3",
   "description": "Signal K plugin: keyless Open-Meteo, Met.no, or AccuWeather marine weather as 30+ environment deltas, severe-weather notifications, NMEA2000-ready",
   "keywords": [
     "signalk-node-server-plugin",
@@ -96,9 +96,6 @@
     "markdownlint-cli2": {
       "js-yaml": "5.2.2"
     },
-    "@rolldown/plugin-babel": {
-      "@babel/plugin-transform-runtime": "7.29.7"
-    },
     "qs": "^6.15.2"
   },
   "devDependencies": {
@@ -125,10 +122,10 @@
     "esbuild-loader": "^4.5.0",
     "knip": "6.31.0",
     "markdownlint-cli2": "0.23.2",
-    "publint": "0.3.22",
+    "publint": "0.3.23",
     "react": "19.2.8",
     "react-dom": "19.2.8",
-    "signalk-nearlcrews-ui": "0.6.1",
+    "signalk-nearlcrews-ui": "0.6.2",
     "size-limit": "13.0.3",
     "tsx": "^4.23.5",
     "typescript": "7.0.2",

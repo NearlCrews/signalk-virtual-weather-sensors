@@ -250,7 +250,7 @@ export function validateConfiguration(config: Partial<PluginConfiguration>): Val
   validateSelectedProviderCredentials(config, mode, provider, mergeProviders, errors, warnings);
   const openMeteoActive =
     mode === 'single' ? provider === 'open-meteo' : mergeProviders.includes('open-meteo');
-  if (openMeteoActive) validateOpenMeteoBaseUrl(config, errors);
+  if (openMeteoActive || config.marineData === true) validateOpenMeteoBaseUrl(config, errors);
   for (const rule of NUMERIC_CONFIG_RULES) {
     validateNumericConfigField(config, rule, errors, warnings);
   }

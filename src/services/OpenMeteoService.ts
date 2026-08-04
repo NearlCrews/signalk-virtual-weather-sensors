@@ -25,9 +25,10 @@ import type {
   OpenMeteoForecastResponse,
   WeatherData,
 } from '../types/index.js';
-import { isAbortError, toErrorMessage } from '../utils/conversions.js';
+import { isAbortError, toCoordKey, toErrorMessage } from '../utils/conversions.js';
 import { DEFAULT_REQUEST_TIMEOUT_MS, fetchJson, normalizeBaseUrl } from '../utils/http.js';
 import { assertValidCoordinates } from '../utils/validation.js';
+import { CoalescingTtlCache } from './cache/CoalescingTtlCache.js';
 
 /** Default Open-Meteo host. Overridable so commercial users can self-host or use a paid plan. */
 const DEFAULT_BASE_URL = 'https://api.open-meteo.com';
@@ -82,6 +83,12 @@ const DAILY_PARAMS = [
 const HOURLY_FORECAST_DAYS = 2;
 /** Days fetched for the daily forecast, matching forecastCapabilities.dailyDays. */
 const DAILY_FORECAST_DAYS = 7;
+/** Current observations change quickly enough to warrant a short v2 memo. */
+const OBSERVATION_CACHE_TTL_MS = 10 * 60 * 1000;
+/** Hourly model output is stable across dashboard refreshes. */
+const HOURLY_CACHE_TTL_MS = 30 * 60 * 1000;
+/** Daily model output changes slowly, so retain it longer. */
+const DAILY_CACHE_TTL_MS = 3 * 60 * 60 * 1000;
 
 export interface OpenMeteoOptions {
   /** Override the Open-Meteo host (self-hosted or paid instance). */
@@ -107,12 +114,26 @@ export class OpenMeteoService implements ForecastCapableProvider {
   private requestCount = 0;
   private readonly signal: AbortSignal | undefined;
   private readonly userAgent = `${PLUGIN.NAME}/${PLUGIN.VERSION}`;
+  private readonly observationCache: CoalescingTtlCache<OpenMeteoCurrentResponse>;
+  private readonly hourlyCache: CoalescingTtlCache<OpenMeteoForecastResponse>;
+  private readonly dailyCache: CoalescingTtlCache<OpenMeteoForecastResponse>;
 
   constructor(logger: Logger = () => {}, options?: OpenMeteoOptions) {
     this.logger = logger;
     this.baseUrl = normalizeBaseUrl(options?.baseUrl, DEFAULT_BASE_URL);
     this.requestTimeoutMs = options?.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS;
     this.signal = options?.signal;
+    this.observationCache = new CoalescingTtlCache(
+      OBSERVATION_CACHE_TTL_MS,
+      OBSERVATION_CACHE_TTL_MS,
+      this.logger
+    );
+    this.hourlyCache = new CoalescingTtlCache(
+      HOURLY_CACHE_TTL_MS,
+      HOURLY_CACHE_TTL_MS,
+      this.logger
+    );
+    this.dailyCache = new CoalescingTtlCache(DAILY_CACHE_TTL_MS, DAILY_CACHE_TTL_MS, this.logger);
 
     this.logger('info', 'OpenMeteoService initialized', { baseUrl: this.baseUrl });
   }
@@ -154,18 +175,12 @@ export class OpenMeteoService implements ForecastCapableProvider {
   public async getObservation(location: GeoLocation): Promise<SKWeatherData> {
     assertValidCoordinates(location, 'Open-Meteo observation');
     try {
-      this.requestCount++;
-      const response = await fetchJson<OpenMeteoCurrentResponse>(this.buildUrl(location), {
-        timeoutMs: this.requestTimeoutMs,
-        headers: { 'User-Agent': this.userAgent },
-        signal: this.signal,
-      });
+      const response = await this.observationCache.get(toCoordKey(location), () =>
+        this.fetchResponse<OpenMeteoCurrentResponse>(this.buildUrl(location))
+      );
       return mapOpenMeteoCurrentToObservation(response);
     } catch (error) {
-      if (isAbortError(error)) {
-        this.requestCount--;
-        throw error;
-      }
+      if (isAbortError(error)) throw error;
       this.logger('error', 'Failed to fetch Open-Meteo observation', {
         location: `${location.latitude},${location.longitude}`,
         error: toErrorMessage(error),
@@ -178,22 +193,16 @@ export class OpenMeteoService implements ForecastCapableProvider {
   public async getHourlyForecast(location: GeoLocation): Promise<SKWeatherData[]> {
     assertValidCoordinates(location, 'Open-Meteo hourly forecast');
     try {
-      this.requestCount++;
       const url = this.buildForecastUrl(location, {
         hourly: HOURLY_PARAMS,
         forecastDays: HOURLY_FORECAST_DAYS,
       });
-      const response = await fetchJson<OpenMeteoForecastResponse>(url, {
-        timeoutMs: this.requestTimeoutMs,
-        headers: { 'User-Agent': this.userAgent },
-        signal: this.signal,
-      });
+      const response = await this.hourlyCache.get(toCoordKey(location), () =>
+        this.fetchResponse<OpenMeteoForecastResponse>(url)
+      );
       return mapOpenMeteoHourlyToForecasts(response);
     } catch (error) {
-      if (isAbortError(error)) {
-        this.requestCount--;
-        throw error;
-      }
+      if (isAbortError(error)) throw error;
       this.logger('error', 'Failed to fetch Open-Meteo hourly forecast', {
         location: `${location.latitude},${location.longitude}`,
         error: toErrorMessage(error),
@@ -206,22 +215,16 @@ export class OpenMeteoService implements ForecastCapableProvider {
   public async getDailyForecast(location: GeoLocation): Promise<SKWeatherData[]> {
     assertValidCoordinates(location, 'Open-Meteo daily forecast');
     try {
-      this.requestCount++;
       const url = this.buildForecastUrl(location, {
         daily: DAILY_PARAMS,
         forecastDays: DAILY_FORECAST_DAYS,
       });
-      const response = await fetchJson<OpenMeteoForecastResponse>(url, {
-        timeoutMs: this.requestTimeoutMs,
-        headers: { 'User-Agent': this.userAgent },
-        signal: this.signal,
-      });
+      const response = await this.dailyCache.get(toCoordKey(location), () =>
+        this.fetchResponse<OpenMeteoForecastResponse>(url)
+      );
       return mapOpenMeteoDailyToForecasts(response);
     } catch (error) {
-      if (isAbortError(error)) {
-        this.requestCount--;
-        throw error;
-      }
+      if (isAbortError(error)) throw error;
       this.logger('error', 'Failed to fetch Open-Meteo daily forecast', {
         location: `${location.latitude},${location.longitude}`,
         error: toErrorMessage(error),
@@ -236,8 +239,8 @@ export class OpenMeteoService implements ForecastCapableProvider {
    */
   private buildBaseUrl(location: GeoLocation): URL {
     const url = new URL(`${this.baseUrl}${FORECAST_ENDPOINT}`);
-    url.searchParams.set('latitude', String(location.latitude));
-    url.searchParams.set('longitude', String(location.longitude));
+    url.searchParams.set('latitude', location.latitude.toFixed(4));
+    url.searchParams.set('longitude', location.longitude.toFixed(4));
     url.searchParams.set('wind_speed_unit', 'ms');
     url.searchParams.set('timezone', 'GMT');
     return url;
@@ -269,6 +272,21 @@ export class OpenMeteoService implements ForecastCapableProvider {
     return url;
   }
 
+  /** Issue one upstream request and keep the attempted-request counter honest on abort. */
+  private async fetchResponse<T>(url: URL): Promise<T> {
+    this.requestCount++;
+    try {
+      return await fetchJson<T>(url, {
+        timeoutMs: this.requestTimeoutMs,
+        headers: { 'User-Agent': this.userAgent },
+        signal: this.signal,
+      });
+    } catch (error) {
+      if (isAbortError(error)) this.requestCount--;
+      throw error;
+    }
+  }
+
   /** Cumulative request count, for the status banner. */
   public getRequestCount(): number {
     return this.requestCount;
@@ -279,9 +297,11 @@ export class OpenMeteoService implements ForecastCapableProvider {
     return 0;
   }
 
-  /** Open-Meteo needs no location-key cache (it takes lat/lon directly). */
+  /** Number of cached v2 observation and forecast responses. */
   public getCacheStats(): { size: number } {
-    return { size: 0 };
+    return {
+      size: this.observationCache.size() + this.hourlyCache.size() + this.dailyCache.size(),
+    };
   }
 
   public isCurrentWeatherFetchBlocked(): boolean {

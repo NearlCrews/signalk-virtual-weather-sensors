@@ -446,7 +446,7 @@ export class AccuWeatherService implements CurrentWeatherProvider {
    */
   private async searchLocation(location: GeoLocation): Promise<AccuWeatherLocation> {
     const url = this.buildApiUrl(ACCUWEATHER.ENDPOINTS.LOCATION_SEARCH);
-    url.searchParams.set('q', `${location.latitude},${location.longitude}`);
+    url.searchParams.set('q', toCoordKey(location));
 
     const data = await this.http.request<AccuWeatherLocation>(url);
 

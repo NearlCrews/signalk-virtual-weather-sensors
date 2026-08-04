@@ -93,6 +93,23 @@ describe('AccuWeatherService', () => {
     });
   });
 
+  it('limits coordinates sent to the location API to four decimal places', async () => {
+    (global.fetch as Mock).mockResolvedValueOnce(
+      mockResponse({
+        Key: '12345',
+        LocalizedName: 'Greenwich',
+        Country: { ID: 'GB', LocalizedName: 'United Kingdom' },
+        AdministrativeArea: { ID: 'LND', LocalizedName: 'London' },
+        GeoPosition: { Latitude: 51.4779, Longitude: -0.0015 },
+      })
+    );
+
+    await service.verifyApiKey({ latitude: 51.47791234, longitude: -0.00154321 });
+
+    const calledUrl = new URL(String((global.fetch as Mock).mock.calls[0][0]));
+    expect(calledUrl.searchParams.get('q')).toBe('51.4779,-0.0015');
+  });
+
   describe('fetchCurrentWeather', () => {
     const testLocation: GeoLocation = {
       latitude: 37.7749,

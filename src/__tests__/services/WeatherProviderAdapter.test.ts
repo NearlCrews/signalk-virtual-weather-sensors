@@ -159,4 +159,37 @@ describe('WeatherProviderAdapter', () => {
     expect(result).toHaveLength(1);
     expect(result[0]?.type).toBe('Gale Warning');
   });
+
+  it('rejects requests above the concurrency limit before calling the provider', async () => {
+    let release: (() => void) | undefined;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const getObservation = vi.fn(async () => {
+      await held;
+      return { date: '2026-06-17T12:00:00Z', type: 'observation' } as never;
+    });
+    const limited = new WeatherProviderAdapter(
+      { ...provider, getObservation },
+      undefined,
+      () => {},
+      2
+    ).toProvider();
+
+    const first = limited.methods.getObservations(position);
+    const second = limited.methods.getObservations(position);
+    await expect(limited.methods.getObservations(position)).rejects.toThrow(
+      'Weather provider is busy'
+    );
+    expect(getObservation).toHaveBeenCalledTimes(2);
+
+    release?.();
+    await Promise.all([first, second]);
+  });
+
+  it('rejects an invalid concurrency limit', () => {
+    expect(() => new WeatherProviderAdapter(provider, undefined, () => {}, 0)).toThrow(
+      'positive integer'
+    );
+  });
 });

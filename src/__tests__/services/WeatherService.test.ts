@@ -261,6 +261,38 @@ describe('WeatherService', () => {
       const initialStatus = service.getServiceStatus();
       expect(initialStatus.errorCount).toBe(0);
     });
+
+    it('waits for GPS without incrementing failure counters', async () => {
+      const banners: Array<{ kind: 'status' | 'error'; message: string }> = [];
+      const provider = {
+        name: 'Open-Meteo',
+        fetchCurrentWeather: vi.fn(),
+        getRequestCount: vi.fn(() => 0),
+        getRequestCountLast24h: vi.fn(() => 0),
+        getCacheStats: vi.fn(() => ({ size: 0 })),
+      };
+      const signalKService = {
+        getVesselNavigationData: vi.fn(() => ({ position: null, isComplete: false })),
+        getHealthStatus: vi.fn(() => ({ status: 'ok', isStale: false })),
+        clearCache: vi.fn(),
+      };
+      const service = new WeatherService(mockApp as never, config, mockLogger, {
+        weatherProvider: provider as never,
+        signalKService: signalKService as never,
+        setBanner: (kind, message) => banners.push({ kind, message }),
+      });
+
+      await service.forceUpdate();
+      await service.forceUpdate();
+
+      expect(provider.fetchCurrentWeather).not.toHaveBeenCalled();
+      expect(banners).toEqual([
+        { kind: 'status', message: 'Waiting for GPS position' },
+        { kind: 'status', message: 'Waiting for GPS position' },
+      ]);
+      expect(service.getServiceStatus().errorCount).toBe(0);
+      expect((service as unknown as { consecutiveFailures: number }).consecutiveFailures).toBe(0);
+    });
   });
 });
 

@@ -50,7 +50,7 @@ metrics, collapsible sections, and actions. Keep provider, quota, status, and
 save-confirmation behavior local to this plugin. Project CSS must stay in
 focused CSS modules and use public `--snui-*` tokens.
 
-The shared UI is pinned exactly at 0.6.1. Fresh profiles use Auto without
+The shared UI is pinned exactly at 0.6.2. Fresh profiles use Auto without
 writing an implicit preference. Retired plugin-specific theme keys are ignored;
 only `signalk-nearlcrews-ui.theme.v1` is authoritative.
 

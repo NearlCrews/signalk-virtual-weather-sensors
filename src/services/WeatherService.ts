@@ -703,7 +703,9 @@ export class WeatherService {
       const vesselData = this.signalKService.getVesselNavigationData();
       const position = vesselData.position;
       if (!position) {
-        throw new Error('No position available for weather data');
+        this.logger('warn', 'Waiting for GPS position');
+        this.setBanner('status', 'Waiting for GPS position');
+        return;
       }
 
       const weatherData = await this.weatherProvider.fetchCurrentWeather(position);

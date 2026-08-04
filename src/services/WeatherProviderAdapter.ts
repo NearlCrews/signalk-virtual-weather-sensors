@@ -21,13 +21,20 @@ import type { GeoLocation, Logger } from '../types/index.js';
 import { isValidCoordinates } from '../utils/conversions.js';
 import type { WarningsService } from './WarningsService.js';
 
+const DEFAULT_MAX_CONCURRENT_REQUESTS = 4;
+
 export class WeatherProviderAdapter {
   private readonly activeRequests = new Set<Promise<unknown>>();
   constructor(
     private readonly provider: ForecastCapableProvider,
     private readonly warningsService?: WarningsService,
-    private readonly logger: Logger = () => {}
-  ) {}
+    private readonly logger: Logger = () => {},
+    private readonly maxConcurrentRequests = DEFAULT_MAX_CONCURRENT_REQUESTS
+  ) {
+    if (!Number.isInteger(maxConcurrentRequests) || maxConcurrentRequests < 1) {
+      throw new Error('Weather provider concurrency limit must be a positive integer');
+    }
+  }
 
   /** Build the WeatherProvider object passed to app.registerWeatherProvider. */
   public toProvider(): WeatherProvider {
@@ -35,9 +42,9 @@ export class WeatherProviderAdapter {
       name: this.provider.name,
       methods: {
         pluginId: PLUGIN.NAME,
-        getObservations: (...args) => this.track(this.getObservations(...args)),
-        getForecasts: (...args) => this.track(this.getForecasts(...args)),
-        getWarnings: (...args) => this.track(this.getWarnings(...args)),
+        getObservations: (...args) => this.track(() => this.getObservations(...args)),
+        getForecasts: (...args) => this.track(() => this.getForecasts(...args)),
+        getWarnings: (...args) => this.track(() => this.getWarnings(...args)),
       },
     };
   }
@@ -54,7 +61,11 @@ export class WeatherProviderAdapter {
     if (timeout) clearTimeout(timeout);
   }
 
-  private track<T>(request: Promise<T>): Promise<T> {
+  private track<T>(startRequest: () => Promise<T>): Promise<T> {
+    if (this.activeRequests.size >= this.maxConcurrentRequests) {
+      return Promise.reject(new Error('Weather provider is busy; try again shortly'));
+    }
+    const request = startRequest();
     this.activeRequests.add(request);
     request.finally(() => this.activeRequests.delete(request)).catch(() => {});
     return request;
