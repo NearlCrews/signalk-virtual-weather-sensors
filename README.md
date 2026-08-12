@@ -18,24 +18,27 @@ service; AccuWeather is an optional source for users who have an API key.
 > for safety-of-life decisions: always cross-check official forecasts and
 > warnings against your primary instruments.
 
-## What's new in 1.13.3
+## What's new in 1.13.4
 
-Version 1.13.3 bounds on-demand weather traffic, keeps sea-state emission
-independent from atmospheric mapping, and improves privacy and GPS startup
-behavior without changing emitted paths or saved configurations.
+Version 1.13.4 makes configuration saves safer in current Signal K Admin,
+refreshes the shared panel, and strengthens release verification without
+changing emitted paths or saved configuration fields.
 
-- **Bounded provider traffic.** Open-Meteo v2 responses are cached and
-  coalesced, and the Weather API adapter limits concurrent requests.
-- **Independent sea state.** Marine deltas continue during an atmospheric
-  mapper failure.
-- **Position privacy.** AccuWeather and Open-Meteo requests use coordinates
-  rounded to four decimal places, approximately 11 meters of latitude.
-- **Clear GPS startup.** Missing position data produces one stable waiting
-  status without inflating failure counters.
-- **Shared marine UI 0.6.2.** The exact shared UI patch is bundled in the
-  configuration panel.
+- **Forward-compatible saves.** Unrecognized top-level and notification fields,
+  including future values of known fields, survive unrelated edits.
+- **Truthful save status.** The panel follows Signal K Admin's fire-and-forget
+  callback and no longer treats an already-running response as proof of a
+  restart.
+- **Reliable admin controls.** API keys use the shared concealed input, and the
+  action bar follows the visual viewport so save actions remain reachable.
+- **Shared marine UI 0.7.1.** The panel adds the System preference, shared
+  typography and status tokens, a theme-safe weather glyph, and a standalone
+  unsupported-browser notice while continuing to bundle the UI library.
+- **Stronger release checks.** Current tooling, deterministic screenshot gates,
+  exact commit metadata, and production federation assertions protect the
+  packaged plugin.
 
-See the [v1.13.3 changelog entry](https://github.com/NearlCrews/signalk-virtual-weather-sensors/blob/main/CHANGELOG.md#v1133), or the
+See the [v1.13.4 changelog entry](https://github.com/NearlCrews/signalk-virtual-weather-sensors/blob/main/CHANGELOG.md#v1134), or the
 [full changelog](https://github.com/NearlCrews/signalk-virtual-weather-sensors/blob/main/CHANGELOG.md).
 
 ## What it does
@@ -94,9 +97,6 @@ severe conditions.
 The configuration panel in the Signal K admin UI, with a live status card
 showing update count, rolling 24-hour API usage, active alerts, and minutes
 since the last fetch.
-
-> The current Admin hero below is generated for the next release and may be
-> unavailable in the current npm package until that release is published.
 
 [![Virtual Weather Sensors inside the current Signal K Admin plugin configuration screen](assets/screenshots/00-admin-hero.png)](assets/screenshots/00-admin-hero.png)
 

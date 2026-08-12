@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+<a id="v1134"></a>
+
+## [1.13.4] - 2026-08-12
+
+This patch release makes configuration saves safer in current Signal K Admin,
+refreshes the shared configuration panel, and strengthens release verification.
+No configuration migration is required.
+
 ### Fixed
 
 - Corrected the configuration panel's save language for Signal K Admin's void,
@@ -48,6 +56,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   setup on the checked-in npm lockfile.
 - Updated contributor and release tooling to Node 24.19.0 and npm 12.0.2 without
   changing the plugin's published Node 20.18 runtime floor.
+- Updated the bug-report version and supported-environment examples for this
+  release, normalized the template to the repository's LF line-ending
+  standard, and removed the published screenshot's prerelease notice.
 
 <a id="v1133"></a>
 
@@ -1744,3 +1755,6 @@ First production release of signalk-virtual-weather-sensors: a comprehensive wea
 ---
 
 **For technical support and feature requests, please visit the GitHub repository.**
+
+[Unreleased]: https://github.com/NearlCrews/signalk-virtual-weather-sensors/compare/v1.13.4...HEAD
+[1.13.4]: https://github.com/NearlCrews/signalk-virtual-weather-sensors/compare/v1.13.3...v1.13.4
