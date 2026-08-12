@@ -50,17 +50,18 @@ metrics, collapsible sections, and actions. Keep provider, quota, status, and
 save-confirmation behavior local to this plugin. Project CSS must stay in
 focused CSS modules and use public `--snui-*` tokens.
 
-The shared UI is pinned exactly at 0.7.0. Fresh profiles use Auto without
+The shared UI is pinned exactly at 0.7.1. Fresh profiles use Auto without
 writing an implicit preference. Auto follows an explicit host theme and
 otherwise stays Light; System is the explicit operating-system preference.
 Retired plugin-specific theme keys are ignored, and only
 `signalk-nearlcrews-ui.theme.v1` is authoritative.
 
 React and React DOM are strict host-provided Module Federation singletons with
-the range `>=19.2.0 <20.0.0` and `import: false`. The shared UI library is
-bundled into the remote. `npm run check:panel` proves that neither framework
-package is bundled, the shared UI library is present, CSS identifiers and
-container names survive webpack, and the size budget is respected.
+the range `^19.2.0` and `import: false`. The shared UI library is bundled into
+the remote. `npm run check:panel` proves that no other package enters the host
+share scope, neither framework package is bundled, the shared UI library is
+present, CSS identifiers and container names survive webpack, and the size
+budget is respected.
 
 `npm run boundaries` rejects circular imports, server-to-panel imports, and
 panel imports of Node-only runtime modules. The panel may import pure constants

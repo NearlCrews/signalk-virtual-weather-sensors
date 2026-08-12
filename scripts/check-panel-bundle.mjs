@@ -67,23 +67,24 @@ const federationOptions = webpackConfig.plugins.find((plugin) => plugin.options?
 if (federationOptions === undefined) {
   throw new Error('webpack.config.cjs must include Module Federation shared-package options.');
 }
+const sharedPackageNames = Object.keys(federationOptions.shared).sort();
+if (JSON.stringify(sharedPackageNames) !== JSON.stringify(['react', 'react-dom'])) {
+  throw new Error(
+    `webpack.config.cjs must share only React and React DOM; found ${sharedPackageNames.join(', ')}.`
+  );
+}
 for (const sharedPackage of ['react', 'react-dom']) {
   const share = federationOptions.shared[sharedPackage];
   if (
     share?.singleton !== true ||
     share.strictVersion !== true ||
-    share.requiredVersion !== '>=19.2.0 <20.0.0' ||
+    share.requiredVersion !== '^19.2.0' ||
     share.import !== false
   ) {
     throw new Error(
       `webpack.config.cjs must consume host-provided ${sharedPackage} as a strict singleton.`
     );
   }
-}
-if (federationOptions.shared['signalk-nearlcrews-ui'] !== undefined) {
-  throw new Error(
-    'signalk-nearlcrews-ui must stay bundled rather than entering the host share scope.'
-  );
 }
 for (const marker of [
   '__CLIENT_INTERNALS_DO_NOT_USE_OR_WARN_USERS_THEY_CANNOT_UPGRADE',

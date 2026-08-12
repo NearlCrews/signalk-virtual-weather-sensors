@@ -24,9 +24,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- Upgraded the exactly pinned `signalk-nearlcrews-ui` package to 0.7.0.
+- Upgraded the exactly pinned `signalk-nearlcrews-ui` package to 0.7.1.
 - Shared React and React DOM as strict host-provided Module Federation
-  singletons, and extended production-bundle validation for both.
+  singletons at the UI package's `^19.2.0` peer range, and extended
+  production-bundle validation for both boundaries.
 - Aligned theme guidance with Auto's Light fallback and the explicit System
   preference, and standardized stale-status ages through the shared helper.
 - Adopted the shared concealed-input control for API keys and the
