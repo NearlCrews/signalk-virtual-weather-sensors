@@ -1,6 +1,7 @@
 .result {
-  min-height: 1.25em;
+  min-height: 1lh;
   margin: 0;
   color: var(--snui-color-success);
-  font-size: 0.9em;
+  font-size: var(--snui-font-size-sm);
+  line-height: var(--snui-line-height);
 }

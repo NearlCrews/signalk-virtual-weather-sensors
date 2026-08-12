@@ -7,6 +7,47 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Corrected the configuration panel's save language for Signal K Admin's void,
+  fire-and-forget callback, stopped treating an already-running status response
+  as proof of a restart, and retained unknown top-level and nested notification
+  fields plus future values of known fields during unrelated edits.
+- Added a current Signal K Admin-shaped browser fixture, including its
+  horizontal-overflow container and responsive configuration card.
+- Replaced the duplicated unsupported-browser fallback with the standalone
+  shared notice, which renders before the scoped panel can mount.
+- Replaced the system-colored status emoji with a token-colored weather glyph
+  that remains appropriate in dark and night-red themes.
+- Replaced local typography and status-line sizing constants with shared UI
+  tokens so panel density follows the common design system.
+
+### Changed
+
+- Upgraded the exactly pinned `signalk-nearlcrews-ui` package to 0.7.0.
+- Shared React and React DOM as strict host-provided Module Federation
+  singletons, and extended production-bundle validation for both.
+- Aligned theme guidance with Auto's Light fallback and the explicit System
+  preference, and standardized stale-status ages through the shared helper.
+- Adopted the shared concealed-input control for API keys and the
+  visual-viewport-aware action bar for reliable save access in Signal K Admin.
+  The API-key field also disables spelling correction, capitalization, and
+  other text transformations while revealed.
+- Refreshed compatible Signal K types, accessibility checks, build tooling,
+  Node types, and dead-code analysis while retaining the Node 20.18 runtime
+  compatibility lane.
+- Added a 1280 by 800 current-Admin hero image and a package gate for App Store
+  screenshot dimensions and size.
+- Injected and verified the exact release commit as `gitHead` in the packed npm
+  artifact, without committing build-only metadata to the source manifest.
+- Recalibrated the production panel ceiling to 33,000 gzip bytes for the shared
+  viewport action bar, secret input, compatibility notice, and relative-age
+  helper.
+- Aligned the Biome schema with the installed CLI and standardized development
+  setup on the checked-in npm lockfile.
+- Updated contributor and release tooling to Node 24.19.0 and npm 12.0.2 without
+  changing the plugin's published Node 20.18 runtime floor.
+
 <a id="v1133"></a>
 
 ## [1.13.3] - 2026-08-04

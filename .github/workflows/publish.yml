@@ -23,7 +23,7 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: 24.18.0
+          node-version: 24.19.0
           package-manager-cache: false
       - name: Verify the release tag matches package.json
         env:
@@ -35,24 +35,38 @@ jobs:
             echo "Release tag ($TAG_NAME) does not match expected tag ($EXPECTED_TAG)" >&2
             exit 1
           fi
+          TAG_COMMIT="$(git rev-parse "refs/tags/${TAG_NAME}^{commit}")"
+          CHECKED_OUT_COMMIT="$(git rev-parse HEAD)"
+          if [ "$TAG_COMMIT" != "$CHECKED_OUT_COMMIT" ]; then
+            echo "Checked-out commit does not match release tag $TAG_NAME" >&2
+            exit 1
+          fi
       - name: Verify the release commit is on main
         run: |
           git fetch origin main --no-tags
           git merge-base --is-ancestor "$GITHUB_SHA" origin/main
-      - run: npx --yes npm@11.18.0 ci
+      - run: npx --yes npm@12.0.2 ci
       - run: npx playwright install --with-deps chromium firefox webkit
       - name: Confirm release approval gate
-        run: npx --yes npm@11.18.0 run release:check
+        run: npx --yes npm@12.0.2 run release:check
         env:
           SVWS_RELEASE_APPROVED: 'true'
-      - run: npx --yes npm@11.18.0 run verify:release
+      - run: npx --yes npm@12.0.2 run verify:release
       - name: Pack the verified plugin once
         id: pack
         run: |
           mkdir artifacts
-          npx --yes npm@11.18.0 pack \
+          RELEASE_GIT_HEAD="$(git rev-parse HEAD)"
+          export RELEASE_GIT_HEAD
+          node -e "const fs=require('node:fs'); const p=JSON.parse(fs.readFileSync('package.json','utf8')); p.gitHead=process.env.RELEASE_GIT_HEAD; fs.writeFileSync('package.json', JSON.stringify(p, null, 2) + '\n')"
+          npx --yes npm@12.0.2 pack \
             --json --ignore-scripts --pack-destination artifacts > pack.json
-          FILENAME="$(node -p "JSON.parse(require('fs').readFileSync('pack.json', 'utf8'))[0].filename")"
+          FILENAME="$(node -p "const r=JSON.parse(require('fs').readFileSync('pack.json','utf8')); const p=Array.isArray(r)?r[0]:Object.values(r)[0]; p.filename")"
+          PACKED_GIT_HEAD="$(tar -xOf "artifacts/$FILENAME" package/package.json | node -e "let s=''; process.stdin.on('data',c=>s+=c).on('end',()=>process.stdout.write(JSON.parse(s).gitHead || ''))")"
+          if [ "$PACKED_GIT_HEAD" != "$RELEASE_GIT_HEAD" ]; then
+            echo "Packed gitHead ($PACKED_GIT_HEAD) does not match release commit ($RELEASE_GIT_HEAD)" >&2
+            exit 1
+          fi
           echo "filename=$FILENAME" >> "$GITHUB_OUTPUT"
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
@@ -75,11 +89,11 @@ jobs:
           path: artifacts
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: 24.18.0
+          node-version: 24.19.0
           registry-url: https://registry.npmjs.org/
           package-manager-cache: false
       - run: >-
-          npx --yes npm@11.18.0 publish ./artifacts/*.tgz
+          npx --yes npm@12.0.2 publish ./artifacts/*.tgz
           --provenance --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

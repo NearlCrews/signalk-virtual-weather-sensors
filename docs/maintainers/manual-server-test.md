@@ -8,7 +8,7 @@ Reproducible end-to-end check of `signalk-virtual-weather-sensors` running again
 - [ ] **Server is running and reachable.** Default Admin UI is at `http://<host>:3000/admin/`.
 - [ ] **AccuWeather API key in hand.** Get a key from <https://developer.accuweather.com/>. This checklist exercises the AccuWeather source; the default source is keyless Open-Meteo, which emits `$source: open-meteo` with a smaller field set. The plugin tolerates the missing `Precip1hr` / `Past24HourTemperatureDeparture` fields some keys do not include.
 - [ ] **Vessel `navigation.position` is being published.** The plugin needs a position to query the weather provider. Confirm in the Admin UI **Data Browser** that `vessels.self.navigation.position` has a current value (any source: GPS, sim, or manual `PUT`).
-- [ ] **Plugin built locally.** From the repo root: `npm install && npm run build`. Confirm `dist/index.js` exists.
+- [ ] **Plugin built locally.** From the repo root: `npm ci && npm run build`. Confirm `dist/index.js` exists.
 - [ ] **Plugin symlinked into the server.** `ln -s "$(pwd)" ~/.signalk/node_modules/signalk-virtual-weather-sensors`. Restart the server: `sudo systemctl restart signalk` (or whatever supervises it).
 - [ ] **Plugin appears in Admin UI.** Open **Server -> Plugin Config**. Confirm an entry titled **Signal K Virtual Weather Sensors** is listed.
 
@@ -22,7 +22,7 @@ Reproducible end-to-end check of `signalk-virtual-weather-sensors` running again
 - [ ] Leave **Update Frequency (minutes)** at the default `30` for the test run (or temporarily lower it to 1 to speed up verification, then restore before regular use).
 - [ ] Leave **Broadcast interval (seconds)** at the default `5` for the test run.
 - [ ] Leave **Daily API Call Quota** at the default `50` for a default-quota check, OR raise it to your plan limit to skip the quota verification step at the end.
-- [ ] Click **Save** in the sticky footer (enabled once the form has unsaved changes). The plugin restarts and the panel confirms the restart.
+- [ ] Click **Save** in the viewport-docked footer (enabled once the form has unsaved changes). The panel reports that the save was requested, then reports the current live plugin status without treating it as proof that persistence completed.
 - [ ] Within ~10 seconds the status banner under the plugin name should change from `Stopped` to `Running, awaiting first update` (or `Running, awaiting first update (0/50 today)` when the quota is on).
 - [ ] Within `Update Frequency` minutes (default 30; the plugin schedules its first fetch on a short startup timer roughly 5 seconds after start) the banner should switch to `Running, last update just now (1 update, 2 API requests)` (the first cycle costs one location-search call plus one current-conditions call). With `dailyApiQuota > 0` the suffix gains `, 2/50 today`. Subsequent updates show `(N updates, M API requests, M/Q today)` with the counters climbing.
 

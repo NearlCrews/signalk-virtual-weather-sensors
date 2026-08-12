@@ -79,9 +79,10 @@ severe conditions.
   every message.
 - **Shared Signal K configuration panel** built with
   `signalk-nearlcrews-ui`, with a live status dashboard, an inline API key
-  test, accessible validation and reordering, unsaved-change tracking, and
-  light, dark, and night-red themes. Older admin UIs retain the JSON-schema
-  form fallback.
+  test, a concealed field with explicit Show and Hide controls, accessible
+  validation and reordering, unsaved-change tracking, Auto and System
+  preferences, and light, dark, and night-red themes. Older admin UIs retain
+  the JSON-schema form fallback.
 - **NMEA2000 path alignment** for bridging onto a physical bus via a
   companion emitter plugin.
 - **Per-provider `$source` on every delta** (`open-meteo`, `met-no`,
@@ -93,6 +94,11 @@ severe conditions.
 The configuration panel in the Signal K admin UI, with a live status card
 showing update count, rolling 24-hour API usage, active alerts, and minutes
 since the last fetch.
+
+> The current Admin hero below is generated for the next release and may be
+> unavailable in the current npm package until that release is published.
+
+[![Virtual Weather Sensors inside the current Signal K Admin plugin configuration screen](assets/screenshots/00-admin-hero.png)](assets/screenshots/00-admin-hero.png)
 
 | Status dashboard | Notification toggles | Night-red theme |
 | --- | --- | --- |
@@ -118,7 +124,7 @@ since the last fetch.
 
 ## Installation
 
-Install from the Signal K admin UI under **Appstore, then Available**, or
+Install from the Signal K admin UI under **Apps and Plugins, then Store**, or
 from npm:
 
 ```bash
@@ -131,7 +137,7 @@ From source:
 ```bash
 git clone https://github.com/NearlCrews/signalk-virtual-weather-sensors.git
 cd signalk-virtual-weather-sensors
-npm install
+npm ci
 npm run build
 ln -s "$(pwd)" ~/.signalk/node_modules/signalk-virtual-weather-sensors
 ```
@@ -141,11 +147,23 @@ ln -s "$(pwd)" ~/.signalk/node_modules/signalk-virtual-weather-sensors
 In the Signal K admin UI, open **Server, then Plugin Config**, find
 "Virtual Weather Sensors", and enable the plugin.
 
+The custom panel bundles `signalk-nearlcrews-ui` but consumes the Admin host's
+matching React and React DOM 19 singletons. Auto follows a published host theme
+and otherwise stays Light to match current Signal K Admin. System explicitly
+follows the operating-system preference; Light, Dark, and Night remain direct
+choices. Night changes the plugin panel, not the surrounding Admin chrome.
+
+The Save button requests persistence through Signal K Admin's fire-and-forget
+callback, then polls and reports the current plugin status. A running response
+does not prove that the void callback completed persistence, so the panel does
+not claim that it does. The panel preserves unknown top-level and notification
+fields when it writes known settings, keeping configurations forward compatible.
+
 | Setting | Description | Default | Range |
 |---------|-------------|---------|-------|
 | Weather source | Open-Meteo (free, keyless, global), Met.no (free, keyless, global), or AccuWeather (needs a key, adds RealFeel, plain-language text, pressure tendency, and precipitation type). In merge mode this source is the primary that sets source priority and backs forecasts. | Open-Meteo | Open-Meteo, Met.no, or AccuWeather |
 | Provider mode | Single source, or merge available providers into a synthetic `vws-merged` source that blends current conditions. | Single source | Single or Merge |
-| AccuWeather API Key | Required when single mode selects AccuWeather. In merge mode, setting a key enables AccuWeather in the blend. | none | n/a |
+| AccuWeather API Key | Required when single mode selects AccuWeather. In merge mode, setting a key enables AccuWeather in the blend. The panel conceals it by default and provides explicit Show and Hide controls. | none | n/a |
 | Open-Meteo base URL | Optional. Leave blank for the free public service (non-commercial use). Self-hosted or paid users can enter a custom endpoint. | none | n/a |
 | Emit sea state | Adds a keyless Open-Meteo Marine layer (waves, swell, sea temperature, and current) on `environment.water.*` and `environment.current`. Coastal and offshore only. | off | boolean |
 | Weather Update Frequency | Minutes between weather fetches. When AccuWeather participates, the default 30 makes 48 calls/day, within the default 50/day quota. | 30 | 1 to 60 |
@@ -247,13 +265,13 @@ See the [troubleshooting guide](https://github.com/NearlCrews/signalk-virtual-we
 ## Development
 
 This project runs on Node 20.18 or newer and supports `@signalk/server-api`
-2.24 through 2.x. Development uses Node 24.18, npm 11.18, Signal K server API
-2.30, and TypeScript 7.
+2.24 through 2.x. Development uses Node 24.19.0, npm 12.0.2, Signal K server API
+2.31, and TypeScript 7.
 
 ```bash
 git clone https://github.com/NearlCrews/signalk-virtual-weather-sensors.git
 cd signalk-virtual-weather-sensors
-npm install          # install dependencies
+npm ci               # install the locked dependencies
 npm run build        # compile the plugin and bundle the config panel
 npm test             # Vitest suite, single run
 npm run test:browser # build and test the federated panel in Chromium

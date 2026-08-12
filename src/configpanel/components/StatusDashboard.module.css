@@ -1,28 +1,37 @@
 .icon {
   display: grid;
   place-items: center;
-  width: 2.75rem;
-  height: 2.75rem;
+  width: var(--snui-control-min-height);
+  height: var(--snui-control-min-height);
   flex: 0 0 auto;
   border-radius: var(--snui-radius-md);
   background: var(--snui-color-surface-raised);
-  font-size: 1.5rem;
+  color: var(--snui-color-text-muted);
+}
+
+.icon svg {
+  width: var(--snui-space-5);
+  height: var(--snui-space-5);
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.75;
 }
 
 .title {
   margin: 0;
   color: var(--snui-color-text);
-  font-size: 1.15rem;
 }
 
 .meta,
 .freshness {
   margin: 0;
   color: var(--snui-color-text-muted);
-  font-size: 0.9em;
+  font-size: var(--snui-font-size-sm);
+  line-height: var(--snui-line-height);
 }
 
 .freshness {
-  min-height: 1.25em;
+  min-height: 1lh;
   margin-block-start: var(--snui-space-2);
 }

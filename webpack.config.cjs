@@ -107,12 +107,19 @@ module.exports = {
       exposes: {
         './PluginConfigurationPanel': './src/configpanel/PluginConfigurationPanel',
       },
-      // `singleton` ensures React state hooks work across the host UI and panel
-      // boundary. The host must supply React 19. The shared UI package stays
-      // inside this remote and is intentionally absent from this share map.
+      // `singleton` keeps React and its renderer as the host's matching pair.
+      // The host must supply React 19 and React DOM 19. The shared UI package
+      // stays inside this remote and is intentionally absent from this map.
       shared: {
         react: {
           singleton: true,
+          strictVersion: true,
+          requiredVersion: '>=19.2.0 <20.0.0',
+          import: false,
+        },
+        'react-dom': {
+          singleton: true,
+          strictVersion: true,
           requiredVersion: '>=19.2.0 <20.0.0',
           import: false,
         },

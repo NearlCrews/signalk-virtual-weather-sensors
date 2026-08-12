@@ -18,7 +18,7 @@ publish to npm until that approval has been given for the prepared commit.
 
 ## Verify
 
-Use Node 24.18 and npm 11.18:
+Use Node 24.19.0 and npm 12.0.2:
 
 ```bash
 npm ci
@@ -70,14 +70,17 @@ pushes, or creates a release automatically.
 After both workflow jobs complete successfully:
 
 ```bash
-npm view signalk-virtual-weather-sensors version dist-tags time --json
+npm view signalk-virtual-weather-sensors version gitHead dist-tags time --json
 npm view signalk-virtual-weather-sensors dist.integrity dist.shasum --json
 ```
 
 Then confirm:
 
 - The npm version and GitHub Release tag match.
+- The npm `gitHead` matches the approved release commit.
 - Provenance is present on npm.
+- The App Store listing shows the current Admin hero first, and the official
+  Signal K plugin score is 100 on the published commit.
 - The package installs in a clean temporary Signal K environment.
 - `dist/index.js`, declarations, `public/remoteEntry.js`, panel chunks, CSS,
   icons, screenshots, README, license, and changelog are present.

@@ -20,6 +20,12 @@ const ci = await readFile('.github/workflows/ci.yml', 'utf8');
 if (!ci.includes('node-version: 20.18.0') || !ci.includes('run build')) {
   failures.push('ci.yml must retain a blocking Node 20.18 type-check and build lane.');
 }
+if (!ci.includes('npm@11.19.0')) {
+  failures.push('The Node 20.18 compatibility lane must use its latest supported npm 11 release.');
+}
+if (!ci.includes('node-version: 24.19.0') || !ci.includes('npx --yes npm@12.0.2')) {
+  failures.push('ci.yml must retain Node 24.19.0 and npm 12.0.2 for the full verification lane.');
+}
 
 const pluginCi = await readFile('.github/workflows/plugin-ci.yml', 'utf8');
 for (const expected of [
@@ -32,11 +38,16 @@ for (const expected of [
 
 const publish = await readFile('.github/workflows/publish.yml', 'utf8');
 for (const expected of [
+  'npm@12.0.2',
   'actions/upload-artifact@',
   'actions/download-artifact@',
   '--json --ignore-scripts --pack-destination artifacts',
+  'Array.isArray(r)?r[0]:Object.values(r)[0]',
   'publish ./artifacts/*.tgz',
   '--provenance --access public',
+  'RELEASE_GIT_HEAD="$(git rev-parse HEAD)"',
+  'p.gitHead=process.env.RELEASE_GIT_HEAD',
+  'PACKED_GIT_HEAD',
 ]) {
   if (!publish.includes(expected)) failures.push(`publish.yml must include ${expected}.`);
 }

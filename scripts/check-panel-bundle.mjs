@@ -1,4 +1,5 @@
 import { readdir, readFile } from 'node:fs/promises';
+import { createRequire } from 'node:module';
 import { join } from 'node:path';
 import { gzipSync } from 'node:zlib';
 
@@ -25,6 +26,8 @@ const combinedCss = assets
   .join('\n');
 const stats = JSON.parse(await readFile('.tmp/panel-stats.json', 'utf8'));
 const baseline = JSON.parse(await readFile('scripts/panel-size-baseline.json', 'utf8'));
+const require = createRequire(import.meta.url);
+const webpackConfig = require('../webpack.config.cjs');
 
 if (stats.errorsCount !== 0 || stats.warningsCount !== 0) {
   throw new Error(
@@ -60,6 +63,28 @@ const combined = files.map((file) => file.source).join('\n');
 if (!combined.includes('data-snui-version')) {
   throw new Error('The configuration panel did not bundle signalk-nearlcrews-ui.');
 }
+const federationOptions = webpackConfig.plugins.find((plugin) => plugin.options?.shared)?.options;
+if (federationOptions === undefined) {
+  throw new Error('webpack.config.cjs must include Module Federation shared-package options.');
+}
+for (const sharedPackage of ['react', 'react-dom']) {
+  const share = federationOptions.shared[sharedPackage];
+  if (
+    share?.singleton !== true ||
+    share.strictVersion !== true ||
+    share.requiredVersion !== '>=19.2.0 <20.0.0' ||
+    share.import !== false
+  ) {
+    throw new Error(
+      `webpack.config.cjs must consume host-provided ${sharedPackage} as a strict singleton.`
+    );
+  }
+}
+if (federationOptions.shared['signalk-nearlcrews-ui'] !== undefined) {
+  throw new Error(
+    'signalk-nearlcrews-ui must stay bundled rather than entering the host share scope.'
+  );
+}
 for (const marker of [
   '__CLIENT_INTERNALS_DO_NOT_USE_OR_WARN_USERS_THEY_CANNOT_UPGRADE',
   'react.production.min',
@@ -85,7 +110,6 @@ if (!moduleNames.some((name) => name.includes('signalk-nearlcrews-ui'))) {
 if (!moduleNames.some((name) => name.startsWith('consume shared module (default) react@'))) {
   throw new Error('The panel is not consuming React from the Module Federation host share scope.');
 }
-
 const bundledReactModules = moduleNames.filter((name) =>
   /node_modules[\\/]react(?:-dom)?[\\/]/.test(name)
 );
@@ -126,5 +150,5 @@ if (gzipBytes > maximumGzipBytes) {
 }
 
 console.log(
-  `Panel bundle passed: ${javascriptNames.length} JavaScript files, ${cssNames.length} CSS ${cssNames.length === 1 ? 'file' : 'files'}, ${rawBytes} raw bytes, ${sizeSummary}, and host-shared React.`
+  `Panel bundle passed: ${javascriptNames.length} JavaScript files, ${cssNames.length} CSS ${cssNames.length === 1 ? 'file' : 'files'}, ${rawBytes} raw bytes, ${sizeSummary}, and host-shared React and React DOM.`
 );

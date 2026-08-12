@@ -4,12 +4,27 @@ import { promisify } from 'node:util';
 
 const execFileAsync = promisify(execFile);
 const packageJson = JSON.parse(await readFile('package.json', 'utf8'));
+if (Object.hasOwn(packageJson, 'gitHead')) {
+  throw new Error(
+    'gitHead must be injected into the release artifact, not committed to package.json.'
+  );
+}
+if (packageJson.packageManager !== 'npm@12.0.2') {
+  throw new Error('packageManager must pin the contributor and release toolchain to npm 12.0.2.');
+}
 const { stdout } = await execFileAsync(
   process.platform === 'win32' ? 'npm.cmd' : 'npm',
   ['pack', '--dry-run', '--json', '--ignore-scripts'],
   { maxBuffer: 10 * 1024 * 1024 }
 );
-const [packResult] = JSON.parse(stdout);
+const parsedPackResult = JSON.parse(stdout);
+const packResults = Array.isArray(parsedPackResult)
+  ? parsedPackResult
+  : Object.values(parsedPackResult);
+if (packResults.length !== 1 || !Array.isArray(packResults[0]?.files)) {
+  throw new Error('npm pack must return exactly one package with a file manifest.');
+}
+const [packResult] = packResults;
 const files = new Set(packResult.files.map((file) => file.path));
 const normalizeDeclaredPath = (declaredPath) => declaredPath.replace(/^\.\//, '');
 
@@ -61,12 +76,13 @@ for (const entry of await readdir('public', { withFileTypes: true })) {
   }
 }
 
+const screenshots = packageJson.signalk?.screenshots;
+if (!Array.isArray(screenshots) || screenshots.length === 0) {
+  throw new Error('signalk.screenshots must list the App Store hero and detail images.');
+}
 const declaredAssets = [
   ['signalk.appIcon', packageJson.signalk?.appIcon],
-  ...(packageJson.signalk?.screenshots ?? []).map((declaredPath, index) => [
-    `signalk.screenshots[${index}]`,
-    declaredPath,
-  ]),
+  ...screenshots.map((declaredPath, index) => [`signalk.screenshots[${index}]`, declaredPath]),
 ];
 for (const [field, declaredPath] of declaredAssets) {
   if (typeof declaredPath !== 'string' || !declaredPath.trim()) {
@@ -76,6 +92,22 @@ for (const [field, declaredPath] of declaredAssets) {
   if (packedPath.startsWith('../') || packedPath.startsWith('/') || !files.has(packedPath)) {
     throw new Error(`${field} does not resolve to packed file ${packedPath}.`);
   }
+}
+
+const heroPath = normalizeDeclaredPath(screenshots[0]);
+if (heroPath !== 'assets/screenshots/00-admin-hero.png') {
+  throw new Error('The current Admin hero must be the first App Store screenshot.');
+}
+const hero = await readFile(heroPath);
+if (
+  hero.subarray(1, 4).toString('ascii') !== 'PNG' ||
+  hero.readUInt32BE(16) !== 1280 ||
+  hero.readUInt32BE(20) !== 800
+) {
+  throw new Error('The first App Store screenshot must be a 1280 by 800 PNG hero image.');
+}
+if (hero.byteLength > 500_000) {
+  throw new Error('The first App Store screenshot must remain under 500 KB.');
 }
 
 for (const file of files) {
@@ -93,8 +125,8 @@ for (const file of files) {
 if (packageJson.dependencies?.['signalk-nearlcrews-ui']) {
   throw new Error('signalk-nearlcrews-ui must be a bundled development dependency.');
 }
-if (packageJson.devDependencies?.['signalk-nearlcrews-ui'] !== '0.6.2') {
-  throw new Error('The UI package must be pinned to exact version 0.6.2 during its 0.x series.');
+if (packageJson.devDependencies?.['signalk-nearlcrews-ui'] !== '0.7.0') {
+  throw new Error('The UI package must be pinned to exact version 0.7.0 during its 0.x series.');
 }
 
 console.log(`Packed package passed: ${files.size} files in ${packResult.filename}.`);

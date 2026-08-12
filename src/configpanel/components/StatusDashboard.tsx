@@ -1,5 +1,13 @@
 import type * as React from 'react';
-import { Card, Cluster, Metric, MetricGrid, Stack, StatusIndicator } from 'signalk-nearlcrews-ui';
+import {
+  Card,
+  Cluster,
+  formatRelativeAge,
+  Metric,
+  MetricGrid,
+  Stack,
+  StatusIndicator,
+} from 'signalk-nearlcrews-ui';
 import { PLUGIN_DISPLAY_NAME } from '../../constants/notifications-shared.js';
 import type { PanelStatusResponse } from '../../types/index.js';
 import styles from './StatusDashboard.module.css';
@@ -8,6 +16,16 @@ const NA = 'n/a';
 
 function count(value: number | undefined): string {
   return value === undefined ? NA : value.toLocaleString();
+}
+
+function WeatherGlyph(): React.ReactElement {
+  return (
+    <svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none">
+      <path d="M7.25 7.25 5.8 5.8M12 5.25V3.5M5.25 12H3.5" />
+      <path d="M8.2 14.5a4.25 4.25 0 1 1 7.58-3.2" />
+      <path d="M7.25 19.25h10a3.25 3.25 0 0 0 .17-6.5 5 5 0 0 0-9.48 1.07 2.75 2.75 0 0 0-.69 5.43Z" />
+    </svg>
+  );
 }
 
 interface Props {
@@ -37,7 +55,7 @@ export default function StatusDashboard({
           <Cluster align="center" justify="between">
             <Cluster align="center">
               <span className={styles.icon} aria-hidden="true">
-                ⛅
+                <WeatherGlyph />
               </span>
               <div>
                 <h2 className={styles.title} id="svws-status-heading">
@@ -49,7 +67,14 @@ export default function StatusDashboard({
             <StatusIndicator tone={tone}>{stateLabel}</StatusIndicator>
           </Cluster>
           <p className={styles.freshness} role="status" aria-live="polite">
-            {stale ? `Updated ${Math.round(staleAgeMs / 1000)} seconds ago` : ''}
+            {stale
+              ? `Updated ${formatRelativeAge(staleAgeMs, {
+                  fallback: 'unknown',
+                  locale: 'en',
+                  numeric: 'auto',
+                  style: 'long',
+                })}`
+              : ''}
           </p>
         </Card>
 

@@ -24,7 +24,7 @@
 .available {
   margin-block: var(--snui-space-2) 0;
   color: var(--snui-color-text-muted);
-  font-size: 0.9em;
+  font-size: var(--snui-font-size-sm);
 }
 
 .visuallyHidden {

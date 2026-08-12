@@ -31,7 +31,7 @@ export interface UseStatusResult {
   // placeholders as loading rather than as a dead plugin.
   loading: boolean;
   // One-shot fetch outside the poll loop. Returns the parsed status or null
-  // on failure; the save flow uses it to confirm the plugin restarted.
+  // on failure; the save flow uses it to report the current plugin status.
   refresh: () => Promise<PanelStatusResponse | null>;
 }
 

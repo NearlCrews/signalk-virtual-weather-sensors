@@ -10,6 +10,7 @@ import {
   Stack,
   supportsNativeCssScope,
   ThemeToggle,
+  UnsupportedBrowserNotice,
 } from 'signalk-nearlcrews-ui';
 import {
   CONFIG_DEFAULTS,
@@ -28,22 +29,14 @@ import { deriveSourceState } from './sourceState.js';
 
 interface Props {
   configuration: unknown;
-  save: (configuration: unknown) => unknown;
+  save: (configuration: unknown) => void;
 }
 
 type SectionKey = 'apiKey' | 'cadence' | 'notifications';
 
 export default function PluginConfigurationPanel(props: Props): React.ReactElement {
   if (typeof window === 'undefined' || !supportsNativeCssScope(window)) {
-    return (
-      <div className={styles.compatibility} data-browser-compatibility-message="" role="alert">
-        <h2>Browser update required</h2>
-        <p>
-          This panel requires native CSS @scope. Update the browser or embedded WebView before
-          reopening Signal K Admin.
-        </p>
-      </div>
-    );
+    return <UnsupportedBrowserNotice />;
   }
 
   return <SupportedPluginConfigurationPanel {...props} />;
@@ -54,7 +47,7 @@ function SupportedPluginConfigurationPanel({ configuration, save }: Props): Reac
   const { status, error, lastUpdatedMs, lastAttemptMs, stale, loading, refresh } = useStatus();
   const {
     form,
-    savedForm,
+    requestedForm,
     dirty,
     saving,
     action,
@@ -99,12 +92,15 @@ function SupportedPluginConfigurationPanel({ configuration, save }: Props): Reac
   }, [dirty]);
 
   const requiresKey = selectionRequiresApiKey(
-    savedForm.weatherMode,
-    savedForm.weatherProvider,
-    savedForm.mergeProviders
+    requestedForm.weatherMode,
+    requestedForm.weatherProvider,
+    requestedForm.mergeProviders
   );
   const firstRun =
-    status !== null && !status.running && requiresKey && savedForm.accuWeatherApiKey.trim() === '';
+    status !== null &&
+    !status.running &&
+    requiresKey &&
+    requestedForm.accuWeatherApiKey.trim() === '';
   const autoOpened = useRef(false);
   useEffect(() => {
     if (firstRun && !autoOpened.current) {
@@ -282,7 +278,7 @@ function SupportedPluginConfigurationPanel({ configuration, save }: Props): Reac
 
         <ActionBar
           data-panel-action-bar=""
-          sticky="bottom"
+          sticky="viewport-bottom"
           statusRef={actionStatusRef}
           status={
             <span className={actionStatusClass} role="status">
@@ -295,7 +291,7 @@ function SupportedPluginConfigurationPanel({ configuration, save }: Props): Reac
                 variant="primary"
                 aria-label="Save configuration"
                 loading={saving}
-                loadingLabel="Saving"
+                loadingLabel="Checking"
                 disabled={saving || (!dirty && !unconfigured && !hasInvalidInteger)}
                 onClick={handleSave}
               >

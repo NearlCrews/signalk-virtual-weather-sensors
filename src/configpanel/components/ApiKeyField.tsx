@@ -1,6 +1,7 @@
 import type * as React from 'react';
 import { useEffect, useRef, useState } from 'react';
-import { Button, Cluster, LabeledField, TextInput } from 'signalk-nearlcrews-ui';
+import { Button, Cluster, LabeledField } from 'signalk-nearlcrews-ui';
+import { SecretInput } from 'signalk-nearlcrews-ui/forms';
 import {
   API_KEY_MIN_LENGTH,
   validateApiKeyCandidate,
@@ -86,11 +87,13 @@ export default function ApiKeyField({ value, keyError, onChange }: Props): React
         error={error}
         errorLive="polite"
       >
-        <TextInput
+        <SecretInput
           id="svws-apikey"
-          type="password"
+          autoCapitalize="none"
           autoComplete="off"
+          autoCorrect="off"
           placeholder="Paste your AccuWeather developer API key"
+          spellCheck={false}
           value={value}
           onChange={(event) => {
             controllerRef.current?.abort();

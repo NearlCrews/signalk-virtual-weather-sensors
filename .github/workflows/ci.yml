@@ -23,11 +23,11 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: 24.18.0
+          node-version: 24.19.0
           package-manager-cache: false
-      - run: npx --yes npm@11.18.0 ci
+      - run: npx --yes npm@12.0.2 ci
       - run: npx playwright install --with-deps chromium firefox webkit
-      - run: npx --yes npm@11.18.0 run verify:release
+      - run: npx --yes npm@12.0.2 run verify:release
       - name: Upload coverage reports to Codecov
         uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f # v7.0.0
         with:
@@ -59,8 +59,10 @@ jobs:
         with:
           node-version: 20.18.0
           package-manager-cache: false
-      - run: npx --yes npm@11.18.0 ci
-      - run: npx --yes npm@11.18.0 run type-check
+      # npm 12 starts at Node 22.22.2. Use the newest npm 11 release in this
+      # runtime-floor lane so Node 20.18 is exercised by a supported npm.
+      - run: npx --yes npm@11.19.0 ci
+      - run: npx --yes npm@11.19.0 run type-check
       # Current Vitest and Rolldown require Node 20.19 or newer. Keep this lane
       # focused on the package's exact Node 20.18 runtime floor.
-      - run: npx --yes npm@11.18.0 run build
+      - run: npx --yes npm@11.19.0 run build

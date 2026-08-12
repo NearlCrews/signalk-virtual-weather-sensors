@@ -7,7 +7,7 @@ for publication steps.
 ## Supported environments
 
 - Plugin runtime: Node.js 20.18 or newer
-- Development: Node.js `^22.22.2 || ^24.15.0 || >=26.0.0` and npm 10.9.3 or newer
+- Development: Node.js `^22.22.2 || ^24.15.0 || ^26.0.0` and npm 12.0.2
 - Language: TypeScript 7, strict mode, ES2023 target
 - Signal K: server 2.x with `@signalk/server-api` 2.24 or newer for Weather API
   registration
@@ -22,7 +22,7 @@ compatibility message. Older Signal K admin UIs use the JSON-schema fallback.
 ```bash
 git clone https://github.com/NearlCrews/signalk-virtual-weather-sensors.git
 cd signalk-virtual-weather-sensors
-npm install
+npm ci
 npm run hooks
 ```
 
@@ -50,15 +50,17 @@ metrics, collapsible sections, and actions. Keep provider, quota, status, and
 save-confirmation behavior local to this plugin. Project CSS must stay in
 focused CSS modules and use public `--snui-*` tokens.
 
-The shared UI is pinned exactly at 0.6.2. Fresh profiles use Auto without
-writing an implicit preference. Retired plugin-specific theme keys are ignored;
-only `signalk-nearlcrews-ui.theme.v1` is authoritative.
+The shared UI is pinned exactly at 0.7.0. Fresh profiles use Auto without
+writing an implicit preference. Auto follows an explicit host theme and
+otherwise stays Light; System is the explicit operating-system preference.
+Retired plugin-specific theme keys are ignored, and only
+`signalk-nearlcrews-ui.theme.v1` is authoritative.
 
-React is a host-provided Module Federation singleton with the range
-`>=19.2.0 <20.0.0` and `import: false`. The shared UI library is bundled into
-the remote. `npm run check:panel` proves that React is not bundled, the shared
-UI library is present, CSS identifiers and container names survive webpack,
-and the size budget is respected.
+React and React DOM are strict host-provided Module Federation singletons with
+the range `>=19.2.0 <20.0.0` and `import: false`. The shared UI library is
+bundled into the remote. `npm run check:panel` proves that neither framework
+package is bundled, the shared UI library is present, CSS identifiers and
+container names survive webpack, and the size budget is respected.
 
 `npm run boundaries` rejects circular imports, server-to-panel imports, and
 panel imports of Node-only runtime modules. The panel may import pure constants
@@ -172,9 +174,10 @@ its migration notes before changing that version.
 
 ## Continuous integration
 
-- `ci.yml` runs the full release verification on Node 24.18 and a separate,
+- `ci.yml` runs the full release verification on Node 24.19.0 and a separate,
   blocking type-check and production-build lane on the Node 20.18 runtime
-  floor. Current Vitest and Rolldown require Node 20.19 or newer, so tests run
+  floor. The runtime-floor lane uses npm 11.19 because npm 12 starts at Node
+  22.22.2. Current Vitest and Rolldown require Node 20.19 or newer, so tests run
   on the supported development runtimes instead.
 - `plugin-ci.yml` pins the official Signal K reusable workflow and tests Node
   22 and 24, Signal K 2.24 and current, armv7, packaging, and installation.

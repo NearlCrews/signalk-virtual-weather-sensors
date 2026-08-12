@@ -37,23 +37,50 @@ try {
     ...(executablePath ? { executablePath } : {}),
   });
   try {
-    const page = await browser.newPage({ viewport: { width: 800, height: 900 } });
+    const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
     await page.goto(`${baseUrl}/?screenshot`, { waitUntil: 'networkidle' });
     await page.locator('[data-snui-root]').waitFor();
     await page.getByText('Running', { exact: true }).waitFor();
 
     await page.screenshot({
+      animations: 'disabled',
+      path: resolve(outputDirectory, '00-admin-hero.png'),
+    });
+
+    await page.setViewportSize({ width: 800, height: 900 });
+    await page.locator('.sidebar, .plugin-list').evaluateAll((elements) => {
+      for (const element of elements) element.style.display = 'none';
+    });
+    await page.locator('.config-column').evaluate((element) => {
+      element.style.flex = '1 1 auto';
+      element.style.maxWidth = '720px';
+      element.style.marginInline = 'auto';
+    });
+    await page.addStyleTag({
+      content: `
+        .snui-action-bar--viewport-docked {
+          position: relative !important;
+          inset: auto !important;
+          width: auto !important;
+        }
+        .snui-action-bar__viewport-anchor--docked {
+          block-size: auto !important;
+        }
+      `,
+    });
+    const panel = page.locator('[data-snui-root]');
+    await panel.screenshot({
+      animations: 'disabled',
       path: resolve(outputDirectory, 'config-panel-status.png'),
-      fullPage: true,
     });
 
     await page.setViewportSize({ width: 800, height: 1200 });
     await page.getByRole('button', { name: /Severe-weather notifications/ }).click();
     await page.mouse.move(0, 0);
     await page.waitForTimeout(250);
-    await page.screenshot({
+    await panel.screenshot({
+      animations: 'disabled',
       path: resolve(outputDirectory, 'config-panel-notifications.png'),
-      fullPage: true,
     });
 
     await page.getByRole('button', { name: /Severe-weather notifications/ }).click();
@@ -62,9 +89,9 @@ try {
     await page.mouse.move(0, 0);
     await page.locator('[data-snui-root][data-snui-theme="night"]').waitFor();
     await page.waitForTimeout(250);
-    await page.screenshot({
+    await panel.screenshot({
+      animations: 'disabled',
       path: resolve(outputDirectory, 'config-panel-night.png'),
-      fullPage: true,
     });
   } finally {
     await browser.close();

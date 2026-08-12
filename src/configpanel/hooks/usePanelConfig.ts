@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 // Shared with the TS plugin runtime so the federated panel and the rjsf
 // schema cannot drift on label wording, numeric defaults, or key validation
 // bounds.
@@ -38,13 +38,19 @@ interface SaveAction {
   isError: boolean;
 }
 
+function openRecord(value: unknown): Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {};
+}
+
 /**
  * Derive form field values from a (possibly partial) saved config, filling
  * defaults from the shared module. Single source for the initial state and
  * the resync path so a new field is added in one place, not two.
  */
-function formStateFromConfig(c: unknown): PanelFormState {
-  const cfg = (typeof c === 'object' && c !== null ? c : {}) as Record<string, unknown>;
+export function formStateFromConfig(c: unknown): PanelFormState {
+  const cfg = openRecord(c);
   const accuWeatherApiKey = typeof cfg.accuWeatherApiKey === 'string' ? cfg.accuWeatherApiKey : '';
   const weatherProvider = resolveWeatherProvider(
     cfg.weatherProvider,
@@ -52,7 +58,9 @@ function formStateFromConfig(c: unknown): PanelFormState {
   );
   const weatherMode = resolveWeatherMode(cfg.weatherMode);
   const notifications =
-    typeof cfg.notifications === 'object' && cfg.notifications !== null
+    typeof cfg.notifications === 'object' &&
+    cfg.notifications !== null &&
+    !Array.isArray(cfg.notifications)
       ? (cfg.notifications as Record<string, unknown>)
       : {};
   const boundedNumber = (value: unknown, fallback: number, min: number, max: number): number =>
@@ -98,6 +106,53 @@ function formStateFromConfig(c: unknown): PanelFormState {
   };
 }
 
+/** Preserve settings that this panel does not understand when saving edits. */
+export function configurationFromForm(
+  form: PanelFormState,
+  originalConfiguration: unknown,
+  baselineForm: PanelFormState = formStateFromConfig(originalConfiguration)
+): Record<string, unknown> {
+  const original = openRecord(originalConfiguration);
+  const result: Record<string, unknown> = { ...original };
+
+  // An older panel may normalize a future enum value or a newly expanded
+  // numeric range for display. Retain the raw field unless the operator
+  // actually changed that control. Missing fields still receive defaults.
+  for (const key of [
+    'weatherProvider',
+    'weatherMode',
+    'accuWeatherApiKey',
+    'openMeteoBaseUrl',
+    'marineData',
+    'updateFrequency',
+    'emissionInterval',
+    'dailyApiQuota',
+  ] as const) {
+    if (!Object.hasOwn(original, key) || form[key] !== baselineForm[key]) {
+      result[key] = form[key];
+    }
+  }
+  const mergeProvidersUnchanged =
+    form.mergeProviders.length === baselineForm.mergeProviders.length &&
+    form.mergeProviders.every((provider, index) => provider === baselineForm.mergeProviders[index]);
+  if (!Object.hasOwn(original, 'mergeProviders') || !mergeProvidersUnchanged) {
+    result.mergeProviders = [...form.mergeProviders];
+  }
+
+  const originalNotifications = openRecord(original.notifications);
+  const notifications: Record<string, unknown> = { ...originalNotifications };
+  for (const key of ['enabled', 'wind', 'visibility', 'heat', 'cold', 'weather'] as const) {
+    if (
+      !Object.hasOwn(originalNotifications, key) ||
+      form.notifications[key] !== baselineForm.notifications[key]
+    ) {
+      notifications[key] = form.notifications[key];
+    }
+  }
+  result.notifications = notifications;
+  return result;
+}
+
 // Field-by-field deep compare. The form is a fixed, shallow shape, so an
 // explicit compare is cheaper and clearer than JSON.stringify and immune to
 // key-order drift.
@@ -122,10 +177,11 @@ function formsEqual(a: PanelFormState, b: PanelFormState): boolean {
   );
 }
 
-// Post-save restart confirmation cadence: up to 4 polls, 1.5 s apart, before
-// giving up. Named like useStatus's POLL_MS so the numbers read as policy.
-const RESTART_POLL_ATTEMPTS = 4;
-const RESTART_POLL_DELAY_MS = 1500;
+// Post-request status-check cadence: up to 4 polls, 1.5 s apart, before giving
+// up. A readable status cannot prove that a void host callback persisted the
+// request, so the result describes only the current plugin state.
+const STATUS_POLL_ATTEMPTS = 4;
+const STATUS_POLL_DELAY_MS = 1500;
 
 function apiKeyErrorFor(form: PanelFormState, trimmedKey: string): string | null {
   const selectedProviders =
@@ -144,39 +200,34 @@ function baseUrlErrorFor(form: PanelFormState): string | null {
   return openMeteoActive ? validateOpenMeteoBaseUrlCandidate(form.openMeteoBaseUrl) : null;
 }
 
-// The plugin is restarting after a save, so /api/status may be briefly
-// unreachable: poll a few times before giving up, then report what the
-// status actually says rather than an optimistic "Saved." that could lie.
-async function confirmRestart(
+async function checkStatusAfterRequest(
   refreshStatus: () => Promise<PanelStatusResponse | null>
 ): Promise<SaveAction> {
   let data: PanelStatusResponse | null = null;
-  for (let attempt = 0; attempt < RESTART_POLL_ATTEMPTS && !data; attempt++) {
-    await new Promise((resolve) => setTimeout(resolve, RESTART_POLL_DELAY_MS));
+  for (let attempt = 0; attempt < STATUS_POLL_ATTEMPTS && !data; attempt++) {
+    await new Promise((resolve) => setTimeout(resolve, STATUS_POLL_DELAY_MS));
     data = await refreshStatus();
   }
   if (!data) {
-    // Never reached a readable status: report honestly rather than claiming
-    // success.
     return {
-      message: 'Saved, but could not confirm the plugin restarted. Check the plugin status.',
+      message: 'Save requested, but the current plugin status could not be read.',
       isError: true,
     };
   }
   return {
     message: data.running
-      ? 'Saved. Plugin restarted with the new configuration.'
-      : `Saved, but the plugin did not come back online: ${data.banner || 'unknown'}.`,
+      ? 'Save requested. Current plugin status is running.'
+      : `Save requested. Current plugin status is not running: ${data.banner || 'unknown'}.`,
     isError: !data.running,
   };
 }
 
 export interface UsePanelConfigResult {
   form: PanelFormState;
-  savedForm: PanelFormState;
+  requestedForm: PanelFormState;
   dirty: boolean;
   saving: boolean;
-  // Save outcome for the footer status line; null until the first save.
+  // Request and current-status outcome for the footer status line.
   action: SaveAction | null;
   // Inline blocker shown by ApiKeyField when Save rejects an invalid key.
   keyError: string | null;
@@ -195,25 +246,27 @@ export interface UsePanelConfigResult {
 /**
  * Form state, dirty tracking, and the save flow for the config panel.
  *
- * The save flow preserves the semantics the panel has always had: the host's
- * save() may be sync OR return a Promise, and SK admin save() typically
- * resolves with no value regardless of server-side outcome, so success is
- * confirmed by polling /api/status (via `refreshStatus`) until the plugin
- * reports it came back running. Never fire-and-forget.
+ * Signal K Admin's save callback starts persistence and returns void before
+ * the request settles. The panel reports that request, then polls /api/status
+ * and describes the current plugin state without treating it as persistence
+ * confirmation.
  */
 export function usePanelConfig(
   configuration: unknown,
-  hostSave: (config: unknown) => unknown,
+  hostSave: (config: unknown) => void,
   refreshStatus: () => Promise<PanelStatusResponse | null>
 ): UsePanelConfigResult {
   const [form, setForm] = useState<PanelFormState>(() => formStateFromConfig(configuration));
-  // Last configuration the host persisted, in form shape: the dirty baseline
-  // and the Discard target. Starts as the same object the form starts from.
-  const [savedForm, setSavedForm] = useState<PanelFormState>(form);
+  // Last configuration supplied by the host or requested by this panel, in
+  // form shape. This is the dirty baseline and the Discard target, but it does
+  // not claim that Signal K completed persistence.
+  const [requestedForm, setRequestedForm] = useState<PanelFormState>(form);
+  const requestedConfigurationRef = useRef<Record<string, unknown>>(openRecord(configuration));
   const [saving, setSaving] = useState(false);
   const [action, setAction] = useState<SaveAction | null>(null);
   const [keyError, setKeyError] = useState<string | null>(null);
   const [baseUrlError, setBaseUrlError] = useState<string | null>(null);
+  const editVersionRef = useRef(0);
 
   // Resync when the host supplies a new configuration object (e.g. after a
   // save and restart), using the render-time previous-props pattern: React
@@ -224,18 +277,23 @@ export function usePanelConfig(
   if (prevConfiguration !== configuration) {
     setPrevConfiguration(configuration);
     const next = formStateFromConfig(configuration);
-    if (formsEqual(form, savedForm)) setForm(next);
-    setSavedForm(next);
+    requestedConfigurationRef.current = openRecord(configuration);
+    if (formsEqual(form, requestedForm)) setForm(next);
+    setRequestedForm(next);
   }
 
   const setField = useCallback(
     <K extends keyof PanelFormState>(key: K, value: PanelFormState[K]): void => {
+      editVersionRef.current += 1;
+      setAction(null);
       setForm((prev) => ({ ...prev, [key]: value }));
     },
     []
   );
 
   const setNotification = useCallback((key: keyof NotificationsFormState, value: boolean): void => {
+    editVersionRef.current += 1;
+    setAction(null);
     setForm((prev) => ({
       ...prev,
       notifications: { ...prev.notifications, [key]: value },
@@ -243,16 +301,20 @@ export function usePanelConfig(
   }, []);
 
   const discard = useCallback((): void => {
-    setForm(savedForm);
+    setForm(requestedForm);
     setKeyError(null);
     setBaseUrlError(null);
     setAction(null);
-  }, [savedForm]);
+  }, [requestedForm]);
 
   const clearKeyError = useCallback((): void => setKeyError(null), []);
   const clearBaseUrlError = useCallback((): void => setBaseUrlError(null), []);
+  const setActionForEditVersion = useCallback((version: number, next: SaveAction): void => {
+    if (editVersionRef.current === version) setAction(next);
+  }, []);
 
   const doSave = useCallback(async (): Promise<SaveBlockerId | null> => {
+    const submittedEditVersion = editVersionRef.current;
     const trimmedKey = form.accuWeatherApiKey.trim();
     const keyFormatError = apiKeyErrorFor(form, trimmedKey);
     if (keyFormatError) {
@@ -267,37 +329,63 @@ export function usePanelConfig(
     }
     setBaseUrlError(null);
     setSaving(true);
-    setAction({ message: 'Saving...', isError: false });
+    setAction({ message: 'Requesting configuration save...', isError: false });
     try {
-      const payload: PanelFormState = {
+      const normalizedForm: PanelFormState = {
         ...form,
         accuWeatherApiKey: trimmedKey,
         openMeteoBaseUrl: form.openMeteoBaseUrl.trim(),
         notifications: { ...form.notifications },
       };
-      await Promise.resolve(hostSave(payload));
-      // What we handed the host is the new baseline; adopting it as the form
+      const payload = configurationFromForm(
+        normalizedForm,
+        requestedConfigurationRef.current,
+        requestedForm
+      );
+      try {
+        hostSave(payload);
+      } catch (err) {
+        setAction({
+          message: `Could not request the configuration save: ${toErrorText(err)}`,
+          isError: true,
+        });
+        return null;
+      }
+      setAction({
+        message: 'Configuration save requested. Checking current plugin status...',
+        isError: false,
+      });
+      // What we handed the host is the requested baseline; adopting it as the form
       // too keeps dirty false even when trimming changed the key. Adopt only
-      // if the user has not typed since Save was clicked: a mid-save edit
+      // if the user has not typed since Save was clicked: a mid-confirmation edit
       // must survive and stay dirty against the new baseline.
-      setForm((current) => (formsEqual(current, form) ? payload : current));
-      setSavedForm(payload);
-      setAction(await confirmRestart(refreshStatus));
+      setForm((current) => (formsEqual(current, form) ? normalizedForm : current));
+      setRequestedForm(normalizedForm);
+      requestedConfigurationRef.current = payload;
+      try {
+        const statusAction = await checkStatusAfterRequest(refreshStatus);
+        setActionForEditVersion(submittedEditVersion, statusAction);
+      } catch (err) {
+        setActionForEditVersion(submittedEditVersion, {
+          message: `Save requested, but the current status check failed: ${toErrorText(err)}`,
+          isError: true,
+        });
+      }
     } catch (err) {
       setAction({
-        message: `Save failed: ${toErrorText(err)}`,
+        message: `Could not prepare the configuration request: ${toErrorText(err)}`,
         isError: true,
       });
     } finally {
       setSaving(false);
     }
     return null;
-  }, [form, hostSave, refreshStatus]);
+  }, [form, hostSave, refreshStatus, requestedForm, setActionForEditVersion]);
 
   return {
     form,
-    savedForm,
-    dirty: !formsEqual(form, savedForm),
+    requestedForm,
+    dirty: !formsEqual(form, requestedForm),
     saving,
     action,
     keyError,
