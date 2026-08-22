@@ -425,8 +425,54 @@ test('gives every control a reachable target at the pointer size floor', async (
   // Merged mode mounts the provider list and its reorder buttons, which are the
   // smallest controls in the panel.
   await page.getByRole('combobox', { name: 'Provider mode' }).selectOption('merged');
+  // A key puts AccuWeather in play, which is the only thing that mounts the
+  // daily-quota field. Without this the sweep silently skips a whole control:
+  // the panel's conditional branches, not the viewport, are what hide controls
+  // from a measurement pass.
+  await page.locator('#svws-apikey').fill('sweep-api-key-1234567890');
+  await expect(page.getByRole('spinbutton', { name: /Daily API call quota/ })).toBeVisible();
 
   const result = await page.evaluate(() => {
+    const isRendered = (el: Element): boolean => {
+      const style = getComputedStyle(el);
+      return (
+        style.display !== 'none' &&
+        style.visibility !== 'hidden' &&
+        el.getBoundingClientRect().height > 0
+      );
+    };
+
+    // A label activates its control, so the hit target is the larger of the two
+    // rather than the raw box a checkbox paints.
+    const targetSize = (el: Element): { width: number; height: number } => {
+      const box = el.getBoundingClientRect();
+      let width = box.width;
+      let height = box.height;
+      const associated = el.id === '' ? null : document.querySelector(`label[for="${el.id}"]`);
+      for (const activator of [el.closest('label'), associated]) {
+        const rect = activator?.getBoundingClientRect();
+        if (rect !== undefined && rect.width > 0 && rect.height > 0) {
+          width = Math.max(width, rect.width);
+          height = Math.max(height, rect.height);
+        }
+      }
+      return { width, height };
+    };
+
+    // Size alone can pass while something covers the control, so require it to
+    // be the topmost element at its own centre.
+    const coveredBy = (el: Element): string | null => {
+      const box = el.getBoundingClientRect();
+      const top = document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2);
+      if (top === null) return 'nothing';
+      const reaches =
+        top === el ||
+        el.contains(top) ||
+        top.contains(el) ||
+        (top.closest('label')?.contains(el) ?? false);
+      return reaches ? null : top.tagName;
+    };
+
     const root = document.querySelector('[data-snui-root]');
     if (root === null) return { floor: 0, measured: 0, undersized: [], unreachable: [] };
     // The shared tokens raise the control minimum under a coarse pointer, so
@@ -442,53 +488,28 @@ test('gives every control a reachable target at the pointer size floor', async (
     const controls = root.querySelectorAll(
       'button, input, select, textarea, [role="radio"], [role="checkbox"], [role="switch"]'
     );
-    for (const el of controls) {
-      const style = getComputedStyle(el);
-      if (style.display === 'none' || style.visibility === 'hidden') continue;
-      if (el.getBoundingClientRect().height === 0) continue;
+    for (const el of [...controls].filter(isRendered)) {
       // Scroll to the middle first: that is what a real tap causes, and it
       // keeps the docked action bar from sitting over a control that is
       // perfectly reachable once the user has scrolled to it.
       el.scrollIntoView({ block: 'center', inline: 'center' });
-      const box = el.getBoundingClientRect();
       const name = el.getAttribute('aria-label') ?? el.textContent?.trim() ?? el.tagName;
       measured += 1;
 
-      // A label activates its control, so the hit target is the larger of the
-      // two rather than the raw box a checkbox paints.
-      let width = box.width;
-      let height = box.height;
-      const wrapping = el.closest('label');
-      const associated = el.id === '' ? null : document.querySelector(`label[for="${el.id}"]`);
-      for (const activator of [wrapping, associated]) {
-        if (activator === null) continue;
-        const rect = activator.getBoundingClientRect();
-        if (rect.width > 0 && rect.height > 0) {
-          width = Math.max(width, rect.width);
-          height = Math.max(height, rect.height);
-        }
-      }
+      const { width, height } = targetSize(el);
       if (width < floor || height < floor) {
         undersized.push(`${name}: ${Math.round(width)}x${Math.round(height)} below ${floor}`);
       }
-
-      // Size alone can pass while something covers the control, so require it
-      // to be the topmost element at its own centre.
-      const top = document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2);
-      const covered =
-        top === null ||
-        !(
-          top === el ||
-          el.contains(top) ||
-          top.contains(el) ||
-          (top.closest('label')?.contains(el) ?? false)
-        );
-      if (covered) unreachable.push(`${name}: covered by ${top?.tagName ?? 'nothing'}`);
+      const covering = coveredBy(el);
+      if (covering !== null) unreachable.push(`${name}: covered by ${covering}`);
     }
     return { floor, measured, undersized, unreachable };
   });
 
-  expect(result.measured).toBeGreaterThan(25);
+  // Pin the count, not just a lower bound: a selector regression or a control
+  // that quietly stops rendering would otherwise pass by measuring almost
+  // nothing. Raise this deliberately when the panel gains a control.
+  expect(result.measured).toBeGreaterThanOrEqual(34);
   expect(result.undersized).toEqual([]);
   expect(result.unreachable).toEqual([]);
 });
