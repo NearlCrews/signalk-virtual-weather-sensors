@@ -1,7 +1,7 @@
 import { AxeBuilder } from '@axe-core/playwright';
 import { expect, type Page, test } from '@playwright/test';
 
-const EXPECTED_UI_VERSION = process.env.SNUI_EXPECT_VERSION ?? '0.7.1';
+const EXPECTED_UI_VERSION = process.env.SNUI_EXPECT_VERSION ?? '0.8.0';
 
 async function expectSaveBlockedAt(page: Page, fieldName: string): Promise<void> {
   await page.getByRole('button', { name: 'Save configuration' }).click();
