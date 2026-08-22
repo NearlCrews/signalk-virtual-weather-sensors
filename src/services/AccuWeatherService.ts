@@ -530,7 +530,11 @@ export class AccuWeatherService implements CurrentWeatherProvider {
     return { size: this.locationCache.size() };
   }
 
-  /** Cumulative HTTP fetch attempts (initial + retries) since construction. */
+  /**
+   * Cumulative HTTP fetch attempts (initial plus retries), seeded from the
+   * persisted quota snapshot, so the count deliberately spans previous process
+   * runs rather than restarting at zero with the object.
+   */
   public getRequestCount(): number {
     return this.requestWindow.cumulativeCount();
   }

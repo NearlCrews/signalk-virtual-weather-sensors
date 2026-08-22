@@ -43,8 +43,6 @@ export interface RetryingHttpClientOptions {
   readonly userAgent: string;
   /** Called once immediately before every fetch attempt. It may reject dispatch. */
   readonly beforeRequest?: () => void;
-  /** @deprecated Use `beforeRequest`. */
-  readonly onRequestCounted?: () => void;
   /** Logger for debug and warn lines; defaults to a no-op. */
   readonly logger?: Logger;
   /** Response-body size cap in bytes; defaults to the shared 1 MiB. */
@@ -77,7 +75,7 @@ export class RetryingHttpClient {
     this.retryAttempts = options.retryAttempts;
     this.retryDelayMs = options.retryDelayMs;
     this.userAgent = options.userAgent;
-    this.beforeRequest = options.beforeRequest ?? options.onRequestCounted ?? (() => {});
+    this.beforeRequest = options.beforeRequest ?? (() => {});
     this.logger = options.logger ?? (() => {});
     this.maxResponseBytes = options.maxResponseBytes ?? DEFAULT_MAX_RESPONSE_BYTES;
     this.responseLabel = options.responseLabel ?? 'response';

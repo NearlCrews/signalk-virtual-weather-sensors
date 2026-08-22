@@ -80,7 +80,7 @@ export class OpenMeteoMarineService {
         throw error;
       }
       // Log at debug, not error: the marine layer is best-effort, and the
-      // orchestrator (WeatherService.refreshMarineData) surfaces the single
+      // orchestrator (WeatherService.runMarineUpdate) surfaces the single
       // operator-facing `warn`. This line just adds the request location for
       // diagnosis without double-reporting a tolerated outage as an error.
       this.logger('debug', 'Open-Meteo marine fetch failed', {

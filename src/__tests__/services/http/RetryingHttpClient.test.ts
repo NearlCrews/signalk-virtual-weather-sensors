@@ -7,31 +7,31 @@ import { createMockFetchResponse } from '../../setup.js';
 beforeEach(() => vi.stubGlobal('fetch', vi.fn()));
 afterEach(() => vi.unstubAllGlobals());
 
-function makeClient(onRequestCounted?: () => void): RetryingHttpClient {
+function makeClient(beforeRequest?: () => void): RetryingHttpClient {
   return new RetryingHttpClient({
     requestTimeoutMs: 1000,
     retryAttempts: 3,
     retryDelayMs: 1,
     userAgent: 'test/1.0',
-    onRequestCounted,
+    beforeRequest,
   });
 }
 
 describe('RetryingHttpClient', () => {
-  it('returns parsed JSON and fires onRequestCounted once per attempt', async () => {
-    const onRequestCounted = vi.fn();
+  it('returns parsed JSON and fires beforeRequest once per attempt', async () => {
+    const beforeRequest = vi.fn();
     vi.mocked(globalThis.fetch).mockResolvedValue(
       createMockFetchResponse({ ok: 1 }) as unknown as Response
     );
-    const result = await makeClient(onRequestCounted).request<{ ok: number }>(
+    const result = await makeClient(beforeRequest).request<{ ok: number }>(
       new URL('https://example.test/x')
     );
     expect(result).toEqual({ ok: 1 });
-    expect(onRequestCounted).toHaveBeenCalledTimes(1);
+    expect(beforeRequest).toHaveBeenCalledTimes(1);
   });
 
   it('counts a 503 error response too, then retries and succeeds', async () => {
-    const onRequestCounted = vi.fn();
+    const beforeRequest = vi.fn();
     vi.mocked(globalThis.fetch)
       .mockResolvedValueOnce(
         createMockFetchResponse(
@@ -40,13 +40,13 @@ describe('RetryingHttpClient', () => {
         ) as unknown as Response
       )
       .mockResolvedValueOnce(createMockFetchResponse({ ok: 2 }) as unknown as Response);
-    const result = await makeClient(onRequestCounted).request<{ ok: number }>(
+    const result = await makeClient(beforeRequest).request<{ ok: number }>(
       new URL('https://example.test/x')
     );
     expect(result).toEqual({ ok: 2 });
     // Both attempts are counted because an upstream error response still
     // consumed quota.
-    expect(onRequestCounted).toHaveBeenCalledTimes(2);
+    expect(beforeRequest).toHaveBeenCalledTimes(2);
     expect(globalThis.fetch).toHaveBeenCalledTimes(2);
   });
 
@@ -82,15 +82,15 @@ describe('RetryingHttpClient', () => {
   });
 
   it('counts attempts when fetch rejects before receiving a response', async () => {
-    const onRequestCounted = vi.fn();
+    const beforeRequest = vi.fn();
     vi.mocked(globalThis.fetch).mockRejectedValue(new Error('getaddrinfo ENOTFOUND'));
 
     await expect(
-      makeClient(onRequestCounted).request(new URL('https://example.test/x'))
+      makeClient(beforeRequest).request(new URL('https://example.test/x'))
     ).rejects.toThrow('getaddrinfo ENOTFOUND');
 
     expect(globalThis.fetch).toHaveBeenCalledTimes(3);
-    expect(onRequestCounted).toHaveBeenCalledTimes(3);
+    expect(beforeRequest).toHaveBeenCalledTimes(3);
   });
 
   it('does not retry a plugin-lifecycle cancellation', async () => {

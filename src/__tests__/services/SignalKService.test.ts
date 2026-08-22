@@ -180,7 +180,10 @@ describe('SignalKService', () => {
     });
   });
 
-  describe('getVesselCourseOverGroundTrue', () => {
+  // The true-course fallback chain is exercised through getVesselNavigationData,
+  // the only path production uses. A second copy of this precedence on a
+  // test-only accessor had already drifted from the live one.
+  describe('getVesselNavigationData course resolution', () => {
     it('should return course from primary source', () => {
       const mockApp = createMockApp({
         'navigation.courseOverGroundTrue': {
@@ -190,7 +193,7 @@ describe('SignalKService', () => {
       });
 
       const service = new SignalKService(mockApp as never, mockLogger);
-      const course = service.getVesselCourseOverGroundTrue();
+      const course = service.getVesselNavigationData().courseOverGroundTrue;
 
       expect(course).toBe(Math.PI / 2);
     });
@@ -208,7 +211,7 @@ describe('SignalKService', () => {
       });
 
       const service = new SignalKService(mockApp as never, mockLogger);
-      const course = service.getVesselCourseOverGroundTrue();
+      const course = service.getVesselNavigationData().courseOverGroundTrue;
 
       expect(course).toBeCloseTo(Math.PI + 0.2, 6);
     });
@@ -222,7 +225,7 @@ describe('SignalKService', () => {
       });
 
       const service = new SignalKService(mockApp as never, mockLogger);
-      expect(service.getVesselCourseOverGroundTrue()).toBeNull();
+      expect(service.getVesselNavigationData().courseOverGroundTrue).toBeUndefined();
     });
 
     it('should fallback to heading true', () => {
@@ -234,7 +237,7 @@ describe('SignalKService', () => {
       });
 
       const service = new SignalKService(mockApp as never, mockLogger);
-      const course = service.getVesselCourseOverGroundTrue();
+      const course = service.getVesselNavigationData().courseOverGroundTrue;
 
       expect(course).toBe(1.5);
     });
@@ -243,9 +246,9 @@ describe('SignalKService', () => {
       const mockApp = createMockApp();
 
       const service = new SignalKService(mockApp as never, mockLogger);
-      const course = service.getVesselCourseOverGroundTrue();
+      const course = service.getVesselNavigationData().courseOverGroundTrue;
 
-      expect(course).toBeNull();
+      expect(course).toBeUndefined();
     });
 
     it('should reject invalid course values', () => {
@@ -257,9 +260,9 @@ describe('SignalKService', () => {
       });
 
       const service = new SignalKService(mockApp as never, mockLogger);
-      const course = service.getVesselCourseOverGroundTrue();
+      const course = service.getVesselNavigationData().courseOverGroundTrue;
 
-      expect(course).toBeNull();
+      expect(course).toBeUndefined();
     });
   });
 

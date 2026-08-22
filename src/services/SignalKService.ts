@@ -288,49 +288,6 @@ export class SignalKService {
     }
   }
 
-  /** Returns the best available true course or heading in radians. */
-  public getVesselCourseOverGroundTrue(): number | null {
-    const courseTrue = this.readNumericSelfPath(
-      NAV.COURSE_OVER_GROUND_TRUE,
-      isValidBearing,
-      'course over ground (true)'
-    );
-    if (courseTrue.value !== null) return courseTrue.value;
-
-    const variation = this.readNumericSelfPath(
-      NAV.MAGNETIC_VARIATION,
-      (value) => Math.abs(value) <= Math.PI,
-      'magnetic variation'
-    );
-    const courseMagnetic = this.correctMagneticReading(
-      this.readNumericSelfPath(
-        NAV.COURSE_OVER_GROUND_MAGNETIC,
-        isValidBearing,
-        'course over ground (magnetic)'
-      ),
-      variation,
-      'course over ground'
-    );
-    if (courseMagnetic.value !== null) return courseMagnetic.value;
-
-    const headingTrue = this.readNumericSelfPath(
-      NAV.HEADING_TRUE,
-      isValidBearing,
-      'heading (true)'
-    );
-    if (headingTrue.value !== null) return headingTrue.value;
-
-    const headingMagnetic = this.correctMagneticReading(
-      this.readNumericSelfPath(NAV.HEADING_MAGNETIC, isValidBearing, 'heading (magnetic)'),
-      variation,
-      'heading'
-    );
-    if (headingMagnetic.value !== null) return headingMagnetic.value;
-
-    this.logger('debug', 'No course or heading data available from any source');
-    return null;
-  }
-
   /**
    * Get vessel true heading from SignalK navigation data
    * @returns Heading in radians or null if not available

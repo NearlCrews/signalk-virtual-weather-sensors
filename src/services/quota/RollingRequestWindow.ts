@@ -31,14 +31,6 @@ export class RollingRequestWindow {
     }
   }
 
-  /** Record an already-approved request. Prefer `tryAcquire` for quota-controlled dispatch. */
-  public record(now = Date.now()): void {
-    this.prune(now);
-    this.timestamps.push(now);
-    this.timestamps.sort((a, b) => a - b);
-    this.cumulative++;
-  }
-
   /**
    * Reserve one request when the rolling count is below `limit`. A missing,
    * non-finite, or non-positive limit disables the cap but still records use.
