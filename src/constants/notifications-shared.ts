@@ -184,6 +184,25 @@ export function selectionRequiresApiKey(
 }
 
 /**
+ * True when an Open-Meteo host is fetched: the single Open-Meteo provider, a
+ * member of the merge list, or the optional marine layer, which passes the
+ * same base URL to marine-api.open-meteo.com whatever the atmospheric provider
+ * is. Shared so the runtime config gate, the panel's source state, and the
+ * panel's save-time check cannot drift on when that base URL matters.
+ */
+export function isOpenMeteoActive(
+  mode: WeatherMode,
+  singleProvider: WeatherProviderId,
+  mergeProviders: ReadonlyArray<WeatherProviderId>,
+  marineData: boolean
+): boolean {
+  return (
+    marineData ||
+    (mode === 'single' ? singleProvider === 'open-meteo' : mergeProviders.includes('open-meteo'))
+  );
+}
+
+/**
  * Default ordered provider list for merge mode: all known providers in catalog
  * order. Used as the merge-providers default in the schema and the sanitizer so
  * the schema and runtime cannot drift.

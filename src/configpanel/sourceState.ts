@@ -10,6 +10,7 @@
 // unit.
 
 import {
+  isOpenMeteoActive,
   providerRequiresApiKey,
   WEATHER_PROVIDER_LABELS,
 } from '../constants/notifications-shared.js';
@@ -90,12 +91,12 @@ export function deriveSourceState(form: PanelFormState): SourceState {
   const showKeyField = merged || singleNeedsKey;
   // Open-Meteo's self-host base URL applies whenever an Open-Meteo host is
   // fetched: as the single provider, as one of the merged providers, or for the
-  // marine layer, which passes the same base URL to marine-api.open-meteo.com
-  // whatever the atmospheric provider is. Keep this in step with the runtime
-  // gate in utils/validation.ts, which validates the URL on the same terms.
-  const openMeteoActive =
-    form.marineData ||
-    (merged ? form.mergeProviders.includes('open-meteo') : form.weatherProvider === 'open-meteo');
+  const openMeteoActive = isOpenMeteoActive(
+    form.weatherMode,
+    form.weatherProvider,
+    form.mergeProviders,
+    form.marineData
+  );
   const quotaSummary = describeQuotaPosture(accuWeatherInPlay, form.dailyApiQuota);
   const sourceSummary = describeSource(form, merged, singleNeedsKey, hasAccuWeatherKey);
 

@@ -5,6 +5,7 @@ import { useCallback, useRef, useState } from 'react';
 import {
   CONFIG_DEFAULTS,
   DEFAULT_NOTIFICATIONS,
+  isOpenMeteoActive,
   providerRequiresApiKey,
   resolveMergeProviders,
   resolveWeatherMode,
@@ -192,17 +193,15 @@ function apiKeyErrorFor(form: PanelFormState, trimmedKey: string): string | null
   return validateKey ? validateApiKeyCandidate(trimmedKey) : null;
 }
 
-// The marine layer passes the same base URL to marine-api.open-meteo.com
-// whatever the atmospheric provider is, so it validates on the same terms as a
-// selected Open-Meteo provider. This mirrors the runtime gate in
-// utils/validation.ts and the panel's own deriveSourceState.
 function baseUrlErrorFor(form: PanelFormState): string | null {
-  const openMeteoActive =
-    form.marineData ||
-    (form.weatherMode === 'single'
-      ? form.weatherProvider === 'open-meteo'
-      : form.mergeProviders.includes('open-meteo'));
-  return openMeteoActive ? validateOpenMeteoBaseUrlCandidate(form.openMeteoBaseUrl) : null;
+  return isOpenMeteoActive(
+    form.weatherMode,
+    form.weatherProvider,
+    form.mergeProviders,
+    form.marineData
+  )
+    ? validateOpenMeteoBaseUrlCandidate(form.openMeteoBaseUrl)
+    : null;
 }
 
 async function checkStatusAfterRequest(

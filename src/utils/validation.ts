@@ -17,6 +17,7 @@ import {
 } from '../constants/index.js';
 import {
   DEFAULT_WEATHER_MODE,
+  isOpenMeteoActive,
   providerRequiresApiKey,
   resolveMergeProviders,
   resolveWeatherMode,
@@ -248,9 +249,9 @@ export function validateConfiguration(config: Partial<PluginConfiguration>): Val
   validateWeatherProvider(config, errors);
   validateModeAndMergeProviders(config, warnings);
   validateSelectedProviderCredentials(config, mode, provider, mergeProviders, errors, warnings);
-  const openMeteoActive =
-    mode === 'single' ? provider === 'open-meteo' : mergeProviders.includes('open-meteo');
-  if (openMeteoActive || config.marineData === true) validateOpenMeteoBaseUrl(config, errors);
+  if (isOpenMeteoActive(mode, provider, mergeProviders, config.marineData === true)) {
+    validateOpenMeteoBaseUrl(config, errors);
+  }
   for (const rule of NUMERIC_CONFIG_RULES) {
     validateNumericConfigField(config, rule, errors, warnings);
   }
