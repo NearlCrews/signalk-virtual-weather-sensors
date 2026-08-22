@@ -32,15 +32,23 @@ export function redactSensitiveValue(
   if (typeof value !== 'object' || value === null) return value;
   if (depth >= MAX_DEPTH) return '[depth-truncated]';
   if (seen.has(value)) return '[CIRCULAR]';
+  // `seen` tracks the current path, not every object visited, so the entry is
+  // released once this branch finishes. Keeping it would report the second of
+  // two sibling references to the same object (a shared config or location
+  // passed in two metadata fields) as circular when the graph is acyclic.
   seen.add(value);
-  if (Array.isArray(value)) {
-    return value.map((entry) => redactSensitiveValue(entry, secrets, depth + 1, seen));
+  try {
+    if (Array.isArray(value)) {
+      return value.map((entry) => redactSensitiveValue(entry, secrets, depth + 1, seen));
+    }
+    const result: Record<string, unknown> = {};
+    for (const [key, entry] of Object.entries(value)) {
+      result[key] = SENSITIVE_KEY_PATTERN.test(key)
+        ? '[REDACTED]'
+        : redactSensitiveValue(entry, secrets, depth + 1, seen);
+    }
+    return result;
+  } finally {
+    seen.delete(value);
   }
-  const result: Record<string, unknown> = {};
-  for (const [key, entry] of Object.entries(value)) {
-    result[key] = SENSITIVE_KEY_PATTERN.test(key)
-      ? '[REDACTED]'
-      : redactSensitiveValue(entry, secrets, depth + 1, seen);
-  }
-  return result;
 }

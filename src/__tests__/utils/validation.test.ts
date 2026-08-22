@@ -377,13 +377,33 @@ describe('NMEA2000 helpers', () => {
       expect(out.windGustSpeed).toBe(102.3);
     });
 
-    it('clamps a NaN numeric field to the min instead of emitting NaN', () => {
+    it('drops a NaN optional field instead of emitting NaN or a floored value', () => {
       // Mutation guard: `NaN < min` and `NaN > max` are both false in
       // IEEE-754, so the fast-path range check must explicitly fail on a
-      // non-finite value or the NaN would slip through onto the bus.
+      // non-finite value or the NaN would slip through onto the bus. Flooring
+      // to `min` would be just as wrong on the signed fields, so an optional
+      // field is dropped rather than clamped.
       const sanitized = sanitizeForNMEA2000(fullData({ uvIndex: Number.NaN }));
-      expect(Number.isFinite(sanitized.uvIndex)).toBe(true);
-      expect(sanitized.uvIndex).toBe(0);
+      expect('uvIndex' in sanitized).toBe(false);
+    });
+
+    it('drops a NaN signed field rather than flooring it into a hazard signal', () => {
+      // Flooring would publish pressureTendency -1 ("barometer falling") and
+      // temperatureDeparture24h -50 K from a value that carries no information.
+      const sanitized = sanitizeForNMEA2000(
+        fullData({ pressureTendency: Number.NaN, temperatureDeparture24h: Number.NaN })
+      );
+      expect('pressureTendency' in sanitized).toBe(false);
+      expect('temperatureDeparture24h' in sanitized).toBe(false);
+    });
+
+    it('clamps a NaN required field so the WeatherData contract keeps its shape', () => {
+      // A downstream consumer may assume these are present, so dropping them is
+      // not available; clamping at least keeps a finite in-range number.
+      const sanitized = sanitizeForNMEA2000(
+        fullData({ uvIndex: Number.NaN, dewPoint: Number.NaN })
+      );
+      expect(Number.isFinite(sanitized.dewPoint)).toBe(true);
     });
 
     it('treats a NaN windDirection as out-of-range and folds it to 0', () => {
@@ -391,9 +411,12 @@ describe('NMEA2000 helpers', () => {
       expect(sanitized.windDirection).toBe(0);
     });
 
-    it('treats a NaN apparentWindAngle as out-of-range and folds it to 0', () => {
+    it('drops a NaN apparentWindAngle rather than folding it to "dead ahead"', () => {
+      // The normalizer folds a non-finite angle to 0 rad, which on this path
+      // reads as wind dead ahead. That is a real reading, so the optional
+      // apparent angle is dropped instead of normalized.
       const sanitized = sanitizeForNMEA2000(fullData({ apparentWindAngle: Number.NaN }));
-      expect(sanitized.apparentWindAngle).toBe(0);
+      expect('apparentWindAngle' in sanitized).toBe(false);
     });
 
     it('rewrites apparentWindAngle of exactly -π to +π (canonical convention is left-exclusive)', () => {

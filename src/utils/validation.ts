@@ -494,6 +494,28 @@ const HUMIDITY_BOUNDS = [VALIDATION_LIMITS.HUMIDITY.MIN, VALIDATION_LIMITS.HUMID
  * by `isWithinNMEA2000Ranges` and `sanitizeForNMEA2000` (via
  * `normalizeAngle0To2Pi` / `normalizeAnglePiToPi`).
  */
+/** The numeric keys `WeatherData` declares non-optional. */
+type RequiredNumericKey = {
+  [K in SanitizableNumericKey]-?: undefined extends WeatherData[K] ? never : K;
+}[SanitizableNumericKey];
+
+/**
+ * Numeric fields a downstream consumer may assume are present. A non-finite
+ * value here is an upstream failure, and dropping the key would leave the
+ * `WeatherData` contract short a required field, so these keep the clamp even
+ * though flooring to `min` is a poor answer. The `satisfies` clause stops
+ * compiling if one of them ever becomes optional.
+ */
+const REQUIRED_NUMERIC_KEYS: ReadonlySet<string> = new Set([
+  'temperature',
+  'pressure',
+  'humidity',
+  'windSpeed',
+  'dewPoint',
+  'windChill',
+  'heatIndex',
+] satisfies ReadonlyArray<RequiredNumericKey>);
+
 const NUMERIC_FIELD_RULES: ReadonlyArray<readonly [SanitizableNumericKey, number, number]> = [
   ['temperature', ...TEMP_K_BOUNDS],
   ['pressure', NMEA2000_LIMITS.PRESSURE_PA.MIN, NMEA2000_LIMITS.PRESSURE_PA.MAX],
@@ -545,8 +567,8 @@ function isWithinNMEA2000Ranges(data: WeatherData): boolean {
     const value = data[key];
     // `NaN < min` and `NaN > max` are both false per IEEE-754, so a NaN field
     // would slip through this fast-path and leave NaN on the bus. Treat any
-    // non-finite present value as out-of-range so the slow path's `clamp`
-    // (which floors non-finite to `min`) runs.
+    // non-finite present value as out-of-range so the slow path runs, where an
+    // optional field is dropped and a required one is clamped.
     if (value !== undefined && (!Number.isFinite(value) || value < min || value > max)) {
       return false;
     }
@@ -585,15 +607,35 @@ export function sanitizeForNMEA2000(data: WeatherData): WeatherData {
   const sanitized = { ...data } as Record<string, unknown>;
   for (const [key, min, max] of NUMERIC_FIELD_RULES) {
     const value = data[key];
-    if (value !== undefined) {
-      sanitized[key] = clamp(value, min, max);
+    if (value === undefined) continue;
+    // A non-finite reading carries no information, so drop an optional field
+    // rather than clamp it. `clamp` floors a non-finite value to `min`, which
+    // on the signed fields would publish a specific claim instead of an absent
+    // one: pressureTendency -1 reads as "barometer falling", and
+    // temperatureDeparture24h -50 reads as a 50 K drop.
+    if (!Number.isFinite(value) && !REQUIRED_NUMERIC_KEYS.has(key)) {
+      delete sanitized[key];
+      continue;
     }
+    sanitized[key] = clamp(value, min, max);
   }
+  // windDirection is required, so it keeps the normalizer's non-finite fold to
+  // 0 for the same reason the required scalars keep the clamp, even though 0
+  // rad reads as "wind from due north".
   if (data.windDirection !== undefined) {
     sanitized.windDirection = normalizeAngle0To2Pi(data.windDirection);
   }
+  // The optional apparent angle drops instead: the normalizer would fold a
+  // non-finite value to 0 rad, and 0 rad is "wind dead ahead", a real reading.
   if (data.apparentWindAngle !== undefined) {
-    sanitized.apparentWindAngle = normalizeAnglePiToPi(data.apparentWindAngle);
+    if (Number.isFinite(data.apparentWindAngle)) {
+      sanitized.apparentWindAngle = normalizeAnglePiToPi(data.apparentWindAngle);
+    } else {
+      // An absent key, not an undefined-valued one, so key enumeration over
+      // WeatherData matches an omitted field.
+      // biome-ignore lint/performance/noDelete: cold path, only an out-of-range snapshot reaches it
+      delete sanitized.apparentWindAngle;
+    }
   }
   return sanitized as unknown as WeatherData;
 }
