@@ -67,8 +67,14 @@ function mapEntry(entry: MetNoTimeseriesEntry, type: 'point' | 'observation'): S
     pressurePa: pressureMbar !== undefined ? millibarsToPA(pressureMbar) : undefined,
     cloudCover: optionalPercentageToRatio(instant?.cloud_area_fraction),
     uvIndex: asOptionalNumber(instant?.ultraviolet_index_clear_sky),
+    // next_1_hours covers the hour AFTER the entry time, so it is a forecast
+    // quantity. Publishing it on an observation would make the same field mean
+    // different things per provider, which is why the internal mapper leaves
+    // precipitationLastHour unset for Met.no as well.
     precipitationVolumeM:
-      precipitationMm !== undefined ? precipitationMm * UNITS.PRECIPITATION.MM_TO_M : undefined,
+      type === 'point' && precipitationMm !== undefined
+        ? precipitationMm * UNITS.PRECIPITATION.MM_TO_M
+        : undefined,
   });
   const wind = buildWindFromMs(
     asOptionalNumber(instant?.wind_speed),

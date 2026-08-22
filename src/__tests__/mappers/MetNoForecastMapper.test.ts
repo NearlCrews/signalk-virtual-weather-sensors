@@ -81,6 +81,10 @@ describe('MetNoForecastMapper', () => {
     expect(obs.type).toBe('observation');
     expect(obs.date).toBe('2026-06-22T12:00:00.000Z');
     expect(obs.outside?.temperature).toBeCloseTo(293.15, 2);
+    // next_1_hours covers the hour after the entry time, so an observation
+    // must not carry it even though the same fixture feeds a point forecast
+    // 0.4 mm above.
+    expect(obs.outside?.precipitationVolume).toBeUndefined();
   });
   it('rejects an empty observation response', () => {
     expect(() => mapMetNoToObservation({ properties: { timeseries: [] } })).toThrow(
