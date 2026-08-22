@@ -10,6 +10,7 @@ import {
 } from 'signalk-nearlcrews-ui';
 import { PLUGIN_DISPLAY_NAME } from '../../constants/notifications-shared.js';
 import type { PanelStatusResponse } from '../../types/index.js';
+import { RELATIVE_AGE_FORMAT } from '../relative-age.js';
 import styles from './StatusDashboard.module.css';
 
 const NA = 'n/a';
@@ -69,10 +70,9 @@ export default function StatusDashboard({
           <p className={styles.freshness} role="status" aria-live="polite">
             {stale
               ? `Updated ${formatRelativeAge(staleAgeMs, {
+                  ...RELATIVE_AGE_FORMAT,
                   fallback: 'unknown',
                   locale: 'en',
-                  numeric: 'auto',
-                  style: 'long',
                 })}`
               : ''}
           </p>
