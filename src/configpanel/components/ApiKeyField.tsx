@@ -39,9 +39,15 @@ export default function ApiKeyField({ value, keyError, onChange }: Props): React
   const [testKey, setTestKey] = useState<TestState>({ state: null, message: '' });
   const controllerRef = useRef<AbortController | null>(null);
 
+  // The owning CollapsibleSection retains this field, so collapsing it hides
+  // the subtree with React Activity and runs this cleanup while the component
+  // stays mounted. Clearing the result alongside the abort stops a reopened
+  // section from sitting on a "Testing" state whose request was cancelled,
+  // which would leave the Test button permanently loading.
   useEffect(
     () => () => {
       controllerRef.current?.abort();
+      setTestKey({ state: null, message: '' });
     },
     []
   );
@@ -105,7 +111,12 @@ export default function ApiKeyField({ value, keyError, onChange }: Props): React
         />
       </LabeledField>
       <Cluster justify="between">
-        <p className={styles.result} role="status" aria-live="polite">
+        <p
+          className={styles.result}
+          data-tone={testKey.state === 'ok' ? 'ok' : undefined}
+          role="status"
+          aria-live="polite"
+        >
           {statusMessage}
         </p>
         <Button

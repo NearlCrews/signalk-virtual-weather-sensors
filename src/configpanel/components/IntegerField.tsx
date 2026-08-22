@@ -38,17 +38,21 @@ export default function IntegerField({
   const [draft, setDraft] = useState<string | null>(null);
   const error = draft === null ? null : validateDraft(draft, min, max);
 
+  // The owning CollapsibleSection retains this field, so collapsing it hides
+  // the subtree with React Activity: effect cleanups run and effects re-run
+  // while component state survives. Reporting the live validity here, instead
+  // of resetting on mount, keeps a collapse and reopen from dropping an
+  // in-progress edit or clearing its error. The cleanup releases the id so a
+  // field that really unmounts, like the quota field when AccuWeather leaves
+  // the selection, cannot block Save from off screen.
   useEffect(() => {
-    setDraft(null);
-    onValidityChange(id, true);
+    onValidityChange(id, error === null);
     return () => onValidityChange(id, true);
-  }, [id, onValidityChange]);
+  }, [id, error, onValidityChange]);
 
   const updateDraft = (nextDraft: string): void => {
     setDraft(nextDraft);
-    const nextError = validateDraft(nextDraft, min, max);
-    onValidityChange(id, nextError === null);
-    if (nextError === null) onChange(Number(nextDraft));
+    if (validateDraft(nextDraft, min, max) === null) onChange(Number(nextDraft));
   };
 
   const finishEdit = (): void => {

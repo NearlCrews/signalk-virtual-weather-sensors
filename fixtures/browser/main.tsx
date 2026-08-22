@@ -40,6 +40,7 @@ const parameters = new URLSearchParams(window.location.search);
 const unconfigured = parameters.has('unconfigured');
 const failStatusAfterFirst = parameters.has('status-fails-after-first');
 const failFirstSave = parameters.has('save-failure');
+const slowTestKey = parameters.has('slow-test-key');
 if (parameters.has('unsupported-css-scope')) {
   Object.defineProperty(window, 'CSSScopeRule', { configurable: true, value: undefined });
 }
@@ -60,7 +61,7 @@ const jsonResponse = (body: unknown, responseStatus = 200): Response =>
     headers: { 'content-type': 'application/json' },
   });
 
-window.fetch = async (input): Promise<Response> => {
+window.fetch = async (input, init): Promise<Response> => {
   const rawUrl = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
   const url = new URL(rawUrl, window.location.origin);
   if (url.pathname.endsWith('/status')) {
@@ -79,6 +80,16 @@ window.fetch = async (input): Promise<Response> => {
     document.body.dataset.keyTestCount = String(
       Number(document.body.dataset.keyTestCount ?? 0) + 1
     );
+    // Settles only when the caller aborts, so a test can collapse the section
+    // while the request is in flight and check that reopening it leaves the
+    // field usable rather than stranded in its testing state.
+    if (slowTestKey) {
+      return await new Promise<Response>((_resolve, reject) => {
+        init?.signal?.addEventListener('abort', () => {
+          reject(new DOMException('Aborted', 'AbortError'));
+        });
+      });
+    }
     return jsonResponse({ ok: true, message: 'API key works.' });
   }
   return jsonResponse({ error: `Unhandled fixture request: ${url.pathname}` }, 404);

@@ -1,7 +1,13 @@
 .result {
   min-height: 1lh;
   margin: 0;
-  color: var(--snui-color-success);
+  color: var(--snui-color-text-muted);
   font-size: var(--snui-font-size-sm);
   line-height: var(--snui-line-height);
+}
+
+/* Success tone belongs to a finished, passing test, not to the in-progress
+   message that shares this element. */
+.result[data-tone="ok"] {
+  color: var(--snui-color-success);
 }
