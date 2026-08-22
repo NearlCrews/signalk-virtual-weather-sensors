@@ -26,6 +26,15 @@ const sharedUiVersion = assertSharedUiVersion(repositoryDir);
 
 const HEADER_MARKER = '<!-- generated-for-signalk-nearlcrews-ui:';
 
+/**
+ * Packages whose code ships in the emitted chunks but can never appear in the
+ * module list, so they have to be named here or they are missed. webpack emits
+ * its own module and federation runtime from templates in its source, which is
+ * generated rather than imported: the chunks carry `__webpack_esm_runtime__`
+ * and the container bootstrap while `stats.modules` lists only real modules.
+ */
+const RUNTIME_PACKAGES = ['webpack'];
+
 /** Ask webpack which packages it actually bundles, rather than guessing. */
 function bundledPackageNames() {
   const result = spawnSync(
@@ -42,18 +51,32 @@ function bundledPackageNames() {
     throw new Error('webpack did not produce a module list.');
   }
   const stats = JSON.parse(result.stdout);
-  const names = new Set();
-  for (const module of stats.modules ?? []) {
-    const match = /node_modules\/((?:@[^/]+\/)?[^/]+)/.exec(module.name ?? '');
-    if (match?.[1]) names.add(match[1]);
-  }
+  const names = new Set(RUNTIME_PACKAGES);
+  // Recurse. Module concatenation nests the records it merged under
+  // `modules`, and those nested records carry an empty `chunks` array, so a
+  // walk that only reads the top level or filters on chunk membership silently
+  // drops whatever was concatenated. This build currently nests 66 such
+  // records; every package in them also appears at the top level today, so the
+  // recursion changes nothing right now and exists so a future build-config
+  // change cannot shrink the list without anyone noticing.
+  const collect = (moduleList) => {
+    for (const module of moduleList ?? []) {
+      const match = /node_modules\/((?:@[^/]+\/)?[^/]+)/.exec(module.name ?? '');
+      if (match?.[1]) names.add(match[1]);
+      collect(module.modules);
+      collect(module.children);
+    }
+  };
+  collect(stats.modules);
   return [...names].sort();
 }
 
 function licenseTextFor(name) {
   for (const candidate of ['LICENSE', 'license', 'LICENSE.md', 'LICENSE.txt']) {
     const url = new URL(`node_modules/${name}/${candidate}`, repositoryDir);
-    if (existsSync(url)) return readFileSync(url, 'utf8').trim();
+    // Normalize line endings so a dependency shipping CRLF cannot make the
+    // generated file differ from the committed one and fail the check.
+    if (existsSync(url)) return readFileSync(url, 'utf8').replace(/\r\n/g, '\n').trim();
   }
   return null;
 }
@@ -90,8 +113,10 @@ function render(names) {
     [
       'React and React DOM are supplied by the Signal K admin host as singletons and',
       'are not bundled here; the React entry that does appear is the JSX runtime.',
-      "The plugin bundle `dist/index.js` is built from this repository's own sources",
-      'and carries no third-party code.',
+      'webpack appears because the chunks carry its generated module and federation',
+      'runtime, which is emitted from its own templates rather than imported as a',
+      "module. The plugin bundle `dist/index.js` is built from this repository's own",
+      'sources and carries no third-party code.',
     ].join('\n'),
     ...sections,
   ].join('\n\n');
