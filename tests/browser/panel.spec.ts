@@ -1,24 +1,11 @@
 import { AxeBuilder } from '@axe-core/playwright';
-import { expect, type Locator, type Page, test } from '@playwright/test';
+import { expect, type Page, test } from '@playwright/test';
 import packageJson from '../../package.json' with { type: 'json' };
 
 const EXPECTED_UI_VERSION = packageJson.devDependencies['signalk-nearlcrews-ui'];
 
-/**
- * Focus before clicking. Save and Discard sit in the viewport-bottom
- * ActionBar, and snui 0.8.0 swallows the first click on a control overlapping
- * the docked bar: the focusin clearance scroll moves the control out from
- * under the pointer between press and release. Focusing first means the click
- * lands on a control the bar has already settled. Remove once the library
- * ships the fix.
- */
-async function clickDockedAction(action: Locator): Promise<void> {
-  await action.focus();
-  await action.click();
-}
-
 async function expectSaveBlockedAt(page: Page, fieldName: string): Promise<void> {
-  await clickDockedAction(page.getByRole('button', { name: 'Save configuration' }));
+  await page.getByRole('button', { name: 'Save configuration' }).click();
   const field = page.getByRole('textbox', { name: fieldName, exact: true });
   await expect(field).toBeFocused();
   await expect(field).toHaveAttribute('aria-invalid', 'true');
@@ -46,13 +33,13 @@ test('loads the production remote and never saves a stale number', async ({ page
   await expect(page.getByText('Enter a value from 1 to 60.')).toBeVisible();
 
   const saveButton = page.getByRole('button', { name: 'Save configuration' });
-  await clickDockedAction(saveButton);
+  await saveButton.click();
   await expect(updateFrequency).toBeFocused();
   await expect(page.locator('body')).not.toHaveAttribute('data-save-count', /\d/);
 
   await updateFrequency.fill('45');
   await expect(updateFrequency).not.toHaveAttribute('aria-invalid');
-  await clickDockedAction(saveButton);
+  await saveButton.click();
   await expect(page.locator('body')).toHaveAttribute('data-save-count', '1');
   await expect(page.locator('body')).toHaveAttribute(
     'data-saved-configuration',
@@ -82,7 +69,7 @@ test('reports a synchronous host request failure without claiming persistence', 
   await page.getByRole('spinbutton', { name: 'Weather update frequency (minutes)' }).fill('45');
   const saveButton = page.getByRole('button', { name: 'Save configuration' });
 
-  await clickDockedAction(saveButton);
+  await saveButton.click();
   await expect(page.locator('body')).toHaveAttribute('data-save-attempt-count', '1');
   await expect(page.locator('body')).not.toHaveAttribute('data-save-count', /\d/);
   await expect(page.locator('[data-panel-action-bar]')).toContainText(
@@ -90,7 +77,7 @@ test('reports a synchronous host request failure without claiming persistence', 
   );
   await expect(saveButton).not.toHaveAttribute('aria-busy');
 
-  await clickDockedAction(saveButton);
+  await saveButton.click();
   await expect(page.locator('body')).toHaveAttribute('data-save-attempt-count', '2');
   await expect(page.locator('body')).toHaveAttribute('data-save-count', '1');
   await expect(page.locator('[data-panel-action-bar]')).toContainText(
@@ -107,7 +94,7 @@ test('keeps an edit made during the status check dirty and visible', async ({ pa
   const saveButton = page.getByRole('button', { name: 'Save configuration' });
 
   await updateFrequency.fill('45');
-  await clickDockedAction(saveButton);
+  await saveButton.click();
   await expect(page.locator('body')).toHaveAttribute('data-save-count', '1');
   await updateFrequency.fill('46');
 
@@ -236,7 +223,7 @@ test('keeps an invalid cadence edit and its error across a collapse and reopen',
   await expect(updateFrequency).toHaveValue('999');
   await expect(updateFrequency).toHaveAttribute('aria-invalid', 'true');
   await expect(page.getByText('Enter a value from 1 to 60.')).toBeVisible();
-  await clickDockedAction(page.getByRole('button', { name: 'Save configuration' }));
+  await page.getByRole('button', { name: 'Save configuration' }).click();
   await expect(updateFrequency).toBeFocused();
   await expect(page.locator('body')).not.toHaveAttribute('data-save-count', /\d/);
 });
@@ -441,7 +428,7 @@ test('lets an unconfigured plugin save defaults', async ({ page }) => {
   await expect(page.locator('body')).toHaveAttribute('data-fixture-ready', 'true');
   const saveButton = page.getByRole('button', { name: 'Save configuration' });
   await expect(saveButton).toBeEnabled();
-  await clickDockedAction(saveButton);
+  await saveButton.click();
   await expect(page.locator('body')).toHaveAttribute('data-save-count', '1');
 });
 

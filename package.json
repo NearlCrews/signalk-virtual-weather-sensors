@@ -127,7 +127,7 @@
     "publint": "0.3.24",
     "react": "19.2.8",
     "react-dom": "19.2.8",
-    "signalk-nearlcrews-ui": "0.8.0",
+    "signalk-nearlcrews-ui": "0.8.1",
     "size-limit": "13.0.3",
     "tsx": "^4.23.12",
     "typescript": "7.0.2",
