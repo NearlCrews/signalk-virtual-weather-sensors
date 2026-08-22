@@ -91,13 +91,23 @@ export default function MergeProviderList({
     id: WeatherProviderId,
     isIncluded: boolean
   ): { disabled: boolean; note: string | undefined } => {
-    if (providerRequiresApiKey(id) && !hasAccuWeatherKey) {
+    const keyMissing = providerRequiresApiKey(id) && !hasAccuWeatherKey;
+    // The last included provider is locked whatever its key state. An empty
+    // list is not saved as an empty merge: resolveMergeProviders reads it as
+    // absent and restores every provider, the opposite of what unchecking the
+    // final row asks for.
+    if (isIncluded && included.length === 1) {
+      return {
+        disabled: true,
+        note: keyMissing
+          ? 'At least one provider must stay in the merge. This one stays excluded from fetching until an AccuWeather key is set.'
+          : 'At least one provider must stay in the merge.',
+      };
+    }
+    if (keyMissing) {
       return isIncluded
         ? { disabled: false, note: 'Excluded from fetching until an AccuWeather key is set.' }
         : { disabled: true, note: 'Needs an AccuWeather key. Set it below first.' };
-    }
-    if (isIncluded && included.length === 1) {
-      return { disabled: true, note: 'At least one provider must stay in the merge.' };
     }
     return { disabled: false, note: undefined };
   };

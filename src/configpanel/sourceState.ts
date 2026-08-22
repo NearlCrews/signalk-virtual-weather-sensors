@@ -27,8 +27,9 @@ export interface SourceState {
   // True when the key field should be shown: single mode with a keyed provider,
   // or any merged config (so a key can be added to enable AccuWeather).
   showKeyField: boolean;
-  // True when Open-Meteo fetches: the single Open-Meteo provider, or a member
-  // of the merge list. Drives the self-host base-URL field.
+  // True when an Open-Meteo host is fetched: the single Open-Meteo provider, a
+  // member of the merge list, or the optional marine layer, which uses the same
+  // base URL. Drives the self-host base-URL field.
   openMeteoActive: boolean;
   // Short cadence-summary fragment describing the quota posture.
   quotaSummary: string;
@@ -87,11 +88,14 @@ export function deriveSourceState(form: PanelFormState): SourceState {
   // merged mode regardless, so the operator can add a key to enable
   // AccuWeather in the blend.
   const showKeyField = merged || singleNeedsKey;
-  // Open-Meteo's self-host base URL applies whenever Open-Meteo fetches: as
-  // the single provider, or as one of the merged providers.
-  const openMeteoActive = merged
-    ? form.mergeProviders.includes('open-meteo')
-    : form.weatherProvider === 'open-meteo';
+  // Open-Meteo's self-host base URL applies whenever an Open-Meteo host is
+  // fetched: as the single provider, as one of the merged providers, or for the
+  // marine layer, which passes the same base URL to marine-api.open-meteo.com
+  // whatever the atmospheric provider is. Keep this in step with the runtime
+  // gate in utils/validation.ts, which validates the URL on the same terms.
+  const openMeteoActive =
+    form.marineData ||
+    (merged ? form.mergeProviders.includes('open-meteo') : form.weatherProvider === 'open-meteo');
   const quotaSummary = describeQuotaPosture(accuWeatherInPlay, form.dailyApiQuota);
   const sourceSummary = describeSource(form, merged, singleNeedsKey, hasAccuWeatherKey);
 
