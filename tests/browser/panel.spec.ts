@@ -413,14 +413,84 @@ test('keeps the viewport action bar reachable inside the Admin overflow contract
   );
 });
 
-test('provides 44-pixel coarse-pointer targets @coarse', async ({ page }) => {
-  for (const control of [
-    page.getByRole('radio', { name: 'Auto' }),
-    page.getByRole('button', { name: /Weather source/ }),
-    page.getByRole('button', { name: 'Save configuration' }),
+test('gives every control a reachable target at the pointer size floor', async ({ page }) => {
+  test.slow();
+  for (const heading of [
+    /Weather source/,
+    /Fetch and emission cadence/,
+    /Severe-weather notifications/,
   ]) {
-    expect((await control.boundingBox())?.height).toBeGreaterThanOrEqual(44);
+    await page.getByRole('button', { name: heading }).click();
   }
+  // Merged mode mounts the provider list and its reorder buttons, which are the
+  // smallest controls in the panel.
+  await page.getByRole('combobox', { name: 'Provider mode' }).selectOption('merged');
+
+  const result = await page.evaluate(() => {
+    const root = document.querySelector('[data-snui-root]');
+    if (root === null) return { floor: 0, measured: 0, undersized: [], unreachable: [] };
+    // The shared tokens raise the control minimum under a coarse pointer, so
+    // the floor follows the pointer the browser reports rather than a literal.
+    const floor = matchMedia('(any-pointer: coarse)').matches ? 44 : 40;
+    const undersized: string[] = [];
+    const unreachable: string[] = [];
+    let measured = 0;
+    // Links inside a sentence are deliberately out of scope: their height is
+    // set by the surrounding line, and the target-size rules exempt them for
+    // that reason. The only one here is the AccuWeather signup link in the
+    // API-key description.
+    const controls = root.querySelectorAll(
+      'button, input, select, textarea, [role="radio"], [role="checkbox"], [role="switch"]'
+    );
+    for (const el of controls) {
+      const style = getComputedStyle(el);
+      if (style.display === 'none' || style.visibility === 'hidden') continue;
+      if (el.getBoundingClientRect().height === 0) continue;
+      // Scroll to the middle first: that is what a real tap causes, and it
+      // keeps the docked action bar from sitting over a control that is
+      // perfectly reachable once the user has scrolled to it.
+      el.scrollIntoView({ block: 'center', inline: 'center' });
+      const box = el.getBoundingClientRect();
+      const name = el.getAttribute('aria-label') ?? el.textContent?.trim() ?? el.tagName;
+      measured += 1;
+
+      // A label activates its control, so the hit target is the larger of the
+      // two rather than the raw box a checkbox paints.
+      let width = box.width;
+      let height = box.height;
+      const wrapping = el.closest('label');
+      const associated = el.id === '' ? null : document.querySelector(`label[for="${el.id}"]`);
+      for (const activator of [wrapping, associated]) {
+        if (activator === null) continue;
+        const rect = activator.getBoundingClientRect();
+        if (rect.width > 0 && rect.height > 0) {
+          width = Math.max(width, rect.width);
+          height = Math.max(height, rect.height);
+        }
+      }
+      if (width < floor || height < floor) {
+        undersized.push(`${name}: ${Math.round(width)}x${Math.round(height)} below ${floor}`);
+      }
+
+      // Size alone can pass while something covers the control, so require it
+      // to be the topmost element at its own centre.
+      const top = document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2);
+      const covered =
+        top === null ||
+        !(
+          top === el ||
+          el.contains(top) ||
+          top.contains(el) ||
+          (top.closest('label')?.contains(el) ?? false)
+        );
+      if (covered) unreachable.push(`${name}: covered by ${top?.tagName ?? 'nothing'}`);
+    }
+    return { floor, measured, undersized, unreachable };
+  });
+
+  expect(result.measured).toBeGreaterThan(25);
+  expect(result.undersized).toEqual([]);
+  expect(result.unreachable).toEqual([]);
 });
 
 test('lets an unconfigured plugin save defaults', async ({ page }) => {

@@ -17,6 +17,17 @@
   gap: var(--snui-space-1);
 }
 
+/*
+ * The reorder buttons hold a single arrow glyph, so a compact button sizes its
+ * width to that glyph and lands under the pointer-size floor even though the
+ * shared minimum already governs its height. Squaring them against the same
+ * token keeps both dimensions on the platform floor, which resolves to 40px
+ * with a fine pointer and 44px under the shared coarse-pointer block.
+ */
+.reorder button {
+  min-width: var(--snui-control-min-height);
+}
+
 .badge {
   margin-inline-start: var(--snui-space-2);
 }
