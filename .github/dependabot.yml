@@ -12,6 +12,13 @@ updates:
     commit-message:
       prefix: "chore"
       include: "scope"
+    ignore:
+      # The package advertises a Node 20.18 runtime floor for Cerbo GX and
+      # similar installs, and scripts/check-package.mjs holds the types major
+      # to that floor so type-checking cannot promise a newer Node API than
+      # the package supports. Patches inside major 20 still arrive.
+      - dependency-name: "@types/node"
+        update-types: ["version-update:semver-major"]
     groups:
       dev-deps:
         dependency-type: "development"

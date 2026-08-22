@@ -129,4 +129,20 @@ if (packageJson.devDependencies?.['signalk-nearlcrews-ui'] !== '0.8.0') {
   throw new Error('The UI package must be pinned to exact version 0.8.0 during its 0.x series.');
 }
 
+// @types/node must track the engines.node floor so type-checking sees the API
+// surface the published package actually promises rather than a newer one.
+// The official Signal K plugin workflow does run an armv7 Cerbo GX lane on
+// Node 20, but that lane is continue-on-error and cannot fail a release, so
+// the floor is defended here and by the blocking node-20-compatibility CI job.
+const nodeFloorMajor = /\d+/.exec(packageJson.engines?.node ?? '')?.[0];
+const typesNodeMajor = /\d+/.exec(packageJson.devDependencies?.['@types/node'] ?? '')?.[0];
+if (nodeFloorMajor === undefined) {
+  throw new Error('engines.node must declare a runtime floor.');
+}
+if (typesNodeMajor !== nodeFloorMajor) {
+  throw new Error(
+    `@types/node must stay on major ${nodeFloorMajor} to match the engines.node floor, not ${String(typesNodeMajor)}.`
+  );
+}
+
 console.log(`Packed package passed: ${files.size} files in ${packResult.filename}.`);
