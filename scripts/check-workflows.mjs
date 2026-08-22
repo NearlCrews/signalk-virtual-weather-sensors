@@ -17,7 +17,7 @@ for (const path of workflowPaths) {
 }
 
 const ci = await readFile('.github/workflows/ci.yml', 'utf8');
-for (const expected of ['node-version: 20.18.0', 'run type-check', 'run test', 'run build']) {
+for (const expected of ['node-version: 20.18.0', 'run type-check', 'run build']) {
   if (!ci.includes(expected)) {
     failures.push(`The blocking Node 20.18 lane in ci.yml must retain ${expected}.`);
   }

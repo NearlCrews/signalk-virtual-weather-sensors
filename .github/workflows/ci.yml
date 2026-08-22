@@ -63,10 +63,15 @@ jobs:
       # runtime-floor lane so Node 20.18 is exercised by a supported npm.
       - run: npx --yes npm@11.19.0 ci
       - run: npx --yes npm@11.19.0 run type-check
-      # Vitest runs on the exact 20.18 floor even though Vite and Rolldown
-      # advertise a 20.19 engine range, so the unit suite belongs in this lane.
-      # The upstream armv7 lane runs the suite on node:20-bookworm-slim, which
-      # tracks the latest Node 20 rather than the version this package
-      # advertises, and it is advisory besides.
-      - run: npx --yes npm@11.19.0 run test
+      # The unit suite deliberately does not run here. Rolldown and the oxc
+      # parser ship their native bindings as OPTIONAL dependencies gated on
+      # ^20.19.0 || >=22.12.0, and npm skips an optional dependency whose
+      # engines it cannot satisfy, so a fresh install on 20.18 omits the two
+      # binding packages a Node 24 install resolves. Vitest then dies at
+      # startup with "Cannot find native binding" out of Rolldown. Vitest is
+      # blameless here: its own engines admit ^20.0.0, and running the suite
+      # against a tree installed under a newer Node hides the fault entirely,
+      # because only the install is version-sensitive. The suite runs in the
+      # verify lane on Node 24, so this stays a type-check and build lane on
+      # the exact runtime floor the package advertises.
       - run: npx --yes npm@11.19.0 run build
