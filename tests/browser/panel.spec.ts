@@ -1,10 +1,24 @@
 import { AxeBuilder } from '@axe-core/playwright';
-import { expect, type Page, test } from '@playwright/test';
+import { expect, type Locator, type Page, test } from '@playwright/test';
+import packageJson from '../../package.json' with { type: 'json' };
 
-const EXPECTED_UI_VERSION = process.env.SNUI_EXPECT_VERSION ?? '0.8.0';
+const EXPECTED_UI_VERSION = packageJson.devDependencies['signalk-nearlcrews-ui'];
+
+/**
+ * Focus before clicking. Save and Discard sit in the viewport-bottom
+ * ActionBar, and snui 0.8.0 swallows the first click on a control overlapping
+ * the docked bar: the focusin clearance scroll moves the control out from
+ * under the pointer between press and release. Focusing first means the click
+ * lands on a control the bar has already settled. Remove once the library
+ * ships the fix.
+ */
+async function clickDockedAction(action: Locator): Promise<void> {
+  await action.focus();
+  await action.click();
+}
 
 async function expectSaveBlockedAt(page: Page, fieldName: string): Promise<void> {
-  await page.getByRole('button', { name: 'Save configuration' }).click();
+  await clickDockedAction(page.getByRole('button', { name: 'Save configuration' }));
   const field = page.getByRole('textbox', { name: fieldName, exact: true });
   await expect(field).toBeFocused();
   await expect(field).toHaveAttribute('aria-invalid', 'true');
@@ -32,13 +46,13 @@ test('loads the production remote and never saves a stale number', async ({ page
   await expect(page.getByText('Enter a value from 1 to 60.')).toBeVisible();
 
   const saveButton = page.getByRole('button', { name: 'Save configuration' });
-  await saveButton.click();
+  await clickDockedAction(saveButton);
   await expect(updateFrequency).toBeFocused();
   await expect(page.locator('body')).not.toHaveAttribute('data-save-count', /\d/);
 
   await updateFrequency.fill('45');
   await expect(updateFrequency).not.toHaveAttribute('aria-invalid');
-  await saveButton.click();
+  await clickDockedAction(saveButton);
   await expect(page.locator('body')).toHaveAttribute('data-save-count', '1');
   await expect(page.locator('body')).toHaveAttribute(
     'data-saved-configuration',
@@ -68,7 +82,7 @@ test('reports a synchronous host request failure without claiming persistence', 
   await page.getByRole('spinbutton', { name: 'Weather update frequency (minutes)' }).fill('45');
   const saveButton = page.getByRole('button', { name: 'Save configuration' });
 
-  await saveButton.click();
+  await clickDockedAction(saveButton);
   await expect(page.locator('body')).toHaveAttribute('data-save-attempt-count', '1');
   await expect(page.locator('body')).not.toHaveAttribute('data-save-count', /\d/);
   await expect(page.locator('[data-panel-action-bar]')).toContainText(
@@ -76,7 +90,7 @@ test('reports a synchronous host request failure without claiming persistence', 
   );
   await expect(saveButton).not.toHaveAttribute('aria-busy');
 
-  await saveButton.click();
+  await clickDockedAction(saveButton);
   await expect(page.locator('body')).toHaveAttribute('data-save-attempt-count', '2');
   await expect(page.locator('body')).toHaveAttribute('data-save-count', '1');
   await expect(page.locator('[data-panel-action-bar]')).toContainText(
@@ -93,7 +107,7 @@ test('keeps an edit made during the status check dirty and visible', async ({ pa
   const saveButton = page.getByRole('button', { name: 'Save configuration' });
 
   await updateFrequency.fill('45');
-  await saveButton.click();
+  await clickDockedAction(saveButton);
   await expect(page.locator('body')).toHaveAttribute('data-save-count', '1');
   await updateFrequency.fill('46');
 
@@ -190,7 +204,63 @@ test('uses a shared relative age when status polling becomes stale', async ({
   await expect(page.locator('body')).toHaveAttribute('data-status-request-count', /[1-9]\d*/);
 
   await page.clock.fastForward(30_000);
-  await expect(page.getByText(/^Updated \d+ seconds ago$/)).toBeVisible();
+  const age = page.getByText(/^Updated \d+ seconds ago$/);
+  await expect(age).toBeVisible();
+
+  // The long-form wording is materially longer than the compact default, so
+  // check the narrowest supported viewport still renders it. A nowrap element
+  // beside a flexible sibling can otherwise be squeezed to zero width and
+  // disappear without failing any wider assertion.
+  await page.setViewportSize({ width: 320, height: 900 });
+  await expect(age).toBeVisible();
+  expect((await age.boundingBox())?.width ?? 0).toBeGreaterThan(0);
+  expect(
+    await page.evaluate(() => document.documentElement.scrollWidth - innerWidth)
+  ).toBeLessThanOrEqual(0);
+});
+
+test('keeps an invalid cadence edit and its error across a collapse and reopen', async ({
+  page,
+}) => {
+  const cadence = page.getByRole('button', { name: /Fetch and emission cadence/ });
+  await cadence.click();
+  const updateFrequency = page.getByRole('spinbutton', {
+    name: 'Weather update frequency (minutes)',
+  });
+  await updateFrequency.fill('999');
+  await expect(updateFrequency).toHaveAttribute('aria-invalid', 'true');
+
+  await cadence.click();
+  await cadence.click();
+
+  await expect(updateFrequency).toHaveValue('999');
+  await expect(updateFrequency).toHaveAttribute('aria-invalid', 'true');
+  await expect(page.getByText('Enter a value from 1 to 60.')).toBeVisible();
+  await clickDockedAction(page.getByRole('button', { name: 'Save configuration' }));
+  await expect(updateFrequency).toBeFocused();
+  await expect(page.locator('body')).not.toHaveAttribute('data-save-count', /\d/);
+});
+
+test('frees the API key test when its section is collapsed mid-request', async ({ page }) => {
+  await page.goto('/?slow-test-key');
+  await expect(page.locator('body')).toHaveAttribute('data-fixture-ready', 'true');
+  const source = page.getByRole('button', { name: /Weather source/ });
+  await source.click();
+  await page.getByRole('combobox', { name: 'Provider', exact: true }).selectOption('accuweather');
+  await page.locator('#svws-apikey').fill('test-api-key-1234567890');
+
+  const testKey = page.getByRole('button', { name: 'Test API key' });
+  await testKey.click();
+  await expect(testKey).toHaveAttribute('aria-busy', 'true');
+  await expect(page.locator('body')).toHaveAttribute('data-key-test-count', '1');
+
+  await source.click();
+  await source.click();
+
+  await expect(testKey).not.toHaveAttribute('aria-busy', 'true');
+  await expect(page.getByText('Testing key against AccuWeather...')).toHaveCount(0);
+  await testKey.click();
+  await expect(page.locator('body')).toHaveAttribute('data-key-test-count', '2');
 });
 
 test('blocks an invalid Open-Meteo base URL and focuses its field', async ({ page }) => {
@@ -371,7 +441,7 @@ test('lets an unconfigured plugin save defaults', async ({ page }) => {
   await expect(page.locator('body')).toHaveAttribute('data-fixture-ready', 'true');
   const saveButton = page.getByRole('button', { name: 'Save configuration' });
   await expect(saveButton).toBeEnabled();
-  await saveButton.click();
+  await clickDockedAction(saveButton);
   await expect(page.locator('body')).toHaveAttribute('data-save-count', '1');
 });
 
