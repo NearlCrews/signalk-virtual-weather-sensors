@@ -18,27 +18,27 @@ service; AccuWeather is an optional source for users who have an API key.
 > for safety-of-life decisions: always cross-check official forecasts and
 > warnings against your primary instruments.
 
-## What's new in 1.13.4
+## What's new in 1.13.5
 
-Version 1.13.4 makes configuration saves safer in current Signal K Admin,
-refreshes the shared panel, and strengthens release verification without
-changing emitted paths or saved configuration fields.
+Version 1.13.5 stops the configuration panel from discarding work when a
+section is collapsed, corrects a Met.no observation value, and refreshes the
+shared panel. Emitted paths and saved configuration fields are unchanged.
 
-- **Forward-compatible saves.** Unrecognized top-level and notification fields,
-  including future values of known fields, survive unrelated edits.
-- **Truthful save status.** The panel follows Signal K Admin's fire-and-forget
-  callback and no longer treats an already-running response as proof of a
-  restart.
-- **Reliable admin controls.** API keys use the shared concealed input, and the
-  action bar follows the visual viewport so save actions remain reachable.
-- **Shared marine UI 0.7.1.** The panel adds the System preference, shared
-  typography and status tokens, a theme-safe weather glyph, and a standalone
-  unsupported-browser notice while continuing to bundle the UI library.
-- **Stronger release checks.** Current tooling, deterministic screenshot gates,
-  exact commit metadata, and production federation assertions protect the
-  packaged plugin.
+- **Collapsed sections keep your edits.** Collapsing and reopening the cadence
+  section no longer throws away an in-progress value or clears its error, and
+  an invalid entry keeps blocking Save until you fix or discard it.
+- **The API-key test always recovers.** Collapsing the weather-source section
+  mid-test no longer strands the Test button in its testing state.
+- **Honest Met.no observations.** Met.no publishes precipitation only for the
+  hour ahead, so the Signal K v2 Weather API no longer reports that forecast as
+  an observed past-hour amount.
+- **Shared marine UI 0.8.1.** The panel's action bar now delivers the first
+  click reliably and settles its docking, verified across Chromium, Firefox,
+  WebKit, and a mobile viewport.
+- **Clearer packaging.** The package now ships third-party notices generated
+  from the panel's actual bundle, verified on every packaging run.
 
-See the [v1.13.4 changelog entry](https://github.com/NearlCrews/signalk-virtual-weather-sensors/blob/main/CHANGELOG.md#v1134), or the
+See the [v1.13.5 changelog entry](https://github.com/NearlCrews/signalk-virtual-weather-sensors/blob/main/CHANGELOG.md#v1135), or the
 [full changelog](https://github.com/NearlCrews/signalk-virtual-weather-sensors/blob/main/CHANGELOG.md).
 
 ## What it does

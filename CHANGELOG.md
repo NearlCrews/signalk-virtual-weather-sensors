@@ -7,6 +7,45 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+<a id="v1135"></a>
+
+## [1.13.5] - 2026-08-22
+
+This patch release fixes two configuration-panel defects that discarded work
+when a section was collapsed, corrects a Met.no observation that reported a
+forecast value, and refreshes the shared panel. No configuration migration is
+required.
+
+### Fixed
+
+- Collapsing and reopening the cadence section no longer discards an
+  in-progress value or clears its error message. An invalid entry now keeps
+  blocking Save until it is corrected or discarded, instead of silently
+  reverting to the last saved value.
+- Collapsing the weather-source section while an API-key test is running no
+  longer leaves the Test button stuck in its testing state. The result clears
+  with the cancelled request, so the button is usable again on reopen.
+- The Signal K v2 Weather API no longer reports Met.no's next-hour forecast
+  precipitation as an observed past-hour amount. Met.no publishes precipitation
+  only for the hour ahead, so observations now omit the field, matching how the
+  plugin already treats the equivalent Signal K path.
+- The API-key test message no longer renders in the success color while the
+  test is still in progress.
+
+### Changed
+
+- Upgraded the exactly pinned `signalk-nearlcrews-ui` package to 0.8.1, which
+  fixes first-click delivery and docking stability for the panel's action bar.
+  The browser suite now exercises the action bar without a workaround across
+  Chromium, Firefox, WebKit, and a mobile viewport.
+- Unified the rule for when the self-hosted Open-Meteo base URL applies, so the
+  runtime configuration check and both panel checks read one definition.
+- Added third-party notices covering the packages the configuration panel
+  bundles, generated from the built panel and verified during packaging.
+- Held Node type definitions to the advertised Node 20 runtime floor and
+  guarded that pairing during packaging, so type checking cannot promise a
+  newer Node API than the plugin supports.
+
 <a id="v1134"></a>
 
 ## [1.13.4] - 2026-08-12
@@ -1756,5 +1795,6 @@ First production release of signalk-virtual-weather-sensors: a comprehensive wea
 
 **For technical support and feature requests, please visit the GitHub repository.**
 
-[Unreleased]: https://github.com/NearlCrews/signalk-virtual-weather-sensors/compare/v1.13.4...HEAD
+[Unreleased]: https://github.com/NearlCrews/signalk-virtual-weather-sensors/compare/v1.13.5...HEAD
+[1.13.5]: https://github.com/NearlCrews/signalk-virtual-weather-sensors/compare/v1.13.4...v1.13.5
 [1.13.4]: https://github.com/NearlCrews/signalk-virtual-weather-sensors/compare/v1.13.3...v1.13.4
