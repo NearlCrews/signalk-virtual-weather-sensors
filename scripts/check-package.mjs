@@ -125,8 +125,8 @@ for (const file of files) {
 if (packageJson.dependencies?.['signalk-nearlcrews-ui']) {
   throw new Error('signalk-nearlcrews-ui must be a bundled development dependency.');
 }
-if (packageJson.devDependencies?.['signalk-nearlcrews-ui'] !== '0.7.1') {
-  throw new Error('The UI package must be pinned to exact version 0.7.1 during its 0.x series.');
+if (packageJson.devDependencies?.['signalk-nearlcrews-ui'] !== '0.8.0') {
+  throw new Error('The UI package must be pinned to exact version 0.8.0 during its 0.x series.');
 }
 
 console.log(`Packed package passed: ${files.size} files in ${packResult.filename}.`);
