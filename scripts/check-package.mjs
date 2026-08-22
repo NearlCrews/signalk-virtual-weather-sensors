@@ -32,6 +32,7 @@ for (const requiredPath of [
   'CHANGELOG.md',
   'LICENSE',
   'README.md',
+  'THIRD_PARTY_NOTICES.md',
   'dist/index.d.ts',
   'dist/index.js',
   'dist/index.js.map',

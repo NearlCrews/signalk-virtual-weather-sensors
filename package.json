@@ -57,6 +57,7 @@
     "assets/",
     "README.md",
     "LICENSE",
+    "THIRD_PARTY_NOTICES.md",
     "CHANGELOG.md"
   ],
   "author": "Nearl Crews",
@@ -170,7 +171,8 @@
     "format:check": "biome format .",
     "clean": "node scripts/clean.mjs",
     "size": "size-limit",
-    "package:check": "publint --pack npm --strict && node scripts/check-package.mjs",
+    "licenses": "node scripts/generate-third-party-notices.mjs",
+    "package:check": "publint --pack npm --strict && node scripts/check-package.mjs && node scripts/generate-third-party-notices.mjs --check",
     "validate": "npm run verify",
     "verify:commit": "npm run ci:biome && npm run lint:docs && npm run spellcheck && npm run ci:workflows && npm run boundaries && npm run deadcode",
     "verify:fast": "npm run verify:commit && npm run type-check",
