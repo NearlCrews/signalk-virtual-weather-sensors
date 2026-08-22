@@ -1,0 +1,13 @@
+/*
+ * Panel-wide utility classes. A style used by more than one panel component
+ * belongs here rather than in either component's own module.
+ */
+
+/*
+ * Fixed-width presentation for values the operator reads or verifies character
+ * by character, where 0 against O and 1 against l have to stay distinct: API
+ * keys and service URLs.
+ */
+.identifier {
+  font-family: var(--snui-font-family-mono);
+}

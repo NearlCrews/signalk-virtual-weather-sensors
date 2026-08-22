@@ -9,6 +9,7 @@ import {
   type WeatherProviderId,
 } from '../../constants/notifications-shared.js';
 import type { PanelFormState } from '../hooks/usePanelConfig.js';
+import utilities from '../panel-utilities.module.css';
 import ApiKeyField from './ApiKeyField.js';
 import MergeProviderList from './MergeProviderList.js';
 
@@ -97,6 +98,7 @@ export default function WeatherSourceSection({
         >
           <TextInput
             id="svws-ombase"
+            className={utilities.identifier}
             value={form.openMeteoBaseUrl}
             placeholder="https://api.open-meteo.com"
             onChange={(event) => {

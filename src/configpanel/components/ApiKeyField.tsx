@@ -7,6 +7,7 @@ import {
   validateApiKeyCandidate,
 } from '../../constants/notifications-shared.js';
 import { asJsonObject, fetchJson, toErrorText } from '../api-base.js';
+import utilities from '../panel-utilities.module.css';
 import styles from './ApiKeyField.module.css';
 
 interface TestState {
@@ -81,7 +82,7 @@ export default function ApiKeyField({ value, keyError, onChange }: Props): React
             <a href="https://developer.accuweather.com/" target="_blank" rel="noreferrer">
               developer.accuweather.com
             </a>
-            . Minimum {API_KEY_MIN_LENGTH} characters.
+            . Minimum {API_KEY_MIN_LENGTH} characters. Each Test spends one AccuWeather API call.
           </>
         }
         error={error}
@@ -89,6 +90,7 @@ export default function ApiKeyField({ value, keyError, onChange }: Props): React
       >
         <SecretInput
           id="svws-apikey"
+          className={utilities.identifier}
           autoCapitalize="none"
           autoComplete="off"
           autoCorrect="off"
