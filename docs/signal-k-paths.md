@@ -80,7 +80,7 @@ list.
 | `environment.weather.cloudCover` | ratio (0 to 1) | Cloud coverage |
 | `environment.weather.cloudCeiling` | m | Cloud base height |
 | `environment.weather.temperatureDeparture24h` | K | 24-hour temperature change (a delta, not an absolute temperature; the data browser renders it as a Kelvin delta) |
-| `environment.weather.precipitationLastHour` | m | Liquid-equivalent precipitation depth over the past hour (the data browser renders it in mm) |
+| `environment.weather.precipitationLastHour` | m | Liquid-equivalent precipitation depth over the past hour (the data browser renders it in mm). Open-Meteo and AccuWeather only: Met.no publishes no past-hour accumulation |
 | `environment.weather.speedGust` | m/s | Wind gust speed |
 | `environment.weather.gustFactor` | ratio | Gust / sustained ratio |
 | `environment.weather.beaufortScale` | (unitless) | Beaufort scale category (0..12) |

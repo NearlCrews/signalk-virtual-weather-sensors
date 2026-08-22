@@ -11,7 +11,9 @@
  *   conservative-tendency - falling (-1) wins; else priority first-present
  *   priority-present      - first element that supplies the field (WBGT, categorical)
  *   categorical           - same as priority-present for string/number labels
- *   primary               - always from dataList[0] (timestamp)
+ *   primary               - always from dataList[0] (timestamp, which
+ *                           MergingWeatherProvider then replaces with the
+ *                           oldest surviving child's)
  *   derived               - recomputed from the merged base through shared helpers
  *   excluded              - omitted (apparent-wind fields added downstream in WeatherService)
  */
@@ -55,6 +57,11 @@ export const FIELD_MERGE_KINDS: Readonly<Record<keyof WeatherData, MergeKind>> =
   dewPoint: 'mean',
   windChill: 'derived',
   heatIndex: 'derived',
+  // Taken from the primary here, then replaced by MergingWeatherProvider with
+  // the oldest surviving child's timestamp: a blend is only as fresh as its
+  // stalest input, and the staleness gate reads this value. Nothing between the
+  // two steps consumes it, so this stays 'primary' rather than growing a kind
+  // that only the caller could implement.
   timestamp: 'primary',
   // Enhanced temperatures
   realFeel: 'mean',
@@ -73,7 +80,11 @@ export const FIELD_MERGE_KINDS: Readonly<Record<keyof WeatherData, MergeKind>> =
   visibility: 'hazard-min',
   cloudCover: 'mean',
   cloudCeiling: 'mean',
-  // Precipitation
+  // Precipitation. Every contributor here reports a genuine preceding-hour
+  // accumulation, so the max is a quantity of one kind. Keep forecast
+  // precipitation out of it for the same reason WBGT is not averaged above: a
+  // forecast for a coming hour and an accumulation over an elapsed one are
+  // different quantities, and blending them yields a number that is neither.
   precipitationLastHour: 'hazard-max',
   // Temperature trend
   temperatureDeparture24h: 'mean',

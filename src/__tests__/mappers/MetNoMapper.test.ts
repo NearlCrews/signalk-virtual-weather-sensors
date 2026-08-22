@@ -44,7 +44,10 @@ describe('mapMetNoCurrentToWeatherData', () => {
     expect(wd.cloudCover).toBeCloseTo(0.25, 5);
     expect(wd.windGustSpeed).toBeCloseTo(8, 5);
     expect(wd.uvIndex).toBeCloseTo(3, 5);
-    expect(wd.precipitationLastHour).toBeCloseTo(1.2, 5);
+    // Locationforecast 2.0 carries no past-hour accumulation: next_1_hours is
+    // the hour AFTER the entry time, so the past-hour leaf stays unset rather
+    // than publishing a forecast under an observation's meta.
+    expect(wd.precipitationLastHour).toBeUndefined();
     expect(wd.severeCondition?.label).toBe('Snow');
     expect(typeof wd.beaufortScale).toBe('number');
     expect(wd.visibility).toBeUndefined(); // Met.no provides no visibility

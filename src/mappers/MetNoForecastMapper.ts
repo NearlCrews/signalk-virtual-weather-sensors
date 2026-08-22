@@ -171,7 +171,11 @@ function processGridWindow(entry: MetNoTimeseriesEntry, byDay: Map<string, DayAc
       precipMm,
       hasPrecip: precipPresent,
       description: desc,
-      has12: hour === 12,
+      // Only a noon window that actually carried a symbol_code claims the day's
+      // description. Setting this on a symbol-less noon window would lock out
+      // every later window, because accumulateWindow's fallback branch requires
+      // has12 to still be false.
+      has12: hour === 12 && desc !== undefined,
     });
   } else {
     accumulateWindow(existing, hour, maxC, minC, precipMm, precipPresent, desc);

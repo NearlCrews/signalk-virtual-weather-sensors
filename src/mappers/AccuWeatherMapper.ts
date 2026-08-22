@@ -200,6 +200,7 @@ export function mapAccuWeatherCurrentToWeatherData(
   // condition here, at the provider boundary, so the notifier never decodes
   // an AccuWeather-specific value.
   const severeCondition = accuWeatherSevereCondition(enhancedConditions.weatherIcon);
+  const description = capString(conditions.WeatherText, ACCUWEATHER.MAX_DESCRIPTION_LENGTH);
 
   return {
     temperature,
@@ -214,8 +215,11 @@ export function mapAccuWeatherCurrentToWeatherData(
     windChill,
     // `description` carries the AccuWeather phrase; `weatherIcon` (decoded
     // into enhancedConditions) carries the icon code for severe-condition
-    // classification.
-    description: capString(conditions.WeatherText, ACCUWEATHER.MAX_DESCRIPTION_LENGTH),
+    // classification. Omitted rather than emitted empty when the phrase is
+    // missing: the field is optional, and an empty string would both publish a
+    // blank `environment.weather.description` and, as the merge primary, mask a
+    // real phrase from another provider.
+    ...(description !== '' && { description }),
     timestamp: requireObservationTimestamp(
       conditions.LocalObservationDateTime,
       'AccuWeather current conditions'

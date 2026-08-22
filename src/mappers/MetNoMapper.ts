@@ -6,7 +6,8 @@
  * `WeatherData` shape and everything downstream (mapper, notifier, PGN bridge)
  * stays provider-agnostic. Met.no gives fewer fields than AccuWeather: it has no
  * RealFeel, wet-bulb, pressure tendency, precipitation type, ceiling, visibility,
- * or 24h departure, so those leaves are left unset. Wind chill and heat index are
+ * past-hour precipitation, or 24h departure, so those leaves are left unset.
+ * Wind chill and heat index are
  * recomputed, and wet-bulb globe temperature is estimated so the heat-stress band
  * still functions.
  */
@@ -107,9 +108,16 @@ function extractOptionalFields(
   const windGustFactor = calculateGustFactor(windGustSpeed, windSpeed);
   const uvIndex = asOptionalNumber(details.ultraviolet_index_clear_sky);
 
-  // mm, no conversion; WeatherData.precipitationLastHour is mm
-  const precipitationLastHour = asOptionalNumber(next1h?.details?.precipitation_amount);
-
+  // `precipitationLastHour` is deliberately NOT populated from Met.no.
+  // Locationforecast 2.0 is a pure forecast product with no backward-looking
+  // precipitation: `next_1_hours.details.precipitation_amount` covers the hour
+  // FOLLOWING the entry time, while the field, its meta, and the path docs all
+  // promise an accumulation over the hour BEFORE it. Publishing a forecast
+  // there would redefine `environment.weather.precipitationLastHour` per
+  // provider, which breaks the rule that a path means the same thing whatever
+  // `$source` says, and it would feed the hazard-max merge a quantity that is
+  // not the one the other providers contribute. A forward-looking value belongs
+  // on its own leaf, which is deferred work rather than a rename of this one.
   const symbolCode = next1h?.summary?.symbol_code;
   const base = metNoSymbolBase(symbolCode);
   const description = base !== undefined ? MET_NO_DESCRIPTIONS.get(base) : undefined;
@@ -120,7 +128,6 @@ function extractOptionalFields(
     ...(windGustSpeed !== undefined && { windGustSpeed }),
     ...(windGustFactor !== undefined && { windGustFactor }),
     ...(uvIndex !== undefined && { uvIndex }),
-    ...(precipitationLastHour !== undefined && { precipitationLastHour }),
     ...(description !== undefined && { description }),
     ...(severeCondition !== undefined && { severeCondition }),
   };
