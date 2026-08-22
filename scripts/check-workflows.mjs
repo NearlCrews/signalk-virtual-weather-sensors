@@ -17,8 +17,10 @@ for (const path of workflowPaths) {
 }
 
 const ci = await readFile('.github/workflows/ci.yml', 'utf8');
-if (!ci.includes('node-version: 20.18.0') || !ci.includes('run build')) {
-  failures.push('ci.yml must retain a blocking Node 20.18 type-check and build lane.');
+for (const expected of ['node-version: 20.18.0', 'run type-check', 'run test', 'run build']) {
+  if (!ci.includes(expected)) {
+    failures.push(`The blocking Node 20.18 lane in ci.yml must retain ${expected}.`);
+  }
 }
 if (!ci.includes('npm@11.19.0')) {
   failures.push('The Node 20.18 compatibility lane must use its latest supported npm 11 release.');

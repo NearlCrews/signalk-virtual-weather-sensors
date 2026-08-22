@@ -63,6 +63,10 @@ jobs:
       # runtime-floor lane so Node 20.18 is exercised by a supported npm.
       - run: npx --yes npm@11.19.0 ci
       - run: npx --yes npm@11.19.0 run type-check
-      # Current Vitest and Rolldown require Node 20.19 or newer. Keep this lane
-      # focused on the package's exact Node 20.18 runtime floor.
+      # Vitest runs on the exact 20.18 floor even though Vite and Rolldown
+      # advertise a 20.19 engine range, so the unit suite belongs in this lane.
+      # The upstream armv7 lane runs the suite on node:20-bookworm-slim, which
+      # tracks the latest Node 20 rather than the version this package
+      # advertises, and it is advisory besides.
+      - run: npx --yes npm@11.19.0 run test
       - run: npx --yes npm@11.19.0 run build
