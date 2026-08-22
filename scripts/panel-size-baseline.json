@@ -4,5 +4,5 @@
   "gzipBytes": 17184,
   "maximumIncreasePercent": 5,
   "approvedCeilingGzipBytes": 35000,
-  "approval": "Recalibrated for the signalk-nearlcrews-ui 0.8.0 upgrade, which measured 33590 gzip bytes. The 0.8.0 additions that grew the panel are runtime popover-trigger and labelable-control validation, the panel-contained toast viewport host, and viewport-bottom action-bar focus preservation. The prior 33000-byte ceiling covered the 0.7.0 migration: the viewport action bar, secret input, compatibility notice, and relative-age helper integrations."
+  "approval": "Recalibrated for the signalk-nearlcrews-ui 0.8.0 upgrade, which measures 33980 gzip bytes against the 35000-byte ceiling. The 0.8.0 additions that grew the panel are runtime popover-trigger and labelable-control validation, the panel-contained toast viewport host, and viewport-bottom action-bar focus preservation; the panel's own merge-provider and status work accounts for the rest. The prior 33000-byte ceiling covered the 0.7.0 migration: the viewport action bar, secret input, compatibility notice, and relative-age helper integrations."
 }

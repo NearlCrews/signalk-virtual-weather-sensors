@@ -98,11 +98,11 @@ The configuration panel in the Signal K admin UI, with a live status card
 showing update count, rolling 24-hour API usage, active alerts, and minutes
 since the last fetch.
 
-[![Virtual Weather Sensors inside the current Signal K Admin plugin configuration screen](assets/screenshots/00-admin-hero.png)](assets/screenshots/00-admin-hero.png)
+![Virtual Weather Sensors inside the current Signal K Admin plugin configuration screen](assets/screenshots/00-admin-hero.png)
 
 | Status dashboard | Notification toggles | Night-red theme |
 | --- | --- | --- |
-| [![The config panel status card and fetch cadence settings](assets/screenshots/config-panel-status.png)](assets/screenshots/config-panel-status.png) | [![The severe-weather notification toggles, opt-in and off by default](assets/screenshots/config-panel-notifications.png)](assets/screenshots/config-panel-notifications.png) | [![The night-red helm theme, designed to preserve night vision](assets/screenshots/config-panel-night.png)](assets/screenshots/config-panel-night.png) |
+| ![The config panel status card and fetch cadence settings](assets/screenshots/config-panel-status.png) | ![The severe-weather notification toggles, opt-in and off by default](assets/screenshots/config-panel-notifications.png) | ![The night-red helm theme, designed to preserve night vision](assets/screenshots/config-panel-night.png) |
 
 ## Requirements
 
