@@ -402,7 +402,12 @@ describe('plugin entry: registerWithRouter exposes panel REST endpoints', () => 
 
   it('GET /api/status returns the live banner + counters once data has arrived', async () => {
     stubState.getCurrentWeatherData = () => ({ temperature: 283.15 });
-    stubState.formatStatusBanner = () => 'Running, last update 0m ago (1 update)';
+    // The route reads the same banner the emission tick pushes, so the panel
+    // and the admin banner cannot disagree about a quota pause or stale data.
+    stubState.getTickBanner = () => ({
+      kind: 'status' as const,
+      message: 'Running, last update 0m ago (1 update)',
+    });
     stubState.getDataAgeMs = () => 30_000;
 
     const app = buildMockApp({
@@ -434,7 +439,10 @@ describe('plugin entry: registerWithRouter exposes panel REST endpoints', () => 
     // tripped apiKeyRejected and the update timer is cleared. The panel must
     // reflect that as not-running so the green indicator does not lie.
     stubState.getCurrentWeatherData = () => ({ temperature: 283.15 });
-    stubState.formatStatusBanner = () => 'API key rejected: update key in plugin settings';
+    stubState.getTickBanner = () => ({
+      kind: 'status' as const,
+      message: 'API key rejected: update key in plugin settings',
+    });
     stubState.isApiKeyRejected = () => true;
 
     const app = buildMockApp();
@@ -454,6 +462,33 @@ describe('plugin entry: registerWithRouter exposes panel REST endpoints', () => 
 
     // Restore the stub for following tests.
     stubState.isApiKeyRejected = () => false;
+    await plugin.stop();
+  });
+
+  it('GET /api/status reports running: false and the paused banner while the quota is exhausted', async () => {
+    // The lifecycle state is still `running`, but fetches are paused, so the
+    // panel must not show a green indicator alongside the admin error banner.
+    stubState.getCurrentWeatherData = () => ({ temperature: 283.15 });
+    stubState.getTickBanner = () => ({
+      kind: 'error' as const,
+      message: 'AccuWeather daily quota reached (50/50 in last 24h), fetches paused',
+    });
+
+    const app = buildMockApp();
+    const plugin = createPlugin(app as never);
+    await plugin.start(baseSettings, () => {});
+    const { router, routes } = captureRoutes();
+    plugin.registerWithRouter?.(router as never);
+
+    const { res, body } = makeRes();
+    const handler = routes.get('GET /api/status');
+    if (!handler) throw new Error('status route not registered');
+    handler({}, res);
+
+    const payload = body.json as Record<string, unknown>;
+    expect(payload.running).toBe(false);
+    expect(payload.banner).toContain('daily quota reached');
+
     await plugin.stop();
   });
 

@@ -8,6 +8,7 @@
 import type { ServerAPI } from '@signalk/server-api';
 import { WindCalculator } from '../calculators/WindCalculator.js';
 import { API_QUOTA, ERROR_CODES, PERFORMANCE, PLUGIN } from '../constants/index.js';
+import { providerRequiresApiKey } from '../constants/notifications-shared.js';
 import { createCurrentWeatherProvider } from '../providers/createCurrentWeatherProvider.js';
 import type { CurrentWeatherProvider } from '../providers/WeatherProvider.js';
 import {
@@ -352,7 +353,9 @@ export class WeatherService {
       const observationMs = Date.parse(marine.timestamp);
       this.lastMarineObservationMs = Number.isFinite(observationMs) ? observationMs : null;
     } catch (error) {
-      if (isAbortError(error) && this.state === 'stopping') return;
+      // Same guard as the weather path: a marine fetch can still reject after
+      // the drain window closes and stop() has finished.
+      if (this.state !== 'running' && this.state !== 'starting') return;
       this.logger('warn', 'Marine data fetch failed; keeping last marine snapshot', {
         error: toErrorMessage(error),
       });
@@ -438,26 +441,45 @@ export class WeatherService {
     if (this.isQuotaExhausted()) {
       return { kind: 'error', message: this.formatQuotaExhaustedMessage() };
     }
-    const fetchAgeMs = this.getDataAgeMs();
-    const observationAgeMs = elapsedSinceMs(this.lastObservationMs);
-    const ageMs = Math.max(fetchAgeMs ?? 0, observationAgeMs ?? 0);
     if (this.isDataStale()) {
-      return { kind: 'error', message: this.formatStaleMessage(ageMs) };
+      return { kind: 'error', message: this.formatStaleMessage() };
     }
     return { kind: 'status', message: this.formatStatusBanner() };
   }
 
   /**
-   * Operator-facing stale-data banner message. Floors (not rounds) so a delta
-   * that has crossed the threshold by, say, 30 seconds reports the actual
-   * whole minute since last update, not the next minute up. Pluralizes for
-   * the "1 minute ago" boundary.
+   * Whole minutes with the unit, floored (not rounded) so an age that has
+   * crossed a threshold by, say, 30 seconds reports the whole minute actually
+   * elapsed rather than the next minute up. Pluralizes for the "1 minute"
+   * boundary.
    * @private
    */
-  private formatStaleMessage(ageMs: number): string {
+  private static formatWholeMinutes(ageMs: number): string {
     const ageMin = msToWholeMinutes(ageMs);
-    const unit = ageMin === 1 ? 'minute' : 'minutes';
-    return `Weather data stale: last update ${ageMin} ${unit} ago`;
+    return `${ageMin} ${ageMin === 1 ? 'minute' : 'minutes'}`;
+  }
+
+  /**
+   * Operator-facing stale-data banner message.
+   *
+   * `isDataStale()` trips on either the fetch age or the provider's observation
+   * age, and the two can differ by a lot: a provider that keeps serving an old
+   * observation while fetches keep succeeding trips the second without the
+   * first. Name whichever one tripped, so the banner cannot report an
+   * observation age under a "last update" label while `/api/status` reports the
+   * fetch age under the same name.
+   * @private
+   */
+  private formatStaleMessage(): string {
+    const fetchAgeMs = this.getDataAgeMs();
+    const observationAgeMs = elapsedSinceMs(this.lastObservationMs);
+    const fetchStale = fetchAgeMs !== null && fetchAgeMs > this.maxStalenessMs();
+    const fetchAge = WeatherService.formatWholeMinutes(fetchAgeMs ?? 0);
+    if (fetchStale || observationAgeMs === null) {
+      return `Weather data stale: last update ${fetchAge} ago`;
+    }
+    const observationAge = WeatherService.formatWholeMinutes(observationAgeMs);
+    return `Weather data stale: provider observation ${observationAge} old, last update ${fetchAge} ago`;
   }
 
   /**
@@ -609,8 +631,20 @@ export class WeatherService {
    * deliberately NOT treated as fatal: it can be transient (an IP block or a
    * brief plan glitch), so it surfaces an error but leaves the retry timer
    * running to recover on its own.
+   *
+   * Only a key-gated provider can have its key rejected. `fetchJson` tags every
+   * upstream 401 with the same code, and a keyless provider can produce one
+   * too: a self-hosted `openMeteoBaseUrl` behind an authenticating proxy, for
+   * instance. Latching `apiKeyRejected` there would stop all fetching until a
+   * config change and tell the operator to fix a key that provider has no field
+   * for, so the terminal latch is gated on the provider actually using a key.
+   * Merged mode never latches either: a key-gated child failing leaves the
+   * blend running on its siblings, and `MergingWeatherProvider` reports
+   * "All weather providers failed", which carries no 401 tag.
    */
   private isAuthError(error: unknown): boolean {
+    if (this.config.weatherMode === 'merged') return false;
+    if (!providerRequiresApiKey(this.config.weatherProvider)) return false;
     return error instanceof Error && error.message.includes(ERROR_CODES.NETWORK.API_UNAUTHORIZED);
   }
 
@@ -654,7 +688,7 @@ export class WeatherService {
   }
 
   /**
-   * Update weather data from AccuWeather API. Single-flight: a scheduled tick
+   * Update weather data from the active provider. Single-flight: a scheduled tick
    * that fires while a slow fetch is still in flight (or a forceUpdate racing
    * the timer) joins the existing fetch instead of starting a second one.
    * Concurrent fetches would double-spend API quota and race the post-fetch
@@ -762,7 +796,13 @@ export class WeatherService {
         });
       }
     } catch (error) {
-      if (isAbortError(error) && this.state === 'stopping') return;
+      // Same guard the success path uses. `waitForActiveUpdates` gives the
+      // drain 1000 ms before stop() proceeds, so a fetch can still reject after
+      // the service reaches 'stopped'. Counting that failure, logging it, or
+      // writing its banner would leave a stopped plugin displaying an error,
+      // and a 401 arriving there would latch apiKeyRejected on a discarded
+      // instance.
+      if (this.state !== 'running' && this.state !== 'starting') return;
       this.errorCount++;
       this.consecutiveFailures++;
       const errorMessage = toErrorMessage(error);

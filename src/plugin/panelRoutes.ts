@@ -65,14 +65,20 @@ export function registerPanelRoutes(router: IRouter, instance: PluginInstance): 
     }
     const snapshot = ws.getServiceStatus();
     const ageMs = ws.getDataAgeMs();
+    // Same banner the emission tick pushes to the admin UI, so the panel and
+    // the admin banner cannot disagree. getTickBanner owns the precedence
+    // between the quota-exhausted pause, stale data, and the live status line;
+    // formatStatusBanner alone reports only the last of those.
+    const tick = ws.getTickBanner();
     // A rejected API key is a terminal state: the update timer is cleared
-    // and no further fetches will fire until config changes. Reflect that on
-    // the `running` flag so the panel does not show a green indicator on a
-    // plugin that has effectively stopped.
-    const running = instance.state === 'running' && !ws.isApiKeyRejected();
+    // and no further fetches will fire until config changes. A quota pause or
+    // stale data likewise means the plugin has stopped emitting. Reflect all
+    // three on the `running` flag so the panel does not show a green indicator
+    // on a plugin that has effectively stopped.
+    const running = instance.state === 'running' && !ws.isApiKeyRejected() && tick.kind !== 'error';
     const payload: PanelStatusResponse = {
       running,
-      banner: ws.formatStatusBanner(),
+      banner: tick.message,
       updates: snapshot.updateCount,
       quotaUsedLast24h: ws.getRequestCountLast24h(),
       lastUpdateMinutesAgo: ageMs === null ? null : msToWholeMinutes(ageMs),
@@ -149,6 +155,15 @@ function sanitizeClientErrorMessage(raw: string): string {
  * shape consumed by the admin-UI panel; no key persistence, no plugin-state
  * mutation. Costs one AccuWeather API call per test, half what a full
  * currentconditions probe would.
+ *
+ * That call is deliberately NOT charged to the plugin's rolling 24h quota
+ * window, so `/api/status` under-reports usage by the number of tests run. Two
+ * reasons: the candidate is not necessarily the configured key, and the window
+ * is persisted through a single file that the live service owns, so a throwaway
+ * probe writing it would simply be overwritten by the live service's next save.
+ * Charging the live window instead would mutate plugin state, which these
+ * read-only routes deliberately do not do. The TEST_KEY_RATE_LIMIT bounds the
+ * under-count, and the panel tells the operator a test spends a call.
  * @private
  */
 async function testApiKey(apiKey: string): Promise<{ ok: boolean; message: string }> {

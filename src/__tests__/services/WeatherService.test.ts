@@ -810,7 +810,7 @@ describe('WeatherService - Fetch Skip and Error Escalation', () => {
   });
 
   it('escalates a 401 to apiKeyRejected, clears the timer, and refuses subsequent fetches', async () => {
-    const config = createTestConfig({ dailyApiQuota: 0 });
+    const config = createTestConfig({ dailyApiQuota: 0, weatherProvider: 'accuweather' });
     const mockProvider = {
       name: 'AccuWeather',
       // Error message carries the API_UNAUTHORIZED tag isAuthError() looks for.
@@ -847,6 +847,46 @@ describe('WeatherService - Fetch Skip and Error Escalation', () => {
     expect(mockProvider.fetchCurrentWeather).toHaveBeenCalledTimes(1);
     await service.forceUpdate();
     expect(mockProvider.fetchCurrentWeather).toHaveBeenCalledTimes(1);
+
+    await service.stop();
+  });
+
+  it('does not latch apiKeyRejected on a 401 from a keyless provider', async () => {
+    // A self-hosted openMeteoBaseUrl behind an authenticating proxy answers 401,
+    // and fetchJson tags every 401 with the same code. Latching there would stop
+    // all fetching and tell the operator to fix a key Open-Meteo has no field for.
+    const config = createTestConfig({ dailyApiQuota: 0, weatherProvider: 'open-meteo' });
+    const mockProvider = {
+      name: 'Open-Meteo',
+      fetchCurrentWeather: vi
+        .fn()
+        .mockRejectedValue(new Error('Open-Meteo request failed: API_UNAUTHORIZED (401)')),
+      getRequestCount: vi.fn(() => 0),
+      getRequestCountLast24h: vi.fn(() => 0),
+      getCacheStats: vi.fn(() => ({ size: 0 })),
+    };
+
+    const service = new WeatherService(mockApp as never, config, mockLogger, {
+      weatherProvider: mockProvider as never,
+      signalKService: makeSignalK() as never,
+      setBanner,
+    });
+
+    await service.start();
+    await expect(service.forceUpdate()).rejects.toThrow();
+
+    expect(service.isApiKeyRejected()).toBe(false);
+    // The retry timer survives, so a transient proxy fault recovers on its own.
+    expect((service as unknown as { updateTimer: unknown }).updateTimer).not.toBeNull();
+    expect(bannerCalls.some((b) => b.message.includes('rejected the configured API key'))).toBe(
+      false
+    );
+    const errorBanner = bannerCalls.find((b) => b.kind === 'error');
+    expect(errorBanner?.message).toContain('Weather update failed');
+
+    // Fetching continues rather than early-returning on a latched flag.
+    await expect(service.forceUpdate()).rejects.toThrow();
+    expect(mockProvider.fetchCurrentWeather).toHaveBeenCalledTimes(2);
 
     await service.stop();
   });
