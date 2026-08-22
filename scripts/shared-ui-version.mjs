@@ -7,7 +7,7 @@ import { readFileSync } from 'node:fs';
  * build: bumping the dependency means bumping this constant too, after
  * working through the package's migration notes.
  */
-const EXPECTED_SHARED_UI_VERSION = '0.8.1';
+const EXPECTED_SHARED_UI_VERSION = '0.8.2';
 
 /**
  * Asserts that the manifest pin and the installed package both match the

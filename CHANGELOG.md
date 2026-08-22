@@ -34,10 +34,13 @@ required.
 
 ### Changed
 
-- Upgraded the exactly pinned `signalk-nearlcrews-ui` package to 0.8.1, which
-  fixes first-click delivery and docking stability for the panel's action bar.
-  The browser suite now exercises the action bar without a workaround across
-  Chromium, Firefox, WebKit, and a mobile viewport.
+- Upgraded the exactly pinned `signalk-nearlcrews-ui` package to 0.8.2, which
+  fixes first-click delivery for the panel's action bar, settles its docking in
+  a single frame, holds compact and icon-only buttons to the shared control
+  size, leaves the scroll position alone when a pointer moves focus, and
+  re-syncs the theme when a collapsed section reopens. The browser suite
+  exercises the action bar without a workaround across Chromium, Firefox,
+  WebKit, and a mobile viewport.
 - Unified the rule for when the self-hosted Open-Meteo base URL applies, so the
   runtime configuration check and both panel checks read one definition.
 - Added third-party notices covering the packages the configuration panel

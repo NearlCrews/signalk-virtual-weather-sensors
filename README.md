@@ -32,9 +32,10 @@ shared panel. Emitted paths and saved configuration fields are unchanged.
 - **Honest Met.no observations.** Met.no publishes precipitation only for the
   hour ahead, so the Signal K v2 Weather API no longer reports that forecast as
   an observed past-hour amount.
-- **Shared marine UI 0.8.1.** The panel's action bar now delivers the first
-  click reliably and settles its docking, verified across Chromium, Firefox,
-  WebKit, and a mobile viewport.
+- **Shared marine UI 0.8.2.** The panel's action bar now delivers the first
+  click reliably and settles its docking, every button meets the touch-target
+  size for your pointer, and the theme follows a section you reopen. Verified
+  across Chromium, Firefox, WebKit, and a mobile viewport.
 - **Clearer packaging.** The package now ships third-party notices generated
   from the panel's actual bundle, verified on every packaging run.
 
