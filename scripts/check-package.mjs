@@ -1,6 +1,7 @@
 import { execFile } from 'node:child_process';
 import { readdir, readFile } from 'node:fs/promises';
 import { promisify } from 'node:util';
+import { assertExactSharedUiPin } from './shared-ui-version.mjs';
 
 const execFileAsync = promisify(execFile);
 const packageJson = JSON.parse(await readFile('package.json', 'utf8'));
@@ -126,8 +127,17 @@ for (const file of files) {
 if (packageJson.dependencies?.['signalk-nearlcrews-ui']) {
   throw new Error('signalk-nearlcrews-ui must be a bundled development dependency.');
 }
-if (packageJson.devDependencies?.['signalk-nearlcrews-ui'] !== '0.8.2') {
-  throw new Error('The UI package must be pinned to exact version 0.8.2 during its 0.x series.');
+// Two invariants, deliberately separate. The shape guard is permanent and
+// imported rather than restated, so it cannot be hand-edited here to admit a
+// range; the literal below is the deliberate-bump tripwire, and it stays
+// independent of the one in shared-ui-version.mjs so that editing one pin site
+// still fails the other.
+const sharedUiPin = packageJson.devDependencies?.['signalk-nearlcrews-ui'];
+assertExactSharedUiPin(sharedUiPin, 'package.json');
+if (sharedUiPin !== '0.8.2') {
+  throw new Error(
+    `The UI package must be pinned to exact version 0.8.2 during its 0.x series, not ${sharedUiPin}.`
+  );
 }
 
 // @types/node must track the engines.node floor so type-checking sees the API
