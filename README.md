@@ -21,14 +21,21 @@ service; AccuWeather is an optional source for users who have an API key.
 ## What's new in 1.13.5
 
 Version 1.13.5 stops the configuration panel from discarding work when a
-section is collapsed, corrects a Met.no observation value, and refreshes the
-shared panel. Emitted paths and saved configuration fields are unchanged.
+section is collapsed, makes the panel's status banner report paused and stale
+states, corrects a Met.no observation value, and refreshes the shared panel.
+Emitted paths and saved configuration fields are unchanged.
 
 - **Collapsed sections keep your edits.** Collapsing and reopening the cadence
   section no longer throws away an in-progress value or clears its error, and
-  an invalid entry keeps blocking Save until you fix or discard it.
-- **The API-key test always recovers.** Collapsing the weather-source section
-  mid-test no longer strands the Test button in its testing state.
+  collapsing mid-test no longer strands the API-key Test button in its testing
+  state.
+- **The status banner tells the truth.** A plugin paused on its quota or gone
+  stale no longer shows a green Running banner in the panel while the admin UI
+  shows an error, and the stale message names which age tripped it.
+- **The merge list saves what you chose.** The last included provider can no
+  longer be unchecked, so a save cannot silently restore every provider, and
+  the self-hosted Open-Meteo base URL stays visible whenever the sea-state
+  layer uses it.
 - **Honest Met.no observations.** Met.no publishes precipitation only for the
   hour ahead, so the Signal K v2 Weather API no longer reports that forecast as
   an observed past-hour amount.
@@ -36,8 +43,6 @@ shared panel. Emitted paths and saved configuration fields are unchanged.
   click reliably and settles its docking, every button meets the touch-target
   size for your pointer, and the theme follows a section you reopen. Verified
   across Chromium, Firefox, WebKit, and a mobile viewport.
-- **Clearer packaging.** The package now ships third-party notices generated
-  from the panel's actual bundle, verified on every packaging run.
 
 See the [v1.13.5 changelog entry](https://github.com/NearlCrews/signalk-virtual-weather-sensors/blob/main/CHANGELOG.md#v1135), or the
 [full changelog](https://github.com/NearlCrews/signalk-virtual-weather-sensors/blob/main/CHANGELOG.md).

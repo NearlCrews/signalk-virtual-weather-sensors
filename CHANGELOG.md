@@ -12,9 +12,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [1.13.5] - 2026-08-22
 
 This patch release fixes two configuration-panel defects that discarded work
-when a section was collapsed, corrects a Met.no observation that reported a
-forecast value, and refreshes the shared panel. No configuration migration is
-required.
+when a section was collapsed, reports the paused and stale states in the
+panel's status banner, keeps the merge list from silently restoring every
+provider, corrects a Met.no observation that reported a forecast value, and
+refreshes the shared panel. No configuration migration is required.
 
 ### Fixed
 
@@ -25,12 +26,36 @@ required.
 - Collapsing the weather-source section while an API-key test is running no
   longer leaves the Test button stuck in its testing state. The result clears
   with the cancelled request, so the button is usable again on reopen.
+- The API-key test message no longer renders in the success color while the
+  test is still in progress.
+- The last included provider in the merge list can no longer be unchecked,
+  closing a gap when that provider was AccuWeather without an API key. Saving
+  the resulting empty list silently restored every provider, since the runtime
+  reads an empty list as absent, so unchecking the final row produced the
+  opposite of what it asked for.
+- The self-hosted Open-Meteo base URL field now stays visible and validated
+  whenever the sea-state layer is enabled, whatever atmospheric provider is
+  selected. The marine layer fetches through that same host, so an operator on
+  Met.no or AccuWeather can now see and correct the URL their marine fetch
+  actually uses before the runtime rejects it.
+- The merge list's reorder buttons now meet the minimum touch-target size in
+  width as well as height, drawing their floor from the shared control token:
+  44 pixels under a coarse pointer and 40 with a fine one.
+- The panel's status banner now reports the paused and stale states the
+  Signal K admin banner already shows, instead of a green indicator with a
+  healthy Running line while emission was gated off. The stale message names
+  whether the fetch age or the observation age tripped it, a keyless provider
+  no longer latches a terminal API-key error on an upstream 401, and a fetch
+  that fails while the plugin is stopping no longer counts as a failure.
 - The Signal K v2 Weather API no longer reports Met.no's next-hour forecast
   precipitation as an observed past-hour amount. Met.no publishes precipitation
   only for the hour ahead, so observations now omit the field, matching how the
   plugin already treats the equivalent Signal K path.
-- The API-key test message no longer renders in the success color while the
-  test is still in progress.
+- A non-finite optional reading is now dropped during NMEA 2000 sanitizing
+  instead of clamped to a value with signed meaning, such as a falling
+  barometer, a 50 K temperature drop, or wind dead ahead. No current mapper
+  can produce one; the latent hazard is closed. Log redaction also no longer
+  marks a repeated sibling reference as circular.
 
 ### Changed
 
@@ -41,13 +66,22 @@ required.
   re-syncs the theme when a collapsed section reopens. The browser suite
   exercises the action bar without a workaround across Chromium, Firefox,
   WebKit, and a mobile viewport.
+- Set the API key and self-hosted Open-Meteo base URL fields in the shared
+  fixed-width identifier face, so characters like 0 and O stay distinct while
+  checking a value, and noted on the key field that each Test spends one
+  AccuWeather API call.
 - Unified the rule for when the self-hosted Open-Meteo base URL applies, so the
   runtime configuration check and both panel checks read one definition.
-- Added third-party notices covering the packages the configuration panel
-  bundles, generated from the built panel and verified during packaging.
+- Added third-party notices covering the four packages the configuration panel
+  bundles, including webpack's generated module and federation runtime,
+  generated from the built panel and verified during packaging.
 - Held Node type definitions to the advertised Node 20 runtime floor and
   guarded that pairing during packaging, so type checking cannot promise a
   newer Node API than the plugin supports.
+- Widened the browser suite's touch-target sweep to measure every control in
+  the panel on all four browser projects, asserted the swept control count,
+  and read the expected shared-UI version from the package manifest instead of
+  a literal.
 
 <a id="v1134"></a>
 
