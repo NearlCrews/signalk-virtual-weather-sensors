@@ -77,12 +77,14 @@ for (const sharedPackage of ['react', 'react-dom']) {
   const share = federationOptions.shared[sharedPackage];
   if (
     share?.singleton !== true ||
-    share.strictVersion !== true ||
+    share.strictVersion !== undefined ||
     share.requiredVersion !== '^19.2.0' ||
     share.import !== false
   ) {
     throw new Error(
-      `webpack.config.cjs must consume host-provided ${sharedPackage} as a strict singleton.`
+      `webpack.config.cjs must consume host-provided ${sharedPackage} as a non-strict singleton: ` +
+        'the Signal K Admin registers its React share below the version it ships, so a strict ' +
+        'check refuses to mount on a compatible host.'
     );
   }
 }

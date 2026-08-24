@@ -20,11 +20,16 @@ service; AccuWeather is an optional source for users who have an API key.
 
 ## What's new in 1.13.5
 
-Version 1.13.5 stops the configuration panel from discarding work when a
-section is collapsed, makes the panel's status banner report paused and stale
-states, corrects a Met.no observation value, and refreshes the shared panel.
-Emitted paths and saved configuration fields are unchanged.
+Version 1.13.5 restores the configuration panel on Signal K 2.24 hosts, stops
+the panel from discarding work when a section is collapsed, makes the status
+banner report paused and stale states, corrects a Met.no observation value,
+and refreshes the shared panel. Emitted paths and saved configuration fields
+are unchanged.
 
+- **The panel mounts on Signal K 2.24 hosts again.** The Admin UI registers
+  its React share below the React it actually ships, so the panel's strict
+  version check refused a fully compatible host. The check now warns and
+  continues.
 - **Collapsed sections keep your edits.** Collapsing and reopening the cadence
   section no longer throws away an in-progress value or clears its error, and
   collapsing mid-test no longer strands the API-key Test button in its testing
@@ -36,9 +41,6 @@ Emitted paths and saved configuration fields are unchanged.
   longer be unchecked, so a save cannot silently restore every provider, and
   the self-hosted Open-Meteo base URL stays visible whenever the sea-state
   layer uses it.
-- **Honest Met.no observations.** Met.no publishes precipitation only for the
-  hour ahead, so the Signal K v2 Weather API no longer reports that forecast as
-  an observed past-hour amount.
 - **Shared marine UI 0.8.2.** The panel's action bar now delivers the first
   click reliably and settles its docking, every button meets the touch-target
   size for your pointer, and the theme follows a section you reopen. Verified

@@ -11,14 +11,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [1.13.5] - 2026-08-22
 
-This patch release fixes two configuration-panel defects that discarded work
-when a section was collapsed, reports the paused and stale states in the
-panel's status banner, keeps the merge list from silently restoring every
-provider, corrects a Met.no observation that reported a forecast value, and
-refreshes the shared panel. No configuration migration is required.
+This patch release restores the configuration panel on Signal K 2.24 hosts,
+fixes two configuration-panel defects that discarded work when a section was
+collapsed, reports the paused and stale states in the panel's status banner,
+keeps the merge list from silently restoring every provider, corrects a Met.no
+observation that reported a forecast value, and refreshes the shared panel. No
+configuration migration is required.
 
 ### Fixed
 
+- The configuration panel mounts on Signal K 2.24 hosts again. The Admin UI
+  registers its React share as 19.0.0 while actually shipping React 19.2.4, so
+  the panel's strict share check rejected a fully compatible host and the
+  panel never appeared. The host-provided singletons keep their `^19.2.0`
+  requirement, but a version mismatch now warns and continues instead of
+  refusing to mount, and the packaging gate rejects a reintroduced strict
+  check.
 - Collapsing and reopening the cadence section no longer discards an
   in-progress value or clears its error message. An invalid entry now keeps
   blocking Save until it is corrected or discarded, instead of silently
