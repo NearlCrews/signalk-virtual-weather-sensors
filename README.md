@@ -20,16 +20,16 @@ service; AccuWeather is an optional source for users who have an API key.
 
 ## What's new in 1.13.5
 
-Version 1.13.5 restores the configuration panel on Signal K 2.24 hosts, stops
-the panel from discarding work when a section is collapsed, makes the status
-banner report paused and stale states, corrects a Met.no observation value,
-and refreshes the shared panel. Emitted paths and saved configuration fields
-are unchanged.
+Version 1.13.5 restores the configuration panel that 1.13.4 left unable to
+load on Signal K 2.24.x hosts, stops the panel from discarding work when a
+section is collapsed, makes the status banner report paused and stale states,
+corrects a Met.no observation value, and refreshes the shared panel. Emitted
+paths and saved configuration fields are unchanged.
 
-- **The panel mounts on Signal K 2.24 hosts again.** The Admin UI registers
-  its React share below the React it actually ships, so the panel's strict
-  version check refused a fully compatible host. The check now warns and
-  continues.
+- **The panel loads again on Signal K 2.24.x hosts.** The 1.13.4 panel did
+  not mount there at all: the Admin registers its React share below the React
+  it actually ships, and the panel's strict version check refused the fully
+  compatible host. The check now warns and continues.
 - **Collapsed sections keep your edits.** Collapsing and reopening the cadence
   section no longer throws away an in-progress value or clears its error, and
   collapsing mid-test no longer strands the API-key Test button in its testing
