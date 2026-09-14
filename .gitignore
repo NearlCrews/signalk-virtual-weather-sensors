@@ -76,6 +76,7 @@ Thumbs.db
 # Claude Code
 .claude/
 .remember/
+.superpowers/
 
 # Optional npm cache
 .npm
