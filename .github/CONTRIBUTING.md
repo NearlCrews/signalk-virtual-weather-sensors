@@ -84,7 +84,22 @@ chore: update dependencies
 ## License and attribution
 
 By contributing, you agree your contributions are licensed under the
-Apache-2.0 License that covers this project. The plugin fetches data from
-the AccuWeather API under AccuWeather's terms of use; do not commit API
-keys, and keep the existing log redaction in place for any new code path
-that could log configuration values.
+Apache-2.0 License that covers this project.
+
+The plugin fetches from four upstream services, each under its own terms:
+
+- **Open-Meteo** (the default source, and the optional marine layer): free tier
+  is CC BY 4.0 and non-commercial, with published per-minute, per-hour, and
+  per-day ceilings. Commercial users point `openMeteoBaseUrl` at a paid or
+  self-hosted instance.
+- **Met.no** Locationforecast and MetAlerts: requires an identifying
+  User-Agent carrying a contact address, and returns a hard 403 on coordinates
+  with more than four decimal places. The plugin sends
+  `PLUGIN.CONTACT_USER_AGENT`; do not remove it.
+- **The NWS API** (weather warnings in US waters): also requires an identifying
+  User-Agent, and the plugin sends the same one.
+- **AccuWeather**: under AccuWeather's terms of use, with a per-key daily cap
+  the plugin enforces itself.
+
+Do not commit API keys, and keep the existing log redaction in place for any
+new code path that could log configuration values.

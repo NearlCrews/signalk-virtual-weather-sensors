@@ -1,0 +1,5 @@
+{
+  "weatherProvider": "open-meteo",
+  "updateFrequency": 15,
+  "emissionInterval": 5
+}

@@ -31,14 +31,21 @@ block list.
 
 AccuWeather rate-limited the request, and AccuWeather enforces its own per-plan
 daily limit. The plugin defaults to a 50 calls/day budget. Each
-`updateFrequency` tick costs 1 call (location lookups are cached for 1 hour, so
-they rarely cost extra).
+`updateFrequency` tick costs 1 current-conditions call. The location key is
+cached for 24 hours per 1 km cell, so a stationary vessel adds 1 location
+lookup per day and a vessel underway adds 1 lookup for each fetch that lands
+in a new cell (up to 2 calls per fetch). The fetch timer's jitter only
+lengthens the interval, so the counts below are upper bounds. A restart, a
+panel key test, and on-demand v2 Weather API calls spend from the same budget.
 
-Fix: the default `updateFrequency` of 30 minutes uses 48 calls/day, which sits
-inside the default 50/day budget. If you have lowered `updateFrequency` below
-30, raise it back: at 5 minutes the plugin would burn 288 calls/day. See
-`examples/slow-update.json` for an ultra-conservative 60-minute profile (24
-calls/day) suitable when the key is shared with other AccuWeather consumers.
+Fix: the default `updateFrequency` of 30 minutes costs at most 48 conditions
+calls plus 1 lookup per day at a fixed position (49 of the default 50), and up
+to 96 per day underway. If you have lowered `updateFrequency` below 30, raise
+it back: at 5 minutes the plugin would burn 288 conditions calls per day
+before lookups. Underway on the default quota, use 60 minutes (at most 48 calls
+per day with a lookup on every fetch) or raise `dailyApiQuota` to your plan's
+allowance. See `examples/slow-update.json` for that 60-minute profile, which
+also suits a key shared with other AccuWeather consumers.
 
 ## `RESPONSE_TOO_LARGE: AccuWeather response is N bytes`
 
@@ -50,11 +57,16 @@ page, captive portal).
 Fix: confirm the Signal K server can reach `dataservice.accuweather.com`
 directly without an HTML interstitial.
 
-## `Running [quota 90% used]` (warning prefix in the status banner)
+## `Running [quota N% used]` (warning prefix in the status banner)
 
-The rolling 24-hour API request count has crossed 90% of `dailyApiQuota`. The
+The rolling 24-hour API request count has crossed 90% of `dailyApiQuota`, and
+`N` is the real figure, so the prefix keeps climbing past 90 as usage does. The
 plugin still fetches normally; this is a soft warning so operators can raise
 the quota or `updateFrequency` before fetches actually pause.
+
+In merged mode the banner also names any provider that has stopped contributing
+(`AccuWeather paused at quota`). The blend keeps producing values from its
+remaining sources, so this is the only signal that it has quietly degraded.
 
 Fix: the suffix `K/Q today` shows the live count. Either raise `dailyApiQuota`
 (paid-tier keys typically allow 25k+/day) or increase `updateFrequency` to
@@ -75,25 +87,71 @@ fetches gradually as the oldest hourly buckets age out. To resume immediately,
 either raise `dailyApiQuota` and restart the plugin, or set `dailyApiQuota: 0`
 to disable the cap entirely.
 
-## `Weather data stale: last update N minutes ago`
+## `Weather update failed: <error>`
 
-The plugin emits this banner when the last successful fetch is older than
-`2 x updateFrequency`. The most common causes are upstream API errors, network
-outages, and missing GPS position.
+The plugin emits this banner as soon as a fetch fails, so the underlying cause
+is visible without waiting for the staleness watchdog below. The message carries
+the error code from the list above, and a `(N consecutive)` suffix once more than
+one attempt in a row has failed. The banner stays up until a fetch succeeds.
 
-Fix: the Signal K server logs will show the underlying error code from the
-list above. The banner clears automatically once the next fetch succeeds.
+Fix: read the error code. It clears automatically on the next successful fetch.
 
-## `No position available for weather data`
+## `Weather data stale: ...`
 
-The plugin throws this when `navigation.position` on the self vessel is null,
-undefined, or comes from an excluded source (currently any source label
-containing `node-red`). There is no fixed-coordinates fallback.
+Two different conditions raise a stale banner, and the wording says which:
+
+- `Weather data stale: last update N minutes ago` means the last SUCCESSFUL
+  fetch is older than `2 x updateFrequency`. The usual causes are upstream API
+  errors, network outages, and a missing GPS position.
+- `Weather data stale: provider observation N minutes old, last update M minutes ago`
+  means fetches are succeeding but the provider is serving an old observation.
+  Each provider declares its own limit: 1 hour for Open-Meteo, 2 hours for
+  AccuWeather, and 3 hours for Met.no (also the default for a provider that
+  declares none). This is the case that network symptoms cannot explain: every
+  HTTP call returns 200 while the model behind them has stopped updating.
+
+Emission stops while data is stale, but an already-active notification is NOT
+cleared: a provider outage must never look like a hazard clearing. Each active
+band is re-emitted once with `(data N min old)` appended to its message so a
+consumer subscribed to `notifications.environment.*` can see the caveat too.
+
+Fix: for the first shape, the Signal K server logs will show the underlying
+error code from the list above. For the second, wait for the provider's model to
+refresh, or switch weather source. Both banners clear once a fresh observation
+arrives.
+
+## `Waiting for GPS position`
+
+The plugin emits this banner when it cannot read a usable `navigation.position`
+from the self vessel, so it has no point to fetch weather for. There is no
+fixed-coordinates fallback. Three causes:
+
+- The path is absent, null, or has no valid Signal K timestamp.
+- It comes from an excluded source (currently any source label containing
+  `node-red`).
+- Its timestamp is more than 30 minutes old. Position gets a far looser age
+  budget than the speed, course, and heading trio that feeds apparent wind,
+  because it only selects a weather grid cell, but a source that publishes a
+  position less often than every 30 minutes still fails the gate.
 
 Fix: confirm a GPS source is publishing `navigation.position` in the Signal K
-Data Browser. Any source whose label contains `node-red` is deliberately
-ignored to avoid feedback loops, so a Node-RED-published position will not be
-picked up; use a different source label or a real GPS/AIS feed.
+Data Browser, and check its timestamp is current. Any source whose label
+contains `node-red` is deliberately ignored to avoid feedback loops, so a
+Node-RED-published position will not be picked up; use a different source label
+or a real GPS/AIS feed.
+
+## The plugin reports every fetch as invalid right after boot
+
+On a host with no real-time clock, the system time is wrong until NTP settles.
+A provider observation more than an hour ahead of the local clock is rejected
+with `INVALID_WEATHER_DATA: ... timestamp is far ahead of this host's clock`,
+and a clock behind UTC by any amount also suppresses observation-age staleness
+detection, because an age is never allowed to go negative. The plugin logs
+`Provider observation is ahead of this host clock` with the measured skew.
+
+Fix: none needed if it self-heals within a minute or two of boot; that is NTP
+settling. If it persists, fix the host clock (`timedatectl status` on a systemd
+host) and consider fitting an RTC module.
 
 ## Weather paths vanish from a downstream consumer after switching the weather source
 

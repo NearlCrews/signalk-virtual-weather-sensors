@@ -80,11 +80,11 @@ list.
 | `environment.weather.cloudCover` | ratio (0 to 1) | Cloud coverage |
 | `environment.weather.cloudCeiling` | m | Cloud base height |
 | `environment.weather.temperatureDeparture24h` | K | 24-hour temperature change (a delta, not an absolute temperature; the data browser renders it as a Kelvin delta) |
-| `environment.weather.precipitationLastHour` | m | Liquid-equivalent precipitation depth over the past hour (the data browser renders it in mm). Open-Meteo and AccuWeather only: Met.no publishes no past-hour accumulation |
+| `environment.weather.precipitationLastHour` | m | Liquid-equivalent precipitation depth over the past hour (the data browser renders it in mm). Open-Meteo and AccuWeather only: Met.no publishes no past-hour accumulation. Open-Meteo's value comes from the hourly `precipitation` series, whose bucket is documented as the sum of the preceding hour; the current block reports only a 15-minute accumulation and is not used for this path |
 | `environment.weather.speedGust` | m/s | Wind gust speed |
-| `environment.weather.gustFactor` | ratio | Gust / sustained ratio |
+| `environment.weather.gustFactor` | (unitless) | Gust / sustained ratio, always >= 1. Deliberately ships without `units`: `ratio` would trip consumers that clamp ratio paths to [0, 1]. Omitted entirely when the upstream gust reading is not above the sustained wind speed |
 | `environment.weather.beaufortScale` | (unitless) | Beaufort scale category (0..12) |
-| `environment.weather.heatStressIndex` | (unitless) | WBGT-derived heat-stress category on US military WBGT flag cutoffs: 0 (<26.7 C), 1 (26.7..27.8 C), 2 (27.8..29.4 C), 3 (29.4..32.2 C), 4 (>=32.2 C) |
+| `environment.weather.heatStressIndex` | (unitless) | WBGT-derived heat-stress category: 0 (<26.7 C), 1 (26.7..27.8 C), 2 (27.8..29.4 C, the US military green flag), 3 (29.4..32.2 C, spanning the yellow and red flags), 4 (>=32.2 C, black flag). Index 1 starts at the 26.7 C (80 F) NWS work-rest band, not at a flag boundary |
 | `environment.weather.windSpeedApparent` | m/s | Apparent wind speed, calculated from the provider's wind and vessel motion |
 | `environment.weather.windAngleApparent` | rad | Apparent wind angle relative to bow (-pi..pi, negative to port); omitted when no heading is available |
 | `environment.weather.description` | (string) | Plain-language summary of the current condition |
@@ -130,16 +130,16 @@ Instance numbers and PGN priority are assigned by the emitter; this plugin does
 not embed them in the deltas it produces.
 
 PGN 130312 has fixed enum slots for Outside Temperature, Dew Point, Apparent
-Wind Chill, and Heat Index. The other temperature paths this plugin emits
-(RealFeel, RealFeel shade, wet bulb, wet bulb globe, AccuWeather apparent) have
-no PGN 130312 enum slot, so they reach Signal K consumers but do not bridge to
-PGN 130312 on the bus.
+Wind Chill, Theoretical Wind Chill, and Heat Index. The other temperature paths
+this plugin emits (RealFeel, RealFeel shade, wet bulb, wet bulb globe,
+AccuWeather apparent) have no PGN 130312 enum slot, so they reach Signal K
+consumers but do not bridge to PGN 130312 on the bus.
 
 | PGN | Description | Source paths emitted by this plugin |
 |-----|-------------|-------------------------------------|
 | 130306 | Wind Data | `environment.wind.speedOverGround`, `directionTrue`. Synthetic apparent wind is producer-namespaced (`environment.weather.windSpeedApparent` / `windAngleApparent`); it bridges to 130306 only through the cannon's opt-in `WIND_WEATHER_APPARENT` conversion (off by default, so a real masthead anemometer is not displaced). Gust (`environment.weather.speedGust`) does not bridge: the cannon ships no conversion for it |
 | 130314 | Actual Pressure | `environment.outside.pressure` (Source 0 = Atmospheric). This is the modern carrier for atmospheric pressure; the older PGN 130311 (Environmental Parameters) and PGN 130310 are marked OBSOLETE in the NMEA2000 / canboat PGN database |
-| 130316 | Temperature Extended Range | Modern successor to PGN 130312, carrying the same temperature data with wider range and finer resolution. An emitter may route the four enum-routed temperature paths through 130316 instead of 130312 |
+| 130316 | Temperature Extended Range | Modern successor to PGN 130312, carrying the same temperature data with wider range and finer resolution. An emitter may route the five enum-routed temperature paths through 130316 instead of 130312 |
 | 130312 | Temperature (enum-routed) | `environment.outside.temperature`, `dewPointTemperature`, `apparentWindChillTemperature`, `theoreticalWindChillTemperature`, `heatIndexTemperature` |
 | 130313 | Humidity | `environment.outside.relativeHumidity` |
 | 130323 | Meteorological Station Data | Carries wind speed, wind direction, wind gust, atmospheric pressure, and ambient temperature in one PGN. It is the natural structural fit for a virtual weather-station feed and an emitter may map this plugin's wind, pressure, and temperature paths onto it |
@@ -216,7 +216,7 @@ actionable on its own:
 | Band | Sample message |
 |------|----------------|
 | Wind | `Gale-force wind: Bf9 from SW, 19 m/s, gusts 27 m/s, 998 hPa` |
-| Visibility | `Reduced visibility: 0.8 km, ceiling 90 m, rain 2.5 mm/h` |
+| Visibility | `Reduced visibility: 0.8 km, ceiling 90 m, rain 2.5 mm/h` (kilometers are rounded DOWN, so the figure can never read above the threshold that fired the band) |
 | Heat | `High heat stress: HSI 3, WBGT 32 C, RH 78%, RealFeel (shade) 35 C` |
 | Cold | `Cold exposure caution: wind chill -2 C, air 1 C, wind 12 m/s` |
 | Severe | `Thunderstorms: Severe thunderstorms approaching, 998 hPa` |
@@ -253,7 +253,9 @@ the endpoints. These endpoints are served:
   the forecasts omit).
 - `GET /signalk/v2/api/weather/warnings` returns region-aware severe-weather
   alerts: keyless NWS CAP active alerts for US waters, keyless Met.no MetAlerts
-  for Norwegian waters, and a Signal K `Not supported!` error elsewhere.
+  for Norwegian waters, and an empty list elsewhere. An upstream failure inside
+  a covered region is reported as an error rather than an empty list, so a
+  consumer can tell "unavailable" from "none active".
 
 Forecast and observation requests honor the Signal K `startDate` and
 `maxCount` options. Nonempty custom requests are rejected because this provider
@@ -293,6 +295,17 @@ it.
 
 Each daily forecast entry summarizes the daytime half of the day and populates
 these fields when the active source provides them.
+
+Every provider stamps `date` at UTC midnight of the local calendar day it
+describes, so a consumer can bucket entries by date without the boundary moving
+when the source changes.
+
+Met.no derives its daily entries from the four canonical 6-hour grid windows, and
+reports a day only when all four are present. A Locationforecast document
+fetched mid-afternoon begins at the current hour, so today's earlier windows are
+absent entirely and the remaining ones are not a whole-day summary: the leading
+and trailing partial days are omitted rather than published as one. Open-Meteo
+and AccuWeather supply their own whole-day aggregates and are unaffected.
 
 | Field | Unit | Description |
 |-------|------|-------------|

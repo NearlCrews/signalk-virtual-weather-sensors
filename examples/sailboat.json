@@ -1,4 +1,5 @@
 {
+  "weatherProvider": "accuweather",
   "accuWeatherApiKey": "REPLACE_WITH_YOUR_ACCUWEATHER_API_KEY",
   "updateFrequency": 30,
   "emissionInterval": 5,

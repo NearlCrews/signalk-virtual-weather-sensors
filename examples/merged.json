@@ -1,0 +1,7 @@
+{
+  "weatherMode": "merged",
+  "mergeProviders": ["open-meteo", "met-no"],
+  "updateFrequency": 15,
+  "emissionInterval": 5,
+  "marineData": true
+}

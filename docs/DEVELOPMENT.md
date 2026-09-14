@@ -45,27 +45,33 @@ The repository ships one npm package and one Signal K plugin.
   matches the Signal K admin host.
 - `tests/browser/` verifies production federation behavior with Playwright.
 
-The panel uses `signalk-nearlcrews-ui` for themes, layout, fields, feedback,
-metrics, collapsible sections, and actions. Keep provider, quota, status, and
-save-confirmation behavior local to this plugin. Project CSS must stay in
-focused CSS modules and use public `--snui-*` tokens.
+The panel uses `signalk-nearlcrews-ui` for the panel shell, themes, layout,
+fields, the number field, feedback, metrics, collapsible sections, and the save
+bar. Keep provider, quota, status, and save-confirmation behavior local to this
+plugin. Project CSS must stay in focused CSS modules and use public `--snui-*`
+tokens; the panel never re-implements a primitive the shared UI provides.
 
-The shared UI is pinned exactly at 0.8.2. Fresh profiles use Auto without
-writing an implicit preference. Auto follows an explicit host theme and
-otherwise stays Light; System is the explicit operating-system preference.
+The shared UI is pinned exactly at 0.11.1. Fresh profiles use Match Admin
+without writing an implicit preference. Match Admin follows an explicit host
+theme and otherwise stays Light; Match device is the explicit operating-system
+preference.
 Retired plugin-specific theme keys are ignored, and only
 `signalk-nearlcrews-ui.theme.v1` is authoritative.
 
-React and React DOM are host-provided Module Federation singletons with the
-range `^19.2.0` and `import: false`, deliberately without `strictVersion`: the
-Signal K Admin registers its React share below the version it actually ships
-(2.24.0 registers 19.0.0 while bundling 19.2.4), so a strict check refuses to
-mount on a fully compatible host. A version mismatch warns and continues. The
-shared UI library is bundled into the remote. `npm run check:panel` proves
-that no other package enters the host share scope, the shares stay non-strict,
-neither framework package is bundled, the shared UI library is present, CSS
-identifiers and container names survive webpack, and the size budget is
-respected.
+React and React DOM are host-provided Module Federation singletons. The
+`shared` map comes from `signalk-nearlcrews-ui/federation`, the map the shared
+UI was verified with: the range `^19.2.0`, `import: false`, and deliberately no
+`strictVersion`, because the Signal K Admin registers its React share below the
+version it actually ships (2.24.0 registers 19.0.0 while bundling 19.2.4), so a
+strict check refuses to mount on a fully compatible host. A version mismatch
+warns and continues. The shared UI library is bundled into the remote.
+`npm run check:panel` runs the repository's own checks (the ESM container
+export, CSS identifiers and container names surviving webpack, and only the
+production JSX runtime from React) and then `snui-check-consumer` from the
+shared UI, which proves the exact pin matches the installed release, the remote
+is stamped with that version, no React runtime is bundled, the remote and the
+webpack configuration consume exactly the published share map, and the gzip
+size stays within `scripts/panel-size-baseline.json`.
 
 `npm run boundaries` rejects circular imports, server-to-panel imports, and
 panel imports of Node-only runtime modules. The panel may import pure constants
@@ -145,9 +151,11 @@ npx playwright install --with-deps chromium firefox webkit
 ```
 
 Run `npm run screenshots:panel` after a visible panel change. It builds the
-production remote and updates the three images in `assets/screenshots/` through
-the same fixture used by Playwright. Inspect the status, notification, and
-night-red images before committing them.
+production remote and updates the four images in `assets/screenshots/` through
+the same fixture used by Playwright. Inspect the admin hero, status,
+notification, and night-red images before committing them. The hero
+(`00-admin-hero.png`) is the image the Signal K App Store shows first, so it is
+the one most worth a second look.
 
 For layout changes, check both a 320-pixel viewport and a 320-pixel panel
 embedded inside a wide host. Keep controls usable with coarse pointers, and run
@@ -169,10 +177,31 @@ TypeScript 7 intentionally takes precedence over tools that still require the
 TypeScript 6 compiler API. A tool that reports success without inspecting
 TypeScript modules is not an acceptable gate.
 
-`@types/node` tracks its current release for dependency compatibility and
-security maintenance. Node 20.18 remains the plugin runtime floor, so the
-blocking Node 20.18 type-check and production-build lane must stay green, and
-runtime code must not rely on APIs introduced after that floor.
+Node 20.18 remains the plugin runtime floor, so the blocking Node 20.18
+type-check and production-build lane must stay green, and runtime code must not
+rely on APIs introduced after that floor. Two dependency rules follow from it.
+
+`@types/node` stays on the major that matches `engines.node`, taking the latest
+release within that major, so type-checking sees the API surface the published
+package actually promises rather than a newer one.
+`npm run package:check` fails when the two majors disagree.
+
+The test toolchain does not have to meet the runtime floor. Vitest 5 declares
+`engines.node` of `^22.12.0 || ^24.0.0 || >=26.0.0`, which excludes Node 20, but
+a Signal K plugin runs inside the server process and `signalk-server` declares
+`node: >=22`, so no supported installation ever executes this plugin on Node 20.
+The Node 20.18 lane therefore proves the plugin runtime: it installs,
+type-checks, checks module boundaries, builds, and smoke-loads the built plugin
+with `npm run check:runtime`. `npm test` there prints a notice naming the Vitest
+floor and exits 0, guarded by `scripts/unit-test-toolchain.mjs`, whose floors are
+written out rather than parsed and are pinned at their boundaries by
+`scripts/test-unit-test-toolchain.mjs` from `npm run package:check`. Bump those
+floors when Vitest bumps its own, and extend the boundary test.
+
+Vitest's `@types/node` peer range of `^22.0.0 || >=24.0.0` would otherwise block
+resolution against a root pinned to major 20. An `overrides` block points that
+peer at the root `@types/node`, so one copy of the Node types is installed and it
+is the copy that matches the runtime floor.
 
 `signalk-nearlcrews-ui` is pinned exactly while it is in the 0.x series. Review
 its migration notes before changing that version.
@@ -180,10 +209,12 @@ its migration notes before changing that version.
 ## Continuous integration
 
 - `ci.yml` runs the full release verification on Node 24.19.0 and a separate,
-  blocking type-check and production-build lane on the Node 20.18 runtime
-  floor. The runtime-floor lane uses npm 11.19 because npm 12 starts at Node
-  22.22.2. Current Vitest and Rolldown require Node 20.19 or newer, so tests run
-  on the supported development runtimes instead.
+  blocking runtime-floor lane on Node 20.18 that installs, type-checks, checks
+  module boundaries, builds, and smoke-loads the built plugin. That lane proves
+  the plugin runtime, not the test toolchain: Vitest 5 requires Node 22.12 or
+  newer, so `npm test` there prints a notice and skips. The lane uses npm 11.19
+  because npm 12 starts at Node 22.22.2. The unit suite runs on the supported
+  development runtimes instead.
 - `plugin-ci.yml` pins the official Signal K reusable workflow and tests Node
   22 and 24, Signal K 2.24 and current, armv7, packaging, and installation.
 - `codeql.yml` runs the extended JavaScript and TypeScript query suite.

@@ -167,16 +167,20 @@ does not prove that the void callback completed persistence, so the panel does
 not claim that it does. The panel preserves unknown top-level and notification
 fields when it writes known settings, keeping configurations forward compatible.
 
+Labels below are the ones the custom panel shows. The rjsf fallback form, used
+on older Signal K Admin builds, titles the same four controls "Weather source",
+"AccuWeather API Key", "Weather Update Frequency", and "Daily API Call Quota".
+
 | Setting | Description | Default | Range |
 |---------|-------------|---------|-------|
-| Weather source | Open-Meteo (free, keyless, global), Met.no (free, keyless, global), or AccuWeather (needs a key, adds RealFeel, plain-language text, pressure tendency, and precipitation type). In merge mode this source is the primary that sets source priority and backs forecasts. | Open-Meteo | Open-Meteo, Met.no, or AccuWeather |
+| Provider | Open-Meteo (free, keyless, global), Met.no (free, keyless, global), or AccuWeather (needs a key, adds RealFeel, plain-language text, pressure tendency, and precipitation type). In merge mode this source is the primary that sets source priority and backs forecasts. | Open-Meteo | Open-Meteo, Met.no, or AccuWeather |
 | Provider mode | Single source, or merge available providers into a synthetic `vws-merged` source that blends current conditions. | Single source | Single or Merge |
-| AccuWeather API Key | Required when single mode selects AccuWeather. In merge mode, setting a key enables AccuWeather in the blend. The panel conceals it by default and provides explicit Show and Hide controls. | none | n/a |
+| API key | Required when single mode selects AccuWeather. In merge mode, setting a key enables AccuWeather in the blend. The panel conceals it by default and provides explicit Show and Hide controls. | none | n/a |
 | Open-Meteo base URL | Optional. Leave blank for the free public service (non-commercial use). Self-hosted or paid users can enter a custom endpoint. | none | n/a |
 | Emit sea state | Adds a keyless Open-Meteo Marine layer (waves, swell, sea temperature, and current) on `environment.water.*` and `environment.current`. Coastal and offshore only. | off | boolean |
-| Weather Update Frequency | Minutes between weather fetches. When AccuWeather participates, the default 30 makes 48 calls/day, within the default 50/day quota. | 30 | 1 to 60 |
+| Weather update frequency | Minutes between weather fetches. When AccuWeather participates, each fetch costs one call plus one location lookup per day while stationary or per new 1 km cell underway, so the default 30 costs at most 49 calls/day at a fixed position, within the default 50/day quota, and up to 96 underway, which exceeds it. | 30 | 1 to 60 |
 | Broadcast Interval | Seconds between cached delta re-emissions for NMEA2000 listeners. The provider observation timestamp is retained. | 5 | 1 to 60 |
-| Daily API Call Quota | Cap on AccuWeather calls per rolling 24-hour window whenever it participates, including merge mode. 0 disables the cap. Open-Meteo and Met.no are keyless and uncapped. | 50 | 0 to 1000 |
+| Daily API call quota | Cap on AccuWeather calls per rolling 24-hour window whenever it participates, including merge mode. 0 disables the cap. Open-Meteo and Met.no are keyless and uncapped. | 50 | 0 to 1000 |
 | Severe-weather notifications | Master toggle plus per-category sub-toggles (wind, visibility, heat, cold, severe conditions). | master off, sub-toggles on | boolean |
 
 ## What it emits
@@ -256,8 +260,9 @@ Common issues, shown as a status banner in the admin UI:
   surrounding whitespace.
 - **Rate limit or quota reached** (AccuWeather only): raise the update
   frequency interval or the daily quota; the plugin defaults to 50 calls/day.
-- **No position available**: confirm a GPS source publishes
-  `navigation.position` in the Data Browser.
+- **Waiting for GPS position**: confirm a GPS source publishes
+  `navigation.position` in the Data Browser, and that its timestamp is less
+  than 30 minutes old.
 
 See the [troubleshooting guide](https://github.com/NearlCrews/signalk-virtual-weather-sensors/blob/main/docs/troubleshooting.md) for the full guide.
 

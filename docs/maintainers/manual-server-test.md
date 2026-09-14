@@ -99,7 +99,7 @@ Enable **Emit sea state** in **Weather source**, save, and (for a coastal or off
 ### Quota verification (skip if `dailyApiQuota = 0`)
 
 - [ ] Set `dailyApiQuota` to a low value (e.g. 3) and `updateFrequency` to 1 minute. Submit. Wait long enough for the rolling 24h count to cross 90% of the cap.
-- [ ] The banner prefix should switch from `Running` to `Running [quota 90% used]`.
+- [ ] The banner prefix should switch from `Running` to `Running [quota N% used]`, carrying the real rolling percentage.
 - [ ] Continue waiting until the count reaches the cap. The banner should switch to a red error reading `AccuWeather daily quota reached (3/3 in last 24h). Fetches paused until the rolling window drops below the cap. To resume sooner, raise dailyApiQuota or increase updateFrequency.` (the banner names the active weather source) and the `<N> updates` counter should stop climbing.
 - [ ] Restore `dailyApiQuota` to its production value (or 0 to disable). Submit. New fetches resume on the next cycle.
 
