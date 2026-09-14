@@ -21,6 +21,14 @@ interface TestState {
   message: string;
 }
 
+/**
+ * The no-result state, as one shared reference. Every keystroke clears the
+ * test result, and React bails out of the re-render only when the new state is
+ * the SAME object, so allocating a fresh idle literal per character would
+ * re-render the field on every key with nothing to show for it.
+ */
+const IDLE_TEST_STATE: TestState = { state: null, message: '' };
+
 interface Props {
   value: string;
   keyError: string | null;
@@ -49,7 +57,7 @@ export default function ApiKeyField({
   inputRef,
   onChange,
 }: Props): React.ReactElement {
-  const [testKey, setTestKey] = useState<TestState>({ state: null, message: '' });
+  const [testKey, setTestKey] = useState<TestState>(IDLE_TEST_STATE);
   const controllerRef = useRef<AbortController | null>(null);
 
   // The owning CollapsibleSection retains this field, so collapsing it hides
@@ -60,7 +68,7 @@ export default function ApiKeyField({
   useEffect(
     () => () => {
       controllerRef.current?.abort();
-      setTestKey({ state: null, message: '' });
+      setTestKey(IDLE_TEST_STATE);
     },
     []
   );
@@ -122,7 +130,7 @@ export default function ApiKeyField({
               onChange={(event) => {
                 controllerRef.current?.abort();
                 onChange(event.target.value);
-                setTestKey({ state: null, message: '' });
+                setTestKey(IDLE_TEST_STATE);
               }}
               trailingContent={
                 <Button

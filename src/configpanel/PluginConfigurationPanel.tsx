@@ -10,6 +10,7 @@ import {
 } from 'signalk-nearlcrews-ui';
 import { SaveActionBar } from 'signalk-nearlcrews-ui/composites';
 import {
+  ACCUWEATHER_FETCH_COST_NOTE,
   CONFIG_DEFAULTS,
   NOTIFICATION_BAND_KEYS,
   QUOTA_WARN_RATIO,
@@ -32,8 +33,10 @@ type SectionKey = 'apiKey' | 'cadence' | 'notifications';
 /** Cadence fields whose live validation blocks Save while a draft is invalid. */
 type CadenceField = 'updateFrequency' | 'emissionInterval' | 'dailyApiQuota';
 
-const INVALID_CADENCE_MESSAGE =
-  'Correct the invalid value under Fetch and emission cadence before saving.';
+/** Heading of the cadence section, named once so the Save bar cannot point at a heading that no longer exists. */
+const CADENCE_SECTION_TITLE = 'Fetch and emission cadence';
+
+const INVALID_CADENCE_MESSAGE = `Correct the invalid value under ${CADENCE_SECTION_TITLE} before saving.`;
 
 // Signal K Admin's save callback returns before persistence settles, so the
 // busy state covers the status poll that follows the request, not a write the
@@ -80,10 +83,6 @@ function WeatherPanel({ configuration, save }: Props): React.ReactElement {
   const [cadenceResetKey, setCadenceResetKey] = useState(0);
   const apiKeyRef = useRef<HTMLInputElement>(null);
   const baseUrlRef = useRef<HTMLInputElement>(null);
-  const blockerRefs: Record<SaveBlocker, React.RefObject<HTMLInputElement | null>> = {
-    apiKey: apiKeyRef,
-    baseUrl: baseUrlRef,
-  };
 
   const setCadenceValidity = useCallback((field: CadenceField, valid: boolean): void => {
     setInvalidCadenceFields((previous) => {
@@ -117,17 +116,25 @@ function WeatherPanel({ configuration, save }: Props): React.ReactElement {
 
   const src = deriveSourceState(form);
 
-  // NumberField reports validity on transitions and never from an unmount, so
-  // the quota field's entry is released here when AccuWeather leaves the
-  // selection and the field stops rendering. Otherwise a draft the operator
-  // can no longer see would keep blocking Save.
-  useEffect(() => {
-    if (!src.accuWeatherInPlay) setCadenceValidity('dailyApiQuota', true);
-  }, [src.accuWeatherInPlay, setCadenceValidity]);
+  // Only a field the panel is actually rendering can block Save. The quota
+  // field shows while AccuWeather is in play and NumberField reports validity
+  // on transitions, never from an unmount, so an invalid draft the operator can
+  // no longer see would otherwise keep Save blocked from off screen. Derived
+  // from what is on screen rather than reconciled by an effect, so a future
+  // conditionally-rendered cadence field needs no matching release.
+  const saveBlockedOnCadence = [...invalidCadenceFields].some(
+    (field) => field !== 'dailyApiQuota' || src.accuWeatherInPlay
+  );
 
   const handleSave = (): void => {
     void doSave().then((blocker) => {
       if (blocker === null) return;
+      // The refs are stable; the lookup is built here rather than per render
+      // because the save-failure branch is its only reader.
+      const blockerRefs: Record<SaveBlocker, React.RefObject<HTMLInputElement | null>> = {
+        apiKey: apiKeyRef,
+        baseUrl: baseUrlRef,
+      };
       setOpenSections((previous) => ({ ...previous, apiKey: true }));
       requestAnimationFrame(() => blockerRefs[blocker].current?.focus());
     });
@@ -191,7 +198,7 @@ function WeatherPanel({ configuration, save }: Props): React.ReactElement {
       </CollapsibleSection>
 
       <CollapsibleSection
-        title="Fetch and emission cadence"
+        title={CADENCE_SECTION_TITLE}
         open={openSections.cadence}
         onOpenChange={(open) => setOpenSections((previous) => ({ ...previous, cadence: open }))}
         summary={`every ${form.updateFrequency} min, broadcast ${form.emissionInterval} s, ${src.quotaSummary}`}
@@ -212,7 +219,7 @@ function WeatherPanel({ configuration, save }: Props): React.ReactElement {
             errorLive="polite"
             description={
               src.accuWeatherInPlay
-                ? `Each fetch costs one AccuWeather API call, plus one location lookup per day while stationary or per new 1 km cell underway. 30 minutes costs at most 49 calls per day at a fixed position, within the default ${CONFIG_DEFAULTS.DAILY_API_QUOTA} call quota. Underway it costs up to 96, which exceeds that quota.`
+                ? `${ACCUWEATHER_FETCH_COST_NOTE} 30 minutes costs at most 49 calls per day at a fixed position, within the default ${CONFIG_DEFAULTS.DAILY_API_QUOTA} call quota. Underway it costs up to 96, which exceeds that quota.`
                 : 'How often new weather data is fetched. The keyless providers have generous limits, so a shorter interval is fine.'
             }
           />
@@ -278,7 +285,7 @@ function WeatherPanel({ configuration, save }: Props): React.ReactElement {
         saving={saving}
         unconfigured={configuration == null}
         saveRequestedAt={saveRequestedAt}
-        invalidMessage={invalidCadenceFields.size > 0 ? INVALID_CADENCE_MESSAGE : null}
+        invalidMessage={saveBlockedOnCadence ? INVALID_CADENCE_MESSAGE : null}
         // The bar's own 2,500 ms window would close before the status poll
         // that follows a save request settles, so the panel keeps the window
         // and takes the message down on the next edit, which is the same

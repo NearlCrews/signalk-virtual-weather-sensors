@@ -18,17 +18,16 @@ const STALE_ANNOUNCEMENT = 'Status updates have stalled. These numbers may be ou
 /** Announced beside a metric the panel knows may be out of date. */
 const STALE_TONE_LABEL = 'Possibly out of date';
 
-// The panel ships no translations, so the age stays in the language of the
-// sentence around it rather than following the browser locale. The wording
-// itself is the library default.
-const AGE_OPTIONS = { locale: 'en' } as const;
+// The panel ships no translations, so every formatted value stays in the
+// language of the sentence around it rather than following the browser locale:
+// a relative age and a grouping separator cannot disagree with the English
+// wording they sit in. The age wording itself is the library default.
+const PANEL_LOCALE = 'en';
 
-// Counts follow the same rule as the relative age: one pinned locale, so a
-// grouping separator cannot disagree with the English sentence around it.
-const COUNT_LOCALE = 'en';
+const AGE_OPTIONS = { locale: PANEL_LOCALE } as const;
 
 function count(value: number | undefined): string {
-  return value === undefined ? NA : value.toLocaleString(COUNT_LOCALE);
+  return value === undefined ? NA : value.toLocaleString(PANEL_LOCALE);
 }
 
 function WeatherGlyph(): React.ReactElement {
@@ -53,6 +52,15 @@ interface MetricsProps {
   stale: boolean;
 }
 
+/** One status counter: its own warning condition, or the shared stale tone. */
+interface MetricRow {
+  readonly label: string;
+  readonly value: string | number;
+  readonly unit?: string;
+  readonly warn?: boolean;
+  readonly warnLabel?: string;
+}
+
 /**
  * The five status counters.
  *
@@ -65,49 +73,48 @@ interface MetricsProps {
 function StatusMetrics({ status, stale }: MetricsProps): React.ReactElement {
   const activeAlerts = status?.activeNotifications ?? 0;
   const weatherApiOn = status?.weatherProviderRegistered === true;
-  const staleTone = stale ? ('warning' as const) : undefined;
-  const staleToneLabel = stale ? STALE_TONE_LABEL : undefined;
+
+  // One row per metric, so the stale tone is resolved once below rather than
+  // threaded onto each element: a metric that forgot the pair would render an
+  // unmarked stale number, which is the failure this marking exists to prevent.
+  const metrics: ReadonlyArray<MetricRow> = [
+    { label: 'Updates', value: count(status?.updates) },
+    { label: 'API usage (24h)', value: count(status?.quotaUsedLast24h), unit: 'calls' },
+    {
+      label: 'Active alerts',
+      value: count(status?.activeNotifications),
+      warn: activeAlerts > 0,
+      warnLabel: `${activeAlerts} active`,
+    },
+    {
+      // `lastUpdateMinutesAgo` is a server snapshot captured at the last
+      // SUCCESSFUL poll, so while the poll is stalled it keeps reporting the
+      // value it held then: ten minutes into a stall it would claim the weather
+      // was one minute old. Report n/a rather than a number known to be wrong.
+      label: 'Since last fetch',
+      value: stale || status?.lastUpdateMinutesAgo == null ? NA : status.lastUpdateMinutesAgo,
+      unit: 'minutes',
+    },
+    {
+      label: 'Weather API',
+      value: weatherApiOn ? 'On' : status ? 'Off' : NA,
+      warn: status !== null && !weatherApiOn,
+      warnLabel: 'Not registered',
+    },
+  ];
 
   return (
     <MetricGrid>
-      <Metric
-        tone={staleTone}
-        toneLabel={staleToneLabel}
-        value={count(status?.updates)}
-        label="Updates"
-      />
-      <Metric
-        tone={staleTone}
-        toneLabel={staleToneLabel}
-        value={count(status?.quotaUsedLast24h)}
-        unit="calls"
-        label="API usage (24h)"
-      />
-      <Metric
-        tone={activeAlerts > 0 ? 'warning' : staleTone}
-        toneLabel={activeAlerts > 0 ? `${activeAlerts} active` : staleToneLabel}
-        value={count(status?.activeNotifications)}
-        label="Active alerts"
-      />
-      {/*
-       * `lastUpdateMinutesAgo` is a server snapshot captured at the last
-       * SUCCESSFUL poll, so while the poll is stalled it keeps reporting the
-       * value it held then: ten minutes into a stall it would claim the weather
-       * was one minute old. Report n/a rather than a number known to be wrong.
-       */}
-      <Metric
-        tone={staleTone}
-        toneLabel={staleToneLabel}
-        value={stale || status?.lastUpdateMinutesAgo == null ? NA : status.lastUpdateMinutesAgo}
-        unit="minutes"
-        label="Since last fetch"
-      />
-      <Metric
-        tone={status && !weatherApiOn ? 'warning' : staleTone}
-        toneLabel={status && !weatherApiOn ? 'Not registered' : staleToneLabel}
-        value={weatherApiOn ? 'On' : status ? 'Off' : NA}
-        label="Weather API"
-      />
+      {metrics.map(({ label, value, unit, warn, warnLabel }) => (
+        <Metric
+          key={label}
+          tone={warn || stale ? 'warning' : undefined}
+          toneLabel={warn ? warnLabel : stale ? STALE_TONE_LABEL : undefined}
+          value={value}
+          {...(unit !== undefined && { unit })}
+          label={label}
+        />
+      ))}
     </MetricGrid>
   );
 }

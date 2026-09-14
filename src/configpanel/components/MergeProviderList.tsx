@@ -1,5 +1,5 @@
 import type * as React from 'react';
-import { useEffect, useRef } from 'react';
+import { useState } from 'react';
 import {
   Badge,
   Button,
@@ -74,70 +74,21 @@ export default function MergeProviderList({
   const lastIndex = included.length - 1;
 
   /**
-   * Row containers by provider id, so focus can be restored to a specific row
-   * after the list re-renders. Populated by the ref callback in `renderRow`.
+   * False until the operator's first change. The merge list mounts only when
+   * Provider mode switches to "merged", at which point the order summary is
+   * already a complete sentence, and a live region whose FIRST render carries
+   * text is not reliably observed (some screen readers instead announce the
+   * whole thing on arrival). Starting silent by construction means no ref is
+   * read during render and no mount effect has to flip anything.
    */
-  const rowRefs = useRef(new Map<WeatherProviderId, HTMLDivElement | null>());
-  /** The row the operator last acted on, consumed once by the focus effect. */
-  const pendingFocusId = useRef<WeatherProviderId | null>(null);
-  /**
-   * False until after the first render. The merge list mounts only when the
-   * operator switches Provider mode to "merged", at which point the order
-   * summary is already a complete sentence, and a live region whose FIRST
-   * render carries text is not reliably observed (some screen readers instead
-   * announce the whole thing on arrival). Seed it empty, then let the first
-   * real change speak.
-   */
-  const announcerReady = useRef(false);
-
-  useEffect(() => {
-    announcerReady.current = true;
-  }, []);
-
-  /**
-   * Put focus back where the operator left it after a change re-renders the
-   * list.
-   *
-   * Two things can take focus away. A row that changes group is a different
-   * child of the same list, and a row can become natively `disabled` as a
-   * direct result of the change (the last included provider locks, and an
-   * excluded provider that needs a key locks): a browser blurs a focused
-   * control the moment it becomes disabled. Either way focus lands on
-   * `document.body` with nothing announced, and a keyboard or screen-reader
-   * operator has to tab through the whole panel again.
-   */
-  useEffect(() => {
-    const id = pendingFocusId.current;
-    if (id === null) return;
-    pendingFocusId.current = null;
-
-    const rows = rowRefs.current;
-    const active = document.activeElement;
-    // Only intervene when the browser actually dropped focus out of the list;
-    // never steal it from wherever the operator has since moved.
-    if (active !== null && Array.from(rows.values()).some((node) => node?.contains(active))) {
-      return;
-    }
-
-    const focusRow = (candidate: WeatherProviderId): boolean => {
-      const input = rows.get(candidate)?.querySelector('input');
-      if (!input || input.disabled) return false;
-      input.focus();
-      return true;
-    };
-
-    if (focusRow(id)) return;
-    // The row the operator acted on is now locked, so fall to the nearest
-    // control that can still be reached, in the order the list renders.
-    for (const candidate of [...included, ...excluded]) {
-      if (candidate !== id && focusRow(candidate)) return;
-    }
-  });
+  const [hasChanged, setHasChanged] = useState(false);
 
   const include = (id: WeatherProviderId): void => {
+    setHasChanged(true);
     if (!included.includes(id)) onChange([...included, id]);
   };
   const exclude = (id: WeatherProviderId): void => {
+    setHasChanged(true);
     onChange(included.filter((other) => other !== id));
   };
   const move = (index: number, direction: -1 | 1): void => {
@@ -145,6 +96,7 @@ export default function MergeProviderList({
     const atIndex = included[index];
     const atTarget = included[target];
     if (atIndex === undefined || atTarget === undefined) return;
+    setHasChanged(true);
     const next = [...included];
     next[index] = atTarget;
     next[target] = atIndex;
@@ -195,13 +147,7 @@ export default function MergeProviderList({
     const shortLabel = WEATHER_PROVIDER_SHORT_LABELS[id];
 
     return (
-      <div
-        className={styles.row}
-        key={id}
-        ref={(node) => {
-          rowRefs.current.set(id, node);
-        }}
-      >
+      <div className={styles.row} key={id}>
         <Checkbox
           className={styles.checkbox}
           label={
@@ -217,9 +163,13 @@ export default function MergeProviderList({
           }
           description={note}
           checked={isIncluded}
-          disabled={disabled}
+          // `ariaDisabled`, not native `disabled`: a locked row is one the
+          // operator may well be standing on (unchecking the last included
+          // provider locks that very box), and native `disabled` takes it out
+          // of the tab order, so the browser blurs it and focus falls to the
+          // document body. The lock reason stays reachable as the description.
+          ariaDisabled={disabled}
           onChange={(event) => {
-            pendingFocusId.current = id;
             if (event.target.checked) include(id);
             else exclude(id);
           }}
@@ -232,10 +182,7 @@ export default function MergeProviderList({
             label={shortLabel}
             atTop={isPrimary}
             atBottom={isLastIncluded}
-            onMove={(direction) => {
-              pendingFocusId.current = id;
-              move(includedIndex, direction);
-            }}
+            onMove={(direction) => move(includedIndex, direction)}
           />
         ) : null}
       </div>
@@ -246,7 +193,9 @@ export default function MergeProviderList({
    * ONE keyed list across both groups. Rendering the included and excluded
    * arrays as separate children of the Stack made a provider that changes group
    * an unmount plus a mount rather than a move, so the checkbox the operator
-   * just activated ceased to exist and focus fell to the document body.
+   * just activated ceased to exist and focus fell to the document body. With
+   * the row lock expressed as `ariaDisabled`, this is the only thing focus
+   * restoration needs.
    */
   const rows: React.ReactNode[] = included.map((id, index) => renderRow(id, index));
   if (excluded.length > 0) {
@@ -264,7 +213,7 @@ export default function MergeProviderList({
       description="The first provider is primary. It supplies categorical fields, tie-breaks, and the forecast source."
     >
       <Stack gap={2}>{rows}</Stack>
-      <LiveRegion as="p" message={announcerReady.current ? orderSummary : ''} />
+      <LiveRegion as="p" message={hasChanged ? orderSummary : ''} />
     </FieldGroup>
   );
 }
