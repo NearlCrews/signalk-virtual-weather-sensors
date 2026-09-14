@@ -85,7 +85,7 @@
     },
     "packageManager": {
       "name": "npm",
-      "version": ">=12.0.2 <13.0.0",
+      "version": ">=10.9.3",
       "onFail": "warn"
     }
   },
@@ -153,7 +153,7 @@
     "build:panel": "node scripts/build-panel.mjs",
     "check:panel": "node scripts/check-panel-bundle.mjs && snui-check-consumer --root . --remote public/remoteEntry.js --baseline scripts/panel-size-baseline.json",
     "dev": "tsx watch src/index.ts",
-    "test": "vitest run",
+    "test": "node scripts/run-unit-tests.mjs",
     "test:watch": "vitest",
     "test:ui": "vitest --ui",
     "test:browser": "npm run build && npm run test:browser:built",
@@ -161,9 +161,10 @@
     "test:browser:cross": "npm run build && npm run test:browser:cross:built",
     "test:browser:cross:built": "node scripts/run-browser-matrix.mjs",
     "test:integration": "node scripts/check-signalk-integration.mjs",
+    "check:runtime": "node scripts/check-plugin-runtime.mjs",
     "screenshots:panel": "npm run build && node scripts/capture-panel-screenshots.mjs",
-    "test:coverage": "vitest run --coverage",
-    "test:run": "vitest run",
+    "test:coverage": "node scripts/run-unit-tests.mjs --coverage",
+    "test:run": "node scripts/run-unit-tests.mjs",
     "mutation-test": "stryker run",
     "type-check": "tsc --noEmit && npm run type-check:panel && npm run type-check:browser",
     "type-check:panel": "tsc -p tsconfig.panel.json --noEmit",
@@ -182,14 +183,13 @@
     "clean": "node scripts/clean.mjs",
     "size": "size-limit",
     "licenses": "node scripts/generate-third-party-notices.mjs",
-    "package:check": "publint --pack npm --strict && node scripts/check-package.mjs && node scripts/generate-third-party-notices.mjs --check",
+    "package:check": "node scripts/test-unit-test-toolchain.mjs && publint --pack npm --strict && node scripts/check-package.mjs && node scripts/generate-third-party-notices.mjs --check",
     "validate": "npm run verify",
     "verify:commit": "npm run ci:biome && npm run lint:docs && npm run spellcheck && npm run ci:workflows && npm run boundaries && npm run deadcode",
     "verify:fast": "npm run verify:commit && npm run type-check",
-    "verify": "npm run verify:fast && npm run test:coverage && npm run build && npm run size && npm run package:check && npm run audit:runtime",
+    "verify": "npm run verify:fast && npm run test:coverage && npm run build && npm run check:runtime && npm run size && npm run package:check && npm run audit:runtime",
     "verify:browser": "npm run verify && npm run test:browser:built",
     "verify:release": "npm run verify && npm run test:browser:cross:built && npm run audit:full",
-    "security-audit": "npm audit --audit-level=moderate",
     "audit:runtime": "npm audit --omit=dev --audit-level=high",
     "audit:full": "npm audit --audit-level=moderate",
     "release:check": "node scripts/check-release.mjs",
@@ -200,7 +200,7 @@
     {
       "name": "Plugin server bundle",
       "path": "dist/index.js",
-      "limit": "180 kB"
+      "limit": "45 kB"
     }
   ],
   "allowScripts": {

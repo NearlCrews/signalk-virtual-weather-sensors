@@ -33,13 +33,16 @@ export default defineConfig({
         '**/*.d.ts',
         '**/types/**',
       ],
+      // Flat keys, NOT a `global` block. Vitest 5 reads any key under
+      // `thresholds` other than its own option names as a GLOB for per-file
+      // thresholds, so a `global` wrapper matched no file and enforced nothing:
+      // an impossible 99 percent floor in that shape exits 0, while the same
+      // floor in this shape exits 1.
       thresholds: {
-        global: {
-          branches: 80,
-          functions: 80,
-          lines: 80,
-          statements: 80,
-        },
+        branches: 80,
+        functions: 80,
+        lines: 80,
+        statements: 80,
       },
       clean: true,
       cleanOnRerun: true,
