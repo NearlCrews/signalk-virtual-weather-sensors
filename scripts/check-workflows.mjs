@@ -17,7 +17,17 @@ for (const path of workflowPaths) {
 }
 
 const ci = await readFile('.github/workflows/ci.yml', 'utf8');
-for (const expected of ['node-version: 20.18.0', 'run type-check', 'run build']) {
+// The Node 20.18 lane proves the plugin runtime, not the test toolchain, so it
+// must keep compiling AND loading the built plugin there. Dropping the runtime
+// or boundary step would leave the advertised floor asserted by nothing but a
+// type-check.
+for (const expected of [
+  'node-version: 20.18.0',
+  'run type-check',
+  'run boundaries',
+  'run build',
+  'run check:runtime',
+]) {
   if (!ci.includes(expected)) {
     failures.push(`The blocking Node 20.18 lane in ci.yml must retain ${expected}.`);
   }
@@ -40,6 +50,12 @@ for (const expected of [
 
 const publish = await readFile('.github/workflows/publish.yml', 'utf8');
 for (const expected of [
+  // The publish lane's Node version is load-bearing, not cosmetic:
+  // `prepublishOnly` runs `verify:release`, whose `test:coverage` goes through
+  // `scripts/run-unit-tests.mjs`, and on any Node below the Vitest 5 floor that
+  // script prints a notice and exits 0 without running a test. Dropping this
+  // lane to Node 20 would publish a release whose unit suite never executed.
+  'node-version: 24.19.0',
   'npm@12.0.2',
   'actions/upload-artifact@',
   'actions/download-artifact@',

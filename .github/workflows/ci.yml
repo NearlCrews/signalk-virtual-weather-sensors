@@ -27,7 +27,17 @@ jobs:
           package-manager-cache: false
       - run: npx --yes npm@12.0.2 ci
       - run: npx playwright install --with-deps chromium firefox webkit
-      - run: npx --yes npm@12.0.2 run verify:release
+      # `verify` plus the cross-browser matrix, deliberately NOT
+      # `verify:release`. That chain ends with `audit:full`, an audit of the
+      # whole development tree, and the advisory database is an external input
+      # that changes without a commit: one new devDependency advisory turned
+      # every open pull request red for reasons none of them introduced. The
+      # runtime audit users are actually exposed to (`audit:runtime`) still runs
+      # inside `verify` here, `audit:full` still gates the release through
+      # `prepublishOnly`, and the scheduled job in workflow-security.yml
+      # surfaces a new development advisory on its own.
+      - run: npx --yes npm@12.0.2 run verify
+      - run: npx --yes npm@12.0.2 run test:browser:cross:built
       - name: Upload coverage reports to Codecov
         uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f # v7.0.0
         with:
@@ -51,6 +61,12 @@ jobs:
   node-20-compatibility:
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    # This lane proves the PLUGIN RUNTIME on the floor engines.node advertises,
+    # not the test toolchain. A Signal K plugin runs inside the server process
+    # and signalk-server declares node >=22, so no supported installation ever
+    # executes this plugin on Node 20. What the floor still promises is that
+    # the plugin's own compiled code installs, type-checks, builds, and loads
+    # there, which is what the steps below check.
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -63,15 +79,18 @@ jobs:
       # runtime-floor lane so Node 20.18 is exercised by a supported npm.
       - run: npx --yes npm@11.19.0 ci
       - run: npx --yes npm@11.19.0 run type-check
-      # The unit suite deliberately does not run here. Rolldown and the oxc
-      # parser ship their native bindings as OPTIONAL dependencies gated on
-      # ^20.19.0 || >=22.12.0, and npm skips an optional dependency whose
-      # engines it cannot satisfy, so a fresh install on 20.18 omits the two
-      # binding packages a Node 24 install resolves. Vitest then dies at
-      # startup with "Cannot find native binding" out of Rolldown. Vitest is
-      # blameless here: its own engines admit ^20.0.0, and running the suite
-      # against a tree installed under a newer Node hides the fault entirely,
-      # because only the install is version-sensitive. The suite runs in the
-      # verify lane on Node 24, so this stays a type-check and build lane on
-      # the exact runtime floor the package advertises.
+      - run: npx --yes npm@11.19.0 run boundaries
       - run: npx --yes npm@11.19.0 run build
+      # Turns "it compiled" into "it loads and constructs" on the runtime
+      # floor: imports the built bundle, builds the plugin object, and checks
+      # the surface signalk-server calls into, including the schema() fallback.
+      - run: npx --yes npm@11.19.0 run check:runtime
+      # The unit suite is skipped here, by design and out loud. Vitest 5
+      # declares node ^22.12.0 || ^24.0.0 || >=26.0.0, so
+      # scripts/run-unit-tests.mjs prints a notice naming that floor and exits
+      # 0 instead of crashing inside the runner. The predicate it consults
+      # lives in scripts/unit-test-toolchain.mjs with the floors written out,
+      # and scripts/test-unit-test-toolchain.mjs pins them at their
+      # boundaries. Running it here proves the guard reports rather than
+      # fails; the suite itself runs in the verify lane on Node 24.
+      - run: npx --yes npm@11.19.0 test

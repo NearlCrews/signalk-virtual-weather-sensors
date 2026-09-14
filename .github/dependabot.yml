@@ -20,8 +20,13 @@ updates:
       - dependency-name: "@types/node"
         update-types: ["version-update:semver-major"]
     groups:
+      # The shared UI ships breaking changes in 0.x minors and is pinned
+      # exactly, so its bump arrives alone with the migration guide open.
+      shared-ui:
+        patterns: ["signalk-nearlcrews-ui"]
       dev-deps:
         dependency-type: "development"
+        exclude-patterns: ["signalk-nearlcrews-ui"]
 
   - package-ecosystem: "github-actions"
     directory: "/"
@@ -34,3 +39,10 @@ updates:
     open-pull-requests-limit: 5
     commit-message:
       prefix: "ci"
+    groups:
+      # init and analyze must run at the same version inside one workflow run,
+      # and dependabot treats the two paths as separate dependencies. Split
+      # bumps fail with "Loaded a configuration file for version X, but running
+      # version Y" on every codeql-action release.
+      codeql:
+        patterns: ["github/codeql-action*"]
