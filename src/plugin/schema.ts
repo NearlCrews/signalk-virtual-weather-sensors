@@ -116,7 +116,7 @@ export function pluginSchema() {
         type: 'integer',
         title: 'Weather Update Frequency (minutes)',
         description:
-          'How often to fetch new weather data. Under AccuWeather each fetch costs one API call (location lookups are cached); Open-Meteo is keyless and unmetered.',
+          'How often to fetch new weather data. Under AccuWeather each fetch costs one API call, plus one location lookup per day while stationary or per new 1 km cell underway; Open-Meteo and Met.no are keyless and unmetered.',
         default: CONFIG_DEFAULTS.UPDATE_FREQUENCY,
         minimum: CONFIG_DEFAULTS.UPDATE_FREQUENCY_MIN,
         maximum: CONFIG_DEFAULTS.UPDATE_FREQUENCY_MAX,
@@ -182,7 +182,7 @@ export function pluginUiSchema() {
     updateFrequency: {
       'ui:widget': 'updown',
       'ui:help':
-        'Free-tier keys get 50 calls/day, so 30 minutes (48/day) is the safe default. Raise the cadence on paid tiers.',
+        'At 30 minutes a stationary vessel spends at most 48 conditions calls plus 1 location lookup per day, inside the default quota of 50. Underway, budget up to 2 calls per fetch and raise the quota or lengthen the interval.',
     },
     emissionInterval: {
       'ui:widget': 'updown',

@@ -1,7 +1,7 @@
 /**
  * Unit tests for WarningsService: region dispatch (NWS for US points, MetAlerts
- * for Norwegian-waters points, explicit unsupported coverage elsewhere, URL
- * construction, and explicit behavior on a fetch failure.
+ * for Norwegian-waters points, an empty list elsewhere, URL construction, and
+ * explicit behavior on a fetch failure.
  */
 
 import { beforeEach, describe, expect, it, type Mock, vi } from 'vitest';
@@ -42,10 +42,16 @@ describe('WarningsService', () => {
     expect(url).toContain('api.weather.gov/alerts/active?point=25.7743,-80.1937');
   });
 
-  it('reports unsupported coverage without a network call outside covered regions', async () => {
-    const service = new WarningsService();
-    await expect(service.getWarnings(OPEN_OCEAN)).rejects.toThrow('Not supported!');
+  it('returns an empty list without a network call outside covered regions', async () => {
+    const logger = vi.fn();
+    const service = new WarningsService(logger);
+    await expect(service.getWarnings(OPEN_OCEAN)).resolves.toEqual([]);
     expect(global.fetch as Mock).not.toHaveBeenCalled();
+    expect(logger).toHaveBeenCalledWith(
+      'debug',
+      'No warnings feed covers this position, returning none',
+      { point: '-33.9000,18.4000' }
+    );
   });
 
   it('reports an NWS fetch failure instead of returning a false clear', async () => {

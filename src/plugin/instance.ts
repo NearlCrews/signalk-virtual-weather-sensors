@@ -59,9 +59,15 @@ export interface PluginInstance {
 /**
  * Single entry point for every admin-UI banner push. Dedupes consecutive
  * identical (kind, message) pairs so a flapping API or a steady-state quota
- * pause doesn't oscillate the banner every 5 seconds. Identity is tracked
- * separately for `setPluginStatus` and `setPluginError` because the server
- * treats them as distinct UI bands.
+ * pause doesn't oscillate the banner every 5 seconds.
+ *
+ * The dedupe key carries the kind as well as the message because the server
+ * does NOT keep two bands: signalk-server routes both `setPluginStatus` and
+ * `setPluginError` through one `doSetProviderStatus` call that overwrites the
+ * same `message` and `type` record (verified against 2.27.0), so the last
+ * write wins and only `status.lastError`, which the admin banner does not
+ * render, retains the previous error. Anything that must stay visible has to
+ * be re-asserted on every tick; that is `WeatherService.getTickBanner`'s job.
  * @private
  */
 export function setBanner(

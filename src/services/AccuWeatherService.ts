@@ -67,10 +67,14 @@ export class AccuWeatherService implements CurrentWeatherProvider {
   private readonly config: AccuWeatherConfig;
   private readonly logger: Logger;
   /**
-   * Coalescing TTL cache for AccuWeather location keys. Concurrent cold lookups
-   * for the same coordinates share one upstream call instead of each spending a
-   * request. The fetcher and key derivation stay in the service; the cache owns
-   * the entry map, in-flight map, and prune throttle.
+   * Coalescing TTL cache for AccuWeather location keys, keyed by a coarse
+   * coordinate cell (`ACCUWEATHER.LOCATION_CACHE_KEY_DECIMALS`) and held for
+   * `locationCacheTimeout`. AccuWeather location keys identify a city-scale
+   * area, so a docked or anchored vessel resolves its key once per TTL and a
+   * vessel underway pays one lookup per new cell instead of one per fetch.
+   * Concurrent cold lookups for the same cell share one upstream call. The
+   * fetcher and key derivation stay in the service; the cache owns the entry
+   * map, in-flight map, and prune throttle.
    */
   private readonly locationCache: CoalescingTtlCache<AccuWeatherLocation>;
   /**
@@ -137,6 +141,10 @@ export class AccuWeatherService implements CurrentWeatherProvider {
       retryAttempts: this.config.retryAttempts,
       retryDelayMs: this.config.retryDelay,
       userAgent: `${PLUGIN.NAME}/${PLUGIN.VERSION}`,
+      // AccuWeather authenticates with a bearer token. Sending the key as a
+      // header keeps it out of request URLs, and therefore out of every log
+      // line and error body that echoes the URL.
+      headers: { Authorization: `Bearer ${apiKey}` },
       beforeRequest: () => {
         if (!this.requestWindow.tryAcquire(this.config.dailyApiQuota)) {
           throw this.quotaReachedError();
@@ -330,9 +338,14 @@ export class AccuWeatherService implements CurrentWeatherProvider {
     );
   }
 
-  /** Stable location-cache key for a coordinate, rounded to 4 decimal places. @private */
+  /**
+   * Stable location-cache key for a coordinate, rounded to the coarse cell in
+   * `ACCUWEATHER.LOCATION_CACHE_KEY_DECIMALS` (about 1 km). The search itself
+   * still sends the finer position; only the cache lookup is coarsened.
+   * @private
+   */
   private locationCacheKey(location: GeoLocation): string {
-    return toCoordKey(location);
+    return toCoordKey(location, ACCUWEATHER.LOCATION_CACHE_KEY_DECIMALS);
   }
 
   /**
@@ -352,14 +365,15 @@ export class AccuWeatherService implements CurrentWeatherProvider {
   }
 
   /**
-   * Build an endpoint URL with the `apikey`, `language`, and `details` query
-   * params every AccuWeather endpoint this plugin calls shares. Callers append
-   * endpoint-specific params (`metric` on forecasts, `q` on location search).
+   * Build an endpoint URL with the `language` and `details` query params every
+   * AccuWeather endpoint this plugin calls shares. The API key travels in the
+   * `Authorization` header set on the HTTP client, never in the URL. Callers
+   * append endpoint-specific params (`metric` on forecasts, `q` on location
+   * search).
    * @private
    */
   private buildApiUrl(path: string): URL {
     const url = new URL(`${ACCUWEATHER.BASE_URL}${path}`);
-    url.searchParams.set('apikey', this.config.apiKey);
     url.searchParams.set('language', ACCUWEATHER.DEFAULT_LANGUAGE);
     url.searchParams.set('details', 'true');
     return url;

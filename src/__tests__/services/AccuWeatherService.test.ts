@@ -110,6 +110,103 @@ describe('AccuWeatherService', () => {
     expect(calledUrl.searchParams.get('q')).toBe('51.4779,-0.0015');
   });
 
+  it('authenticates with a bearer header and keeps the key out of the URL', async () => {
+    (global.fetch as Mock).mockResolvedValueOnce(
+      mockResponse({ Key: '12345', LocalizedName: 'Greenwich' })
+    );
+
+    await service.verifyApiKey({ latitude: 51.4779, longitude: -0.0015 });
+
+    const [rawUrl, init] = (global.fetch as Mock).mock.calls[0] as [string, RequestInit];
+    const headers = init.headers as Record<string, string>;
+    expect(headers.Authorization).toBe('Bearer test-api-key');
+    expect(headers.Accept).toBe('application/json');
+    expect(headers['User-Agent']).toContain('signalk-virtual-weather-sensors');
+    expect(new URL(rawUrl).searchParams.has('apikey')).toBe(false);
+    expect(rawUrl).not.toContain('test-api-key');
+  });
+
+  describe('location cache cell and lifetime', () => {
+    // `verifyApiKey` deliberately bypasses the cache (it probes the key with a
+    // raw search), so these tests drive the cache through fetchCurrentWeather:
+    // a cold cell costs a location call plus a conditions call, a warm cell
+    // costs the conditions call alone.
+    const locationResponse = (key: string) =>
+      mockResponse({ Key: key, LocalizedName: 'Somewhere', GeoPosition: {} });
+    const conditionsResponse = () => mockResponse(createMockAccuWeatherResponse());
+    const requestedUrls = () =>
+      (global.fetch as Mock).mock.calls.map((call) => String(call[0] as string));
+
+    beforeEach(() => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date('2026-05-10T12:00:00Z'));
+      service = new AccuWeatherService('test-api-key', mockLogger);
+      vi.mocked(global.fetch).mockClear();
+    });
+
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it('shares one lookup across positions inside the same 0.01 degree cell', async () => {
+      (global.fetch as Mock)
+        .mockResolvedValueOnce(locationResponse('cell-a'))
+        .mockResolvedValueOnce(conditionsResponse())
+        .mockResolvedValueOnce(conditionsResponse());
+
+      // About 700 m apart inside the 37.77,-122.41 cell: a vessel swinging at
+      // anchor or drifting in a marina.
+      await service.fetchCurrentWeather({ latitude: 37.7681, longitude: -122.4131 });
+      await service.fetchCurrentWeather({ latitude: 37.7739, longitude: -122.4089 });
+
+      const urls = requestedUrls();
+      expect(urls).toHaveLength(3);
+      // The search still sends the finer position; only the cache key is coarse.
+      expect(new URL(urls[0] as string).searchParams.get('q')).toBe('37.7681,-122.4131');
+      expect(urls[1]).toContain('/currentconditions/v1/cell-a');
+      expect(urls[2]).toContain('/currentconditions/v1/cell-a');
+    });
+
+    it('spends a fresh lookup when the position crosses into a new cell', async () => {
+      (global.fetch as Mock)
+        .mockResolvedValueOnce(locationResponse('cell-a'))
+        .mockResolvedValueOnce(conditionsResponse())
+        .mockResolvedValueOnce(locationResponse('cell-b'))
+        .mockResolvedValueOnce(conditionsResponse());
+
+      await service.fetchCurrentWeather({ latitude: 37.7681, longitude: -122.4131 });
+      await service.fetchCurrentWeather({ latitude: 37.7849, longitude: -122.4131 });
+
+      const urls = requestedUrls();
+      expect(urls).toHaveLength(4);
+      expect(new URL(urls[2] as string).searchParams.get('q')).toBe('37.7849,-122.4131');
+      expect(urls[3]).toContain('/currentconditions/v1/cell-b');
+    });
+
+    it('keeps a location key for 24 hours and refreshes it afterwards', async () => {
+      (global.fetch as Mock)
+        .mockResolvedValueOnce(locationResponse('first'))
+        .mockResolvedValueOnce(conditionsResponse())
+        .mockResolvedValueOnce(conditionsResponse())
+        .mockResolvedValueOnce(locationResponse('second'))
+        .mockResolvedValueOnce(conditionsResponse());
+      const position = { latitude: 37.7681, longitude: -122.4131 };
+
+      await service.fetchCurrentWeather(position);
+      vi.advanceTimersByTime(23 * 60 * 60 * 1000);
+      await service.fetchCurrentWeather(position);
+      expect(requestedUrls()).toHaveLength(3);
+      expect(requestedUrls()[2]).toContain('/currentconditions/v1/first');
+
+      vi.advanceTimersByTime(2 * 60 * 60 * 1000);
+      await service.fetchCurrentWeather(position);
+      const urls = requestedUrls();
+      expect(urls).toHaveLength(5);
+      expect(new URL(urls[3] as string).searchParams.get('q')).toBe('37.7681,-122.4131');
+      expect(urls[4]).toContain('/currentconditions/v1/second');
+    });
+  });
+
   describe('fetchCurrentWeather', () => {
     const testLocation: GeoLocation = {
       latitude: 37.7749,

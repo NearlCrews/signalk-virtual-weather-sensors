@@ -9,7 +9,7 @@ import { PLUGIN } from '../constants/index.js';
 import type { NMEA2000PathMapper } from '../mappers/NMEA2000PathMapper.js';
 import { isMarineDataEmpty } from '../mappers/OpenMeteoMarineMapper.js';
 import type { PluginConfiguration, WeatherData } from '../types/index.js';
-import { toErrorMessage } from '../utils/conversions.js';
+import { msToWholeMinutes, toErrorMessage } from '../utils/conversions.js';
 import { buildValuesDelta } from '../utils/skDelta.js';
 import { type PluginInstance, setBanner } from './instance.js';
 
@@ -55,22 +55,29 @@ export function emitWeatherTick(instance: PluginInstance, app: ServerAPI): void 
   if (!instance.weatherService) return;
   const weatherData = instance.weatherService.getCurrentWeatherData();
 
+  // Banner precedence (rejected key, quota pause, missing position, stale
+  // data, last fetch failure, then live status) is owned by
+  // WeatherService.getTickBanner; this tick just routes the result through the
+  // setBanner dedupe, so identical ticks within the same minute are no-ops and
+  // only message changes hit the SK API.
+  //
+  // Pushed BEFORE the no-data short-circuit: a plugin that has never fetched
+  // (no GPS fix, a rejected key, a provider that has never answered) would
+  // otherwise keep whatever banner start() left while the panel's /api/status,
+  // which calls getTickBanner directly, reported something else entirely.
+  const banner = instance.weatherService.getTickBanner();
+  setBanner(instance, app, banner.kind, banner.message);
+
   if (!weatherData || !instance.pathMapper) {
     emitMarineTick(instance, app);
     return;
   }
 
-  // Banner precedence (quota-exhausted, then stale, then live status) is
-  // owned by WeatherService.getTickBanner; this tick just routes the result
-  // through the setBanner dedupe, so identical ticks within the same minute
-  // are no-ops and only message changes hit the SK API.
-  const banner = instance.weatherService.getTickBanner();
-  setBanner(instance, app, banner.kind, banner.message);
-
   // Staleness gates emission, not just the banner: quota exhaustion alone
   // keeps broadcasting cached in-window data on the configured cadence, but
   // every rebroadcast retains the original provider measurement timestamp.
   if (instance.weatherService.isDataStale()) {
+    markNotificationsStale(instance, app);
     emitMarineTick(instance, app);
     return;
   }
@@ -107,6 +114,11 @@ export function emitWeatherTick(instance: PluginInstance, app: ServerAPI): void 
       SKVersion.v1
     );
   }
+  // Only now does the notifier record the transitions as published. Anything
+  // that threw between `evaluate` and this point would otherwise leave the
+  // band believed active with no delta ever having reached the bus, and the
+  // entry edge would never re-emit.
+  if (notificationValues !== undefined) instance.notifier?.commit();
 
   // Ship the static meta block once per plugin lifetime, AFTER the first
   // values delta so admin UIs that render units lazily attach them on first
@@ -118,6 +130,36 @@ export function emitWeatherTick(instance: PluginInstance, app: ServerAPI): void 
   }
 
   emitMarineTick(instance, app);
+}
+
+/**
+ * Re-emit every active notification band once, with the age of the driving
+ * observation appended to its message, when data first goes stale.
+ *
+ * Emission stops while data is stale, which correctly refuses to clear an
+ * active warning on a provider outage, but the latched notification would
+ * otherwise sit on the bus with no indication that its driving observation is
+ * hours old: only the admin banner says so, and a consumer subscribed to
+ * `notifications.environment.*` cannot see the banner. The notifier latches
+ * the marker, so this is one delta per stale episode, not one per tick.
+ * @private
+ */
+function markNotificationsStale(instance: PluginInstance, app: ServerAPI): void {
+  const notifier = instance.notifier;
+  const ageMs = instance.weatherService?.getDataAgeMs();
+  if (!notifier || ageMs == null) return;
+
+  const marked = notifier.markStale(`data ${msToWholeMinutes(ageMs)} min old`);
+  if (marked.length === 0) return;
+
+  app.handleMessage(
+    PLUGIN.NAME,
+    buildValuesDelta(marked, undefined, instance.sourceRef),
+    SKVersion.v1
+  );
+  instance.logger('info', 'Marked active weather notifications as stale', {
+    count: marked.length,
+  });
 }
 
 /**

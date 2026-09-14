@@ -59,6 +59,8 @@ vi.mock('../services/WeatherService.js', () => {
 vi.mock('../notifications/WeatherNotifier.js', () => {
   class StubWeatherNotifier {
     public evaluate = vi.fn(() => []);
+    public commit = vi.fn();
+    public markStale = vi.fn(() => []);
     public clearAll = vi.fn(() => []);
     public reset = vi.fn();
     public getActiveCount = vi.fn(() => 0);
@@ -725,6 +727,41 @@ describe('Weather provider registration', () => {
     const provider = registerWeatherProvider.mock.calls[0]?.[0];
     expect(provider.name).toBe('Open-Meteo');
     expect(provider.name).not.toContain('merged');
+
+    await plugin.stop();
+  });
+});
+
+describe('plugin entry: banner reaches both surfaces before any data arrives', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    resetStubState();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('pushes the tick banner even when no weather data has ever arrived', async () => {
+    // No usable GPS position, so the service never fetches and
+    // getCurrentWeatherData() stays null. The tick used to short-circuit
+    // before reading the banner, so the admin banner kept whatever start()
+    // left while /api/status, which calls getTickBanner directly, reported
+    // something else entirely.
+    stubState.getCurrentWeatherData = () => null;
+    stubState.getTickBanner = () => ({ kind: 'error', message: 'Waiting for GPS position' });
+
+    const app = buildMockApp();
+    const plugin = createPlugin(app as never);
+
+    await plugin.start(baseSettings, () => {});
+    await vi.advanceTimersByTimeAsync(3500);
+
+    const positionCalls = app.setPluginError.mock.calls.filter(
+      (call) => String(call[0]) === 'Waiting for GPS position'
+    );
+    expect(positionCalls.length).toBe(1);
+    expect(app.handleMessage).not.toHaveBeenCalled();
 
     await plugin.stop();
   });

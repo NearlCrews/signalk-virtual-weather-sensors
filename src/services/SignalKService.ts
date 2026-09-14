@@ -77,6 +77,12 @@ export class SignalKService {
   private readonly app: ServerAPI;
   private readonly logger: Logger;
   private readonly maxDataAge = VALIDATION_LIMITS.MAX_DATA_AGE;
+  /**
+   * Position gets its own, much looser age budget: it selects a weather grid
+   * cell rather than feeding the apparent-wind vector, and the fetch cadence is
+   * measured in tens of minutes. See `VALIDATION_LIMITS.MAX_POSITION_AGE`.
+   */
+  private readonly maxPositionAge = VALIDATION_LIMITS.MAX_POSITION_AGE;
 
   private cachedData: CachedVesselData = EMPTY_CACHED_VESSEL_DATA;
 
@@ -86,6 +92,7 @@ export class SignalKService {
 
     this.logger('info', 'SignalKService initialized', {
       maxDataAge: this.maxDataAge,
+      maxPositionAge: this.maxPositionAge,
     });
   }
 
@@ -202,7 +209,7 @@ export class SignalKService {
         return EMPTY_READING;
       }
 
-      const timestampMs = this.getFreshTimestamp(positionData, 'position');
+      const timestampMs = this.getFreshTimestamp(positionData, 'position', this.maxPositionAge);
       if (timestampMs === null) return EMPTY_READING;
 
       const value = positionData.value as { latitude?: number; longitude?: number };
@@ -424,11 +431,17 @@ export class SignalKService {
   }
 
   /**
-   * Return the source measurement timestamp when it is valid and fresh.
-   * Navigation leaves without trustworthy timestamps are not safe inputs for
-   * position selection or vector calculations.
+   * Return the source measurement timestamp when it is valid and within
+   * `maxAgeSeconds`. Navigation leaves without trustworthy timestamps are not
+   * safe inputs for position selection or vector calculations. The budget is a
+   * parameter because position tolerates a far older fix than the motion
+   * vector does; callers pass the right one rather than sharing a single gate.
    */
-  private getFreshTimestamp(data: SignalKDataValue, label: string): number | null {
+  private getFreshTimestamp(
+    data: SignalKDataValue,
+    label: string,
+    maxAgeSeconds: number = this.maxDataAge
+  ): number | null {
     if (typeof data.timestamp !== 'string') {
       this.logger('warn', `Ignoring ${label} without a Signal K timestamp`);
       return null;
@@ -443,11 +456,11 @@ export class SignalKService {
     }
 
     const ageSeconds = Math.floor((Date.now() - timestampMs) / 1000);
-    if (ageSeconds > this.maxDataAge || ageSeconds < -this.maxDataAge) {
+    if (ageSeconds > maxAgeSeconds || ageSeconds < -maxAgeSeconds) {
       this.logger('warn', `Ignoring ${label} with a stale or future Signal K timestamp`, {
         timestamp: data.timestamp,
         ageSeconds,
-        maxDataAgeSeconds: this.maxDataAge,
+        maxDataAgeSeconds: maxAgeSeconds,
       });
       return null;
     }

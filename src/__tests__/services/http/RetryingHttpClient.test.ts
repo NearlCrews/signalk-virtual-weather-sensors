@@ -30,6 +30,28 @@ describe('RetryingHttpClient', () => {
     expect(beforeRequest).toHaveBeenCalledTimes(1);
   });
 
+  it('sends the configured extra headers alongside Accept and User-Agent', async () => {
+    vi.mocked(globalThis.fetch).mockResolvedValue(
+      createMockFetchResponse({ ok: 1 }) as unknown as Response
+    );
+    const client = new RetryingHttpClient({
+      requestTimeoutMs: 1000,
+      retryAttempts: 1,
+      retryDelayMs: 1,
+      userAgent: 'test/1.0',
+      headers: { Authorization: 'Bearer secret-token' },
+    });
+
+    await client.request(new URL('https://example.test/x'));
+
+    const init = vi.mocked(globalThis.fetch).mock.calls[0]?.[1] as RequestInit;
+    expect(init.headers).toEqual({
+      Accept: 'application/json',
+      'User-Agent': 'test/1.0',
+      Authorization: 'Bearer secret-token',
+    });
+  });
+
   it('counts a 503 error response too, then retries and succeeds', async () => {
     const beforeRequest = vi.fn();
     vi.mocked(globalThis.fetch)

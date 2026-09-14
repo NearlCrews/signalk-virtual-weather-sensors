@@ -4,9 +4,12 @@
  * There is no single free global alerts feed, so warnings are sourced by
  * region: NWS CAP for US waters (keyless, requires an identifying User-Agent),
  * and Met.no MetAlerts for Norwegian waters (keyless, same contact User-Agent
- * requirement). Unsupported regions and upstream failures are reported
- * explicitly so consumers can distinguish unavailable warning coverage from a
- * successful lookup that found no active warnings.
+ * requirement). A position outside both coverage areas resolves to an empty
+ * list: the server turns a provider throw into an HTTP 400 for the consumer,
+ * which would put every dashboard outside the US and Norway into an error
+ * state for a limitation that is documented and expected. An upstream failure
+ * inside a covered region still throws, so a consumer there can tell
+ * "unavailable" from "none active".
  */
 
 import type { WeatherWarning } from '@signalk/server-api';
@@ -54,7 +57,10 @@ export class WarningsService {
     this.signal = options?.signal;
   }
 
-  /** Warnings for a position, dispatched by region. */
+  /**
+   * Warnings for a position, dispatched by region. Outside NWS and MET Norway
+   * coverage the result is an empty list, not an error.
+   */
   public async getWarnings(location: GeoLocation): Promise<WeatherWarning[]> {
     if (this.inUsCoverage(location)) {
       return this.fetchNws(location);
@@ -62,9 +68,10 @@ export class WarningsService {
     if (this.inNordicCoverage(location)) {
       return this.fetchMetAlerts(location);
     }
-    throw new Error(
-      'Not supported! Weather warnings are currently available only in NWS and MET Norway coverage areas.'
-    );
+    this.logger('debug', 'No warnings feed covers this position, returning none', {
+      point: toCoordKey(location),
+    });
+    return [];
   }
 
   private inBox(

@@ -50,6 +50,21 @@ const CURRENT_PARAMS = [
   'visibility',
   'uv_index',
 ].join(',');
+/**
+ * Hourly companion variable requested alongside the current block. The current
+ * block's `precipitation` is a backward-looking sum over its 900-second
+ * `interval`, so it cannot fill `environment.weather.precipitationLastHour`;
+ * the hourly variable is documented as the sum of the preceding hour and does.
+ */
+const CURRENT_COMPANION_HOURLY_PARAMS = 'precipitation';
+/**
+ * Hourly companion window: the hour before the current one plus the current
+ * one. `forecast_hours=1` yields the bucket stamped at the top of the current
+ * hour, which covers the hour that has just elapsed, and `past_hours=1` keeps
+ * the preceding bucket available when a provider clock straddles the boundary.
+ */
+const CURRENT_COMPANION_PAST_HOURS = 1;
+const CURRENT_COMPANION_FORECAST_HOURS = 1;
 /** Hourly-block variables for the 48-hour point-forecast endpoint. */
 const HOURLY_PARAMS = [
   'temperature_2m',
@@ -246,10 +261,16 @@ export class OpenMeteoService implements ForecastCapableProvider {
     return url;
   }
 
-  /** Build the current-block request URL. */
+  /**
+   * Build the current-block request URL, plus the two-hour `precipitation`
+   * companion series the past-hour accumulation is read from.
+   */
   private buildUrl(location: GeoLocation): URL {
     const url = this.buildBaseUrl(location);
     url.searchParams.set('current', CURRENT_PARAMS);
+    url.searchParams.set('hourly', CURRENT_COMPANION_HOURLY_PARAMS);
+    url.searchParams.set('past_hours', String(CURRENT_COMPANION_PAST_HOURS));
+    url.searchParams.set('forecast_hours', String(CURRENT_COMPANION_FORECAST_HOURS));
     return url;
   }
 

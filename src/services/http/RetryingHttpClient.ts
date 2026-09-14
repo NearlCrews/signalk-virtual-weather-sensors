@@ -41,6 +41,12 @@ export interface RetryingHttpClientOptions {
   readonly retryDelayMs: number;
   /** `User-Agent` header sent on every request. */
   readonly userAgent: string;
+  /**
+   * Extra headers sent on every request, such as an `Authorization` header.
+   * Headers are never logged, so a credential belongs here rather than in the
+   * URL.
+   */
+  readonly headers?: Readonly<Record<string, string>>;
   /** Called once immediately before every fetch attempt. It may reject dispatch. */
   readonly beforeRequest?: () => void;
   /** Logger for debug and warn lines; defaults to a no-op. */
@@ -64,6 +70,7 @@ export class RetryingHttpClient {
   private readonly retryAttempts: number;
   private readonly retryDelayMs: number;
   private readonly userAgent: string;
+  private readonly headers: Readonly<Record<string, string>>;
   private readonly beforeRequest: () => void;
   private readonly logger: Logger;
   private readonly maxResponseBytes: number;
@@ -75,6 +82,7 @@ export class RetryingHttpClient {
     this.retryAttempts = options.retryAttempts;
     this.retryDelayMs = options.retryDelayMs;
     this.userAgent = options.userAgent;
+    this.headers = options.headers ?? {};
     this.beforeRequest = options.beforeRequest ?? (() => {});
     this.logger = options.logger ?? (() => {});
     this.maxResponseBytes = options.maxResponseBytes ?? DEFAULT_MAX_RESPONSE_BYTES;
@@ -118,7 +126,7 @@ export class RetryingHttpClient {
     });
     const response = await fetch(url.toString(), {
       method: 'GET',
-      headers: { Accept: 'application/json', 'User-Agent': this.userAgent },
+      headers: { Accept: 'application/json', 'User-Agent': this.userAgent, ...this.headers },
       signal,
     });
     if (!response.ok) await this.handleApiError(response, attempt);
@@ -281,10 +289,11 @@ export class RetryingHttpClient {
   }
 
   /**
-   * Return URL string with the apikey query parameter stripped so it's safe to log.
-   * Debug-level logs are not passed through sanitizeLogMetadata, so we must strip
-   * secrets here before they reach the logger. A cheap string check avoids the
-   * URL clone allocation on the common keyless path.
+   * Return URL string with any apikey query parameter masked so it's safe to
+   * log. The plugin's own AccuWeather requests authenticate through a header
+   * and carry no key in the URL; this guard stays because the client is
+   * generic and a caller could still hand it a keyed URL. A cheap string check
+   * avoids the URL clone allocation on the common keyless path.
    * @private
    */
   private sanitizeUrlForLogging(url: URL): string {

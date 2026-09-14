@@ -124,6 +124,26 @@ export class WeatherService {
    */
   private consecutiveFailures = 0;
   /**
+   * Operator-facing message for the most recent failed fetch, cleared on the
+   * next success.
+   *
+   * `escalateFetchError` writes an error banner the moment a fetch fails, but
+   * the emission tick overwrites it a few seconds later with the live status
+   * line, because data fetched before the outage is still inside the staleness
+   * window. Latching the message here lets `getTickBanner` keep reporting the
+   * failure until a fetch succeeds, so a provider outage is visible for the
+   * whole outage instead of for one emission interval.
+   */
+  private lastFetchErrorMessage: string | null = null;
+  /**
+   * True while the plugin has a usable configuration but no usable position, so
+   * no fetch can be attempted. Surfaced through `getTickBanner` rather than a
+   * one-shot `setBanner` call, so the admin banner and the panel's
+   * `/api/status` agree instead of the panel reporting a green "awaiting first
+   * update" forever.
+   */
+  private awaitingPosition = false;
+  /**
    * True once an AccuWeather 401 has been seen: the configured key is invalid,
    * so retrying burns quota with no chance of success. The update timer is
    * cleared and subsequent forceUpdate calls return early. Cleared only by a
@@ -431,18 +451,37 @@ export class WeatherService {
   }
 
   /**
-   * Banner the emission tick should push this tick. Owns the precedence:
-   * the quota-exhausted error wins (it tells the operator WHY fetches paused,
-   * even when the data has also gone stale), then the stale-data error, then
-   * the live status banner. The caller routes the result through its dedupe
-   * sink and separately gates emission on `isDataStale()`.
+   * Banner the emission tick should push this tick. Owns the precedence, most
+   * specific cause first:
+   *   1. a rejected API key, which no retry can clear;
+   *   2. the quota pause, which says WHY fetches stopped even once the data
+   *      has also gone stale;
+   *   3. no usable GPS position, which is why nothing has been fetched at all;
+   *   4. stale data, the watchdog on a fetch that has stopped landing;
+   *   5. the latched message from the last failed fetch, which names the cause
+   *      before the watchdog trips;
+   *   6. the live status line.
+   *
+   * Every failure state is an `error` kind, which is also what `/api/status`
+   * reads to clear its `running` flag, so the panel and the admin banner
+   * cannot report different health. The caller routes the result through its
+   * dedupe sink and separately gates emission on `isDataStale()`.
    */
   public getTickBanner(): TickBanner {
+    if (this.apiKeyRejected) {
+      return { kind: 'error', message: this.formatStatusBanner() };
+    }
     if (this.isQuotaExhausted()) {
       return { kind: 'error', message: this.formatQuotaExhaustedMessage() };
     }
+    if (this.awaitingPosition) {
+      return { kind: 'error', message: PLUGIN.STATUS.WAITING_FOR_POSITION };
+    }
     if (this.isDataStale()) {
       return { kind: 'error', message: this.formatStaleMessage() };
+    }
+    if (this.lastFetchErrorMessage !== null) {
+      return { kind: 'error', message: this.lastFetchErrorMessage };
     }
     return { kind: 'status', message: this.formatStatusBanner() };
   }
@@ -516,7 +555,7 @@ export class WeatherService {
 
     const used = this.getRequestCountLast24h();
     const prefix = this.shouldShowQuotaWarning(used)
-      ? PLUGIN.STATUS.RUNNING_QUOTA_WARN
+      ? PLUGIN.STATUS.runningQuotaWarn(this.quotaPercentUsed(used))
       : PLUGIN.STATUS.RUNNING;
 
     const ageMs = this.getDataAgeMs();
@@ -538,8 +577,24 @@ export class WeatherService {
     }
     const quotaSegment = this.formatQuotaSegment(used);
     if (quotaSegment) counters.push(quotaSegment);
+    const pausedSegment = this.formatPausedChildrenSegment();
+    if (pausedSegment) counters.push(pausedSegment);
 
     return `${prefix}, last update ${ageLabel} (${counters.join(', ')})`;
+  }
+
+  /**
+   * `<name> paused at quota` segment naming any child of a merging provider
+   * that has stopped contributing. A blend silently degrading from three
+   * sources to two would otherwise show a green banner and a `warn` log line
+   * as its only signal. Empty for a single provider, and empty when every
+   * child is blocked, because `getTickBanner` then shows the quota error.
+   * @private
+   */
+  private formatPausedChildrenSegment(): string {
+    const paused = this.weatherProvider.getBlockedChildNames?.() ?? [];
+    if (paused.length === 0) return '';
+    return `${paused.join(' and ')} paused at quota`;
   }
 
   /**
@@ -559,6 +614,38 @@ export class WeatherService {
    */
   private shouldShowQuotaWarning(used: number): boolean {
     return isApiQuotaReached(used, this.config.dailyApiQuota, API_QUOTA.WARN_RATIO);
+  }
+
+  /**
+   * Warn once per fetch when the provider's observation is ahead of the local
+   * clock, which means this host is behind UTC.
+   *
+   * Observation ages are clamped at zero so a backward NTP jump cannot surface
+   * a negative age, and the side effect is that a host clock behind UTC makes
+   * every observation look permanently fresh: `isDataStale()` never trips on
+   * the observation-age condition while the skew holds. That is a real loss of
+   * a watchdog, so name it in the log rather than let it pass silently.
+   * @private
+   */
+  private warnOnClockSkew(observationMs: number): void {
+    if (!Number.isFinite(observationMs)) return;
+    const skewMs = observationMs - Date.now();
+    if (skewMs <= 0) return;
+    this.logger('warn', 'Provider observation is ahead of this host clock', {
+      skewSeconds: Math.round(skewMs / 1000),
+      impact:
+        'This host appears to be behind UTC. Check the system time and NTP: observation-age staleness detection is suppressed while the skew holds.',
+    });
+  }
+
+  /**
+   * Rolling 24h usage as a whole percentage of the configured cap. Only called
+   * behind `shouldShowQuotaWarning`, which is false when the cap is disabled,
+   * so the divisor is positive. Rounded down so the figure never overstates.
+   * @private
+   */
+  private quotaPercentUsed(used: number): number {
+    return Math.floor((used / this.config.dailyApiQuota) * 100);
   }
 
   /**
@@ -649,13 +736,14 @@ export class WeatherService {
   }
 
   /**
-   * Calculate interval with jitter to avoid synchronized API requests
-   * Adds ±10% random variation to the interval
+   * Lengthen an interval by a random 0 to 10 percent so several plugin
+   * instances do not synchronize their API requests. The jitter only ever
+   * delays, never shortens: the configured cadence is a floor, which keeps the
+   * documented per-day call count an upper bound instead of an average.
    * @private
    */
   private addJitter(baseInterval: number): number {
-    const jitterRange = baseInterval * 0.1;
-    const jitter = (Math.random() - 0.5) * 2 * jitterRange;
+    const jitter = Math.random() * baseInterval * 0.1;
     return Math.round(baseInterval + jitter);
   }
 
@@ -737,10 +825,15 @@ export class WeatherService {
       const vesselData = this.signalKService.getVesselNavigationData();
       const position = vesselData.position;
       if (!position) {
-        this.logger('warn', 'Waiting for GPS position');
-        this.setBanner('status', 'Waiting for GPS position');
+        // Latched, not one-shot: the emission tick's own banner would otherwise
+        // overwrite this within `emissionInterval` seconds and report a green
+        // "Running, awaiting first update" on a plugin publishing nothing.
+        this.awaitingPosition = true;
+        this.logger('warn', PLUGIN.STATUS.WAITING_FOR_POSITION);
+        this.setBanner('error', PLUGIN.STATUS.WAITING_FOR_POSITION);
         return;
       }
+      this.awaitingPosition = false;
 
       const weatherData = await this.weatherProvider.fetchCurrentWeather(position);
 
@@ -759,10 +852,12 @@ export class WeatherService {
       this.currentWeatherData = enhancedWeatherData;
       this.lastUpdate = new Date();
       this.lastObservationMs = Date.parse(enhancedWeatherData.timestamp);
+      this.warnOnClockSkew(this.lastObservationMs);
       this.updateCount++;
       // Reset failure streaks on any successful fetch so transient outages do
       // not leave the plugin in an error state once recovery happens.
       this.consecutiveFailures = 0;
+      this.lastFetchErrorMessage = null;
 
       // Cold-start UX: the plugin entry pushes "Running, awaiting first update"
       // during start(), and the emission timer wouldn't re-push the banner
@@ -850,7 +945,13 @@ export class WeatherService {
     // first and subsequent failures; dedupe in the banner sink keeps repeat
     // identical messages from flooding the admin UI.
     const streak = this.consecutiveFailures > 1 ? ` (${this.consecutiveFailures} consecutive)` : '';
-    this.setBanner('error', `Weather update failed${streak}: ${errorMessage}`);
+    // Latched so `getTickBanner` keeps reporting the outage. Without it the
+    // next emission tick, at most `emissionInterval` seconds later, overwrites
+    // this with the live status line, because data fetched before the outage
+    // is still inside the staleness window. The banner then reads green for up
+    // to `2 x updateFrequency` on a plugin whose fetches are all failing.
+    this.lastFetchErrorMessage = `Weather update failed${streak}: ${errorMessage}`;
+    this.setBanner('error', this.lastFetchErrorMessage);
   }
 
   /**

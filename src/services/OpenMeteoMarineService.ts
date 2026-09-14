@@ -93,8 +93,13 @@ export class OpenMeteoMarineService {
 
   private buildUrl(location: GeoLocation): URL {
     const url = new URL(`${this.baseUrl}${MARINE_ENDPOINT}`);
-    url.searchParams.set('latitude', String(location.latitude));
-    url.searchParams.set('longitude', String(location.longitude));
+    // Four decimals (about 11 m), the same rounding every other provider in
+    // this plugin uses. Full float precision produced a distinct URL on every
+    // fetch from a moving vessel, defeating any upstream or intermediary cache
+    // for no gain: the marine grid is coarser than a metre by orders of
+    // magnitude.
+    url.searchParams.set('latitude', location.latitude.toFixed(4));
+    url.searchParams.set('longitude', location.longitude.toFixed(4));
     url.searchParams.set('current', CURRENT_PARAMS);
     url.searchParams.set('timezone', 'GMT');
     return url;

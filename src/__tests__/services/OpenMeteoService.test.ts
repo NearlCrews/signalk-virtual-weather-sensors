@@ -59,6 +59,21 @@ describe('OpenMeteoService', () => {
     expect(calledUrl).toContain('weather_code');
   });
 
+  it('requests the hourly precipitation companion beside the current block', async () => {
+    (global.fetch as Mock).mockResolvedValueOnce(createMockFetchResponse(SAMPLE));
+    const service = new OpenMeteoService();
+
+    await service.fetchCurrentWeather(GREENWICH);
+
+    // The current block's precipitation is a 15-minute backward sum, so the
+    // past-hour depth `environment.weather.precipitationLastHour` promises has
+    // to come from the hourly series covering the elapsed hour.
+    const calledUrl = new URL(String((global.fetch as Mock).mock.calls[0][0]));
+    expect(calledUrl.searchParams.get('hourly')).toBe('precipitation');
+    expect(calledUrl.searchParams.get('past_hours')).toBe('1');
+    expect(calledUrl.searchParams.get('forecast_hours')).toBe('1');
+  });
+
   it('limits coordinates sent upstream to four decimal places', async () => {
     (global.fetch as Mock).mockResolvedValueOnce(createMockFetchResponse(SAMPLE));
     const service = new OpenMeteoService();

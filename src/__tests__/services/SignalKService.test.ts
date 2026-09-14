@@ -497,6 +497,42 @@ describe('SignalKService', () => {
     it('uses the source measurement timestamp and rejects stale navigation data', () => {
       const staleTimestamp = new Date(Date.now() - 31_000).toISOString();
       const mockApp = createMockApp({
+        'navigation.speedOverGround': { value: 5, timestamp: staleTimestamp },
+      });
+
+      const service = new SignalKService(mockApp as never, mockLogger);
+      const data = service.getVesselNavigationData();
+
+      expect(data.speedOverGround).toBeUndefined();
+      expect(mockLogger).toHaveBeenCalledWith(
+        'warn',
+        expect.stringContaining('stale or future'),
+        expect.objectContaining({ timestamp: staleTimestamp })
+      );
+    });
+
+    it('accepts a position far older than the motion-vector budget', () => {
+      // Position only selects a weather grid cell and the fetch cadence is
+      // 30 minutes, so a 10-minute-old fix (about 2 nm at 12 knots, well inside
+      // any provider's cell) must not block a fetch the way a 10-minute-old
+      // speed would block the apparent-wind vector.
+      const mockApp = createMockApp({
+        'navigation.position': {
+          value: { latitude: 37.0, longitude: -122.0 },
+          timestamp: new Date(Date.now() - 10 * 60_000).toISOString(),
+        },
+      });
+
+      const service = new SignalKService(mockApp as never, mockLogger);
+      expect(service.getVesselNavigationData().position).toEqual({
+        latitude: 37.0,
+        longitude: -122.0,
+      });
+    });
+
+    it('still rejects a position older than its own budget', () => {
+      const staleTimestamp = new Date(Date.now() - 31 * 60_000).toISOString();
+      const mockApp = createMockApp({
         'navigation.position': {
           value: { latitude: 37.0, longitude: -122.0 },
           timestamp: staleTimestamp,

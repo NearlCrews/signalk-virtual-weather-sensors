@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { WindCalculator } from '../../calculators/WindCalculator.js';
 import { WeatherService } from '../../services/WeatherService.js';
 import type { PluginConfiguration } from '../../types/index.js';
+import { createMockWeatherData } from '../setup.js';
 
 // Mock ServerAPI
 const createMockApp = () => ({
@@ -122,6 +123,25 @@ describe('WeatherService', () => {
           intervalMinutes: config.updateFrequency,
         })
       );
+    });
+
+    it('never schedules fetches faster than the configured cadence', async () => {
+      // The jitter only delays (0 to 10 percent), so the configured interval is
+      // a floor and the documented calls-per-day figure is an upper bound.
+      const baseIntervalMs = config.updateFrequency * 60_000;
+      for (const draw of [0, 0.5, 0.999]) {
+        vi.spyOn(Math, 'random').mockReturnValue(draw);
+        const service = new WeatherService(mockApp as never, config, mockLogger);
+        await service.start();
+        const started = mockLogger.mock.calls.find(
+          (call) => call[1] === 'Weather update timer started'
+        );
+        const metadata = started?.[2] as { actualIntervalMs: number } | undefined;
+        expect(metadata?.actualIntervalMs).toBeGreaterThanOrEqual(baseIntervalMs);
+        expect(metadata?.actualIntervalMs).toBeLessThanOrEqual(baseIntervalMs * 1.1);
+        await service.stop();
+        mockLogger.mockClear();
+      }
     });
   });
 
@@ -286,10 +306,19 @@ describe('WeatherService', () => {
       await service.forceUpdate();
 
       expect(provider.fetchCurrentWeather).not.toHaveBeenCalled();
+      // An error kind, not a status: /api/status reads the kind to clear its
+      // `running` flag, so a status banner here showed a green indicator on a
+      // plugin publishing nothing.
       expect(banners).toEqual([
-        { kind: 'status', message: 'Waiting for GPS position' },
-        { kind: 'status', message: 'Waiting for GPS position' },
+        { kind: 'error', message: 'Waiting for GPS position' },
+        { kind: 'error', message: 'Waiting for GPS position' },
       ]);
+      // Latched, so the emission tick reports the same state instead of
+      // overwriting it with the live status line seconds later.
+      expect(service.getTickBanner()).toEqual({
+        kind: 'error',
+        message: 'Waiting for GPS position',
+      });
       expect(service.getServiceStatus().errorCount).toBe(0);
       expect((service as unknown as { consecutiveFailures: number }).consecutiveFailures).toBe(0);
     });
@@ -567,16 +596,28 @@ describe('WeatherService - Quota Banner', () => {
     expect(service.isQuotaExhausted()).toBe(false);
   });
 
-  it('flags exhaustion at 100% usage and keeps the warning prefix', () => {
+  it('flags exhaustion at 100% usage and reports the real percentage', () => {
     const config = createTestConfig({ dailyApiQuota: 50 });
     const service = new WeatherService(mockApp as never, config, mockLogger, {
       weatherProvider: makeFakeAccu(50),
     });
 
     const banner = service.formatStatusBanner();
-    expect(banner).toContain('Running [quota 90% used]');
+    // The prefix used to be the fixed literal `Running [quota 90% used]`, so it
+    // kept claiming 90 percent at 95, at 100, and beyond. In merged mode, where
+    // the quota error banner is not reached until every child is blocked, that
+    // was the only figure an operator saw.
+    expect(banner).toContain('Running [quota 100% used]');
     expect(banner).toContain('50/50 today');
     expect(service.isQuotaExhausted()).toBe(true);
+  });
+
+  it('reports an intermediate percentage between the warning threshold and the cap', () => {
+    const config = createTestConfig({ dailyApiQuota: 50 });
+    const service = new WeatherService(mockApp as never, config, mockLogger, {
+      weatherProvider: makeFakeAccu(48),
+    });
+    expect(service.formatStatusBanner()).toContain('Running [quota 96% used]');
   });
 
   it('formats the quota-exhausted message with actionable guidance', () => {
@@ -1089,5 +1130,128 @@ describe('WeatherService - Configuration Validation', () => {
         emissionInterval: 10,
       })
     );
+  });
+});
+
+describe('WeatherService - failure banner precedence', () => {
+  let mockApp: ReturnType<typeof createMockApp>;
+  let mockLogger: ReturnType<typeof createMockLogger>;
+
+  beforeEach(() => {
+    mockApp = createMockApp();
+    mockLogger = createMockLogger();
+  });
+
+  /** A service whose provider answers once, then fails on every later call. */
+  const makeFlakyService = (): {
+    service: WeatherService;
+    failNext: () => void;
+    recover: () => void;
+  } => {
+    let shouldFail = false;
+    const provider = {
+      name: 'Open-Meteo',
+      fetchCurrentWeather: vi.fn(async () => {
+        if (shouldFail) throw new Error('NETWORK_ERROR: upstream down');
+        return createMockWeatherData({ timestamp: new Date().toISOString() });
+      }),
+      getRequestCount: () => 1,
+      getRequestCountLast24h: () => 0,
+      getCacheStats: () => ({ size: 0 }),
+    };
+    const signalKService = {
+      getVesselNavigationData: () => ({
+        position: { latitude: 51.5, longitude: 0 },
+        isComplete: false,
+      }),
+      getHealthStatus: () => ({ status: 'ok', isStale: false }),
+      clearCache: () => {},
+    };
+    const service = new WeatherService(mockApp as never, createTestConfig(), mockLogger, {
+      weatherProvider: provider as never,
+      signalKService: signalKService as never,
+      setBanner: () => {},
+    });
+    return {
+      service,
+      failNext: () => {
+        shouldFail = true;
+      },
+      recover: () => {
+        shouldFail = false;
+      },
+    };
+  };
+
+  it('keeps reporting a fetch failure instead of reverting to the live status line', async () => {
+    const { service, failNext } = makeFlakyService();
+    await service.start();
+    await service.forceUpdate();
+    expect(service.getTickBanner().kind).toBe('status');
+
+    failNext();
+    await expect(service.forceUpdate()).rejects.toThrow();
+
+    // Data fetched before the outage is still inside the staleness window, so
+    // the old code let the next emission tick overwrite the error with a green
+    // "Running, last update just now" for up to 2 x updateFrequency.
+    expect(service.isDataStale()).toBe(false);
+    expect(service.getTickBanner()).toEqual({
+      kind: 'error',
+      message: 'Weather update failed: NETWORK_ERROR: upstream down',
+    });
+    await service.stop();
+  });
+
+  it('clears the latched failure on the next successful fetch', async () => {
+    const { service, failNext, recover } = makeFlakyService();
+    await service.start();
+    await service.forceUpdate();
+
+    failNext();
+    await expect(service.forceUpdate()).rejects.toThrow();
+    expect(service.getTickBanner().kind).toBe('error');
+
+    recover();
+    await service.forceUpdate();
+    expect(service.getTickBanner().kind).toBe('status');
+    await service.stop();
+  });
+
+  it('names a quota-paused child while the blend still produces values', async () => {
+    const provider = {
+      name: 'Virtual Weather Sensors (merged)',
+      fetchCurrentWeather: async () => createMockWeatherData({}),
+      getRequestCount: () => 12,
+      getRequestCountLast24h: () => 50,
+      getCacheStats: () => ({ size: 0 }),
+      isCurrentWeatherFetchBlocked: () => false,
+      getBlockedChildNames: () => ['AccuWeather'],
+    };
+    const signalKService = {
+      getVesselNavigationData: () => ({
+        position: { latitude: 51.5, longitude: 0 },
+        isComplete: false,
+      }),
+      getHealthStatus: () => ({ status: 'ok', isStale: false }),
+      clearCache: () => {},
+    };
+    const service = new WeatherService(
+      mockApp as never,
+      createTestConfig({ dailyApiQuota: 50 }),
+      mockLogger,
+      {
+        weatherProvider: provider as never,
+        signalKService: signalKService as never,
+        setBanner: () => {},
+      }
+    );
+    await service.start();
+    await service.forceUpdate();
+
+    const banner = service.formatStatusBanner();
+    expect(banner).toContain('AccuWeather paused at quota');
+    expect(banner).toContain('Running [quota 100% used]');
+    await service.stop();
   });
 });

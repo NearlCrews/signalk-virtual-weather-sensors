@@ -138,3 +138,81 @@ describe('MetNoService v2 capability', () => {
     expect(svc.getRequestCount()).toBe(1);
   });
 });
+
+describe('MetNoService caching hygiene', () => {
+  /** Advance past the 10-minute document memo without waiting for it. */
+  const expireMemo = (): void => {
+    vi.setSystemTime(Date.now() + 11 * 60_000);
+  };
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('keeps hitting the memo as the vessel moves within a grid cell', async () => {
+    (global.fetch as Mock).mockResolvedValue(createMockFetchResponse(SAMPLE));
+    const svc = new MetNoService(() => {});
+
+    // About 110 m apart. At four decimals (11 m) each of these was a distinct
+    // memo key, so a vessel underway refetched on every call.
+    await svc.fetchCurrentWeather({ latitude: 60.0001, longitude: 11.0001 });
+    await svc.fetchCurrentWeather({ latitude: 60.0009, longitude: 11.0009 });
+
+    expect((global.fetch as Mock).mock.calls).toHaveLength(1);
+  });
+
+  it('reuses the held document without a request while its Expires is in the future', async () => {
+    vi.useFakeTimers();
+    (global.fetch as Mock).mockResolvedValue(
+      createMockFetchResponse(SAMPLE, {
+        extraHeaders: { Expires: new Date(Date.now() + 30 * 60_000).toUTCString() },
+      })
+    );
+    const svc = new MetNoService(() => {});
+    const position = { latitude: 60, longitude: 11 };
+
+    await svc.fetchCurrentWeather(position);
+    expireMemo();
+    await svc.fetchCurrentWeather(position);
+
+    expect((global.fetch as Mock).mock.calls).toHaveLength(1);
+    expect(svc.getRequestCount()).toBe(1);
+  });
+
+  it('revalidates with If-Modified-Since and reuses the document on a 304', async () => {
+    vi.useFakeTimers();
+    const lastModified = new Date(Date.now() - 60 * 60_000).toUTCString();
+    (global.fetch as Mock)
+      .mockResolvedValueOnce(
+        createMockFetchResponse(SAMPLE, { extraHeaders: { 'Last-Modified': lastModified } })
+      )
+      .mockResolvedValueOnce(
+        createMockFetchResponse(null, { ok: false, status: 304, statusText: 'Not Modified' })
+      );
+    const svc = new MetNoService(() => {});
+    const position = { latitude: 60, longitude: 11 };
+
+    const first = await svc.fetchCurrentWeather(position);
+    expireMemo();
+    const second = await svc.fetchCurrentWeather(position);
+
+    expect(second.temperature).toBeCloseTo(first.temperature, 6);
+    const revalidation = (global.fetch as Mock).mock.calls[1];
+    const headers = (revalidation?.[1] as RequestInit | undefined)?.headers as Record<
+      string,
+      string
+    >;
+    expect(headers['If-Modified-Since']).toBe(lastModified);
+  });
+
+  it('sends no validator when nothing is held to revalidate', async () => {
+    (global.fetch as Mock).mockResolvedValue(createMockFetchResponse(SAMPLE));
+    const svc = new MetNoService(() => {});
+
+    await svc.fetchCurrentWeather({ latitude: 60, longitude: 11 });
+
+    const headers = ((global.fetch as Mock).mock.calls[0]?.[1] as RequestInit | undefined)
+      ?.headers as Record<string, string>;
+    expect(headers['If-Modified-Since']).toBeUndefined();
+  });
+});
