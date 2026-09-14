@@ -190,7 +190,44 @@ describe('mergeWeatherData: conservative hazard drivers', () => {
     expect(mergeWeatherData([mild, cold]).windChill).toBeCloseTo(228.54, 5);
   });
 
+  it('keeps the heat band the milder survivor would have averaged away', () => {
+    const hot = base({ heatStressIndex: 4 });
+    const mild = base({ heatStressIndex: 2 });
+    expect(mergeWeatherData([mild, hot]).heatStressIndex).toBe(4);
+  });
+
+  it('keeps the strongest reported gust rather than the mean of two', () => {
+    const gusty = base({ windSpeed: 12, windGustSpeed: 28 });
+    const calm = base({ windSpeed: 12, windGustSpeed: 14 });
+    expect(mergeWeatherData([calm, gusty]).windGustSpeed).toBe(28);
+  });
+
+  it('keeps the worst reported visibility rather than the mean of two', () => {
+    const fog = base({ visibility: 400 });
+    const clear = base({ visibility: 20000 });
+    expect(mergeWeatherData([clear, fog]).visibility).toBe(400);
+  });
+
+  it('keeps the heaviest reported past-hour precipitation', () => {
+    const heavy = base({ precipitationLastHour: 12.5 });
+    const light = base({ precipitationLastHour: 0.2 });
+    expect(mergeWeatherData([light, heavy]).precipitationLastHour).toBe(12.5);
+  });
+
+  it('keeps the highest-severity condition even when the primary reports a milder one', () => {
+    const severe = base({
+      severeCondition: { state: 'alarm', label: 'Severe thunderstorm' },
+    });
+    const mild = base({ severeCondition: { state: 'warn', label: 'Rain' } });
+    expect(mergeWeatherData([mild, severe]).severeCondition).toEqual({
+      state: 'alarm',
+      label: 'Severe thunderstorm',
+    });
+  });
+
   it('declares every hazard driver conservative in FIELD_MERGE_KINDS', () => {
+    // Not a restatement of the behaviour above: the merge dispatches on these
+    // entries, so changing one here changes what actually runs.
     expect(FIELD_MERGE_KINDS.beaufortScale).toBe('hazard-max');
     expect(FIELD_MERGE_KINDS.heatStressIndex).toBe('hazard-max');
     expect(FIELD_MERGE_KINDS.windChill).toBe('hazard-min');

@@ -21,22 +21,13 @@
  *   Every value a notification band reads is taken conservatively from the
  *   survivors, never from the mean, because averaging two providers can cancel
  *   a band that either one alone would raise: 18.0 m/s (Bf8, gale) blended with
- *   15.0 m/s (Bf7) yields 16.5 m/s (Bf7) and no gale warning. The conservative
- *   drivers are `beaufortScale` (highest survivor), `windChill` (lowest
- *   survivor), `heatStressIndex` (highest survivor), `windGustSpeed`
- *   (hazard-max), `visibility` (hazard-min), `precipitationLastHour`
- *   (hazard-max), `severeCondition` (highest severity), and `pressureTendency`
- *   (falling wins). Each is a value some contributing provider actually
- *   reported or derived from its own coherent reading set, so no synthetic
- *   number reaches an alarm.
- *
- *   The published measurements stay averaged: `windSpeed`, `temperature`,
- *   `pressure`, `humidity`, and `dewPoint` are means, and
- *   `wetBulbGlobeTemperature` stays priority-present so a measured globe
- *   temperature is preferred over a shade estimate. A conservative category can
- *   therefore sit beside a lower merged measurement (Bf8 next to 16.5 m/s);
- *   that is deliberate, and it is the same trade `windGustSpeed: hazard-max`
- *   beside `windSpeed: mean` already makes.
+ *   15.0 m/s (Bf7) yields 16.5 m/s (Bf7) and no gale warning. Which fields
+ *   those are, and why each one is what it is, is stated per entry in
+ *   FIELD_MERGE_KINDS below; that table is the only place a field's policy is
+ *   declared, and `reduceNumeric` runs the kind it declares. A conservative
+ *   category can therefore sit beside a lower merged measurement (Bf8 next to
+ *   16.5 m/s); that is deliberate, and it is the same trade
+ *   `windGustSpeed: hazard-max` beside `windSpeed: mean` already makes.
  */
 import { deriveBaseWeatherFields } from '../calculators/deriveWeatherFields.js';
 import type { SevereCondition, WeatherData } from '../types/index.js';
@@ -64,7 +55,7 @@ export type MergeKind =
  * is caught at build time. The coverage test asserts the runtime key set
  * matches a fully-populated WeatherData sample as a second safety net.
  */
-export const FIELD_MERGE_KINDS: Readonly<Record<keyof WeatherData, MergeKind>> = {
+export const FIELD_MERGE_KINDS = {
   // Core required fields
   temperature: 'mean',
   pressure: 'mean',
@@ -129,7 +120,7 @@ export const FIELD_MERGE_KINDS: Readonly<Record<keyof WeatherData, MergeKind>> =
   pressureTendency: 'conservative-tendency',
   precipitationType: 'categorical',
   visibilityObstruction: 'categorical',
-};
+} as const satisfies Readonly<Record<keyof WeatherData, MergeKind>>;
 
 // ---- Severity ladder (compile-exhaustive) ----
 
@@ -234,7 +225,52 @@ function maxSeverity(dataList: ReadonlyArray<WeatherData>): SevereCondition | un
  * is the narrowest safe route.
  */
 function collectNums(dataList: ReadonlyArray<WeatherData>, key: keyof WeatherData): number[] {
-  return dataList.map((d) => d[key] as unknown).filter((v): v is number => typeof v === 'number');
+  const values: number[] = [];
+  for (const d of dataList) {
+    const value = d[key] as unknown;
+    if (typeof value === 'number') values.push(value);
+  }
+  return values;
+}
+
+/** The merge kinds that reduce a list of survivor numbers to one number. */
+type NumericMergeKind = 'mean' | 'hazard-max' | 'hazard-min';
+
+/**
+ * Reducer per numeric merge kind. `reduceNumeric` looks the reducer up from the
+ * field's declared kind instead of naming one at the call site, so the table is
+ * the mechanism rather than a parallel spec: change a field's kind and the
+ * merge changes with it, and a field whose kind has no numeric reducer is a
+ * compile error rather than a silently unchanged rule.
+ */
+const NUMERIC_REDUCERS: Readonly<Record<NumericMergeKind, (values: number[]) => number>> = {
+  mean,
+  'hazard-max': hazardMax,
+  'hazard-min': hazardMin,
+};
+
+/** A numeric WeatherData field whose declared kind has a reducer. */
+type ReducedField = {
+  [K in keyof WeatherData]-?: (typeof FIELD_MERGE_KINDS)[K] extends NumericMergeKind
+    ? NonNullable<WeatherData[K]> extends number
+      ? K
+      : never
+    : never;
+}[keyof WeatherData];
+
+/**
+ * Merge one numeric field across the survivors under its declared kind, or
+ * undefined when no survivor supplied it. The empty-list policy is stated here
+ * once: an optional field stays absent, and the two required hazard drivers
+ * name their own fallback at the call site.
+ */
+function reduceNumeric(
+  dataList: ReadonlyArray<WeatherData>,
+  key: ReducedField
+): number | undefined {
+  const values = collectNums(dataList, key);
+  if (values.length === 0) return undefined;
+  return NUMERIC_REDUCERS[FIELD_MERGE_KINDS[key]](values);
 }
 
 /**
@@ -253,76 +289,70 @@ function mergeTendency(vals: number[]): number | undefined {
 type MutablePartialWeatherData = { -readonly [K in keyof WeatherData]?: WeatherData[K] };
 
 /**
- * Optional mean fields spread into the output object. Each entry is only
- * present when at least one provider supplied the field.
+ * Write `value` under `key` when it is present. Absent stays absent, stated
+ * once here rather than guarded at every optional field, so no field can be
+ * emitted as a real 0 by a forgotten check.
  */
-function meanOptionals(dataList: ReadonlyArray<WeatherData>): MutablePartialWeatherData {
-  const opt: MutablePartialWeatherData = {};
-  const addMean = (key: keyof WeatherData, vals: number[]): void => {
-    if (vals.length > 0) (opt as Record<keyof WeatherData, unknown>)[key] = mean(vals);
+function optionalWriter(opt: MutablePartialWeatherData) {
+  return (key: keyof WeatherData, value: unknown): void => {
+    if (value !== undefined) (opt as Record<keyof WeatherData, unknown>)[key] = value;
   };
-  addMean('realFeel', collectNums(dataList, 'realFeel'));
-  addMean('realFeelShade', collectNums(dataList, 'realFeelShade'));
-  addMean('wetBulbTemperature', collectNums(dataList, 'wetBulbTemperature'));
-  addMean('apparentTemperature', collectNums(dataList, 'apparentTemperature'));
-  addMean('uvIndex', collectNums(dataList, 'uvIndex'));
-  addMean('cloudCover', collectNums(dataList, 'cloudCover'));
-  addMean('cloudCeiling', collectNums(dataList, 'cloudCeiling'));
-  addMean('temperatureDeparture24h', collectNums(dataList, 'temperatureDeparture24h'));
-  return opt;
 }
 
 /**
- * Hazard and categorical optional fields spread into the output object. Covers
- * hazard-max, hazard-min, conservative-tendency, priority-present, and categorical
- * fields that are absent from some providers.
+ * Optional fields reduced from the survivors' numeric values. The reducer per
+ * field is whatever FIELD_MERGE_KINDS declares, so this list decides only WHICH
+ * fields are optional numerics, never how they blend.
  */
-function hazardAndCategoricalOptionals(
+const REDUCED_OPTIONAL_FIELDS = [
+  'realFeel',
+  'realFeelShade',
+  'wetBulbTemperature',
+  'apparentTemperature',
+  'uvIndex',
+  'cloudCover',
+  'cloudCeiling',
+  'temperatureDeparture24h',
+  'precipitationLastHour',
+  'visibility',
+  'heatStressIndex',
+] as const satisfies ReadonlyArray<ReducedField>;
+
+/**
+ * Optional fields taken from the first survivor that supplies them
+ * (priority-present and categorical). The published WBGT is here rather than
+ * averaged because a measured globe temperature and a shade-estimated one are
+ * different quantities; the heat band reads `heatStressIndex` instead, which
+ * every survivor derived from its own WBGT.
+ */
+const FIRST_PRESENT_OPTIONAL_FIELDS = [
+  'wetBulbGlobeTemperature',
+  'description',
+  'weatherIcon',
+  'precipitationType',
+  'visibilityObstruction',
+] as const satisfies ReadonlyArray<keyof WeatherData>;
+
+/**
+ * Every optional field of the merged result, spread into the output object.
+ * An entry appears only when at least one survivor supplied the field.
+ */
+function optionalFields(
   dataList: ReadonlyArray<WeatherData>,
   mergedWindSpeed: number
 ): MutablePartialWeatherData {
   const opt: MutablePartialWeatherData = {};
+  const add = optionalWriter(opt);
 
-  const precipVals = collectNums(dataList, 'precipitationLastHour');
-  if (precipVals.length > 0) opt.precipitationLastHour = hazardMax(precipVals);
+  for (const key of REDUCED_OPTIONAL_FIELDS) add(key, reduceNumeric(dataList, key));
+  for (const key of FIRST_PRESENT_OPTIONAL_FIELDS) add(key, firstPresent(dataList, key));
 
-  const gustVals = collectNums(dataList, 'windGustSpeed');
-  const gustSpeed = gustVals.length > 0 ? hazardMax(gustVals) : undefined;
-  if (gustSpeed !== undefined) opt.windGustSpeed = gustSpeed;
+  const gustSpeed = reduceNumeric(dataList, 'windGustSpeed');
+  add('windGustSpeed', gustSpeed);
+  add('windGustFactor', calculateGustFactor(gustSpeed, mergedWindSpeed));
 
-  const gustFactor = calculateGustFactor(gustSpeed, mergedWindSpeed);
-  if (gustFactor !== undefined) opt.windGustFactor = gustFactor;
-
-  const visVals = collectNums(dataList, 'visibility');
-  if (visVals.length > 0) opt.visibility = hazardMin(visVals);
-
-  const tendency = mergeTendency(collectNums(dataList, 'pressureTendency'));
-  if (tendency !== undefined) opt.pressureTendency = tendency;
-
-  // The published WBGT stays priority-present so a measured globe temperature
-  // wins over a shade estimate, but the band driver is the highest index any
-  // survivor derived from its own WBGT: a sibling reporting more heat stress
-  // than the primary must not be discarded by priority order.
-  const wbgt = firstPresent(dataList, 'wetBulbGlobeTemperature');
-  if (wbgt !== undefined) opt.wetBulbGlobeTemperature = wbgt;
-
-  const heatIndexVals = collectNums(dataList, 'heatStressIndex');
-  if (heatIndexVals.length > 0) opt.heatStressIndex = hazardMax(heatIndexVals);
-
-  const severe = maxSeverity(dataList);
-  if (severe !== undefined) opt.severeCondition = severe;
-
-  const desc = firstPresent(dataList, 'description');
-  if (desc !== undefined) opt.description = desc;
-
-  const icon = firstPresent(dataList, 'weatherIcon');
-  if (icon !== undefined) opt.weatherIcon = icon;
-
-  const precipType = firstPresent(dataList, 'precipitationType');
-  if (precipType !== undefined) opt.precipitationType = precipType;
-
-  const visObs = firstPresent(dataList, 'visibilityObstruction');
-  if (visObs !== undefined) opt.visibilityObstruction = visObs;
+  add('pressureTendency', mergeTendency(collectNums(dataList, 'pressureTendency')));
+  add('severeCondition', maxSeverity(dataList));
 
   return opt;
 }
@@ -366,20 +396,14 @@ export function mergeWeatherData(dataList: ReadonlyArray<WeatherData>): WeatherD
     mergedWindSpeed
   );
 
-  // CONSERVATIVE HAZARD DRIVERS: taken from the survivors' own values rather
-  // than recomputed from the merged base, so a milder sibling cannot cancel a
-  // band the other provider raises. The fallbacks never fire today (both fields
-  // come from deriveBaseWeatherFields on every provider path) and exist so a
-  // future provider that omits them still yields a complete WeatherData.
-  const windChills = collectNums(dataList, 'windChill');
-  const mergedWindChill = windChills.length > 0 ? hazardMin(windChills) : derived.windChill;
-  const beaufortForces = collectNums(dataList, 'beaufortScale');
-  const mergedBeaufortScale =
-    beaufortForces.length > 0 ? hazardMax(beaufortForces) : derived.beaufortScale;
+  // REQUIRED HAZARD DRIVERS: reduced under the kind FIELD_MERGE_KINDS declares.
+  // The fallbacks never fire today (both fields come from deriveBaseWeatherFields
+  // on every provider path) and exist so a future provider that omits them still
+  // yields a complete WeatherData.
+  const mergedWindChill = reduceNumeric(dataList, 'windChill') ?? derived.windChill;
+  const mergedBeaufortScale = reduceNumeric(dataList, 'beaufortScale') ?? derived.beaufortScale;
 
-  // Optional fields by policy kind
-  const optMeans = meanOptionals(dataList);
-  const optHazard = hazardAndCategoricalOptionals(dataList, mergedWindSpeed);
+  const optional = optionalFields(dataList, mergedWindSpeed);
 
   // Assemble. apparentWindSpeed, apparentWindAngle, and apparentWindChill are
   // EXCLUDED: they are added downstream in WeatherService.enhanceWeatherData.
@@ -401,7 +425,6 @@ export function mergeWeatherData(dataList: ReadonlyArray<WeatherData>): WeatherD
     // Primary timestamp
     timestamp: primary.timestamp,
     // Optional fields
-    ...optMeans,
-    ...optHazard,
+    ...optional,
   };
 }

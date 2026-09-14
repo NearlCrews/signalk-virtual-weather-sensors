@@ -203,7 +203,17 @@ export class MergingWeatherProvider implements ForecastCapableProvider {
    * many children had stopped contributing.
    */
   isCurrentWeatherFetchBlocked(): boolean {
-    return this.children.every((child) => child.isCurrentWeatherFetchBlocked?.() ?? false);
+    return this.children.every(MergingWeatherProvider.isBlocked);
+  }
+
+  /**
+   * Whether one child can make a current request right now. A child that does
+   * not meter requests does not implement the hook and is never blocked; the
+   * default lives here once so the two callers cannot disagree about it.
+   * @private
+   */
+  private static isBlocked(child: CurrentWeatherProvider): boolean {
+    return child.isCurrentWeatherFetchBlocked?.() ?? false;
   }
 
   /**
@@ -214,8 +224,10 @@ export class MergingWeatherProvider implements ForecastCapableProvider {
    * green banner. The status line names them so the degradation is reported.
    */
   getBlockedChildNames(): string[] {
-    return this.children
-      .filter((child) => child.isCurrentWeatherFetchBlocked?.() ?? false)
-      .map((child) => child.name);
+    const blocked: string[] = [];
+    for (const child of this.children) {
+      if (MergingWeatherProvider.isBlocked(child)) blocked.push(child.name);
+    }
+    return blocked;
   }
 }
