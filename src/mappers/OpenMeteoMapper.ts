@@ -24,7 +24,7 @@ import {
   celsiusToKelvin,
   degreesToRadians,
   estimateWetBulbGlobeTemperature,
-  floorToUtcHour,
+  floorToUtcHourMs,
   millibarsToPA,
   normalizeAngle0To2Pi,
   optionalPercentageToRatio,
@@ -94,11 +94,14 @@ export function pastHourPrecipitationMm(
   const values = response.hourly?.precipitation;
   if (times === undefined || values === undefined) return undefined;
 
-  const observationHour = floorToUtcHour(observationTime);
-  if (observationHour === '') return undefined;
+  // Compare hour boundaries as epoch milliseconds: the real key is an instant,
+  // and formatting each candidate back into a string would parse and allocate
+  // per hourly entry to answer the same question.
+  const observationHourMs = floorToUtcHourMs(observationTime);
+  if (!Number.isFinite(observationHourMs)) return undefined;
 
   for (let i = 0; i < times.length; i++) {
-    if (floorToUtcHour(times[i]) === observationHour) {
+    if (floorToUtcHourMs(times[i]) === observationHourMs) {
       return asOptionalNumber(values[i]);
     }
   }

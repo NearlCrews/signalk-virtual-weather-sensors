@@ -21,8 +21,6 @@
 export interface OpenMeteoCurrentResponse {
   readonly current?: {
     readonly time?: string;
-    /** Backward-looking sum window of the current block, in seconds (900). */
-    readonly interval?: number;
     readonly temperature_2m?: number;
     readonly relative_humidity_2m?: number;
     readonly apparent_temperature?: number;

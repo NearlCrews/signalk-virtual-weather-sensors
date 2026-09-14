@@ -1,5 +1,12 @@
 import type { Timestamp } from '@signalk/server-api';
-import { API_QUOTA, ERROR_CODES, MAGNUS, UNITS, VALIDATION_LIMITS } from '../constants/index.js';
+import {
+  ACCUWEATHER,
+  API_QUOTA,
+  ERROR_CODES,
+  MAGNUS,
+  UNITS,
+  VALIDATION_LIMITS,
+} from '../constants/index.js';
 import type { GeoLocation } from '../types/navigation.js';
 
 /** Extract a string message from any thrown value: `Error.message` or `String(value)`. */
@@ -67,16 +74,25 @@ const ISO_ZONE_RE = /([Zz]|[+-]\d{2}:?\d{2})$/;
 export const MAX_OBSERVATION_FUTURE_MS = 60 * 60 * 1000;
 
 /**
- * Normalize an ISO 8601 value to a canonical RFC 3339 UTC instant. Provider
- * values without a zone are defined by their APIs as UTC, so add `Z` before
- * parsing. Invalid or absent input returns an empty string.
+ * Parse an ISO 8601 value to epoch milliseconds, or `NaN` when the value is
+ * absent or unparseable. Provider values without a zone are defined by their
+ * APIs as UTC, so add `Z` before parsing. Every instant helper below shares
+ * this one step, so none of them round-trips through a formatted string to get
+ * back to the epoch it already had.
+ */
+function isoToEpochMs(value: unknown): number {
+  if (typeof value !== 'string') return Number.NaN;
+  const time = value.trim();
+  if (time === '') return Number.NaN;
+  return Date.parse(ISO_ZONE_RE.test(time) ? time : `${time}Z`);
+}
+
+/**
+ * Normalize an ISO 8601 value to a canonical RFC 3339 UTC instant. Invalid or
+ * absent input returns an empty string.
  */
 export function normalizeIsoTimestamp(value: unknown): string {
-  if (typeof value !== 'string') return '';
-  const time = value.trim();
-  if (time === '') return '';
-  const zoned = ISO_ZONE_RE.test(time) ? time : `${time}Z`;
-  const epochMs = Date.parse(zoned);
+  const epochMs = isoToEpochMs(value);
   return Number.isFinite(epochMs) ? new Date(epochMs).toISOString() : '';
 }
 
@@ -84,16 +100,16 @@ export function normalizeIsoTimestamp(value: unknown): string {
 const MS_PER_HOUR = 60 * 60 * 1000;
 
 /**
- * Floor an ISO 8601 instant onto the top of its UTC hour, returning a canonical
- * RFC 3339 string, or an empty string when the input is not a valid instant.
- * Used to line a provider's sub-hourly observation stamp up with the hourly
- * accumulation bucket that covers the hour ending at that boundary.
+ * Floor an ISO 8601 instant onto the top of its UTC hour, in epoch
+ * milliseconds, or `NaN` when the input is not a valid instant. Used to line a
+ * provider's sub-hourly observation stamp up with the hourly accumulation
+ * bucket that covers the hour ending at that boundary. The result is a number
+ * rather than a formatted instant because every caller only compares two of
+ * them for equality.
  */
-export function floorToUtcHour(value: unknown): string {
-  const normalized = normalizeIsoTimestamp(value);
-  if (normalized === '') return '';
-  const epochMs = Date.parse(normalized);
-  return new Date(Math.floor(epochMs / MS_PER_HOUR) * MS_PER_HOUR).toISOString();
+export function floorToUtcHourMs(value: unknown): number {
+  const epochMs = isoToEpochMs(value);
+  return Number.isFinite(epochMs) ? Math.floor(epochMs / MS_PER_HOUR) * MS_PER_HOUR : Number.NaN;
 }
 
 /** Normalize a calendar date to UTC midnight, or return an empty string when invalid. */
@@ -438,6 +454,14 @@ export function truncateToCodePoints(value: string, maxCodePoints: number): stri
 }
 
 /**
+ * Control characters stripped from every provider-supplied string. Hoisted to
+ * module scope because `capExternalString` runs over every republished label
+ * and description, several times per warnings fetch.
+ */
+// biome-ignore lint/suspicious/noControlCharactersInRegex: deliberately stripping injection vectors
+const CONTROL_CHARS_RE = /[\x00-\x1f\x7f]/g;
+
+/**
  * Strip control characters from a provider-supplied string and truncate it to
  * a safe length for downstream consumers.
  *
@@ -454,9 +478,21 @@ export function truncateToCodePoints(value: string, maxCodePoints: number): stri
  */
 export function capExternalString(value: unknown, maxLength: number): string {
   if (typeof value !== 'string') return '';
-  // biome-ignore lint/suspicious/noControlCharactersInRegex: deliberately stripping injection vectors
-  const stripped = value.replace(/[\x00-\x1f\x7f]/g, '');
-  return truncateToCodePoints(stripped, maxLength);
+  return truncateToCodePoints(value.replace(CONTROL_CHARS_RE, ''), maxLength);
+}
+
+/**
+ * Bound a provider's free-text condition description, or undefined when the
+ * value is absent or empty once stripped.
+ *
+ * Every mapper that copies provider prose onto a Signal K path or into a v2
+ * response body calls this, so the ceiling belongs to the field rather than to
+ * each call site, and a fourth provider cannot reintroduce a raw passthrough by
+ * writing its own `typeof === 'string'` guard.
+ */
+export function providerDescription(value: unknown): string | undefined {
+  const capped = capExternalString(value, ACCUWEATHER.MAX_DESCRIPTION_LENGTH);
+  return capped.length > 0 ? capped : undefined;
 }
 
 /**

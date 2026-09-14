@@ -7,6 +7,7 @@
  */
 
 import { ERROR_CODES } from '../constants/index.js';
+import type { GeoLocation } from '../types/navigation.js';
 import { toErrorMessage } from './conversions.js';
 
 /** Default response-body cap (1 MiB), matching the AccuWeather fetch path. */
@@ -14,6 +15,59 @@ export const DEFAULT_MAX_RESPONSE_BYTES = 1_048_576;
 
 /** Default per-request timeout for the keyless JSON clients, in milliseconds. */
 export const DEFAULT_REQUEST_TIMEOUT_MS = 10_000;
+
+/** `304 Not Modified`: a successful conditional GET that carries no body. */
+const NOT_MODIFIED_STATUS = 304;
+
+/**
+ * Decimal places of latitude and longitude sent as request parameters, the
+ * same precision `toCoordKey` defaults to (about 11 m). Met.no returns a hard
+ * 403 at five or more decimals, and a full-precision GPS fix would make every
+ * URL unique from a moving vessel, defeating any upstream or intermediary
+ * cache for no gain: every provider grid is coarser than a metre by orders of
+ * magnitude.
+ */
+export const COORD_PARAM_DECIMALS = 4;
+
+/**
+ * Set a location's latitude and longitude as request parameters at
+ * `COORD_PARAM_DECIMALS`. The parameter names differ per provider (Open-Meteo
+ * spells them out, Met.no abbreviates), the rounding does not, so the
+ * precision that upstream caching depends on is stated once.
+ */
+export function setCoordParams(
+  url: URL,
+  location: GeoLocation,
+  latKey = 'latitude',
+  lonKey = 'longitude'
+): URL {
+  url.searchParams.set(latKey, location.latitude.toFixed(COORD_PARAM_DECIMALS));
+  url.searchParams.set(lonKey, location.longitude.toFixed(COORD_PARAM_DECIMALS));
+  return url;
+}
+
+/** Parse an HTTP-date header to epoch milliseconds, or undefined when absent or invalid. */
+function parseHttpDate(value: string | null): number | undefined {
+  if (value === null) return undefined;
+  const ms = Date.parse(value);
+  return Number.isFinite(ms) ? ms : undefined;
+}
+
+/** Map an HTTP status onto the plugin's tagged error-code substring. */
+function classifyStatus(status: number): string {
+  if (status === 401) return ERROR_CODES.NETWORK.API_UNAUTHORIZED;
+  if (status === 403) return ERROR_CODES.NETWORK.API_FORBIDDEN;
+  if (status === 429) return ERROR_CODES.NETWORK.API_RATE_LIMIT;
+  if (status >= 500) return ERROR_CODES.NETWORK.NETWORK_ERROR;
+  return ERROR_CODES.NETWORK.API_INVALID_RESPONSE;
+}
+
+/** The tagged throw both entry points produce for a non-2xx status. */
+function statusError(response: Response): Error {
+  return new Error(
+    `${classifyStatus(response.status)}: request failed (${response.status} ${response.statusText})`
+  );
+}
 
 /**
  * Resolve a service base URL: a trimmed, non-empty override wins, otherwise the
@@ -71,31 +125,8 @@ async function readConditionalResponse<T>(
   if (response.status === NOT_MODIFIED_STATUS) {
     return { body: null, lastModified, expiresMs };
   }
-  if (!response.ok) {
-    throw new Error(
-      `${classifyStatus(response.status)}: request failed (${response.status} ${response.statusText})`
-    );
-  }
+  if (!response.ok) throw statusError(response);
   return { body: await readBoundedJson<T>(response, maxBytes), lastModified, expiresMs };
-}
-
-/** `304 Not Modified`: a successful conditional GET that carries no body. */
-const NOT_MODIFIED_STATUS = 304;
-
-/** Parse an HTTP-date header to epoch milliseconds, or undefined when absent or invalid. */
-function parseHttpDate(value: string | null): number | undefined {
-  if (value === null) return undefined;
-  const ms = Date.parse(value);
-  return Number.isFinite(ms) ? ms : undefined;
-}
-
-/** Map an HTTP status onto the plugin's tagged error-code substring. */
-function classifyStatus(status: number): string {
-  if (status === 401) return ERROR_CODES.NETWORK.API_UNAUTHORIZED;
-  if (status === 403) return ERROR_CODES.NETWORK.API_FORBIDDEN;
-  if (status === 429) return ERROR_CODES.NETWORK.API_RATE_LIMIT;
-  if (status >= 500) return ERROR_CODES.NETWORK.NETWORK_ERROR;
-  return ERROR_CODES.NETWORK.API_INVALID_RESPONSE;
 }
 
 /**
@@ -177,42 +208,21 @@ async function readBoundedText(
 }
 
 /**
- * GET a URL and parse a bounded JSON body, aborting after `timeoutMs`. Throws a
- * tagged error on a timeout or a non-2xx status. No retry: a keyless upstream
- * with generous limits does not warrant burning a retry budget here, and the
- * caller's own update cadence provides the next attempt.
+ * GET a URL under an abort-based timeout and hand the response to `read`.
+ *
+ * The timeout covers the body read as well as the round trip, so `read` runs
+ * inside the same scaffolding rather than after it. Both entry points share
+ * this core, so neither has to handle an outcome the other produces: the
+ * unconditional caller never sees the 304 the conditional one treats as a
+ * success.
+ * @private
  */
-export async function fetchJson<T>(url: URL | string, options: FetchJsonOptions): Promise<T> {
-  const result = await fetchJsonConditional<T>(url, options);
-  // Unreachable without `ifModifiedSince`: a server cannot answer 304 to an
-  // unconditional request. Narrowing here keeps the unconditional signature
-  // free of a null the caller would have to handle.
-  if (result.body === null) {
-    throw new Error(
-      `${ERROR_CODES.NETWORK.API_INVALID_RESPONSE}: unconditional request answered 304`
-    );
-  }
-  return result.body;
-}
-
-/**
- * GET a URL with an optional `If-Modified-Since`, returning the parsed body
- * alongside the cache-validator headers. A `304 Not Modified` is a SUCCESS
- * here, reported as a null body, so a caller holding the previous document can
- * keep it without paying for the payload again. Every other non-2xx status
- * throws exactly as `fetchJson` does.
- */
-export async function fetchJsonConditional<T>(
+async function fetchWithTimeout<R>(
   url: URL | string,
-  options: ConditionalFetchJsonOptions
-): Promise<ConditionalJsonResult<T>> {
-  const {
-    timeoutMs,
-    headers,
-    maxBytes = DEFAULT_MAX_RESPONSE_BYTES,
-    signal,
-    ifModifiedSince,
-  } = options;
+  options: ConditionalFetchJsonOptions,
+  read: (response: Response) => Promise<R>
+): Promise<R> {
+  const { timeoutMs, headers, signal, ifModifiedSince } = options;
   signal?.throwIfAborted();
   const controller = new AbortController();
   let timedOut = false;
@@ -234,7 +244,7 @@ export async function fetchJsonConditional<T>(
       signal: controller.signal,
     });
 
-    return await readConditionalResponse<T>(response, maxBytes);
+    return await read(response);
   } catch (error) {
     if (error instanceof Error && error.name === 'AbortError') {
       if (signal?.aborted) signal.throwIfAborted();
@@ -246,4 +256,35 @@ export async function fetchJsonConditional<T>(
     clearTimeout(timeout);
     signal?.removeEventListener('abort', abortFromParent);
   }
+}
+
+/**
+ * GET a URL and parse a bounded JSON body, aborting after `timeoutMs`. Throws a
+ * tagged error on a timeout or a non-2xx status. No retry: a keyless upstream
+ * with generous limits does not warrant burning a retry budget here, and the
+ * caller's own update cadence provides the next attempt.
+ */
+export async function fetchJson<T>(url: URL | string, options: FetchJsonOptions): Promise<T> {
+  const maxBytes = options.maxBytes ?? DEFAULT_MAX_RESPONSE_BYTES;
+  return fetchWithTimeout(url, options, async (response) => {
+    if (!response.ok) throw statusError(response);
+    return readBoundedJson<T>(response, maxBytes);
+  });
+}
+
+/**
+ * GET a URL with an optional `If-Modified-Since`, returning the parsed body
+ * alongside the cache-validator headers. A `304 Not Modified` is a SUCCESS
+ * here, reported as a null body, so a caller holding the previous document can
+ * keep it without paying for the payload again. Every other non-2xx status
+ * throws exactly as `fetchJson` does.
+ */
+export async function fetchJsonConditional<T>(
+  url: URL | string,
+  options: ConditionalFetchJsonOptions
+): Promise<ConditionalJsonResult<T>> {
+  const maxBytes = options.maxBytes ?? DEFAULT_MAX_RESPONSE_BYTES;
+  return fetchWithTimeout(url, options, (response) =>
+    readConditionalResponse<T>(response, maxBytes)
+  );
 }

@@ -61,22 +61,6 @@ export function assertValidCoordinates(location: GeoLocation, context: string): 
 }
 
 /**
- * Sanitizer temperature bounds in Kelvin, from the physical validation window
- * (-100 C to +100 C) rather than `NMEA2000_LIMITS.TEMPERATURE_C`.
- *
- * The narrower -40 C to +85 C figure is a typical sensor operating envelope,
- * not a wire limit: PGN 130312 carries temperature as 0.01 K over 0 to
- * 655.35 K, and this plugin emits Signal K deltas only, leaving the NMEA 2000
- * bridge to a separate plugin. Clamping at -40 C silently published a wind
- * chill of -44.6 C as -40.0 C while the notification built from the same
- * snapshot said -45 C, so the path and the alarm text disagreed on a
- * life-threatening exposure figure. The physical window never clamps a real
- * reading and still catches numerical garbage.
- */
-const SANITIZER_TEMP_K_MIN = VALIDATION_LIMITS.TEMPERATURE.MIN;
-const SANITIZER_TEMP_K_MAX = VALIDATION_LIMITS.TEMPERATURE.MAX;
-
-/**
  * Top-level fields checked for presence on an AccuWeather current-conditions
  * response. Temperature, Pressure, and DewPoint are validated more deeply by
  * `validateMetricNumber` (presence plus a numeric `Metric.Value`), so they are
@@ -492,7 +476,23 @@ type SanitizableNumericKey = {
   [K in keyof WeatherData]-?: WeatherData[K] extends number | undefined ? K : never;
 }[keyof WeatherData];
 
-const TEMP_K_BOUNDS = [SANITIZER_TEMP_K_MIN, SANITIZER_TEMP_K_MAX] as const;
+/**
+ * Sanitizer temperature bounds in Kelvin: the physical validation window
+ * (-100 C to +100 C) rather than `NMEA2000_LIMITS.TEMPERATURE_C`.
+ *
+ * The narrower -40 C to +85 C figure is a typical sensor operating envelope,
+ * not a wire limit: PGN 130312 carries temperature as 0.01 K over 0 to
+ * 655.35 K, and this plugin emits Signal K deltas only, leaving the NMEA 2000
+ * bridge to a separate plugin. Clamping at -40 C silently published a wind
+ * chill of -44.6 C as -40.0 C while the notification built from the same
+ * snapshot said -45 C, so the path and the alarm text disagreed on a
+ * life-threatening exposure figure. The physical window never clamps a real
+ * reading and still catches numerical garbage.
+ */
+const TEMP_K_BOUNDS = [
+  VALIDATION_LIMITS.TEMPERATURE.MIN,
+  VALIDATION_LIMITS.TEMPERATURE.MAX,
+] as const;
 const WIND_SPEED_BOUNDS = [0, NMEA2000_LIMITS.WIND_SPEED_MAX_MS] as const;
 const HUMIDITY_BOUNDS = [VALIDATION_LIMITS.HUMIDITY.MIN, VALIDATION_LIMITS.HUMIDITY.MAX] as const;
 
