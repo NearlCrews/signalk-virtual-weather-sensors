@@ -18,7 +18,7 @@ describe('emitWeatherTick', () => {
       weatherService: {
         getCurrentWeatherData: () => weather,
         getCurrentMarineData: () => marine,
-        getTickBanner: () => ({ kind: 'status', message: 'Running' }),
+        getTickBanner: () => ({ kind: 'status', message: 'Running', stale: false }),
         isDataStale: () => false,
         isMarineDataStale: () => false,
       },

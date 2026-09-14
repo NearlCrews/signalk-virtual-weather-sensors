@@ -385,11 +385,13 @@ async function cleanup(instance: PluginInstance, app: ServerAPI): Promise<void> 
   instance.marinePathMapper = null;
   if (instance.notifier) {
     try {
+      const cleared = instance.notifier.clearAll();
       app.handleMessage(
         PLUGIN.NAME,
-        buildValuesDelta(instance.notifier.clearAll(), undefined, instance.sourceRef),
+        buildValuesDelta(cleared.transitions, undefined, instance.sourceRef),
         SKVersion.v1
       );
+      cleared.commit();
     } catch (error) {
       instance.logger('error', 'Error clearing weather notifications', {
         error: toErrorMessage(error),

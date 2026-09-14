@@ -32,16 +32,16 @@ function makeNotifier(overrides: Partial<NotificationsConfig> = {}): WeatherNoti
 
 /**
  * Evaluate a snapshot and record the result as published, which is what the
- * emission tick does once the delta reaches the bus. `evaluate` alone holds the
- * new states back so a throw between evaluation and publication cannot latch a
- * band that never emitted; every test that models a successful tick goes
- * through here, and the tests that exercise the uncommitted path call
- * `evaluate` directly.
+ * emission tick does once the delta reaches the bus. An evaluation alone holds
+ * the new states back so a throw between evaluation and publication cannot
+ * latch a band that never emitted; every test that models a successful tick
+ * goes through here, and the tests that exercise the uncommitted path read the
+ * evaluation's transitions without calling its `commit`.
  */
 function publish(notifier: WeatherNotifier, data: WeatherData): PathValue[] {
-  const transitions = notifier.evaluate(data);
-  notifier.commit();
-  return transitions;
+  const evaluation = notifier.evaluate(data);
+  evaluation.commit();
+  return evaluation.transitions;
 }
 
 /**
@@ -327,7 +327,7 @@ describe('WeatherNotifier: restart clearing (unprimed first evaluate)', () => {
 
   it('clearAll normalizes every path regardless of the active configuration', () => {
     const notifier = makeNotifier({ wind: false, heat: false });
-    const out = notifier.clearAll();
+    const out = notifier.clearAll().transitions;
     expect(new Set(out.map((entry) => entry.path))).toEqual(
       new Set(Object.values(NOTIFICATION_PATHS))
     );
@@ -768,7 +768,7 @@ describe('WeatherNotifier: deferred commit', () => {
 
     // Models a throw between evaluate() and app.handleMessage: the transitions
     // are computed but never reach the bus, so nothing is committed.
-    const dropped = notifier.evaluate(snapshot({ beaufortScale: 12 }));
+    const dropped = notifier.evaluate(snapshot({ beaufortScale: 12 })).transitions;
     expect(dropped.map((p) => p.path)).toContain(NOTIFICATION_PATHS.WIND_GALE);
 
     const retried = publish(notifier, snapshot({ beaufortScale: 12 }));
@@ -778,15 +778,15 @@ describe('WeatherNotifier: deferred commit', () => {
 
   it('does not count an uncommitted band as active', () => {
     const notifier = makePrimedNotifier();
-    notifier.evaluate(snapshot({ beaufortScale: 12 }));
+    const evaluation = notifier.evaluate(snapshot({ beaufortScale: 12 }));
     expect(notifier.getActiveCount()).toBe(0);
-    notifier.commit();
+    evaluation.commit();
     expect(notifier.getActiveCount()).toBe(3);
   });
 
   it('stays unprimed until the first evaluation is committed', () => {
     const notifier = makeNotifier();
-    const dropped = notifier.evaluate(snapshot({}));
+    const dropped = notifier.evaluate(snapshot({})).transitions;
     expect(dropped.length).toBeGreaterThan(0);
 
     // Still unprimed, so the leading normals are offered again rather than

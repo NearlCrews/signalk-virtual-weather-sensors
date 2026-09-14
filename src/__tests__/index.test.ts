@@ -21,7 +21,8 @@ const { stubState } = vi.hoisted(() => ({
     getTickBanner: (() => ({
       kind: 'status' as const,
       message: 'Running, awaiting first update',
-    })) as () => { kind: 'status' | 'error'; message: string },
+      stale: false,
+    })) as () => { kind: 'status' | 'error'; message: string; stale: boolean },
     isDataStale: (() => false) as () => boolean,
     isApiKeyRejected: (() => false) as () => boolean,
   },
@@ -58,10 +59,10 @@ vi.mock('../services/WeatherService.js', () => {
 
 vi.mock('../notifications/WeatherNotifier.js', () => {
   class StubWeatherNotifier {
-    public evaluate = vi.fn(() => []);
-    public commit = vi.fn();
+    public evaluate = vi.fn(() => ({ transitions: [], commit: vi.fn() }));
     public markStale = vi.fn(() => []);
-    public clearAll = vi.fn(() => []);
+    public needsStaleMark = vi.fn(() => true);
+    public clearAll = vi.fn(() => ({ transitions: [], commit: vi.fn() }));
     public reset = vi.fn();
     public getActiveCount = vi.fn(() => 0);
   }
@@ -151,6 +152,7 @@ function resetStubState(): void {
   stubState.getTickBanner = () => ({
     kind: 'status',
     message: 'Running, awaiting first update',
+    stale: false,
   });
   stubState.isDataStale = () => false;
 }
@@ -277,6 +279,7 @@ describe('plugin entry: meta delta is shipped exactly once per lifetime', () => 
     stubState.getTickBanner = () => ({
       kind: 'status',
       message: 'Running, last update just now (1 update)',
+      stale: false,
     });
 
     await vi.advanceTimersByTimeAsync(3500);
@@ -326,9 +329,12 @@ describe('plugin entry: emission-tick error branches (O6)', () => {
   // WeatherService.test.ts where getTickBanner lives.
   it('pushes the stale-data error banner once and skips emission while stale', async () => {
     stubState.getCurrentWeatherData = () => ({ temperature: 283.15 });
+    // The tick reads the staleness the banner already carries, so the stub
+    // reports it the same way the service does.
     stubState.getTickBanner = () => ({
       kind: 'error',
       message: 'Weather data stale: last update 15 minutes ago',
+      stale: true,
     });
     stubState.isDataStale = () => true;
 
@@ -409,6 +415,7 @@ describe('plugin entry: registerWithRouter exposes panel REST endpoints', () => 
     stubState.getTickBanner = () => ({
       kind: 'status' as const,
       message: 'Running, last update 0m ago (1 update)',
+      stale: false,
     });
     stubState.getDataAgeMs = () => 30_000;
 
@@ -438,12 +445,14 @@ describe('plugin entry: registerWithRouter exposes panel REST endpoints', () => 
 
   it('GET /api/status reports running: false when the API key has been rejected', async () => {
     // Even though the lifecycle state is still `running`, a 401 response has
-    // tripped apiKeyRejected and the update timer is cleared. The panel must
-    // reflect that as not-running so the green indicator does not lie.
+    // put the service in `key-rejected` and the update timer is cleared.
+    // getTickBanner ranks that as an error, and the panel must reflect it as
+    // not-running so the green indicator does not lie.
     stubState.getCurrentWeatherData = () => ({ temperature: 283.15 });
     stubState.getTickBanner = () => ({
-      kind: 'status' as const,
+      kind: 'error' as const,
       message: 'API key rejected: update key in plugin settings',
+      stale: false,
     });
     stubState.isApiKeyRejected = () => true;
 
@@ -474,6 +483,7 @@ describe('plugin entry: registerWithRouter exposes panel REST endpoints', () => 
     stubState.getTickBanner = () => ({
       kind: 'error' as const,
       message: 'AccuWeather daily quota reached (50/50 in last 24h), fetches paused',
+      stale: false,
     });
 
     const app = buildMockApp();
@@ -749,7 +759,11 @@ describe('plugin entry: banner reaches both surfaces before any data arrives', (
     // left while /api/status, which calls getTickBanner directly, reported
     // something else entirely.
     stubState.getCurrentWeatherData = () => null;
-    stubState.getTickBanner = () => ({ kind: 'error', message: 'Waiting for GPS position' });
+    stubState.getTickBanner = () => ({
+      kind: 'error',
+      message: 'Waiting for GPS position',
+      stale: false,
+    });
 
     const app = buildMockApp();
     const plugin = createPlugin(app as never);

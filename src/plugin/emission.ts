@@ -8,10 +8,15 @@ import { type PathValue, type ServerAPI, SKVersion } from '@signalk/server-api';
 import { PLUGIN } from '../constants/index.js';
 import type { NMEA2000PathMapper } from '../mappers/NMEA2000PathMapper.js';
 import { isMarineDataEmpty } from '../mappers/OpenMeteoMarineMapper.js';
+import type { NotificationEvaluation } from '../notifications/WeatherNotifier.js';
+import type { WeatherService } from '../services/WeatherService.js';
 import type { PluginConfiguration, WeatherData } from '../types/index.js';
 import { msToWholeMinutes, toErrorMessage } from '../utils/conversions.js';
 import { buildValuesDelta } from '../utils/skDelta.js';
 import { type PluginInstance, setBanner } from './instance.js';
+
+/** Stand-in for a tick with no notifier: nothing to publish and nothing to record. */
+const NO_NOTIFICATIONS: NotificationEvaluation = { transitions: [], commit: () => {} };
 
 /**
  * Wire up the interval-based emission timer. Called once per start() cycle.
@@ -52,8 +57,9 @@ export function setupEnhancedEmissionSystem(
  * @private
  */
 export function emitWeatherTick(instance: PluginInstance, app: ServerAPI): void {
-  if (!instance.weatherService) return;
-  const weatherData = instance.weatherService.getCurrentWeatherData();
+  const weatherService = instance.weatherService;
+  if (!weatherService) return;
+  const weatherData = weatherService.getCurrentWeatherData();
 
   // Banner precedence (rejected key, quota pause, missing position, stale
   // data, last fetch failure, then live status) is owned by
@@ -65,7 +71,7 @@ export function emitWeatherTick(instance: PluginInstance, app: ServerAPI): void 
   // (no GPS fix, a rejected key, a provider that has never answered) would
   // otherwise keep whatever banner start() left while the panel's /api/status,
   // which calls getTickBanner directly, reported something else entirely.
-  const banner = instance.weatherService.getTickBanner();
+  const banner = weatherService.getTickBanner();
   setBanner(instance, app, banner.kind, banner.message);
 
   if (!weatherData || !instance.pathMapper) {
@@ -76,8 +82,11 @@ export function emitWeatherTick(instance: PluginInstance, app: ServerAPI): void 
   // Staleness gates emission, not just the banner: quota exhaustion alone
   // keeps broadcasting cached in-window data on the configured cadence, but
   // every rebroadcast retains the original provider measurement timestamp.
-  if (instance.weatherService.isDataStale()) {
-    markNotificationsStale(instance, app);
+  // The flag rides on the banner because `getTickBanner` already derived it to
+  // rank the banner, and re-asking would prune and re-count the rolling quota
+  // window a second time on every tick.
+  if (banner.stale) {
+    markNotificationsStale(instance, app, weatherService);
     emitMarineTick(instance, app);
     return;
   }
@@ -86,14 +95,14 @@ export function emitWeatherTick(instance: PluginInstance, app: ServerAPI): void 
   // Notifications are evaluated on the same edge: transitions only fire when
   // the underlying snapshot changes, so re-evaluating on every emission tick
   // would waste CPU on the steady-state case.
-  let notificationValues: PathValue[] | undefined;
+  let evaluation: NotificationEvaluation | undefined;
   if (weatherData !== instance.cachedWeatherDataRef) {
     const refreshed = refreshCachedDelta(instance, app, weatherData, instance.pathMapper);
     if (refreshed === null) {
       emitMarineTick(instance, app);
       return;
     }
-    notificationValues = refreshed;
+    evaluation = refreshed;
   }
 
   if (!instance.cachedDelta) {
@@ -103,22 +112,16 @@ export function emitWeatherTick(instance: PluginInstance, app: ServerAPI): void 
 
   app.handleMessage(PLUGIN.NAME, instance.cachedDelta, SKVersion.v1);
 
-  // Notifications ride a separate delta so consumers walking the values delta
-  // do not see a `notifications.*` leaf interleaved with measurements. The
-  // notifier returned PathValues only on transition, so a non-empty list here
-  // always represents an entry or exit edge.
-  if (notificationValues?.length) {
-    app.handleMessage(
-      PLUGIN.NAME,
-      buildValuesDelta(notificationValues, undefined, instance.sourceRef),
-      SKVersion.v1
-    );
+  // The notifier returns PathValues only on transition, so a non-empty list
+  // here always represents an entry or exit edge.
+  if (evaluation && evaluation.transitions.length > 0) {
+    publishNotificationDelta(instance, app, evaluation.transitions);
   }
   // Only now does the notifier record the transitions as published. Anything
   // that threw between `evaluate` and this point would otherwise leave the
   // band believed active with no delta ever having reached the bus, and the
   // entry edge would never re-emit.
-  if (notificationValues !== undefined) instance.notifier?.commit();
+  evaluation?.commit();
 
   // Ship the static meta block once per plugin lifetime, AFTER the first
   // values delta so admin UIs that render units lazily attach them on first
@@ -144,22 +147,47 @@ export function emitWeatherTick(instance: PluginInstance, app: ServerAPI): void 
  * the marker, so this is one delta per stale episode, not one per tick.
  * @private
  */
-function markNotificationsStale(instance: PluginInstance, app: ServerAPI): void {
+function markNotificationsStale(
+  instance: PluginInstance,
+  app: ServerAPI,
+  weatherService: WeatherService
+): void {
   const notifier = instance.notifier;
-  const ageMs = instance.weatherService?.getDataAgeMs();
-  if (!notifier || ageMs == null) return;
+  // The latch is checked before the age is read and the label built: a stale
+  // episode lasts as long as the provider outage, and `markStale` would throw
+  // that work away on every tick after the first.
+  if (!notifier?.needsStaleMark()) return;
+  const ageMs = weatherService.getDataAgeMs();
+  if (ageMs === null) return;
 
   const marked = notifier.markStale(`data ${msToWholeMinutes(ageMs)} min old`);
   if (marked.length === 0) return;
 
-  app.handleMessage(
-    PLUGIN.NAME,
-    buildValuesDelta(marked, undefined, instance.sourceRef),
-    SKVersion.v1
-  );
+  publishNotificationDelta(instance, app, marked);
   instance.logger('info', 'Marked active weather notifications as stale', {
     count: marked.length,
   });
+}
+
+/**
+ * Publish a notification delta under this instance's `$source`. Notifications
+ * ride their own delta so consumers walking the values delta never see a
+ * `notifications.*` leaf interleaved with measurements; routing every such
+ * publish through here keeps the source reference, the untouched timestamp
+ * slot, and the SK version identical across the transition and staleness
+ * paths, so a consumer sees one coherent notification stream.
+ * @private
+ */
+function publishNotificationDelta(
+  instance: PluginInstance,
+  app: ServerAPI,
+  values: PathValue[]
+): void {
+  app.handleMessage(
+    PLUGIN.NAME,
+    buildValuesDelta(values, undefined, instance.sourceRef),
+    SKVersion.v1
+  );
 }
 
 /**
@@ -200,7 +228,7 @@ function emitMarineTick(instance: PluginInstance, app: ServerAPI): void {
 
 /**
  * Rebuild the cached values delta from new weather data and run the notifier.
- * Returns the notifier's transitions, or `null` if mapping failed (in which
+ * Returns the notifier's evaluation, or `null` if mapping failed (in which
  * case the cached delta is cleared and an error banner is published so the
  * caller can short-circuit the tick).
  * @private
@@ -210,11 +238,11 @@ function refreshCachedDelta(
   app: ServerAPI,
   weatherData: WeatherData,
   pathMapper: NMEA2000PathMapper
-): PathValue[] | null {
+): NotificationEvaluation | null {
   try {
     instance.cachedDelta = pathMapper.mapToSignalKPaths(weatherData);
     instance.cachedWeatherDataRef = weatherData;
-    return instance.notifier?.evaluate(weatherData) ?? [];
+    return instance.notifier?.evaluate(weatherData) ?? NO_NOTIFICATIONS;
   } catch (error) {
     // Mapper failure: drop the cached delta so we stop emitting invalid data.
     // Pin cachedWeatherDataRef to this snapshot so the emission tick's ref-equality

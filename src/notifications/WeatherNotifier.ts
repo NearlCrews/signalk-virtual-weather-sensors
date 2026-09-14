@@ -31,6 +31,7 @@ import {
   pascalsToMillibars,
   radiansToDegrees,
   ratioToPercentage,
+  truncateToCodePoints,
 } from '../utils/conversions.js';
 import { pv } from '../utils/skDelta.js';
 
@@ -79,12 +80,10 @@ export const MAX_MESSAGE_LENGTH = 80;
 function capForChartplotter(message: string, limit: number = MAX_MESSAGE_LENGTH): string {
   // UTF-16 length is an upper bound on code-point count: a string within the
   // cap by UTF-16 units is within it by code points too.
-  if (message.length <= limit) return message;
-  const points = Array.from(message);
-  if (points.length <= limit) return message;
+  if (message.length <= limit || Array.from(message).length <= limit) return message;
   // Trim to limit - 1 code points and append the ellipsis so the result is
   // exactly `limit` code points (the ellipsis replaces, it does not add).
-  return `${points.slice(0, limit - 1).join('')}…`;
+  return `${truncateToCodePoints(message, limit - 1)}…`;
 }
 
 /** 16-point compass rose, indexed by floor((deg + 11.25) / 22.5) % 16 (the wrap maps [348.75, 360) back to N). */
@@ -359,6 +358,44 @@ const COLD_BANDS: BandSet = {
   ],
 };
 
+/** One notification path's published state and the message that explains it. */
+interface PublishedNotification {
+  readonly state: NotificationState;
+  readonly message: string;
+}
+
+/**
+ * Collector threaded through one evaluation: the deltas it will emit and the
+ * states those deltas will record. One object rather than two parameters, so a
+ * band cannot push a delta without recording what the delta says.
+ */
+interface EvaluationSink {
+  readonly transitions: PathValue[];
+  readonly states: Map<string, PublishedNotification>;
+}
+
+/** What an evaluation will record once the caller confirms it reached the bus. */
+interface PendingEvaluation {
+  readonly states: Map<string, PublishedNotification>;
+  readonly primed: boolean;
+}
+
+/**
+ * One evaluation's result: the deltas to publish, and the recorder that marks
+ * them published.
+ *
+ * The recorder is reachable only through the evaluation that produced it and
+ * only while that evaluation is still the outstanding one, so a caller cannot
+ * record transitions a later evaluation replaced, and calling it twice is a
+ * no-op rather than a second write.
+ */
+export interface NotificationEvaluation {
+  /** Deltas to hand to the server; empty when no enabled band transitioned. */
+  readonly transitions: PathValue[];
+  /** Record these transitions as published. Call once the delta has reached the bus. */
+  readonly commit: () => void;
+}
+
 /**
  * Translates `WeatherData` snapshots into Signal K notification deltas under
  * `notifications.environment.*`. Pure transition emitter: a band is reported
@@ -369,23 +406,24 @@ export class WeatherNotifier {
   private readonly config: NotificationsConfig;
   private readonly logger: Logger;
   /**
-   * Last state PUBLISHED per notification path; default `normal` until set.
-   * Only {@link commit} writes here, and only once the caller confirms the
-   * transitions reached the bus.
+   * State and message PUBLISHED per notification path; absent until the path
+   * has been published at least once. Only the recorder handed back by an
+   * evaluation writes here, and only once the caller confirms the transitions
+   * reached the bus. One entry per path rather than two parallel maps, so a
+   * path's state and the message that explains it cannot drift apart.
    */
-  private readonly lastState = new Map<string, NotificationState>();
-  /** Last message published per active path, reused by {@link markStale}. */
-  private readonly lastMessage = new Map<string, string>();
+  private readonly published = new Map<string, PublishedNotification>();
   /**
-   * States the current evaluation WOULD publish. Held back from `lastState`
-   * until {@link commit}, because the caller maps, evaluates, and publishes in
-   * separate statements: committing at evaluate time meant a throw anywhere in
-   * between discarded the delta while the notifier already believed the band
-   * had entered, and the band then never re-emitted (the next evaluation sees
-   * `prior === desired` and returns early).
+   * The evaluation awaiting its recorder, or `null` when nothing is
+   * outstanding. Held back from `published` because the caller maps,
+   * evaluates, and publishes in separate statements: recording at evaluate
+   * time meant a throw anywhere in between discarded the delta while the
+   * notifier already believed the band had entered, and the band then never
+   * re-emitted (the next evaluation sees `prior === desired` and returns
+   * early). A committed and an uncommitted evaluation differ by this one
+   * field being null or not.
    */
-  private readonly pendingState = new Map<string, NotificationState>();
-  private readonly pendingMessage = new Map<string, string>();
+  private pending: PendingEvaluation | null = null;
   /**
    * False until the first COMMITTED evaluate() after construction or reset().
    * While unprimed, leading `normal` states ARE emitted: a previous plugin
@@ -395,8 +433,6 @@ export class WeatherNotifier {
    * again because the bus is known to have nothing to clear.
    */
   private primed = false;
-  /** Priming deferred with the rest of the evaluation, applied by {@link commit}. */
-  private pendingPrimed = false;
   /** True once the active bands have been re-emitted with a staleness marker. */
   private staleMarked = false;
 
@@ -416,33 +452,33 @@ export class WeatherNotifier {
    * notifier allocates nothing.
    *
    * The returned transitions are NOT recorded as published until the caller
-   * calls {@link commit}. Call it once the delta has reached the bus.
+   * calls the evaluation's `commit`. Call it once the delta has reached the bus.
    */
-  public evaluate(data: WeatherData): PathValue[] {
-    this.pendingState.clear();
-    this.pendingMessage.clear();
-    this.pendingPrimed = false;
+  public evaluate(data: WeatherData): NotificationEvaluation {
+    const states = new Map<string, PublishedNotification>();
+    this.pending = null;
     // Fresh data has arrived, so any staleness marker on the active bands is
     // superseded by this evaluation and a later stale edge should re-mark.
     this.staleMarked = false;
 
     if (!this.config.enabled) {
-      return this.primed ? [] : this.clearAll();
+      return this.primed ? { transitions: [], commit: () => {} } : this.clearAll();
     }
 
-    const transitions: PathValue[] = [];
+    const sink: EvaluationSink = { transitions: [], states };
 
-    if (this.config.wind) this.evaluateWind(data, transitions);
-    else this.clearBands(WIND_BANDS, transitions);
-    if (this.config.visibility) this.evaluateVisibility(data, transitions);
-    else this.clearBands(VISIBILITY_BANDS, transitions);
-    if (this.config.heat) this.evaluateHeat(data, transitions);
-    else this.clearBands(HEAT_BANDS, transitions);
-    if (this.config.cold) this.evaluateCold(data, transitions);
-    else this.clearBands(COLD_BANDS, transitions);
-    if (this.config.weather) this.evaluateSevereCondition(data, transitions);
-    else this.maybeTransition(NOTIFICATION_PATHS.WEATHER_SEVERE, 'normal', () => '', transitions);
+    if (this.config.wind) this.evaluateWind(data, sink);
+    else this.clearBands(WIND_BANDS, sink);
+    if (this.config.visibility) this.evaluateVisibility(data, sink);
+    else this.clearBands(VISIBILITY_BANDS, sink);
+    if (this.config.heat) this.evaluateHeat(data, sink);
+    else this.clearBands(HEAT_BANDS, sink);
+    if (this.config.cold) this.evaluateCold(data, sink);
+    else this.clearBands(COLD_BANDS, sink);
+    if (this.config.weather) this.evaluateSevereCondition(data, sink);
+    else this.maybeTransition(NOTIFICATION_PATHS.WEATHER_SEVERE, 'normal', () => '', sink);
 
+    const { transitions } = sink;
     if (transitions.length > 0) {
       this.logger('info', 'Weather notifications transitioned', {
         count: transitions.length,
@@ -450,29 +486,31 @@ export class WeatherNotifier {
       });
     }
 
-    this.pendingPrimed = true;
-    return transitions;
+    return this.seal(transitions, states);
   }
 
   /**
-   * Record the transitions from the last {@link evaluate} or {@link clearAll}
-   * as published. Call this only after the caller has handed the delta to the
-   * server; skipping it leaves the notifier believing nothing changed, so the
-   * next evaluation re-derives and re-emits the same edge.
+   * Park `states` as the outstanding evaluation and hand back its recorder.
+   * Only this closure can reach `published`, and only while its own evaluation
+   * is still outstanding, so a caller cannot record a superseded evaluation or
+   * record the same one twice.
+   * @private
    */
-  public commit(): void {
-    for (const [path, state] of this.pendingState) {
-      this.lastState.set(path, state);
-    }
-    for (const [path, message] of this.pendingMessage) {
-      this.lastMessage.set(path, message);
-    }
-    this.pendingState.clear();
-    this.pendingMessage.clear();
-    if (this.pendingPrimed) {
-      this.primed = true;
-      this.pendingPrimed = false;
-    }
+  private seal(
+    transitions: PathValue[],
+    states: Map<string, PublishedNotification>
+  ): NotificationEvaluation {
+    const sealed: PendingEvaluation = { states, primed: true };
+    this.pending = sealed;
+    return {
+      transitions,
+      commit: () => {
+        if (this.pending !== sealed) return;
+        for (const [path, entry] of sealed.states) this.published.set(path, entry);
+        this.primed = sealed.primed;
+        this.pending = null;
+      },
+    };
   }
 
   /**
@@ -490,24 +528,24 @@ export class WeatherNotifier {
   public markStale(ageLabel: string): PathValue[] {
     if (this.staleMarked) return [];
     const suffix = ` (${ageLabel})`;
+    // One instant and one budget for the whole batch: the bands are marked by
+    // a single edge, so they should not carry timestamps a millisecond apart.
+    const timestamp = new Date().toISOString();
+    const limit = MAX_MESSAGE_LENGTH - suffix.length;
     const out: PathValue[] = [];
-    for (const [path, state] of this.lastState) {
+    for (const [path, { state, message }] of this.published) {
       if (state === 'normal') continue;
-      const base = capForChartplotter(
-        this.lastMessage.get(path) ?? '',
-        MAX_MESSAGE_LENGTH - suffix.length
-      );
       out.push(
         pv(path, {
           state,
           method: methodsFor(state),
-          message: `${base}${suffix}`,
-          timestamp: new Date().toISOString(),
+          message: `${capForChartplotter(message, limit)}${suffix}`,
+          timestamp,
         } satisfies NotificationValue)
       );
     }
     // Latch even with nothing to emit, so a stale episode with no active band
-    // does not re-scan `lastState` on every emission tick.
+    // does not re-scan `published` on every emission tick.
     this.staleMarked = true;
     return out;
   }
@@ -519,13 +557,20 @@ export class WeatherNotifier {
    * the plugin was stopped does not stay latched in the server model.
    */
   public reset(): void {
-    this.lastState.clear();
-    this.lastMessage.clear();
-    this.pendingState.clear();
-    this.pendingMessage.clear();
+    this.published.clear();
+    this.pending = null;
     this.primed = false;
-    this.pendingPrimed = false;
     this.staleMarked = false;
+  }
+
+  /**
+   * True while a stale episode still needs its marker delta. {@link markStale}
+   * latches after the first call, so the caller reads the data age and formats
+   * the age label only on the tick that will actually emit something, not on
+   * every tick of an outage that can last hours.
+   */
+  public needsStaleMark(): boolean {
+    return !this.staleMarked;
   }
 
   /**
@@ -533,22 +578,22 @@ export class WeatherNotifier {
    * used on disable and stop so alarms cannot remain latched in the server's
    * full model when their category is no longer evaluated.
    */
-  public clearAll(): PathValue[] {
+  public clearAll(): NotificationEvaluation {
+    const states = new Map<string, PublishedNotification>();
     const transitions: PathValue[] = [];
+    const timestamp = new Date().toISOString();
     for (const path of ALL_NOTIFICATION_PATHS) {
-      this.pendingState.set(path, 'normal');
-      this.pendingMessage.set(path, '');
+      states.set(path, { state: 'normal', message: '' });
       transitions.push(
         pv(path, {
           state: 'normal',
           method: NO_METHODS,
           message: '',
-          timestamp: new Date().toISOString(),
+          timestamp,
         } satisfies NotificationValue)
       );
     }
-    this.pendingPrimed = true;
-    return transitions;
+    return this.seal(transitions, states);
   }
 
   /**
@@ -558,7 +603,7 @@ export class WeatherNotifier {
    */
   public getActiveCount(): number {
     let count = 0;
-    for (const state of this.lastState.values()) {
+    for (const { state } of this.published.values()) {
       if (state !== 'normal') count++;
     }
     return count;
@@ -571,13 +616,13 @@ export class WeatherNotifier {
    * surfaces sustained wind, gust, cardinal direction, and pressure so the
    * operator sees what to actually do (reef, run, hold) from the banner alone.
    */
-  private evaluateWind(data: WeatherData, out: PathValue[]): void {
+  private evaluateWind(data: WeatherData, sink: EvaluationSink): void {
     const bft = data.beaufortScale;
     if (bft === undefined) {
-      this.clearBands(WIND_BANDS, out);
+      this.clearBands(WIND_BANDS, sink);
       return;
     }
-    this.evaluateBands(WIND_BANDS, bft, () => formatWindSuffix(data), out);
+    this.evaluateBands(WIND_BANDS, bft, () => formatWindSuffix(data), sink);
   }
 
   /**
@@ -585,13 +630,13 @@ export class WeatherNotifier {
    * independently. 1 nm is the plugin's chosen restricted-visibility
    * threshold; neither SOLAS nor the COLREGs define a numeric value.
    */
-  private evaluateVisibility(data: WeatherData, out: PathValue[]): void {
+  private evaluateVisibility(data: WeatherData, sink: EvaluationSink): void {
     const vis = data.visibility;
     if (vis === undefined) {
-      this.clearBands(VISIBILITY_BANDS, out);
+      this.clearBands(VISIBILITY_BANDS, sink);
       return;
     }
-    this.evaluateBands(VISIBILITY_BANDS, vis, () => formatVisibilitySuffix(data), out);
+    this.evaluateBands(VISIBILITY_BANDS, vis, () => formatVisibilitySuffix(data), sink);
   }
 
   /**
@@ -601,13 +646,13 @@ export class WeatherNotifier {
    * WBGT, RH, and RealFeel-in-shade (when present) so the operator sees both
    * the index and the underlying physiology drivers.
    */
-  private evaluateHeat(data: WeatherData, out: PathValue[]): void {
+  private evaluateHeat(data: WeatherData, sink: EvaluationSink): void {
     const hsi = data.heatStressIndex;
     if (hsi === undefined) {
-      this.clearBands(HEAT_BANDS, out);
+      this.clearBands(HEAT_BANDS, sink);
       return;
     }
-    this.evaluateBands(HEAT_BANDS, hsi, () => formatHeatSuffix(data), out);
+    this.evaluateBands(HEAT_BANDS, hsi, () => formatHeatSuffix(data), sink);
   }
 
   /**
@@ -622,7 +667,7 @@ export class WeatherNotifier {
     set: BandSet,
     value: number,
     scalarSuffix: () => string,
-    out: PathValue[]
+    sink: EvaluationSink
   ): void {
     for (const band of set.bands) {
       const active =
@@ -635,7 +680,7 @@ export class WeatherNotifier {
         band.path,
         desired,
         desired === 'normal' ? () => '' : () => `${band.prefix}: ${scalarSuffix()}`,
-        out
+        sink
       );
     }
   }
@@ -647,9 +692,9 @@ export class WeatherNotifier {
    * alarm on the bus until a later response happens to carry the driver again.
    * Mirrors the clear-to-normal path in {@link evaluateSevereCondition}.
    */
-  private clearBands(set: BandSet, out: PathValue[]): void {
+  private clearBands(set: BandSet, sink: EvaluationSink): void {
     for (const band of set.bands) {
-      this.maybeTransition(band.path, 'normal', () => '', out);
+      this.maybeTransition(band.path, 'normal', () => '', sink);
     }
   }
 
@@ -659,13 +704,13 @@ export class WeatherNotifier {
    * adds air temp and wind speed because wind chill alone undersells the
    * exposure risk on a windy day.
    */
-  private evaluateCold(data: WeatherData, out: PathValue[]): void {
+  private evaluateCold(data: WeatherData, sink: EvaluationSink): void {
     const windChillK = data.windChill;
     if (!Number.isFinite(windChillK)) {
-      this.clearBands(COLD_BANDS, out);
+      this.clearBands(COLD_BANDS, sink);
       return;
     }
-    this.evaluateBands(COLD_BANDS, windChillK, () => formatColdSuffix(data), out);
+    this.evaluateBands(COLD_BANDS, windChillK, () => formatColdSuffix(data), sink);
   }
 
   /**
@@ -679,11 +724,11 @@ export class WeatherNotifier {
    * appended when finite: a thunderstorm paired with a falling barometer is a
    * useful operational signal.
    */
-  private evaluateSevereCondition(data: WeatherData, out: PathValue[]): void {
+  private evaluateSevereCondition(data: WeatherData, sink: EvaluationSink): void {
     const severity = data.severeCondition;
 
     if (severity === undefined) {
-      this.maybeTransition(NOTIFICATION_PATHS.WEATHER_SEVERE, 'normal', () => '', out);
+      this.maybeTransition(NOTIFICATION_PATHS.WEATHER_SEVERE, 'normal', () => '', sink);
       return;
     }
 
@@ -691,16 +736,16 @@ export class WeatherNotifier {
       NOTIFICATION_PATHS.WEATHER_SEVERE,
       severity.state,
       () => formatSevereSuffix(data, severity.label),
-      out
+      sink
     );
   }
 
   /**
    * Push a notification PathValue onto `out` if and only if the desired state
    * differs from the last state emitted for this path. Once primed, the first
-   * evaluation against `normal` records `normal` in lastState (so a later
+   * evaluation against `normal` records `normal` in `published` (so a later
    * transition to an active band correctly emits the entry delta) but does
-   * NOT emit a delta: the bus has nothing to clear. Result: `lastState` may
+   * NOT emit a delta: the bus has nothing to clear. Result: `published` may
    * contain many paths in `normal` state, but `getActiveCount` still returns
    * 0 because it counts only non-normal entries. On the unprimed first
    * evaluate after a (re)start the leading `normal` IS emitted, clearing any
@@ -714,27 +759,26 @@ export class WeatherNotifier {
     path: string,
     desired: NotificationState,
     message: () => string,
-    out: PathValue[]
+    sink: EvaluationSink
   ): void {
-    const prior = this.lastState.get(path);
+    const prior = this.published.get(path)?.state;
     if (prior === undefined && desired === 'normal' && this.primed) {
       // Suppress the leading `normal`: the band has never been active since
       // priming, so the bus has nothing to clear. Record the state so a later
       // transition to an active band correctly emits the entry delta.
-      this.pendingState.set(path, desired);
+      sink.states.set(path, { state: desired, message: '' });
       return;
     }
     if (prior === desired) return;
 
-    this.pendingState.set(path, desired);
     const capped = capForChartplotter(message());
-    this.pendingMessage.set(path, capped);
+    sink.states.set(path, { state: desired, message: capped });
     const value: NotificationValue = {
       state: desired,
       method: methodsFor(desired),
       message: capped,
       timestamp: new Date().toISOString(),
     };
-    out.push(pv(path, value));
+    sink.transitions.push(pv(path, value));
   }
 }
