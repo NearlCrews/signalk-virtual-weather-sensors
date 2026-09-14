@@ -29,7 +29,7 @@ import {
   requireIsoTimestamp,
   requireObservationTimestamp,
 } from '../utils/conversions.js';
-import { WMO_DESCRIPTIONS } from './OpenMeteoMapper.js';
+import { pastHourPrecipitationMm, WMO_DESCRIPTIONS } from './OpenMeteoMapper.js';
 import {
   buildSkOutsideSI,
   buildSunBlock,
@@ -150,7 +150,10 @@ export function mapOpenMeteoCurrentToObservation(
   const visibilityM = asOptionalNumber(c?.visibility); // already meters
   const cloudCover = optionalPercentageToRatio(c?.cloud_cover);
   const uvIndex = asOptionalNumber(c?.uv_index);
-  const precipitationMm = asOptionalNumber(c?.precipitation);
+  // Past-hour depth from the hourly companion block, never the current block's
+  // 15-minute backward sum: `outside.precipitationVolume` on an observation is
+  // the same quantity `environment.weather.precipitationLastHour` publishes.
+  const precipitationMm = pastHourPrecipitationMm(response, c?.time);
   const description = wmoDescription(asOptionalNumber(c?.weather_code));
 
   const pressurePa = pressureMbar !== undefined ? millibarsToPA(pressureMbar) : undefined;

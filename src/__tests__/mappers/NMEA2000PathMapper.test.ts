@@ -242,7 +242,7 @@ describe('NMEA2000PathMapper', () => {
   describe('NMEA2000 Compatibility', () => {
     it('should sanitize data for NMEA2000 compatibility', () => {
       const extremeWeatherData = createMockWeatherData({
-        temperature: 400, // Extreme temperature (over NMEA2000 range)
+        temperature: 400, // Extreme temperature (over the physical range)
         pressure: 150000, // Extreme pressure
         humidity: 1.5, // Invalid humidity > 1.0
         windSpeed: 200, // Over NMEA2000 wind speed limit
@@ -261,7 +261,7 @@ describe('NMEA2000PathMapper', () => {
       const windSpeedValue = values.find((v) => v.path === 'environment.wind.speedOverGround')
         ?.value as number;
 
-      expect(tempValue).toBeLessThanOrEqual(358.15); // 85°C max
+      expect(tempValue).toBeLessThanOrEqual(373.15); // +100°C max
       expect(pressureValue).toBeLessThanOrEqual(120000); // Reasonable atmospheric max
       expect(humidityValue).toBeLessThanOrEqual(1); // Signal K spec: humidity is a 0-1 ratio
       expect(windSpeedValue).toBeLessThanOrEqual(102.3); // NMEA2000 wind speed max

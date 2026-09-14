@@ -6,6 +6,21 @@
  */
 
 import type { WeatherWarning } from '@signalk/server-api';
+import { capExternalString } from '../utils/conversions.js';
+
+/**
+ * Length ceilings for the free text these feeds supply.
+ *
+ * An NWS `description` routinely runs to several kilobytes, and the only other
+ * ceiling in the path is the 1 MiB whole-body cap in `readBoundedJson`, so an
+ * unbounded field would reach the v2 warnings payload verbatim. Every other
+ * externally-sourced string in the plugin is bounded and control-stripped the
+ * same way (`capExternalString`); these are the limits at which a warning still
+ * renders on a dashboard. `details` keeps a full marine narrative plus its
+ * instruction; `type` and `source` are short labels.
+ */
+const MAX_WARNING_DETAILS_LENGTH = 512;
+const MAX_WARNING_LABEL_LENGTH = 64;
 
 /** Minimal shape of the NWS `/alerts/active` GeoJSON response (only mapped fields). */
 export interface NwsAlertsResponse {
@@ -39,9 +54,14 @@ export interface MetAlertsResponse {
   }>;
 }
 
-/** Coerce an optional string-ish value to a trimmed string, or '' when absent. */
-function str(value: unknown): string {
-  return typeof value === 'string' ? value.trim() : '';
+/**
+ * Coerce an optional string-ish value to a trimmed, control-stripped string
+ * bounded at `maxLength` code points, or '' when absent. Timestamps pass
+ * through the same guard: they are provider text too, and the label ceiling is
+ * far above any ISO 8601 instant.
+ */
+function str(value: unknown, maxLength: number = MAX_WARNING_LABEL_LENGTH): string {
+  return capExternalString(value, maxLength).trim();
 }
 
 function isValidTimestamp(value: string): boolean {
@@ -76,7 +96,9 @@ export function mapNwsAlertsToWarnings(response: NwsAlertsResponse): WeatherWarn
   const warnings = features
     .map((feature) => {
       const p = feature.properties ?? {};
-      const details = str(p.headline) || str(p.description);
+      const details =
+        str(p.headline, MAX_WARNING_DETAILS_LENGTH) ||
+        str(p.description, MAX_WARNING_DETAILS_LENGTH);
       return {
         startTime: str(p.onset) || str(p.effective),
         endTime: str(p.ends) || str(p.expires),
@@ -110,9 +132,11 @@ export function mapMetAlertsToWarnings(response: MetAlertsResponse): WeatherWarn
     .map((feature) => {
       const p = feature.properties ?? {};
       const interval = feature.when?.interval ?? [];
-      const base = str(p.description) || str(p.title);
-      const instruction = str(p.instruction);
-      const details = instruction.length > 0 ? `${base} ${instruction}`.trim() : base;
+      const base =
+        str(p.description, MAX_WARNING_DETAILS_LENGTH) || str(p.title, MAX_WARNING_DETAILS_LENGTH);
+      const instruction = str(p.instruction, MAX_WARNING_DETAILS_LENGTH);
+      const joined = instruction.length > 0 ? `${base} ${instruction}`.trim() : base;
+      const details = capExternalString(joined, MAX_WARNING_DETAILS_LENGTH);
       return {
         startTime: str(interval[0]),
         endTime: str(interval[1]),

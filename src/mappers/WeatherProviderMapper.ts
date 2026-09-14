@@ -21,6 +21,7 @@ import {
   asOptionalNumber,
   kmhToMS,
   millibarsToPA,
+  normalizeUtcDate,
   optionalCelsiusToKelvin,
   optionalPercentageToRatio,
   requireIsoTimestamp,
@@ -152,6 +153,21 @@ function dailyUvIndex(
   return asOptionalNumber(entry?.Value);
 }
 
+/**
+ * UTC midnight of the calendar day an AccuWeather daily entry describes.
+ *
+ * The wire value is the LOCAL day start with its offset attached, so the
+ * calendar date is the leading `YYYY-MM-DD` of that string. Parsing to an
+ * instant first would move the date across the boundary for a large positive
+ * offset. Falls back to the validated instant when the value is not a plain
+ * date-prefixed ISO string, so a malformed entry still fails loudly rather
+ * than silently emitting an empty date.
+ */
+function dailyForecastDate(value: unknown): string {
+  const normalized = typeof value === 'string' ? normalizeUtcDate(value.slice(0, 10)) : '';
+  return normalized || requireIsoTimestamp(value, 'AccuWeather daily forecast');
+}
+
 /** Map the AccuWeather 5-day daily forecast to ascending-order daily WeatherData. */
 export function mapDailyToForecasts(response: AccuWeatherDailyForecastResponse): SKWeatherData[] {
   return response.DailyForecasts.map((day) => {
@@ -181,7 +197,14 @@ export function mapDailyToForecasts(response: AccuWeatherDailyForecastResponse):
     );
 
     return {
-      date: requireIsoTimestamp(day.Date, 'AccuWeather daily forecast'),
+      // Normalized to UTC midnight of the LOCAL calendar day, matching the
+      // Open-Meteo and Met.no daily mappers. AccuWeather stamps a local day
+      // start (`2026-09-11T07:00:00+01:00`), so a consumer bucketing v2 daily
+      // entries by date saw the bucket boundary move by hours when the provider
+      // changed. The calendar date comes from the offset-bearing string rather
+      // than the UTC instant, because a positive offset can put the same local
+      // day on the previous UTC date.
+      date: dailyForecastDate(day.Date),
       type: 'daily',
       ...(typeof half?.IconPhrase === 'string' && { description: half.IconPhrase }),
       outside,

@@ -8,7 +8,9 @@
  * precipitation type, ceiling, visibility obstruction, or 24h departure, so
  * those leaves are left unset. Wind chill and heat index are recomputed (as
  * AccuWeather already does for heat index), and wet-bulb globe temperature is
- * estimated so the heat-stress band still functions.
+ * estimated so the heat-stress band still functions. Past-hour precipitation
+ * comes from the `hourly` companion block rather than the current block, which
+ * reports only a 15-minute accumulation; see `pastHourPrecipitationMm`.
  */
 
 import { deriveBaseWeatherFields } from '../calculators/deriveWeatherFields.js';
@@ -22,6 +24,7 @@ import {
   celsiusToKelvin,
   degreesToRadians,
   estimateWetBulbGlobeTemperature,
+  floorToUtcHour,
   millibarsToPA,
   normalizeAngle0To2Pi,
   optionalPercentageToRatio,
@@ -67,12 +70,49 @@ export const WMO_DESCRIPTIONS: ReadonlyMap<number, string> = new Map([
 ]);
 
 /**
+ * Read the past-hour precipitation depth in millimetres from the `hourly`
+ * companion block, or `undefined` when the covering bucket is absent.
+ *
+ * `current.precipitation` cannot be used for this. Open-Meteo documents the
+ * current block's `interval` as "the duration in seconds used for calculating
+ * backward-looking sums", and that interval is 900 s, so `current.precipitation`
+ * is a 15-minute depth. `environment.weather.precipitationLastHour` promises a
+ * past-hour depth, and scaling a 15-minute sample up would invent a number
+ * rather than report one, so the hourly variable is requested alongside the
+ * current block instead: Open-Meteo documents it as the "sum of the preceding
+ * hour", so the entry stamped at the top of the observation's own hour is the
+ * completed hour ending at that stamp.
+ *
+ * Returning `undefined` leaves the path unset, which is the same choice
+ * `mapMetNoCurrentToWeatherData` makes when no genuine past-hour depth exists.
+ */
+export function pastHourPrecipitationMm(
+  response: OpenMeteoCurrentResponse,
+  observationTime: unknown
+): number | undefined {
+  const times = response.hourly?.time;
+  const values = response.hourly?.precipitation;
+  if (times === undefined || values === undefined) return undefined;
+
+  const observationHour = floorToUtcHour(observationTime);
+  if (observationHour === '') return undefined;
+
+  for (let i = 0; i < times.length; i++) {
+    if (floorToUtcHour(times[i]) === observationHour) {
+      return asOptionalNumber(values[i]);
+    }
+  }
+  return undefined;
+}
+
+/**
  * Decode the optional Open-Meteo fields, returning only the keys that were
  * present. Kept separate from the core transform so neither grows the
  * cognitive complexity the codebase caps, mirroring AccuWeather's
  * `extractEnhancedConditions`.
  */
 function extractOptionalFields(
+  response: OpenMeteoCurrentResponse,
   current: NonNullable<OpenMeteoCurrentResponse['current']>,
   windSpeed: number
 ): Partial<WeatherData> {
@@ -83,7 +123,7 @@ function extractOptionalFields(
   const windGustFactor = calculateGustFactor(windGustSpeed, windSpeed);
   const rawApparent = asOptionalNumber(current.apparent_temperature);
   const apparentTemperature = rawApparent !== undefined ? celsiusToKelvin(rawApparent) : undefined;
-  const precipitationLastHour = asOptionalNumber(current.precipitation);
+  const precipitationLastHour = pastHourPrecipitationMm(response, current.time);
   const weatherCode = asOptionalNumber(current.weather_code);
   const severeCondition = openMeteoSevereCondition(weatherCode);
   const description = weatherCode !== undefined ? WMO_DESCRIPTIONS.get(weatherCode) : undefined;
@@ -156,6 +196,6 @@ export function mapOpenMeteoCurrentToWeatherData(response: OpenMeteoCurrentRespo
     wetBulbGlobeTemperature,
     heatStressIndex,
     timestamp: requireObservationTimestamp(current.time, 'Open-Meteo current conditions'),
-    ...extractOptionalFields(current, windSpeed),
+    ...extractOptionalFields(response, current, windSpeed),
   };
 }

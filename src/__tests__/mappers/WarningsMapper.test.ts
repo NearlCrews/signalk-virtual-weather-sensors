@@ -148,3 +148,69 @@ describe('mapMetAlertsToWarnings', () => {
     expect(out).toEqual([]);
   });
 });
+
+describe('WarningsMapper: bounded external text', () => {
+  const longText = 'a'.repeat(2000);
+  /** Control characters an external feed can smuggle into a republished field. */
+  const CONTROL_CHARS = '\x00\x07\x1b\x7f';
+  // biome-ignore lint/suspicious/noControlCharactersInRegex: asserting the mapper strips exactly these
+  const CONTROL_RE = /[\x00-\x1f\x7f]/;
+
+  it('caps an NWS description and strips control characters', () => {
+    const [warning] = mapNwsAlertsToWarnings({
+      features: [
+        {
+          properties: {
+            event: `Gale Warning${CONTROL_CHARS}${'x'.repeat(200)}`,
+            onset: '2026-06-17T05:00:00Z',
+            ends: '2026-06-17T17:00:00Z',
+            description: `${longText}tail`,
+            senderName: `NWS ${'y'.repeat(200)}`,
+          },
+        },
+      ],
+    });
+    if (!warning) throw new Error('expected one warning');
+    // An NWS description routinely runs to several kilobytes, and the only
+    // other ceiling in the path is the 1 MiB whole-body cap.
+    expect(warning.details.length).toBe(512);
+    expect(warning.type.length).toBe(64);
+    expect(warning.source.length).toBe(64);
+    for (const field of [warning.details, warning.type, warning.source]) {
+      expect(CONTROL_RE.test(field)).toBe(false);
+    }
+  });
+
+  it('caps the joined MetAlerts description and instruction', () => {
+    const [warning] = mapMetAlertsToWarnings({
+      features: [
+        {
+          when: { interval: ['2026-06-17T05:00:00Z', '2026-06-17T17:00:00Z'] },
+          properties: {
+            eventAwarenessName: 'Gale',
+            description: longText,
+            instruction: longText,
+          },
+        },
+      ],
+    });
+    if (!warning) throw new Error('expected one warning');
+    expect(warning.details.length).toBe(512);
+  });
+
+  it('leaves short text untouched', () => {
+    const [warning] = mapMetAlertsToWarnings({
+      features: [
+        {
+          when: { interval: ['2026-06-17T05:00:00Z', '2026-06-17T17:00:00Z'] },
+          properties: {
+            eventAwarenessName: 'Gale',
+            description: 'Strong gale expected.',
+            instruction: 'Do not go out in a small boat.',
+          },
+        },
+      ],
+    });
+    expect(warning?.details).toBe('Strong gale expected. Do not go out in a small boat.');
+  });
+});

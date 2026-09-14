@@ -26,6 +26,7 @@ import {
   asOptionalNumber,
   calculateGustFactor,
   calculateHeatStressIndex,
+  capExternalString,
   celsiusToKelvin,
   degreesToRadians,
   kmhToMS,
@@ -35,24 +36,7 @@ import {
   optionalPercentageToRatio,
   percentageToRatio,
   requireObservationTimestamp,
-  truncateToCodePoints,
 } from '../utils/conversions.js';
-
-/**
- * Strip control characters and truncate a string from the API to a safe length
- * for downstream consumers. Truncation walks code points (via `Array.from`)
- * so a surrogate-pair character (emoji, CJK supplementary) at the boundary
- * cannot leave a lone surrogate that breaks JSON-encoded downstream consumers.
- * The runtime `typeof` guard catches real-world API responses where a field
- * typed `string` arrives as null/undefined/number; the response schema is a
- * contract for what we use, not a guarantee the wire matches it.
- */
-function capString(value: unknown, maxLength: number): string {
-  if (typeof value !== 'string') return '';
-  // biome-ignore lint/suspicious/noControlCharactersInRegex: deliberately stripping injection vectors
-  const stripped = value.replace(/[\x00-\x1f\x7f]/g, '');
-  return truncateToCodePoints(stripped, maxLength);
-}
 
 /**
  * Decode the optional enhanced-temperature fields, all in Kelvin. Free-tier
@@ -130,7 +114,7 @@ const PRESSURE_TENDENCY_CODES: ReadonlyMap<string, number> = new Map([
 
 /** Strip control characters and bound an optional API label; undefined when absent or empty. */
 function optionalLabel(value: unknown): string | undefined {
-  const capped = capString(value, ACCUWEATHER.MAX_LABEL_LENGTH);
+  const capped = capExternalString(value, ACCUWEATHER.MAX_LABEL_LENGTH);
   return capped.length > 0 ? capped : undefined;
 }
 
@@ -200,7 +184,7 @@ export function mapAccuWeatherCurrentToWeatherData(
   // condition here, at the provider boundary, so the notifier never decodes
   // an AccuWeather-specific value.
   const severeCondition = accuWeatherSevereCondition(enhancedConditions.weatherIcon);
-  const description = capString(conditions.WeatherText, ACCUWEATHER.MAX_DESCRIPTION_LENGTH);
+  const description = capExternalString(conditions.WeatherText, ACCUWEATHER.MAX_DESCRIPTION_LENGTH);
 
   return {
     temperature,

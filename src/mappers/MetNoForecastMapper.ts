@@ -46,6 +46,11 @@ interface DayAcc {
   hasPrecip: boolean;
   description: string | undefined;
   has12: boolean;
+  /**
+   * Canonical grid hours seen for this day. A day is only reported when all
+   * four are present; see `mapMetNoToDailyForecasts`.
+   */
+  hours: Set<number>;
 }
 
 /**
@@ -182,8 +187,10 @@ function processGridWindow(entry: MetNoTimeseriesEntry, byDay: Map<string, DayAc
       // every later window, because accumulateWindow's fallback branch requires
       // has12 to still be false.
       has12: hour === 12 && desc !== undefined,
+      hours: new Set([hour]),
     });
   } else {
+    existing.hours.add(hour);
     accumulateWindow(existing, hour, maxC, minC, precipMm, precipPresent, desc);
   }
 }
@@ -226,6 +233,17 @@ export function mapMetNoToObservation(response: MetNoLocationforecastResponse): 
  * The description comes from the 12:00 UTC window, falling back to the earliest
  * window seen for the day. The hour is parsed from the ISO 8601 string with slice
  * (UTC, so string-slicing is timezone-safe and avoids new Date).
+ *
+ * A day is reported only when ALL FOUR grid windows are present. A document
+ * fetched mid-afternoon begins at the current hour, so today's earlier windows
+ * are simply absent and the accumulator would report the remaining windows as
+ * the whole day: on a live document fetched at 14:47 UTC, "today" carried only
+ * the 18:00 window and reported a high of 8.9 C while the instrument panel read
+ * 15.1 C from the same plugin. Locationforecast is a forecast product with no
+ * observations for the elapsed part of today, so that day's true high is not
+ * recoverable and the honest answer is to omit the day rather than mislabel a
+ * partial window as a daily summary. The same rule drops the trailing day at
+ * the end of the horizon, which is partial for the same reason.
  */
 export function mapMetNoToDailyForecasts(response: MetNoLocationforecastResponse): SKWeatherData[] {
   const timeseries = response.properties?.timeseries ?? [];
@@ -235,6 +253,7 @@ export function mapMetNoToDailyForecasts(response: MetNoLocationforecastResponse
   }
   // ISO YYYY-MM-DD keys sort correctly as strings: no Date parsing needed.
   return Array.from(byDay.entries())
+    .filter(([, acc]) => acc.hours.size === GRID_HOURS.size)
     .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
     .map(([day, acc]) => buildDailyEntry(day, acc));
 }

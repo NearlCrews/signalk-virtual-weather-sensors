@@ -137,12 +137,13 @@ describe('MetNoForecastMapper', () => {
     expect(out[0]?.outside?.precipitationVolume).toBeCloseTo(0.003, 6); // (1+0+2+0) mm to m, off-grid excluded
     expect(out[0]?.description).toBe('Rain'); // from the 12:00 window symbol
   });
-  it('uses the earliest window description when the day has no 12:00 window', () => {
+  it('uses the earliest window description when the 12:00 window has no symbol_code', () => {
     const out = mapMetNoToDailyForecasts({
       properties: {
         timeseries: [
           sixHourEntry('2026-06-26T00:00:00Z', { precipitation: 0, symbol: 'snow' }),
           sixHourEntry('2026-06-26T06:00:00Z', { precipitation: 0, symbol: 'rain' }),
+          sixHourEntry('2026-06-26T12:00:00Z', { precipitation: 0 }),
           sixHourEntry('2026-06-26T18:00:00Z', { precipitation: 0, symbol: 'cloudy' }),
         ],
       },
@@ -151,22 +152,11 @@ describe('MetNoForecastMapper', () => {
     // The 00:00 window is the earliest and must win, not the last (18:00) window.
     expect(out[0]?.description).toBe('Snow');
   });
-  it('keeps an earlier description when the 12:00 window has no symbol_code', () => {
+  it('lets a later window supply the description when the earlier ones have no symbol_code', () => {
     const out = mapMetNoToDailyForecasts({
       properties: {
         timeseries: [
-          sixHourEntry('2026-06-26T00:00:00Z', { precipitation: 0, symbol: 'snow' }),
-          sixHourEntry('2026-06-26T12:00:00Z', { precipitation: 0 }),
-        ],
-      },
-    });
-    expect(out).toHaveLength(1);
-    expect(out[0]?.description).toBe('Snow');
-  });
-  it('lets a later window supply the description when noon has no symbol_code', () => {
-    const out = mapMetNoToDailyForecasts({
-      properties: {
-        timeseries: [
+          sixHourEntry('2026-06-26T00:00:00Z', { precipitation: 0 }),
           sixHourEntry('2026-06-26T06:00:00Z', { precipitation: 0 }),
           sixHourEntry('2026-06-26T12:00:00Z', { precipitation: 0 }),
           sixHourEntry('2026-06-26T18:00:00Z', { precipitation: 0, symbol: 'cloudy' }),
@@ -175,6 +165,29 @@ describe('MetNoForecastMapper', () => {
     });
     expect(out).toHaveLength(1);
     expect(out[0]?.description).toBe('Cloudy');
+  });
+  it('drops a day whose grid windows are incomplete', () => {
+    // A document fetched mid-afternoon starts at the current hour, so today's
+    // earlier windows are absent entirely. Reporting the 18:00 window alone as
+    // the day's high understates it by several degrees, and Locationforecast
+    // carries no observation for the elapsed part of the day to fill the gap.
+    const out = mapMetNoToDailyForecasts({
+      properties: {
+        timeseries: [
+          sixHourEntry('2026-06-26T18:00:00Z', { max: 8.9, min: 5.8, precipitation: 0 }),
+          sixHourEntry('2026-06-27T00:00:00Z', { max: 12, min: 6, precipitation: 0 }),
+          sixHourEntry('2026-06-27T06:00:00Z', { max: 18, min: 9, precipitation: 0 }),
+          sixHourEntry('2026-06-27T12:00:00Z', { max: 21, min: 14, precipitation: 0 }),
+          sixHourEntry('2026-06-27T18:00:00Z', { max: 16, min: 11, precipitation: 0 }),
+          // Trailing partial day at the end of the horizon, dropped for the
+          // same reason as the leading one.
+          sixHourEntry('2026-06-28T00:00:00Z', { max: 10, min: 5, precipitation: 0 }),
+          sixHourEntry('2026-06-28T06:00:00Z', { max: 14, min: 7, precipitation: 0 }),
+        ],
+      },
+    });
+    expect(out.map((entry) => entry.date)).toEqual(['2026-06-27T00:00:00.000Z']);
+    expect(out[0]?.outside?.maxTemperature).toBeCloseTo(294.15, 2); // 21 C
   });
   it('emits precipitationVolume of 0 when all 6-hour windows report 0 mm', () => {
     const out = mapMetNoToDailyForecasts({
@@ -195,7 +208,9 @@ describe('MetNoForecastMapper', () => {
       properties: {
         timeseries: [
           sixHourEntry('2026-06-25T00:00:00Z', { symbol: 'clearsky' }),
+          sixHourEntry('2026-06-25T06:00:00Z', { symbol: 'clearsky' }),
           sixHourEntry('2026-06-25T12:00:00Z', { symbol: 'clearsky' }),
+          sixHourEntry('2026-06-25T18:00:00Z', { symbol: 'clearsky' }),
         ],
       },
     });

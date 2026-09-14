@@ -116,7 +116,9 @@ describe('mapDailyToForecasts', () => {
 
   it('maps a daily entry to SI daily WeatherData', () => {
     const [f] = mapDailyToForecasts(resp);
-    expect(f?.date).toBe('2026-05-28T07:00:00.000Z');
+    // UTC midnight of the local calendar day, matching the Open-Meteo and
+    // Met.no daily mappers so a consumer bucketing by date sees one convention.
+    expect(f?.date).toBe('2026-05-28T00:00:00.000Z');
     expect(f?.type).toBe('daily');
     expect(f?.description).toBe('Showers');
     expect(f?.outside?.minTemperature).toBeCloseTo(283.15, 2);
@@ -199,5 +201,34 @@ describe('mapCurrentToObservation', () => {
     expect(obs.outside?.pressure).toBeUndefined();
     expect(obs.outside?.pressureTendency).toBeUndefined();
     expect(obs.wind).toBeUndefined();
+  });
+});
+
+describe('mapDailyToForecasts: calendar-day bucketing', () => {
+  const dayAt = (date: string): AccuWeatherDailyForecastResponse => ({
+    DailyForecasts: [
+      {
+        Date: date,
+        Temperature: { Minimum: { Value: 10, Unit: 'C' }, Maximum: { Value: 22, Unit: 'C' } },
+      },
+    ] as unknown as AccuWeatherDailyForecastResponse['DailyForecasts'],
+  });
+
+  it('keeps the local calendar day for a large positive offset', () => {
+    // The UTC instant of this local day start falls on the PREVIOUS date, so
+    // parsing to an instant first would bucket the entry a day early.
+    expect(mapDailyToForecasts(dayAt('2026-05-28T07:00:00+13:00'))[0]?.date).toBe(
+      '2026-05-28T00:00:00.000Z'
+    );
+  });
+
+  it('keeps the local calendar day for a negative offset', () => {
+    expect(mapDailyToForecasts(dayAt('2026-05-28T07:00:00-05:00'))[0]?.date).toBe(
+      '2026-05-28T00:00:00.000Z'
+    );
+  });
+
+  it('throws on a malformed date rather than emitting an empty one', () => {
+    expect(() => mapDailyToForecasts(dayAt('not-a-date'))).toThrow(/invalid timestamp/);
   });
 });

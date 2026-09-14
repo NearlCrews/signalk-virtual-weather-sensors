@@ -6,13 +6,29 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import { mapOpenMeteoCurrentToWeatherData } from '../../mappers/OpenMeteoMapper.js';
+import {
+  mapOpenMeteoCurrentToWeatherData,
+  pastHourPrecipitationMm,
+} from '../../mappers/OpenMeteoMapper.js';
 import type { OpenMeteoCurrentResponse } from '../../types/index.js';
 
-function sample(overrides: Record<string, unknown> = {}): OpenMeteoCurrentResponse {
+/**
+ * A current block plus the two-hour `precipitation` companion the service now
+ * requests. `current.precipitation` is deliberately a DIFFERENT value from the
+ * hourly bucket: it is a 15-minute backward sum, and every assertion about
+ * `precipitationLastHour` must show the hourly figure winning.
+ */
+function sample(
+  overrides: Record<string, unknown> = {},
+  hourly: OpenMeteoCurrentResponse['hourly'] | null = {
+    time: ['2026-06-16T18:00', '2026-06-16T19:00'],
+    precipitation: [2.6, 1.6],
+  }
+): OpenMeteoCurrentResponse {
   return {
     current: {
       time: '2026-06-16T19:00',
+      interval: 900,
       temperature_2m: 20,
       relative_humidity_2m: 50,
       apparent_temperature: 19,
@@ -28,6 +44,7 @@ function sample(overrides: Record<string, unknown> = {}): OpenMeteoCurrentRespon
       uv_index: 3.2,
       ...overrides,
     },
+    ...(hourly !== null && { hourly }),
   };
 }
 
@@ -61,7 +78,9 @@ describe('mapOpenMeteoCurrentToWeatherData', () => {
     expect(data.uvIndex).toBe(3.2);
     expect(data.visibility).toBe(24000);
     expect(data.apparentTemperature).toBeCloseTo(292.15, 2);
-    expect(data.precipitationLastHour).toBe(0.4);
+    // The hourly bucket for the observation's own hour, NOT the 0.4 mm
+    // 15-minute sum in the current block.
+    expect(data.precipitationLastHour).toBe(1.6);
   });
 
   it('recomputes wind chill and heat index, and estimates WBGT and heat-stress index', () => {
@@ -112,5 +131,55 @@ describe('mapOpenMeteoCurrentToWeatherData', () => {
     expect(() => mapOpenMeteoCurrentToWeatherData(sample({ pressure_msl: undefined }))).toThrow(
       /missing pressure_msl/
     );
+  });
+});
+
+describe('pastHourPrecipitationMm', () => {
+  it('reads the bucket stamped at the top of the observation hour', () => {
+    // Open-Meteo documents the hourly variable as the "sum of the preceding
+    // hour", so the 19:00 entry is the completed 18:00-to-19:00 accumulation.
+    expect(pastHourPrecipitationMm(sample(), '2026-06-16T19:00')).toBe(1.6);
+  });
+
+  it('floors a sub-hourly observation stamp onto its own hour', () => {
+    // The current block reports at 15-minute boundaries, so 19:45 must still
+    // resolve to the 19:00 bucket rather than falling through to undefined.
+    expect(pastHourPrecipitationMm(sample(), '2026-06-16T19:45')).toBe(1.6);
+  });
+
+  it('matches across timezone representations of the same instant', () => {
+    const zoned = sample(
+      {},
+      {
+        time: ['2026-06-16T20:00+01:00', '2026-06-16T21:00+01:00'],
+        precipitation: [2.6, 1.6],
+      }
+    );
+    expect(pastHourPrecipitationMm(zoned, '2026-06-16T19:30Z')).toBe(2.6);
+  });
+
+  it('returns undefined rather than the shorter current-block value', () => {
+    // No companion block, a bucket that does not cover the observation, and a
+    // null reading all leave the path unset. Publishing the 15-minute sum under
+    // an hourly label is the defect this guards.
+    expect(pastHourPrecipitationMm(sample({}, null), '2026-06-16T19:00')).toBeUndefined();
+    expect(
+      pastHourPrecipitationMm(
+        sample({}, { time: ['2026-06-16T17:00'], precipitation: [2.6] }),
+        '2026-06-16T19:00'
+      )
+    ).toBeUndefined();
+    expect(
+      pastHourPrecipitationMm(
+        sample({}, { time: ['2026-06-16T19:00'], precipitation: [null] }),
+        '2026-06-16T19:00'
+      )
+    ).toBeUndefined();
+    expect(pastHourPrecipitationMm(sample(), 'not-a-timestamp')).toBeUndefined();
+  });
+
+  it('leaves precipitationLastHour unset when the companion block is missing', () => {
+    const data = mapOpenMeteoCurrentToWeatherData(sample({}, null));
+    expect(data.precipitationLastHour).toBeUndefined();
   });
 });

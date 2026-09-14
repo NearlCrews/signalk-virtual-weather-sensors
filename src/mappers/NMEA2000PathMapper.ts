@@ -147,7 +147,7 @@ const NON_CANONICAL_META: ReadonlyArray<Meta> = [
   me(SIGNALK_PATHS.ENVIRONMENT.WEATHER.HEAT_STRESS_INDEX, {
     displayName: 'Heat stress index',
     description:
-      'WBGT-derived heat-stress category on the US military WBGT flag cutoffs: 0 (<26.7 C), 1 (26.7..27.8 C), 2 (27.8..29.4 C), 3 (29.4..32.2 C), 4 (>=32.2 C).',
+      'WBGT-derived heat-stress category: 0 (<26.7 C), 1 (26.7..27.8 C), 2 (27.8..29.4 C, the US military green flag), 3 (29.4..32.2 C, spanning the yellow and red flags), 4 (>=32.2 C, black flag).',
   }),
   me(SIGNALK_PATHS.ENVIRONMENT.WEATHER.WIND_SPEED_APPARENT, {
     units: 'm/s',
@@ -279,17 +279,28 @@ export class NMEA2000PathMapper {
    * is shipped only when it changes (Signal K spec data_model.html).
    *
    * Every numeric leaf this method emits is clamped or normalized upstream by
-   * `NMEA2000Validator.sanitizeForNMEA2000`: temperatures into the NMEA2000
-   * Kelvin window, apparent wind angle into the canonical (-pi, pi] convention,
-   * speeds/visibility/ceilings into non-negative physical bounds, and derived
-   * categorical indices (Beaufort, heat stress) into their defined ranges.
-   * Adding a new emitted numeric field here requires a matching rule in the
-   * sanitizer's NUMERIC_FIELD_RULES table. String leaves (description,
+   * `NMEA2000Validator.sanitizeForNMEA2000`: temperatures into the physical
+   * -100 C to +100 C window, apparent wind angle into the canonical (-pi, pi]
+   * convention, speeds/visibility/ceilings into non-negative physical bounds,
+   * and derived categorical indices (Beaufort, heat stress) into their defined
+   * ranges. Adding a new emitted numeric field here requires a matching rule in
+   * the sanitizer's NUMERIC_FIELD_RULES table. String leaves (description,
    * precipitationType, visibilityObstruction) carry no numeric range and pass
-   * through the sanitizer untouched.
+   * through the sanitizer untouched. Any field the sanitizer actually changes
+   * is logged, because a clamped path would otherwise disagree silently with
+   * the notification message built from the same snapshot.
    */
   public mapToSignalKPaths(weatherData: WeatherData): Delta {
-    const sanitizedData = NMEA2000Validator.sanitizeForNMEA2000(weatherData);
+    const sanitizedData = NMEA2000Validator.sanitizeForNMEA2000(
+      weatherData,
+      (field, reading, published) => {
+        this.logger('warn', 'Weather reading clamped before emission', {
+          field,
+          reading,
+          published: published ?? 'dropped',
+        });
+      }
+    );
     const values: PathValue[] = [];
 
     this.addCoreEnvironmentalPaths(values, sanitizedData);
