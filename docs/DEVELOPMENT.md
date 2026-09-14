@@ -208,18 +208,25 @@ its migration notes before changing that version.
 
 ## Continuous integration
 
-- `ci.yml` runs the full release verification on Node 24.19.0 and a separate,
-  blocking runtime-floor lane on Node 20.18 that installs, type-checks, checks
-  module boundaries, builds, and smoke-loads the built plugin. That lane proves
-  the plugin runtime, not the test toolchain: Vitest 5 requires Node 22.12 or
-  newer, so `npm test` there prints a notice and skips. The lane uses npm 11.19
-  because npm 12 starts at Node 22.22.2. The unit suite runs on the supported
+- `ci.yml` runs `verify` and the cross-browser matrix on Node 24.19.0, plus a
+  separate, blocking runtime-floor lane on Node 20.18 that installs,
+  type-checks, checks module boundaries, builds, and smoke-loads the built
+  plugin. The pull-request lane stops short of `verify:release`, whose last
+  step audits the whole development tree: that advisory database changes
+  without a commit, so one new development advisory would turn every open
+  pull request red for something none of them introduced. The runtime audit
+  users are exposed to still runs inside `verify`, and the release path runs
+  the full audit through `prepublishOnly`. The floor lane proves the plugin
+  runtime, not the test toolchain: Vitest 5 requires Node 22.12 or newer, so
+  `npm test` there prints a notice and skips. The lane uses npm 11.19 because
+  npm 12 starts at Node 22.22.2. The unit suite runs on the supported
   development runtimes instead.
 - `plugin-ci.yml` pins the official Signal K reusable workflow and tests Node
   22 and 24, Signal K 2.24 and current, armv7, packaging, and installation.
 - `codeql.yml` runs the extended JavaScript and TypeScript query suite.
 - `workflow-security.yml` runs actionlint and zizmor against workflow changes
-  and on a weekly schedule.
+  and on a weekly schedule, and audits both the runtime dependencies and the
+  full development tree in the same run.
 - `publish.yml` verifies a release, packs once, uploads the exact tarball, and
   publishes that artifact in a separate job.
 
