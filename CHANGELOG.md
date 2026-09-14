@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Internal cleanup with no change to emitted data, notifications, or
+  configuration: provider names, coordinate rounding, external-text length
+  caps, and the AccuWeather cadence-cost wording each now have one definition
+  that every surface reads, the merged hazard policy table is what the merge
+  engine dispatches on rather than a parallel description of it, the fetch
+  loop's health is one value instead of four independent flags, and the
+  notifier hands its caller the recorder for the transitions it just returned
+  instead of exposing a separate commit step.
+- A locked row in the merge-provider list now uses the shared library's
+  `ariaDisabled` instead of the native `disabled` attribute. The box stays
+  focusable and in the tab order, so unchecking the second-to-last provider no
+  longer drops keyboard focus onto the page body, and the lock reason stays
+  reachable as the row's description.
+- Met.no's conditional-GET bookkeeping moved into the shared TTL cache, which
+  can now retain an expired value so the fetch that replaces it can revalidate
+  against it. One cache with one expiry and eviction policy replaces the two
+  that previously aged entries differently.
+
+### Fixed
+
+- The panel's status endpoint reports the redacted banner text for a stopped
+  plugin, matching what the admin UI banner shows.
+
 <a id="v1136"></a>
 
 ## [1.13.6] - 2026-09-14
