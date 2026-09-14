@@ -49,11 +49,14 @@ export interface PluginInstance {
   /** `$source` of the active provider, stamped on notification and re-broadcast deltas. */
   sourceRef: SourceRef;
   /**
-   * Last (kind, message) pushed to the admin UI. Used to dedupe identical
-   * setPluginStatus / setPluginError calls so a flapping API doesn't oscillate
-   * the banner every emission tick. Reset on stop().
+   * Last banner handed to `setBanner`, as the caller wrote it. Used to dedupe
+   * identical setPluginStatus / setPluginError calls so a flapping API doesn't
+   * oscillate the banner every emission tick. The RAW message is the dedupe key
+   * so a steady-state tick compares two strings and skips redaction and
+   * truncation entirely; `redacted` is what actually reached the server.
+   * Reset on stop().
    */
-  lastBanner: { kind: BannerKind; message: string } | null;
+  lastBanner: { kind: BannerKind; message: string; redacted: string } | null;
 }
 
 /**
@@ -76,13 +79,20 @@ export function setBanner(
   kind: BannerKind,
   message: string
 ): void {
+  // Dedupe on the raw pair first: redaction runs a regex pass per registered
+  // secret and the truncation allocates, and in steady state every tick would
+  // throw that work away on the comparison below.
+  const last = instance.lastBanner;
+  if (last !== null && last.kind === kind && last.message === message) {
+    return;
+  }
   const redacted = instance.logger.redact?.(message) ?? message;
   const safeMessage =
     redacted.length > MAX_BANNER_LENGTH
       ? `${redacted.slice(0, MAX_BANNER_LENGTH - 3)}...`
       : redacted;
-  const last = instance.lastBanner;
-  if (last !== null && last.kind === kind && last.message === safeMessage) {
+  if (last !== null && last.kind === kind && last.redacted === safeMessage) {
+    instance.lastBanner = { kind, message, redacted: safeMessage };
     return;
   }
   if (kind === 'status') {
@@ -90,5 +100,5 @@ export function setBanner(
   } else {
     app.setPluginError(safeMessage);
   }
-  instance.lastBanner = { kind, message: safeMessage };
+  instance.lastBanner = { kind, message, redacted: safeMessage };
 }

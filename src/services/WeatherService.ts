@@ -7,7 +7,13 @@
 
 import type { ServerAPI } from '@signalk/server-api';
 import { WindCalculator } from '../calculators/WindCalculator.js';
-import { API_QUOTA, ERROR_CODES, PERFORMANCE, PLUGIN } from '../constants/index.js';
+import {
+  API_QUOTA,
+  ERROR_CODES,
+  PERFORMANCE,
+  PLUGIN,
+  QUOTA_WARN_PERCENT_PLACEHOLDER,
+} from '../constants/index.js';
 import { providerRequiresApiKey } from '../constants/notifications-shared.js';
 import { createCurrentWeatherProvider } from '../providers/createCurrentWeatherProvider.js';
 import type { CurrentWeatherProvider } from '../providers/WeatherProvider.js';
@@ -56,7 +62,26 @@ interface ApparentWind {
 export interface TickBanner {
   readonly kind: 'status' | 'error';
   readonly message: string;
+  /**
+   * Whether the emitted data has gone stale this tick. Carried on the banner
+   * because ranking the banner already derived it: the caller gates emission
+   * on the same fact and would otherwise prune and re-count the rolling quota
+   * window a second time every few seconds.
+   */
+  readonly stale: boolean;
 }
+
+/**
+ * Health of the fetch loop, as one value rather than a set of flags that can
+ * contradict each other. Exactly one of these holds at a time, so entering a
+ * state clears the previous one by construction and `getTickBanner` reads a
+ * single field instead of ranking four.
+ */
+type ServiceHealth =
+  | { readonly kind: 'ok' }
+  | { readonly kind: 'awaiting-position' }
+  | { readonly kind: 'key-rejected' }
+  | { readonly kind: 'fetch-failed'; readonly message: string };
 
 /**
  * Single sink for every status / error banner write. Routed through the
@@ -124,32 +149,31 @@ export class WeatherService {
    */
   private consecutiveFailures = 0;
   /**
-   * Operator-facing message for the most recent failed fetch, cleared on the
-   * next success.
+   * Current health of the fetch loop. Each failure mode is its own variant, so
+   * the contradictory combinations (awaiting a position while also carrying a
+   * latched fetch error, a rejected key alongside a fetch error) cannot be
+   * represented, and every transition is a single assignment.
    *
-   * `escalateFetchError` writes an error banner the moment a fetch fails, but
-   * the emission tick overwrites it a few seconds later with the live status
-   * line, because data fetched before the outage is still inside the staleness
-   * window. Latching the message here lets `getTickBanner` keep reporting the
-   * failure until a fetch succeeds, so a provider outage is visible for the
-   * whole outage instead of for one emission interval.
-   */
-  private lastFetchErrorMessage: string | null = null;
-  /**
-   * True while the plugin has a usable configuration but no usable position, so
-   * no fetch can be attempted. Surfaced through `getTickBanner` rather than a
-   * one-shot `setBanner` call, so the admin banner and the panel's
+   * `fetch-failed` latches the operator-facing message: `escalateFetchError`
+   * writes an error banner the moment a fetch fails, but the emission tick
+   * overwrites it a few seconds later with the live status line, because data
+   * fetched before the outage is still inside the staleness window. Latching it
+   * lets `getTickBanner` keep reporting the failure until a fetch succeeds, so a
+   * provider outage is visible for the whole outage instead of for one emission
+   * interval.
+   *
+   * `awaiting-position` means a usable configuration but no usable position, so
+   * no fetch can be attempted. It is surfaced through `getTickBanner` rather
+   * than a one-shot `setBanner` call, so the admin banner and the panel's
    * `/api/status` agree instead of the panel reporting a green "awaiting first
    * update" forever.
-   */
-  private awaitingPosition = false;
-  /**
-   * True once an AccuWeather 401 has been seen: the configured key is invalid,
-   * so retrying burns quota with no chance of success. The update timer is
-   * cleared and subsequent forceUpdate calls return early. Cleared only by a
+   *
+   * `key-rejected` means an AccuWeather 401 has been seen: the configured key is
+   * invalid, so retrying burns quota with no chance of success. The update timer
+   * is cleared and subsequent forceUpdate calls return early. Cleared only by a
    * config change, which constructs a fresh service instance.
    */
-  private apiKeyRejected = false;
+  private health: ServiceHealth = { kind: 'ok' };
 
   /**
    * Banner sink wired by the plugin entry point. When supplied, every status
@@ -465,25 +489,32 @@ export class WeatherService {
    * Every failure state is an `error` kind, which is also what `/api/status`
    * reads to clear its `running` flag, so the panel and the admin banner
    * cannot report different health. The caller routes the result through its
-   * dedupe sink and separately gates emission on `isDataStale()`.
+   * dedupe sink and gates emission on the `stale` flag returned here.
+   *
+   * Each derived fact is read once and threaded into the branch that needs it:
+   * the rolling 24h request count and the quota-paused child names both walk a
+   * merging provider's children, and an AccuWeather child prunes its rolling
+   * window on every walk.
    */
   public getTickBanner(): TickBanner {
-    if (this.apiKeyRejected) {
-      return { kind: 'error', message: this.formatStatusBanner() };
+    const stale = this.isDataStale();
+    if (this.health.kind === 'key-rejected') {
+      return { kind: 'error', message: this.formatStatusBanner(), stale };
     }
+    const used = this.getRequestCountLast24h();
     if (this.isQuotaExhausted()) {
-      return { kind: 'error', message: this.formatQuotaExhaustedMessage() };
+      return { kind: 'error', message: this.formatQuotaExhaustedMessage(used), stale };
     }
-    if (this.awaitingPosition) {
-      return { kind: 'error', message: PLUGIN.STATUS.WAITING_FOR_POSITION };
+    if (this.health.kind === 'awaiting-position') {
+      return { kind: 'error', message: PLUGIN.STATUS.WAITING_FOR_POSITION, stale };
     }
-    if (this.isDataStale()) {
-      return { kind: 'error', message: this.formatStaleMessage() };
+    if (stale) {
+      return { kind: 'error', message: this.formatStaleMessage(), stale };
     }
-    if (this.lastFetchErrorMessage !== null) {
-      return { kind: 'error', message: this.lastFetchErrorMessage };
+    if (this.health.kind === 'fetch-failed') {
+      return { kind: 'error', message: this.health.message, stale };
     }
-    return { kind: 'status', message: this.formatStatusBanner() };
+    return { kind: 'status', message: this.formatStatusBanner(used), stale };
   }
 
   /**
@@ -543,19 +574,22 @@ export class WeatherService {
    * Crossing `API_QUOTA.WARN_RATIO` switches the banner prefix to a
    * quota-warning variant so operators see the cap is approaching even when
    * no setPluginError is active yet.
+   *
+   * `used` is the rolling 24h request count. A caller that has already read it
+   * this tick passes it in so the window is pruned and counted once; callers
+   * that have not simply omit it.
    */
-  public formatStatusBanner(): string {
+  public formatStatusBanner(used: number = this.getRequestCountLast24h()): string {
     // A rejected API key is a terminal state until the operator updates config:
     // surface it on the status banner so the admin UI does not show an
     // inconsistent "Running, awaiting first update" alongside the auth-error
     // banner published from `escalateFetchError`.
-    if (this.apiKeyRejected) {
+    if (this.health.kind === 'key-rejected') {
       return 'API key rejected: update key in plugin settings';
     }
 
-    const used = this.getRequestCountLast24h();
     const prefix = this.shouldShowQuotaWarning(used)
-      ? PLUGIN.STATUS.runningQuotaWarn(this.quotaPercentUsed(used))
+      ? this.formatQuotaWarnPrefix(this.quotaPercentUsed(used))
       : PLUGIN.STATUS.RUNNING;
 
     const ageMs = this.getDataAgeMs();
@@ -581,6 +615,21 @@ export class WeatherService {
     if (pausedSegment) counters.push(pausedSegment);
 
     return `${prefix}, last update ${ageLabel} (${counters.join(', ')})`;
+  }
+
+  /**
+   * Banner prefix once rolling 24h usage crosses `API_QUOTA.WARN_RATIO`. The
+   * percentage is the real rolling figure, not the warning threshold: a fixed
+   * `90% used` literal kept claiming 90 percent at 95 and at 100, and merged
+   * mode never reaches the quota error banner that used to mask the 100
+   * percent case.
+   * @private
+   */
+  private formatQuotaWarnPrefix(percentUsed: number): string {
+    return PLUGIN.STATUS.RUNNING_QUOTA_WARN_TEMPLATE.replace(
+      QUOTA_WARN_PERCENT_PLACEHOLDER,
+      String(percentUsed)
+    );
   }
 
   /**
@@ -649,12 +698,12 @@ export class WeatherService {
   }
 
   /**
-   * True once an AccuWeather 401 has set `apiKeyRejected`. Exposed so the
+   * True once an AccuWeather 401 has put the service in `key-rejected`. Exposed so the
    * admin-UI panel's `/api/status` payload can render the rejected state in
    * its `running` flag without subscribing to banner events.
    */
   public isApiKeyRejected(): boolean {
-    return this.apiKeyRejected;
+    return this.health.kind === 'key-rejected';
   }
 
   /**
@@ -679,8 +728,7 @@ export class WeatherService {
    * reachable only when `isQuotaExhausted()` is true, which requires a
    * non-zero rolling-24h request count (keyless providers report 0).
    */
-  public formatQuotaExhaustedMessage(): string {
-    const used = this.getRequestCountLast24h();
+  public formatQuotaExhaustedMessage(used: number = this.getRequestCountLast24h()): string {
     const quota = this.config.dailyApiQuota;
     return `${this.weatherProvider.name} daily quota reached (${used}/${quota} in last 24h). Fetches paused until the rolling window drops below the cap. To resume sooner, raise dailyApiQuota or increase updateFrequency.`;
   }
@@ -722,7 +770,7 @@ export class WeatherService {
    * Only a key-gated provider can have its key rejected. `fetchJson` tags every
    * upstream 401 with the same code, and a keyless provider can produce one
    * too: a self-hosted `openMeteoBaseUrl` behind an authenticating proxy, for
-   * instance. Latching `apiKeyRejected` there would stop all fetching until a
+   * instance. Latching `key-rejected` there would stop all fetching until a
    * config change and tell the operator to fix a key that provider has no field
    * for, so the terminal latch is gated on the provider actually using a key.
    * Merged mode never latches either: a key-gated child failing leaves the
@@ -800,7 +848,7 @@ export class WeatherService {
     // Bad key has been seen previously: do not refetch. The update timer is
     // already cleared and an error banner is published; this guard catches a
     // racing initialUpdateTimer callback or a manual forceUpdate.
-    if (this.apiKeyRejected) {
+    if (this.health.kind === 'key-rejected') {
       this.logger('debug', 'Skipping weather update: API key was rejected');
       return;
     }
@@ -828,12 +876,15 @@ export class WeatherService {
         // Latched, not one-shot: the emission tick's own banner would otherwise
         // overwrite this within `emissionInterval` seconds and report a green
         // "Running, awaiting first update" on a plugin publishing nothing.
-        this.awaitingPosition = true;
+        this.health = { kind: 'awaiting-position' };
         this.logger('warn', PLUGIN.STATUS.WAITING_FOR_POSITION);
         this.setBanner('error', PLUGIN.STATUS.WAITING_FOR_POSITION);
         return;
       }
-      this.awaitingPosition = false;
+      // Only the position wait clears here. A latched fetch failure stays until
+      // a fetch actually succeeds, so the banner does not flick green during the
+      // request that is about to fail again.
+      if (this.health.kind === 'awaiting-position') this.health = { kind: 'ok' };
 
       const weatherData = await this.weatherProvider.fetchCurrentWeather(position);
 
@@ -857,7 +908,7 @@ export class WeatherService {
       // Reset failure streaks on any successful fetch so transient outages do
       // not leave the plugin in an error state once recovery happens.
       this.consecutiveFailures = 0;
-      this.lastFetchErrorMessage = null;
+      this.health = { kind: 'ok' };
 
       // Cold-start UX: the plugin entry pushes "Running, awaiting first update"
       // during start(), and the emission timer wouldn't re-push the banner
@@ -895,7 +946,7 @@ export class WeatherService {
       // drain 1000 ms before stop() proceeds, so a fetch can still reject after
       // the service reaches 'stopped'. Counting that failure, logging it, or
       // writing its banner would leave a stopped plugin displaying an error,
-      // and a 401 arriving there would latch apiKeyRejected on a discarded
+      // and a 401 arriving there would latch key-rejected on a discarded
       // instance.
       if (this.state !== 'running' && this.state !== 'starting') return;
       this.errorCount++;
@@ -927,7 +978,7 @@ export class WeatherService {
    */
   private escalateFetchError(error: unknown, errorMessage: string): void {
     if (this.isAuthError(error)) {
-      this.apiKeyRejected = true;
+      this.health = { kind: 'key-rejected' };
       if (this.updateTimer) {
         clearInterval(this.updateTimer);
         this.updateTimer = null;
@@ -950,8 +1001,9 @@ export class WeatherService {
     // this with the live status line, because data fetched before the outage
     // is still inside the staleness window. The banner then reads green for up
     // to `2 x updateFrequency` on a plugin whose fetches are all failing.
-    this.lastFetchErrorMessage = `Weather update failed${streak}: ${errorMessage}`;
-    this.setBanner('error', this.lastFetchErrorMessage);
+    const message = `Weather update failed${streak}: ${errorMessage}`;
+    this.health = { kind: 'fetch-failed', message };
+    this.setBanner('error', message);
   }
 
   /**

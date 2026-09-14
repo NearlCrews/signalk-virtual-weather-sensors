@@ -22,6 +22,22 @@ const createMockApp = () => ({
 // needed. `vi.fn()` is already callable, so no double cast is required here.
 const createMockLogger = () => vi.fn();
 
+/** Vessel fix used wherever the test only needs a position the fetch can use. */
+const DEFAULT_VESSEL_DATA = {
+  position: { latitude: 51.5, longitude: 0 },
+  isComplete: false,
+};
+
+/**
+ * SignalKService stub. One factory for the whole file, so a change to the
+ * service's surface lands in one place instead of in each hand-written fake.
+ */
+const makeSignalK = (vesselData: unknown = DEFAULT_VESSEL_DATA) => ({
+  getVesselNavigationData: vi.fn(() => vesselData),
+  getHealthStatus: vi.fn(() => ({ status: 'ok', isStale: false })),
+  clearCache: vi.fn(),
+});
+
 // Default test configuration
 const createTestConfig = (overrides?: Partial<PluginConfiguration>): PluginConfiguration => ({
   accuWeatherApiKey: 'test-api-key-12345678',
@@ -125,21 +141,42 @@ describe('WeatherService', () => {
       );
     });
 
-    it('never schedules fetches faster than the configured cadence', async () => {
+    it('never fetches before the configured cadence, and always within 10 percent after it', async () => {
       // The jitter only delays (0 to 10 percent), so the configured interval is
       // a floor and the documented calls-per-day figure is an upper bound.
+      // Asserted against the fetches the timer actually drives, not against a
+      // log line: a renamed diagnostic is not a change in scheduling, and a
+      // timer that was never armed would satisfy a log assertion.
       const baseIntervalMs = config.updateFrequency * 60_000;
       for (const draw of [0, 0.5, 0.999]) {
-        vi.spyOn(Math, 'random').mockReturnValue(draw);
-        const service = new WeatherService(mockApp as never, config, mockLogger);
-        await service.start();
-        const started = mockLogger.mock.calls.find(
-          (call) => call[1] === 'Weather update timer started'
+        const random = vi.spyOn(Math, 'random').mockReturnValue(draw);
+        const fetchCurrentWeather = vi.fn(async () =>
+          createMockWeatherData({ timestamp: new Date().toISOString() })
         );
-        const metadata = started?.[2] as { actualIntervalMs: number } | undefined;
-        expect(metadata?.actualIntervalMs).toBeGreaterThanOrEqual(baseIntervalMs);
-        expect(metadata?.actualIntervalMs).toBeLessThanOrEqual(baseIntervalMs * 1.1);
+        const provider = {
+          name: 'Stub',
+          sourceRef: 'stub',
+          fetchCurrentWeather,
+          getRequestCount: () => 0,
+          getRequestCountLast24h: () => 0,
+          getCacheStats: () => ({ size: 0 }),
+        };
+        const service = new WeatherService(mockApp as never, config, mockLogger, {
+          weatherProvider: provider as never,
+          signalKService: makeSignalK() as never,
+          setBanner: () => {},
+        });
+        await service.start();
+
+        // One fetch by the one-shot start delay, and nothing yet from the timer.
+        await vi.advanceTimersByTimeAsync(baseIntervalMs - 1);
+        expect(fetchCurrentWeather).toHaveBeenCalledTimes(1);
+
+        await vi.advanceTimersByTimeAsync(baseIntervalMs * 0.1 + 1);
+        expect(fetchCurrentWeather).toHaveBeenCalledTimes(2);
+
         await service.stop();
+        random.mockRestore();
         mockLogger.mockClear();
       }
     });
@@ -318,6 +355,7 @@ describe('WeatherService', () => {
       expect(service.getTickBanner()).toEqual({
         kind: 'error',
         message: 'Waiting for GPS position',
+        stale: false,
       });
       expect(service.getServiceStatus().errorCount).toBe(0);
       expect((service as unknown as { consecutiveFailures: number }).consecutiveFailures).toBe(0);
@@ -800,12 +838,6 @@ describe('WeatherService - Fetch Skip and Error Escalation', () => {
 
   const inlandVessel = { position: { latitude: 60, longitude: 5 }, isComplete: false };
 
-  const makeSignalK = (vesselData: unknown = inlandVessel) => ({
-    getVesselNavigationData: vi.fn(() => vesselData),
-    getHealthStatus: vi.fn(() => ({ status: 'ok', isStale: false })),
-    clearCache: vi.fn(),
-  });
-
   beforeEach(() => {
     mockApp = createMockApp();
     mockLogger = createMockLogger();
@@ -834,7 +866,7 @@ describe('WeatherService - Fetch Skip and Error Escalation', () => {
 
     const service = new WeatherService(mockApp as never, config, mockLogger, {
       weatherProvider: mockProvider as never,
-      signalKService: makeSignalK() as never,
+      signalKService: makeSignalK(inlandVessel) as never,
       setBanner,
     });
 
@@ -865,7 +897,7 @@ describe('WeatherService - Fetch Skip and Error Escalation', () => {
 
     const service = new WeatherService(mockApp as never, config, mockLogger, {
       weatherProvider: mockProvider as never,
-      signalKService: makeSignalK() as never,
+      signalKService: makeSignalK(inlandVessel) as never,
       setBanner,
     });
 
@@ -909,7 +941,7 @@ describe('WeatherService - Fetch Skip and Error Escalation', () => {
 
     const service = new WeatherService(mockApp as never, config, mockLogger, {
       weatherProvider: mockProvider as never,
-      signalKService: makeSignalK() as never,
+      signalKService: makeSignalK(inlandVessel) as never,
       setBanner,
     });
 
@@ -948,7 +980,7 @@ describe('WeatherService - Fetch Skip and Error Escalation', () => {
 
     const service = new WeatherService(mockApp as never, config, mockLogger, {
       weatherProvider: mockProvider as never,
-      signalKService: makeSignalK() as never,
+      signalKService: makeSignalK(inlandVessel) as never,
       setBanner,
     });
 
@@ -995,7 +1027,7 @@ describe('WeatherService - Fetch Skip and Error Escalation', () => {
 
     const service = new WeatherService(mockApp as never, config, mockLogger, {
       weatherProvider: mockProvider as never,
-      signalKService: makeSignalK() as never,
+      signalKService: makeSignalK(inlandVessel) as never,
       setBanner,
     });
 
@@ -1159,17 +1191,9 @@ describe('WeatherService - failure banner precedence', () => {
       getRequestCountLast24h: () => 0,
       getCacheStats: () => ({ size: 0 }),
     };
-    const signalKService = {
-      getVesselNavigationData: () => ({
-        position: { latitude: 51.5, longitude: 0 },
-        isComplete: false,
-      }),
-      getHealthStatus: () => ({ status: 'ok', isStale: false }),
-      clearCache: () => {},
-    };
     const service = new WeatherService(mockApp as never, createTestConfig(), mockLogger, {
       weatherProvider: provider as never,
-      signalKService: signalKService as never,
+      signalKService: makeSignalK() as never,
       setBanner: () => {},
     });
     return {
@@ -1199,6 +1223,7 @@ describe('WeatherService - failure banner precedence', () => {
     expect(service.getTickBanner()).toEqual({
       kind: 'error',
       message: 'Weather update failed: NETWORK_ERROR: upstream down',
+      stale: false,
     });
     await service.stop();
   });
@@ -1228,21 +1253,13 @@ describe('WeatherService - failure banner precedence', () => {
       isCurrentWeatherFetchBlocked: () => false,
       getBlockedChildNames: () => ['AccuWeather'],
     };
-    const signalKService = {
-      getVesselNavigationData: () => ({
-        position: { latitude: 51.5, longitude: 0 },
-        isComplete: false,
-      }),
-      getHealthStatus: () => ({ status: 'ok', isStale: false }),
-      clearCache: () => {},
-    };
     const service = new WeatherService(
       mockApp as never,
       createTestConfig({ dailyApiQuota: 50 }),
       mockLogger,
       {
         weatherProvider: provider as never,
-        signalKService: signalKService as never,
+        signalKService: makeSignalK() as never,
         setBanner: () => {},
       }
     );

@@ -53,7 +53,7 @@ export function registerPanelRoutes(router: IRouter, instance: PluginInstance): 
     if (!ws) {
       const payload: PanelStatusResponse = {
         running: false,
-        banner: instance.lastBanner?.message ?? 'Plugin stopped',
+        banner: instance.lastBanner?.redacted ?? 'Plugin stopped',
         updates: 0,
         quotaUsedLast24h: 0,
         lastUpdateMinutesAgo: null,
@@ -70,12 +70,11 @@ export function registerPanelRoutes(router: IRouter, instance: PluginInstance): 
     // between the quota-exhausted pause, stale data, and the live status line;
     // formatStatusBanner alone reports only the last of those.
     const tick = ws.getTickBanner();
-    // A rejected API key is a terminal state: the update timer is cleared
-    // and no further fetches will fire until config changes. A quota pause or
-    // stale data likewise means the plugin has stopped emitting. Reflect all
-    // three on the `running` flag so the panel does not show a green indicator
-    // on a plugin that has effectively stopped.
-    const running = instance.state === 'running' && !ws.isApiKeyRejected() && tick.kind !== 'error';
+    // getTickBanner already ranks a rejected key, the quota pause, a missing
+    // position, and stale data as `error`, so one clause covers every state in
+    // which the plugin has effectively stopped emitting and the panel must not
+    // show a green indicator.
+    const running = instance.state === 'running' && tick.kind !== 'error';
     const payload: PanelStatusResponse = {
       running,
       banner: tick.message,

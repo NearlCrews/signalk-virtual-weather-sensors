@@ -73,16 +73,24 @@ const EMPTY_CACHED_VESSEL_DATA: CachedVesselData = Object.freeze({
   lastUpdateMs: null,
 });
 
+/** What a navigation leaf is used for, which is what decides how old it may be. */
+type FreshnessKind = 'position' | 'motion';
+
+/**
+ * Freshness budget per leaf kind, in seconds. Position selects a weather grid
+ * cell and the fetch cadence is measured in tens of minutes, so it tolerates a
+ * far older fix than the motion vector, which feeds the apparent-wind
+ * calculation. Every leaf names its kind, so a new one cannot inherit the
+ * strict budget by omission.
+ */
+const AGE_BUDGET_SECONDS: Readonly<Record<FreshnessKind, number>> = {
+  position: VALIDATION_LIMITS.MAX_POSITION_AGE,
+  motion: VALIDATION_LIMITS.MAX_DATA_AGE,
+};
+
 export class SignalKService {
   private readonly app: ServerAPI;
   private readonly logger: Logger;
-  private readonly maxDataAge = VALIDATION_LIMITS.MAX_DATA_AGE;
-  /**
-   * Position gets its own, much looser age budget: it selects a weather grid
-   * cell rather than feeding the apparent-wind vector, and the fetch cadence is
-   * measured in tens of minutes. See `VALIDATION_LIMITS.MAX_POSITION_AGE`.
-   */
-  private readonly maxPositionAge = VALIDATION_LIMITS.MAX_POSITION_AGE;
 
   private cachedData: CachedVesselData = EMPTY_CACHED_VESSEL_DATA;
 
@@ -91,8 +99,8 @@ export class SignalKService {
     this.logger = logger;
 
     this.logger('info', 'SignalKService initialized', {
-      maxDataAge: this.maxDataAge,
-      maxPositionAge: this.maxPositionAge,
+      maxDataAge: AGE_BUDGET_SECONDS.motion,
+      maxPositionAge: AGE_BUDGET_SECONDS.position,
     });
   }
 
@@ -209,7 +217,7 @@ export class SignalKService {
         return EMPTY_READING;
       }
 
-      const timestampMs = this.getFreshTimestamp(positionData, 'position', this.maxPositionAge);
+      const timestampMs = this.getFreshTimestamp(positionData, 'position', 'position');
       if (timestampMs === null) return EMPTY_READING;
 
       const value = positionData.value as { latitude?: number; longitude?: number };
@@ -280,7 +288,7 @@ export class SignalKService {
         this.logger('debug', `Ignoring ${label} from excluded source`, { source: data.$source });
         return EMPTY_READING;
       }
-      const timestampMs = this.getFreshTimestamp(data, label);
+      const timestampMs = this.getFreshTimestamp(data, label, 'motion');
       if (timestampMs === null) return EMPTY_READING;
       const value = data.value;
       if (!isValid(value)) {
@@ -384,7 +392,7 @@ export class SignalKService {
 
   /**
    * Check if cached data is stale
-   * @returns True if data is older than maxDataAge
+   * @returns True if data is older than the motion freshness budget
    */
   public isDataStale(): boolean {
     return this.isAgeStale(this.getDataAge());
@@ -396,7 +404,7 @@ export class SignalKService {
    * @private
    */
   private isAgeStale(age: number | null): boolean {
-    return age !== null && age > this.maxDataAge;
+    return age !== null && age > AGE_BUDGET_SECONDS.motion;
   }
 
   /**
@@ -431,17 +439,19 @@ export class SignalKService {
   }
 
   /**
-   * Return the source measurement timestamp when it is valid and within
-   * `maxAgeSeconds`. Navigation leaves without trustworthy timestamps are not
-   * safe inputs for position selection or vector calculations. The budget is a
-   * parameter because position tolerates a far older fix than the motion
-   * vector does; callers pass the right one rather than sharing a single gate.
+   * Return the source measurement timestamp when it is valid and within the
+   * budget its `kind` declares. Navigation leaves without trustworthy
+   * timestamps are not safe inputs for position selection or vector
+   * calculations. Every caller states its kind, so the leaf-to-budget mapping
+   * is the one readable table in `AGE_BUDGET_SECONDS` rather than a default a
+   * new leaf can inherit without deciding.
    */
   private getFreshTimestamp(
     data: SignalKDataValue,
     label: string,
-    maxAgeSeconds: number = this.maxDataAge
+    kind: FreshnessKind
   ): number | null {
+    const maxAgeSeconds = AGE_BUDGET_SECONDS[kind];
     if (typeof data.timestamp !== 'string') {
       this.logger('warn', `Ignoring ${label} without a Signal K timestamp`);
       return null;
