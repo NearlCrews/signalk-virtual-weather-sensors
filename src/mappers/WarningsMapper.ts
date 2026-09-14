@@ -6,21 +6,8 @@
  */
 
 import type { WeatherWarning } from '@signalk/server-api';
+import { WARNINGS } from '../constants/index.js';
 import { capExternalString } from '../utils/conversions.js';
-
-/**
- * Length ceilings for the free text these feeds supply.
- *
- * An NWS `description` routinely runs to several kilobytes, and the only other
- * ceiling in the path is the 1 MiB whole-body cap in `readBoundedJson`, so an
- * unbounded field would reach the v2 warnings payload verbatim. Every other
- * externally-sourced string in the plugin is bounded and control-stripped the
- * same way (`capExternalString`); these are the limits at which a warning still
- * renders on a dashboard. `details` keeps a full marine narrative plus its
- * instruction; `type` and `source` are short labels.
- */
-const MAX_WARNING_DETAILS_LENGTH = 512;
-const MAX_WARNING_LABEL_LENGTH = 64;
 
 /** Minimal shape of the NWS `/alerts/active` GeoJSON response (only mapped fields). */
 export interface NwsAlertsResponse {
@@ -55,13 +42,23 @@ export interface MetAlertsResponse {
 }
 
 /**
- * Coerce an optional string-ish value to a trimmed, control-stripped string
- * bounded at `maxLength` code points, or '' when absent. Timestamps pass
- * through the same guard: they are provider text too, and the label ceiling is
- * far above any ISO 8601 instant.
+ * Coerce an optional string-ish value to a trimmed, control-stripped short
+ * label, or '' when absent. Timestamps pass through the same guard: they are
+ * provider text too, and the label ceiling is far above any ISO 8601 instant.
+ * The ceiling belongs to the field's role, so every call site picks `label` or
+ * `details` and none of them names a length.
  */
-function str(value: unknown, maxLength: number = MAX_WARNING_LABEL_LENGTH): string {
-  return capExternalString(value, maxLength).trim();
+function label(value: unknown): string {
+  return capExternalString(value, WARNINGS.MAX_LABEL_LENGTH).trim();
+}
+
+/**
+ * Coerce an optional string-ish value to a trimmed, control-stripped warning
+ * body, or '' when absent. A body carries a marine narrative rather than a
+ * name, so it keeps the far larger details ceiling.
+ */
+function details(value: unknown): string {
+  return capExternalString(value, WARNINGS.MAX_DETAILS_LENGTH).trim();
 }
 
 function isValidTimestamp(value: string): boolean {
@@ -96,15 +93,12 @@ export function mapNwsAlertsToWarnings(response: NwsAlertsResponse): WeatherWarn
   const warnings = features
     .map((feature) => {
       const p = feature.properties ?? {};
-      const details =
-        str(p.headline, MAX_WARNING_DETAILS_LENGTH) ||
-        str(p.description, MAX_WARNING_DETAILS_LENGTH);
       return {
-        startTime: str(p.onset) || str(p.effective),
-        endTime: str(p.ends) || str(p.expires),
-        details,
-        source: str(p.senderName) || 'NWS',
-        type: str(p.event),
+        startTime: label(p.onset) || label(p.effective),
+        endTime: label(p.ends) || label(p.expires),
+        details: details(p.headline) || details(p.description),
+        source: label(p.senderName) || 'NWS',
+        type: label(p.event),
       };
     })
     .filter(
@@ -132,17 +126,15 @@ export function mapMetAlertsToWarnings(response: MetAlertsResponse): WeatherWarn
     .map((feature) => {
       const p = feature.properties ?? {};
       const interval = feature.when?.interval ?? [];
-      const base =
-        str(p.description, MAX_WARNING_DETAILS_LENGTH) || str(p.title, MAX_WARNING_DETAILS_LENGTH);
-      const instruction = str(p.instruction, MAX_WARNING_DETAILS_LENGTH);
+      const base = details(p.description) || details(p.title);
+      const instruction = details(p.instruction);
       const joined = instruction.length > 0 ? `${base} ${instruction}`.trim() : base;
-      const details = capExternalString(joined, MAX_WARNING_DETAILS_LENGTH);
       return {
-        startTime: str(interval[0]),
-        endTime: str(interval[1]),
-        details,
+        startTime: label(interval[0]),
+        endTime: label(interval[1]),
+        details: capExternalString(joined, WARNINGS.MAX_DETAILS_LENGTH),
         source: 'MET Norway',
-        type: str(p.eventAwarenessName) || str(p.event),
+        type: label(p.eventAwarenessName) || label(p.event),
       };
     })
     .filter(

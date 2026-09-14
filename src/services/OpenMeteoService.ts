@@ -11,6 +11,7 @@
 
 import type { WeatherData as SKWeatherData } from '@signalk/server-api';
 import { PLUGIN } from '../constants/index.js';
+import { WEATHER_PROVIDER_SHORT_LABELS } from '../constants/notifications-shared.js';
 import {
   mapOpenMeteoCurrentToObservation,
   mapOpenMeteoDailyToForecasts,
@@ -26,7 +27,12 @@ import type {
   WeatherData,
 } from '../types/index.js';
 import { isAbortError, toCoordKey, toErrorMessage } from '../utils/conversions.js';
-import { DEFAULT_REQUEST_TIMEOUT_MS, fetchJson, normalizeBaseUrl } from '../utils/http.js';
+import {
+  DEFAULT_REQUEST_TIMEOUT_MS,
+  fetchJson,
+  normalizeBaseUrl,
+  setCoordParams,
+} from '../utils/http.js';
 import { assertValidCoordinates } from '../utils/validation.js';
 import { CoalescingTtlCache } from './cache/CoalescingTtlCache.js';
 
@@ -115,7 +121,7 @@ export interface OpenMeteoOptions {
 
 export class OpenMeteoService implements ForecastCapableProvider {
   /** Provider name for the v2 registration and logs. */
-  public readonly name = 'Open-Meteo';
+  public readonly name = WEATHER_PROVIDER_SHORT_LABELS['open-meteo'];
   /** `$source` stamped on Open-Meteo-sourced deltas, distinct from AccuWeather. */
   public readonly sourceRef = 'open-meteo';
   public readonly maxObservationAgeMs = 60 * 60 * 1000;
@@ -253,9 +259,7 @@ export class OpenMeteoService implements ForecastCapableProvider {
    * units, and GMT timezone. Callers append block-specific params on top.
    */
   private buildBaseUrl(location: GeoLocation): URL {
-    const url = new URL(`${this.baseUrl}${FORECAST_ENDPOINT}`);
-    url.searchParams.set('latitude', location.latitude.toFixed(4));
-    url.searchParams.set('longitude', location.longitude.toFixed(4));
+    const url = setCoordParams(new URL(`${this.baseUrl}${FORECAST_ENDPOINT}`), location);
     url.searchParams.set('wind_speed_unit', 'ms');
     url.searchParams.set('timezone', 'GMT');
     return url;

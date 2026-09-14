@@ -24,6 +24,7 @@ import {
   normalizeUtcDate,
   optionalCelsiusToKelvin,
   optionalPercentageToRatio,
+  providerDescription,
   requireIsoTimestamp,
   requireObservationTimestamp,
 } from '../utils/conversions.js';
@@ -34,6 +35,15 @@ import {
   type SKOutside,
   type SKWind,
 } from './skV2Envelope.js';
+
+/**
+ * `{ description }` for a provider phrase, or `{}` when the phrase is absent or
+ * empty, so the v2 envelope omits the key rather than carrying an empty string.
+ */
+function spreadDescription(value: unknown): { description?: string } {
+  const description = providerDescription(value);
+  return description === undefined ? {} : { description };
+}
 
 /** AccuWeather PrecipitationType (lowercased) to the SK PrecipitationKind enum. */
 const PRECIPITATION_KIND_BY_ACCUWEATHER: ReadonlyMap<string, PrecipitationKind> = new Map([
@@ -138,7 +148,7 @@ export function mapHourlyToForecasts(
     return {
       date: requireIsoTimestamp(hour.DateTime, 'AccuWeather hourly forecast'),
       type: 'point',
-      ...(typeof hour.IconPhrase === 'string' && { description: hour.IconPhrase }),
+      ...spreadDescription(hour.IconPhrase),
       outside,
       ...(wind !== undefined && { wind }),
     };
@@ -206,7 +216,7 @@ export function mapDailyToForecasts(response: AccuWeatherDailyForecastResponse):
       // day on the previous UTC date.
       date: dailyForecastDate(day.Date),
       type: 'daily',
-      ...(typeof half?.IconPhrase === 'string' && { description: half.IconPhrase }),
+      ...spreadDescription(half?.IconPhrase),
       outside,
       ...(wind !== undefined && { wind }),
       ...(sun !== undefined && { sun }),
@@ -257,7 +267,7 @@ export function mapCurrentToObservation(c: AccuWeatherCurrentConditions): SKWeat
   return {
     date: requireObservationTimestamp(c.LocalObservationDateTime, 'AccuWeather observation'),
     type: 'observation',
-    ...(typeof c.WeatherText === 'string' && { description: c.WeatherText }),
+    ...spreadDescription(c.WeatherText),
     outside,
     ...(wind !== undefined && { wind }),
   };

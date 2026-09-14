@@ -22,7 +22,7 @@ import {
 } from '../mappers/WarningsMapper.js';
 import type { GeoLocation, Logger } from '../types/index.js';
 import { isAbortError, isWithinBounds, toCoordKey, toErrorMessage } from '../utils/conversions.js';
-import { DEFAULT_REQUEST_TIMEOUT_MS, fetchJson } from '../utils/http.js';
+import { DEFAULT_REQUEST_TIMEOUT_MS, fetchJson, setCoordParams } from '../utils/http.js';
 
 /**
  * Loose bounding box for US NWS coverage (CONUS, Alaska, Hawaii, the
@@ -40,6 +40,9 @@ const US_BOX = { latMin: 15, latMax: 72, lonMin: -180, lonMax: -64 } as const;
  * best-effort, so over-inclusion only costs an occasional empty lookup.
  */
 const NORDIC_BOX = { latMin: 54, latMax: 82, lonMin: -12, lonMax: 37 } as const;
+
+/** Met.no MetAlerts active-alerts endpoint; position and language are added per request. */
+const METALERTS_URL = 'https://api.met.no/weatherapi/metalerts/2.0/current.json';
 
 export interface WarningsOptions {
   readonly requestTimeoutMs?: number;
@@ -116,9 +119,8 @@ export class WarningsService {
 
   /** Fetch and map Met.no MetAlerts active alerts. */
   private async fetchMetAlerts(location: GeoLocation): Promise<WeatherWarning[]> {
-    const lat = location.latitude.toFixed(4);
-    const lon = location.longitude.toFixed(4);
-    const url = `https://api.met.no/weatherapi/metalerts/2.0/current.json?lat=${lat}&lon=${lon}&lang=en`;
+    const url = setCoordParams(new URL(METALERTS_URL), location, 'lat', 'lon');
+    url.searchParams.set('lang', 'en');
     try {
       const response = await fetchJson<MetAlertsResponse>(url, {
         timeoutMs: this.requestTimeoutMs,
@@ -130,7 +132,7 @@ export class WarningsService {
       if (isAbortError(error)) throw error;
       const message = toErrorMessage(error);
       this.logger('warn', 'MetAlerts warnings fetch failed', {
-        point: `${lat},${lon}`,
+        point: `${url.searchParams.get('lat')},${url.searchParams.get('lon')}`,
         error: message,
       });
       throw new Error(`MET Norway warnings unavailable: ${message}`, { cause: error });

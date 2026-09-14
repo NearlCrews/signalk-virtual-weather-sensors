@@ -50,13 +50,12 @@ export const PLUGIN = {
   STATUS: {
     RUNNING: 'Running',
     /**
-     * Banner prefix once 24h API usage crosses `API_QUOTA.WARN_RATIO`. The
-     * percentage is the real rolling figure, not the warning threshold: a fixed
-     * `90% used` literal kept claiming 90 percent at 95 and at 100, and merged
-     * mode never reaches the quota error banner that used to mask the 100
-     * percent case.
+     * Banner prefix once 24h API usage crosses `API_QUOTA.WARN_RATIO`.
+     * `QUOTA_WARN_PERCENT_PLACEHOLDER` is filled in by
+     * `WeatherService.formatQuotaWarnPrefix`, beside the other banner
+     * formatters, so this table holds only values.
      */
-    runningQuotaWarn: (percentUsed: number): string => `Running [quota ${percentUsed}% used]`,
+    RUNNING_QUOTA_WARN_TEMPLATE: 'Running [quota {percent}% used]',
     STOPPED: 'Stopped',
     /**
      * Banner while the plugin has a usable configuration but no usable
@@ -361,6 +360,19 @@ export const MAGNUS = {
 // AccuWeather API Constants
 // ===============================
 
+/**
+ * Decimal places of latitude and longitude that key a coarse provider cache
+ * cell. Two decimals is a cell of about 1.1 km, far smaller than the area a
+ * provider's own location resolution covers, so a vessel swinging at anchor or
+ * drifting in a marina keeps hitting the same cache entry and a vessel underway
+ * spends one upstream lookup per new cell rather than one per fetch. Every
+ * coarse cache key in the plugin rounds to this, through `toCoordKey`.
+ */
+export const COORD_CACHE_CELL_DECIMALS = 2;
+
+/** Token `PLUGIN.STATUS.RUNNING_QUOTA_WARN_TEMPLATE` substitutes the live figure for. */
+export const QUOTA_WARN_PERCENT_PLACEHOLDER = '{percent}';
+
 /** AccuWeather API configuration and endpoints */
 export const ACCUWEATHER = {
   BASE_URL: 'https://dataservice.accuweather.com',
@@ -371,17 +383,27 @@ export const ACCUWEATHER = {
     FORECAST_DAILY_5DAY: '/forecasts/v1/daily/5day',
   },
   DEFAULT_LANGUAGE: 'en-us',
-  /**
-   * Decimal places of latitude and longitude that key the location cache.
-   * Two decimals is a cell of about 1.1 km, far smaller than the area an
-   * AccuWeather location key covers, so a vessel swinging at anchor or drifting
-   * in a marina reuses its key and a vessel underway spends one Locations
-   * call per new cell rather than one per fetch.
-   */
-  LOCATION_CACHE_KEY_DECIMALS: 2,
+  /** Decimal places of latitude and longitude that key the location cache. */
+  LOCATION_CACHE_KEY_DECIMALS: COORD_CACHE_CELL_DECIMALS,
   /** Maximum length for descriptive strings copied verbatim from API responses into Signal K deltas */
   MAX_DESCRIPTION_LENGTH: 128,
   /** Maximum length for short labels copied verbatim from API responses (e.g. observation timestamps). */
+  MAX_LABEL_LENGTH: 64,
+} as const;
+
+/**
+ * Length ceilings for the free text a regional alert feed supplies.
+ *
+ * An NWS `description` routinely runs to several kilobytes, and the only other
+ * ceiling in the path is the 1 MiB whole-body cap in `readBoundedJson`, so an
+ * unbounded field would reach the v2 warnings payload verbatim. Every other
+ * externally-sourced string in the plugin is bounded and control-stripped the
+ * same way (`capExternalString`); these are the limits at which a warning still
+ * renders on a dashboard. `details` keeps a full marine narrative plus its
+ * instruction; `type` and `source` are short labels.
+ */
+export const WARNINGS = {
+  MAX_DETAILS_LENGTH: 512,
   MAX_LABEL_LENGTH: 64,
 } as const;
 

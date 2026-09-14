@@ -8,6 +8,7 @@
  */
 
 import {
+  ACCUWEATHER_FETCH_COST_NOTE,
   CONFIG_DEFAULTS,
   DEFAULT_MERGE_PROVIDERS,
   DEFAULT_NOTIFICATIONS,
@@ -115,8 +116,7 @@ export function pluginSchema() {
       updateFrequency: {
         type: 'integer',
         title: 'Weather Update Frequency (minutes)',
-        description:
-          'How often to fetch new weather data. Under AccuWeather each fetch costs one API call, plus one location lookup per day while stationary or per new 1 km cell underway; Open-Meteo and Met.no are keyless and unmetered.',
+        description: `How often to fetch new weather data. ${ACCUWEATHER_FETCH_COST_NOTE} Open-Meteo and Met.no are keyless and unmetered.`,
         default: CONFIG_DEFAULTS.UPDATE_FREQUENCY,
         minimum: CONFIG_DEFAULTS.UPDATE_FREQUENCY_MIN,
         maximum: CONFIG_DEFAULTS.UPDATE_FREQUENCY_MAX,

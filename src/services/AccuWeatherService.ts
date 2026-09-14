@@ -11,6 +11,7 @@ import {
   FORECAST_CACHE,
   PLUGIN,
 } from '../constants/index.js';
+import { WEATHER_PROVIDER_SHORT_LABELS } from '../constants/notifications-shared.js';
 import { mapAccuWeatherCurrentToWeatherData } from '../mappers/AccuWeatherMapper.js';
 import {
   mapCurrentToObservation,
@@ -59,7 +60,7 @@ const CACHE_PRUNE_INTERVAL_MS = 5 * 60_000;
  */
 export class AccuWeatherService implements CurrentWeatherProvider {
   /** Provider name for the v2 registration and logs. */
-  public readonly name = 'AccuWeather';
+  public readonly name = WEATHER_PROVIDER_SHORT_LABELS.accuweather;
   /** `$source` stamped on AccuWeather-sourced deltas. */
   public readonly sourceRef = 'accuweather';
   public readonly maxObservationAgeMs = 2 * 60 * 60 * 1000;

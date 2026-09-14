@@ -13,7 +13,12 @@ import { PLUGIN } from '../constants/index.js';
 import { mapOpenMeteoMarineToMarineData } from '../mappers/OpenMeteoMarineMapper.js';
 import type { GeoLocation, Logger, MarineData, OpenMeteoMarineResponse } from '../types/index.js';
 import { isAbortError, toErrorMessage } from '../utils/conversions.js';
-import { DEFAULT_REQUEST_TIMEOUT_MS, fetchJson, normalizeBaseUrl } from '../utils/http.js';
+import {
+  DEFAULT_REQUEST_TIMEOUT_MS,
+  fetchJson,
+  normalizeBaseUrl,
+  setCoordParams,
+} from '../utils/http.js';
 import { assertValidCoordinates } from '../utils/validation.js';
 
 /** Default public Open-Meteo Marine host. */
@@ -92,14 +97,7 @@ export class OpenMeteoMarineService {
   }
 
   private buildUrl(location: GeoLocation): URL {
-    const url = new URL(`${this.baseUrl}${MARINE_ENDPOINT}`);
-    // Four decimals (about 11 m), the same rounding every other provider in
-    // this plugin uses. Full float precision produced a distinct URL on every
-    // fetch from a moving vessel, defeating any upstream or intermediary cache
-    // for no gain: the marine grid is coarser than a metre by orders of
-    // magnitude.
-    url.searchParams.set('latitude', location.latitude.toFixed(4));
-    url.searchParams.set('longitude', location.longitude.toFixed(4));
+    const url = setCoordParams(new URL(`${this.baseUrl}${MARINE_ENDPOINT}`), location);
     url.searchParams.set('current', CURRENT_PARAMS);
     url.searchParams.set('timezone', 'GMT');
     return url;

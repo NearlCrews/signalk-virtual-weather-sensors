@@ -112,10 +112,11 @@ export const WEATHER_PROVIDER_LABELS: Readonly<Record<WeatherProviderId, string>
 });
 
 /**
- * Bare provider names, without the parenthetical that helps someone CHOOSE a
- * provider. Used wherever the name is repeated rather than chosen: the merge
- * list's reorder buttons and its order summary, where a screen-reader operator
- * hears the name on every arrow press.
+ * Bare provider names. The single source for what each provider is called
+ * wherever the name is repeated rather than chosen: each service declares its
+ * own `name` from here, and the merge list's reorder buttons and order summary
+ * read the same entry, so the admin banner and the merge list cannot call one
+ * provider two things.
  */
 export const WEATHER_PROVIDER_SHORT_LABELS: Readonly<Record<WeatherProviderId, string>> =
   Object.freeze({
@@ -123,6 +124,14 @@ export const WEATHER_PROVIDER_SHORT_LABELS: Readonly<Record<WeatherProviderId, s
     accuweather: 'AccuWeather',
     'met-no': 'Met.no',
   });
+
+/**
+ * What one fetch costs on AccuWeather, in the wording both the React panel and
+ * the rjsf fallback form build their own sentence around, so an admin UI
+ * without the remote cannot describe the cost differently from one with it.
+ */
+export const ACCUWEATHER_FETCH_COST_NOTE =
+  'Each fetch costs one AccuWeather API call, plus one location lookup per day while stationary or per new 1 km cell underway.';
 
 /**
  * Resolve the effective provider from saved config. An explicit, valid

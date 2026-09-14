@@ -35,6 +35,7 @@ import {
   optionalCelsiusToKelvin,
   optionalPercentageToRatio,
   percentageToRatio,
+  providerDescription,
   requireObservationTimestamp,
 } from '../utils/conversions.js';
 
@@ -184,7 +185,7 @@ export function mapAccuWeatherCurrentToWeatherData(
   // condition here, at the provider boundary, so the notifier never decodes
   // an AccuWeather-specific value.
   const severeCondition = accuWeatherSevereCondition(enhancedConditions.weatherIcon);
-  const description = capExternalString(conditions.WeatherText, ACCUWEATHER.MAX_DESCRIPTION_LENGTH);
+  const description = providerDescription(conditions.WeatherText);
 
   return {
     temperature,
@@ -203,7 +204,7 @@ export function mapAccuWeatherCurrentToWeatherData(
     // missing: the field is optional, and an empty string would both publish a
     // blank `environment.weather.description` and, as the merge primary, mask a
     // real phrase from another provider.
-    ...(description !== '' && { description }),
+    ...(description !== undefined && { description }),
     timestamp: requireObservationTimestamp(
       conditions.LocalObservationDateTime,
       'AccuWeather current conditions'
