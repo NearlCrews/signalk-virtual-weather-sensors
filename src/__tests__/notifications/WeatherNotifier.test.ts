@@ -8,6 +8,7 @@
  * mapping for the dedicated severe-condition path.
  */
 
+import type { PathValue } from '@signalk/server-api';
 import { describe, expect, it } from 'vitest';
 import { NOTIFICATION_PATHS } from '../../constants/index.js';
 import { MAX_MESSAGE_LENGTH, WeatherNotifier } from '../../notifications/WeatherNotifier.js';
@@ -30,6 +31,20 @@ function makeNotifier(overrides: Partial<NotificationsConfig> = {}): WeatherNoti
 }
 
 /**
+ * Evaluate a snapshot and record the result as published, which is what the
+ * emission tick does once the delta reaches the bus. `evaluate` alone holds the
+ * new states back so a throw between evaluation and publication cannot latch a
+ * band that never emitted; every test that models a successful tick goes
+ * through here, and the tests that exercise the uncommitted path call
+ * `evaluate` directly.
+ */
+function publish(notifier: WeatherNotifier, data: WeatherData): PathValue[] {
+  const transitions = notifier.evaluate(data);
+  notifier.commit();
+  return transitions;
+}
+
+/**
  * Build a notifier and prime it with one benign evaluate. The unprimed first
  * evaluate() after construction or reset() deliberately emits one-shot
  * `normal` clears for every enabled band (so a notification latched by a
@@ -38,7 +53,7 @@ function makeNotifier(overrides: Partial<NotificationsConfig> = {}): WeatherNoti
  */
 function makePrimedNotifier(overrides: Partial<NotificationsConfig> = {}): WeatherNotifier {
   const notifier = makeNotifier(overrides);
-  notifier.evaluate(snapshot({}));
+  publish(notifier, snapshot({}));
   return notifier;
 }
 
@@ -66,15 +81,15 @@ function readValue(pv: { value: unknown }): NotificationValue {
 describe('WeatherNotifier: master enable', () => {
   it('clears every owned path once when notifications.enabled is false', () => {
     const notifier = makeNotifier({ enabled: false });
-    const out = notifier.evaluate(snapshot({ beaufortScale: 12 }));
+    const out = publish(notifier, snapshot({ beaufortScale: 12 }));
     expect(out).toHaveLength(Object.keys(NOTIFICATION_PATHS).length);
     expect(out.every((entry) => readValue(entry).state === 'normal')).toBe(true);
-    expect(notifier.evaluate(snapshot({ beaufortScale: 12 }))).toEqual([]);
+    expect(publish(notifier, snapshot({ beaufortScale: 12 }))).toEqual([]);
   });
 
   it('emits when notifications.enabled is true and a band is active', () => {
     const notifier = makeNotifier();
-    const out = notifier.evaluate(snapshot({ beaufortScale: 12 }));
+    const out = publish(notifier, snapshot({ beaufortScale: 12 }));
     expect(out.length).toBeGreaterThan(0);
   });
 });
@@ -85,13 +100,13 @@ describe('WeatherNotifier: wind bands', () => {
     // primed notifier should not emit a `normal` clear; the bus already lacks
     // anything to clear.
     const notifier = makePrimedNotifier();
-    const out = notifier.evaluate(snapshot({ beaufortScale: 5 }));
+    const out = publish(notifier, snapshot({ beaufortScale: 5 }));
     expect(out).toEqual([]);
   });
 
   it('emits warn on entry into gale, alarm into storm, emergency into hurricane', () => {
     const notifier = makeNotifier();
-    const out = notifier.evaluate(snapshot({ beaufortScale: 12 }));
+    const out = publish(notifier, snapshot({ beaufortScale: 12 }));
     const paths = new Map(out.map((pv) => [pv.path, readValue(pv)]));
     expect(paths.get(NOTIFICATION_PATHS.WIND_GALE)?.state).toBe('warn');
     expect(paths.get(NOTIFICATION_PATHS.WIND_STORM)?.state).toBe('alarm');
@@ -101,9 +116,9 @@ describe('WeatherNotifier: wind bands', () => {
   it('emits normal on exit from each active band, exactly once per transition', () => {
     const notifier = makeNotifier();
     // Step 1: hurricane fires all three.
-    notifier.evaluate(snapshot({ beaufortScale: 12 }));
+    publish(notifier, snapshot({ beaufortScale: 12 }));
     // Step 2: wind drops below every threshold.
-    const out = notifier.evaluate(snapshot({ beaufortScale: 5 }));
+    const out = publish(notifier, snapshot({ beaufortScale: 5 }));
     const paths = new Map(out.map((pv) => [pv.path, readValue(pv)]));
     expect(paths.get(NOTIFICATION_PATHS.WIND_GALE)?.state).toBe('normal');
     expect(paths.get(NOTIFICATION_PATHS.WIND_STORM)?.state).toBe('normal');
@@ -116,9 +131,9 @@ describe('WeatherNotifier: wind bands', () => {
 
   it('is idempotent: a repeated active snapshot emits no further transitions', () => {
     const notifier = makeNotifier();
-    notifier.evaluate(snapshot({ beaufortScale: 12 }));
+    publish(notifier, snapshot({ beaufortScale: 12 }));
     // Re-evaluate the same Beaufort: nothing transitioned.
-    const out = notifier.evaluate(snapshot({ beaufortScale: 12 }));
+    const out = publish(notifier, snapshot({ beaufortScale: 12 }));
     expect(out).toEqual([]);
   });
 
@@ -127,7 +142,7 @@ describe('WeatherNotifier: wind bands', () => {
     // beaufortScale is not set in the mock by default.
     expect(data.beaufortScale).toBeUndefined();
     const notifier = makePrimedNotifier();
-    const out = notifier.evaluate(data);
+    const out = publish(notifier, data);
     // No wind paths should appear in the output.
     expect(out.find((pv) => pv.path.startsWith('notifications.environment.wind.'))).toBeUndefined();
   });
@@ -136,7 +151,7 @@ describe('WeatherNotifier: wind bands', () => {
 describe('WeatherNotifier: visibility', () => {
   it('fires both low and veryLow when visibility drops below 0.5 nm', () => {
     const notifier = makeNotifier();
-    const out = notifier.evaluate(snapshot({ visibility: 500 }));
+    const out = publish(notifier, snapshot({ visibility: 500 }));
     const paths = new Map(out.map((pv) => [pv.path, readValue(pv)]));
     expect(paths.get(NOTIFICATION_PATHS.VISIBILITY_LOW)?.state).toBe('warn');
     expect(paths.get(NOTIFICATION_PATHS.VISIBILITY_VERY_LOW)?.state).toBe('alarm');
@@ -145,7 +160,7 @@ describe('WeatherNotifier: visibility', () => {
   it('fires only low when visibility is between 0.5 and 1 nm', () => {
     const notifier = makePrimedNotifier();
     // 1000m is below the LOW_M threshold (1852m) but above VERY_LOW_M (926m).
-    const out = notifier.evaluate(snapshot({ visibility: 1000 }));
+    const out = publish(notifier, snapshot({ visibility: 1000 }));
     const paths = out.map((pv) => pv.path);
     expect(paths).toContain(NOTIFICATION_PATHS.VISIBILITY_LOW);
     expect(paths).not.toContain(NOTIFICATION_PATHS.VISIBILITY_VERY_LOW);
@@ -155,7 +170,7 @@ describe('WeatherNotifier: visibility', () => {
 describe('WeatherNotifier: heat and cold', () => {
   it('fires caution, high, and extreme heat at HSI 4', () => {
     const notifier = makeNotifier();
-    const out = notifier.evaluate(snapshot({ heatStressIndex: 4 }));
+    const out = publish(notifier, snapshot({ heatStressIndex: 4 }));
     const paths = new Map(out.map((pv) => [pv.path, readValue(pv)]));
     expect(paths.get(NOTIFICATION_PATHS.HEAT_CAUTION)?.state).toBe('warn');
     expect(paths.get(NOTIFICATION_PATHS.HEAT_HIGH)?.state).toBe('alarm');
@@ -165,7 +180,7 @@ describe('WeatherNotifier: heat and cold', () => {
   it('fires both cold bands when wind chill is below -20 C', () => {
     const notifier = makeNotifier();
     // -25 C in Kelvin
-    const out = notifier.evaluate(snapshot({ windChill: 248.15 }));
+    const out = publish(notifier, snapshot({ windChill: 248.15 }));
     const paths = new Map(out.map((pv) => [pv.path, readValue(pv)]));
     expect(paths.get(NOTIFICATION_PATHS.COLD_CAUTION)?.state).toBe('warn');
     expect(paths.get(NOTIFICATION_PATHS.COLD_EXTREME)?.state).toBe('alarm');
@@ -175,7 +190,8 @@ describe('WeatherNotifier: heat and cold', () => {
 describe('WeatherNotifier: severe condition (WeatherIcon)', () => {
   it('maps icon 15 (thunderstorms) to warn with the description in the message', () => {
     const notifier = makeNotifier();
-    const out = notifier.evaluate(
+    const out = publish(
+      notifier,
       snapshot({ weatherIcon: 15, description: 'Severe thunderstorms approaching' })
     );
     const pv = out.find((p) => p.path === NOTIFICATION_PATHS.WEATHER_SEVERE);
@@ -189,15 +205,15 @@ describe('WeatherNotifier: severe condition (WeatherIcon)', () => {
 
   it('maps icon 24 (ice) to alarm', () => {
     const notifier = makeNotifier();
-    const out = notifier.evaluate(snapshot({ weatherIcon: 24, description: 'Ice' }));
+    const out = publish(notifier, snapshot({ weatherIcon: 24, description: 'Ice' }));
     const pv = out.find((p) => p.path === NOTIFICATION_PATHS.WEATHER_SEVERE);
     expect(pv && readValue(pv).state).toBe('alarm');
   });
 
   it('emits normal exit when icon falls outside the severity table', () => {
     const notifier = makeNotifier();
-    notifier.evaluate(snapshot({ weatherIcon: 15, description: 'Thunderstorms' }));
-    const out = notifier.evaluate(snapshot({ weatherIcon: 1, description: 'Sunny' }));
+    publish(notifier, snapshot({ weatherIcon: 15, description: 'Thunderstorms' }));
+    const out = publish(notifier, snapshot({ weatherIcon: 1, description: 'Sunny' }));
     const pv = out.find((p) => p.path === NOTIFICATION_PATHS.WEATHER_SEVERE);
     expect(pv && readValue(pv).state).toBe('normal');
   });
@@ -206,7 +222,7 @@ describe('WeatherNotifier: severe condition (WeatherIcon)', () => {
 describe('WeatherNotifier: per-category toggles', () => {
   it('clears wind notifications when wind is disabled', () => {
     const notifier = makeNotifier({ wind: false });
-    const out = notifier.evaluate(snapshot({ beaufortScale: 12 }));
+    const out = publish(notifier, snapshot({ beaufortScale: 12 }));
     const wind = out.filter((pv) => pv.path.startsWith('notifications.environment.wind.'));
     expect(wind).toHaveLength(3);
     expect(wind.every((entry) => readValue(entry).state === 'normal')).toBe(true);
@@ -214,7 +230,8 @@ describe('WeatherNotifier: per-category toggles', () => {
 
   it('still emits other categories when only wind is disabled', () => {
     const notifier = makeNotifier({ wind: false });
-    const out = notifier.evaluate(
+    const out = publish(
+      notifier,
       snapshot({ beaufortScale: 12, visibility: 500, heatStressIndex: 4 })
     );
     const paths = out.map((pv) => pv.path);
@@ -229,7 +246,7 @@ describe('WeatherNotifier: per-category toggles', () => {
 describe('WeatherNotifier: value shape', () => {
   it('emits the SK spec shape (state, method, message, timestamp)', () => {
     const notifier = makeNotifier();
-    const out = notifier.evaluate(snapshot({ beaufortScale: 12 }));
+    const out = publish(notifier, snapshot({ beaufortScale: 12 }));
     const pv = out[0];
     if (!pv) throw new Error('expected at least one transition');
     const value = readValue(pv);
@@ -243,7 +260,7 @@ describe('WeatherNotifier: value shape', () => {
 
   it('attaches sound + visual on alarm and emergency, visual-only on warn', () => {
     const notifier = makeNotifier();
-    const out = notifier.evaluate(snapshot({ beaufortScale: 12 }));
+    const out = publish(notifier, snapshot({ beaufortScale: 12 }));
     const gale = out.find((p) => p.path === NOTIFICATION_PATHS.WIND_GALE);
     const storm = out.find((p) => p.path === NOTIFICATION_PATHS.WIND_STORM);
     const hurr = out.find((p) => p.path === NOTIFICATION_PATHS.WIND_HURRICANE);
@@ -257,12 +274,12 @@ describe('WeatherNotifier: value shape', () => {
 describe('WeatherNotifier: reset', () => {
   it('clears tracked state so subsequent evaluations are first-time again', () => {
     const notifier = makeNotifier();
-    notifier.evaluate(snapshot({ beaufortScale: 12 })); // arms all wind bands
+    publish(notifier, snapshot({ beaufortScale: 12 })); // arms all wind bands
     notifier.reset();
     // After reset, repeating the same active snapshot is treated as a fresh
     // entry: the wind bands fire again, and the other enabled bands emit their
     // one-shot restart `normal` clears.
-    const out = notifier.evaluate(snapshot({ beaufortScale: 12 }));
+    const out = publish(notifier, snapshot({ beaufortScale: 12 }));
     const states = new Map(out.map((pv) => [pv.path, readValue(pv).state]));
     expect(states.get(NOTIFICATION_PATHS.WIND_GALE)).toBe('warn');
     expect(states.get(NOTIFICATION_PATHS.WIND_STORM)).toBe('alarm');
@@ -275,7 +292,7 @@ describe('WeatherNotifier: reset', () => {
 describe('WeatherNotifier: restart clearing (unprimed first evaluate)', () => {
   it('emits a normal clear for every enabled band on the first evaluate after construction', () => {
     const notifier = makeNotifier();
-    const out = notifier.evaluate(snapshot({}));
+    const out = publish(notifier, snapshot({}));
     expect(out.length).toBeGreaterThan(0);
     for (const pv of out) {
       expect(readValue(pv).state).toBe('normal');
@@ -293,9 +310,9 @@ describe('WeatherNotifier: restart clearing (unprimed first evaluate)', () => {
     // notifier. The hazard clears while the plugin is down. The first evaluate
     // after restart must write `normal` so plotters drop the stale alarm.
     const notifier = makePrimedNotifier();
-    notifier.evaluate(snapshot({ beaufortScale: 12 }));
+    publish(notifier, snapshot({ beaufortScale: 12 }));
     notifier.reset();
-    const out = notifier.evaluate(snapshot({ beaufortScale: 5 }));
+    const out = publish(notifier, snapshot({ beaufortScale: 5 }));
     const gale = out.find((pv) => pv.path === NOTIFICATION_PATHS.WIND_GALE);
     if (!gale) throw new Error('expected a clearing normal for the gale band');
     expect(readValue(gale).state).toBe('normal');
@@ -303,7 +320,7 @@ describe('WeatherNotifier: restart clearing (unprimed first evaluate)', () => {
 
   it('emits clearing normals, even unprimed, when the master switch is off', () => {
     const notifier = makeNotifier({ enabled: false });
-    const out = notifier.evaluate(snapshot({}));
+    const out = publish(notifier, snapshot({}));
     expect(out).toHaveLength(Object.keys(NOTIFICATION_PATHS).length);
     expect(out.every((entry) => readValue(entry).state === 'normal')).toBe(true);
   });
@@ -321,7 +338,8 @@ describe('WeatherNotifier: restart clearing (unprimed first evaluate)', () => {
 describe('WeatherNotifier: enriched messages', () => {
   it('wind: surfaces Beaufort, cardinal direction, sustained speed, gusts, and pressure', () => {
     const notifier = makeNotifier();
-    const out = notifier.evaluate(
+    const out = publish(
+      notifier,
       snapshot({
         beaufortScale: 9,
         windSpeed: 19,
@@ -343,7 +361,8 @@ describe('WeatherNotifier: enriched messages', () => {
 
   it('wind: omits gust segment when gust is missing or not above sustained', () => {
     const notifier = makeNotifier();
-    const out = notifier.evaluate(
+    const out = publish(
+      notifier,
       snapshot({
         beaufortScale: 9,
         windSpeed: 19,
@@ -358,7 +377,8 @@ describe('WeatherNotifier: enriched messages', () => {
 
   it('visibility: includes ceiling and precipitation rate when available', () => {
     const notifier = makeNotifier();
-    const out = notifier.evaluate(
+    const out = publish(
+      notifier,
       snapshot({
         visibility: 800,
         cloudCeiling: 90,
@@ -376,7 +396,8 @@ describe('WeatherNotifier: enriched messages', () => {
 
   it('heat: surfaces HSI, WBGT in C, humidity percent, and RealFeel-in-shade', () => {
     const notifier = makeNotifier();
-    const out = notifier.evaluate(
+    const out = publish(
+      notifier,
       snapshot({
         heatStressIndex: 3,
         wetBulbGlobeTemperature: 305.15, // 32 C
@@ -396,7 +417,8 @@ describe('WeatherNotifier: enriched messages', () => {
 
   it('cold: includes air temperature and wind speed alongside wind chill', () => {
     const notifier = makeNotifier();
-    const out = notifier.evaluate(
+    const out = publish(
+      notifier,
       snapshot({
         windChill: 271.15, // -2 C
         temperature: 274.15, // +1 C
@@ -414,7 +436,8 @@ describe('WeatherNotifier: enriched messages', () => {
 
   it('severe: appends barometric pressure when finite', () => {
     const notifier = makeNotifier();
-    const out = notifier.evaluate(
+    const out = publish(
+      notifier,
       snapshot({
         weatherIcon: 15,
         description: 'Severe thunderstorms approaching',
@@ -430,7 +453,8 @@ describe('WeatherNotifier: enriched messages', () => {
 
   it('caps every emitted message at MAX_MESSAGE_LENGTH', () => {
     const notifier = makeNotifier();
-    const out = notifier.evaluate(
+    const out = publish(
+      notifier,
       snapshot({
         beaufortScale: 12,
         windSpeed: 35,
@@ -467,7 +491,7 @@ describe('WeatherNotifier: enriched messages', () => {
     ];
     for (const [radians, expected] of cases) {
       notifier.reset();
-      const out = notifier.evaluate(snapshot({ beaufortScale: 9, windDirection: radians }));
+      const out = publish(notifier, snapshot({ beaufortScale: 9, windDirection: radians }));
       const gale = out.find((pv) => pv.path === NOTIFICATION_PATHS.WIND_GALE);
       if (!gale) throw new Error(`expected gale to fire for ${radians}`);
       expect(readValue(gale).message).toContain(expected);
@@ -479,10 +503,10 @@ describe('WeatherNotifier: driver field disappears', () => {
   it('heat: clears active bands to normal when heatStressIndex is absent from a later snapshot', () => {
     const notifier = makeNotifier();
     // Step 1: extreme heat stress fires all three heat bands.
-    notifier.evaluate(snapshot({ heatStressIndex: 4 }));
+    publish(notifier, snapshot({ heatStressIndex: 4 }));
     // Step 2: a partial AccuWeather response drops the wet-bulb-globe block,
     // so heatStressIndex is undefined. The bands must clear, not latch.
-    const out = notifier.evaluate(snapshot({}));
+    const out = publish(notifier, snapshot({}));
     const paths = new Map(out.map((pv) => [pv.path, readValue(pv)]));
     expect(paths.get(NOTIFICATION_PATHS.HEAT_CAUTION)?.state).toBe('normal');
     expect(paths.get(NOTIFICATION_PATHS.HEAT_HIGH)?.state).toBe('normal');
@@ -491,8 +515,8 @@ describe('WeatherNotifier: driver field disappears', () => {
 
   it('visibility: clears active bands to normal when visibility is absent from a later snapshot', () => {
     const notifier = makeNotifier();
-    notifier.evaluate(snapshot({ visibility: 400 }));
-    const out = notifier.evaluate(snapshot({}));
+    publish(notifier, snapshot({ visibility: 400 }));
+    const out = publish(notifier, snapshot({}));
     const paths = new Map(out.map((pv) => [pv.path, readValue(pv)]));
     expect(paths.get(NOTIFICATION_PATHS.VISIBILITY_LOW)?.state).toBe('normal');
     expect(paths.get(NOTIFICATION_PATHS.VISIBILITY_VERY_LOW)?.state).toBe('normal');
@@ -500,8 +524,8 @@ describe('WeatherNotifier: driver field disappears', () => {
 
   it('wind: clears active bands to normal when beaufortScale is absent from a later snapshot', () => {
     const notifier = makeNotifier();
-    notifier.evaluate(snapshot({ beaufortScale: 12 }));
-    const out = notifier.evaluate(snapshot({}));
+    publish(notifier, snapshot({ beaufortScale: 12 }));
+    const out = publish(notifier, snapshot({}));
     const paths = new Map(out.map((pv) => [pv.path, readValue(pv)]));
     expect(paths.get(NOTIFICATION_PATHS.WIND_GALE)?.state).toBe('normal');
     expect(paths.get(NOTIFICATION_PATHS.WIND_STORM)?.state).toBe('normal');
@@ -512,7 +536,7 @@ describe('WeatherNotifier: driver field disappears', () => {
     // No band has ever been active since priming, so a missing driver must
     // clear nothing.
     const notifier = makePrimedNotifier();
-    const out = notifier.evaluate(snapshot({}));
+    const out = publish(notifier, snapshot({}));
     expect(out).toEqual([]);
   });
 });
@@ -521,7 +545,7 @@ describe('WeatherNotifier: exact-threshold mutation guards', () => {
   it('wind: fires only the matching ascending band at exact thresholds', () => {
     // Bft 8: gale fires, storm and hurricane do not.
     const notifier = makePrimedNotifier();
-    const out = notifier.evaluate(snapshot({ beaufortScale: 8 }));
+    const out = publish(notifier, snapshot({ beaufortScale: 8 }));
     const paths = new Map(out.map((pv) => [pv.path, readValue(pv)]));
     expect(paths.get(NOTIFICATION_PATHS.WIND_GALE)?.state).toBe('warn');
     expect(paths.has(NOTIFICATION_PATHS.WIND_STORM)).toBe(false);
@@ -530,13 +554,13 @@ describe('WeatherNotifier: exact-threshold mutation guards', () => {
     // One step below the threshold leaves the band silent on a fresh primed
     // instance.
     const fresh = makePrimedNotifier();
-    const justBelow = fresh.evaluate(snapshot({ beaufortScale: 7 }));
+    const justBelow = publish(fresh, snapshot({ beaufortScale: 7 }));
     expect(justBelow.some((pv) => pv.path === NOTIFICATION_PATHS.WIND_GALE)).toBe(false);
   });
 
   it('heat: fires only the matching ascending band at exact thresholds', () => {
     const notifier = makePrimedNotifier();
-    const out = notifier.evaluate(snapshot({ heatStressIndex: 2 }));
+    const out = publish(notifier, snapshot({ heatStressIndex: 2 }));
     const paths = new Map(out.map((pv) => [pv.path, readValue(pv)]));
     expect(paths.get(NOTIFICATION_PATHS.HEAT_CAUTION)?.state).toBe('warn');
     expect(paths.has(NOTIFICATION_PATHS.HEAT_HIGH)).toBe(false);
@@ -547,19 +571,19 @@ describe('WeatherNotifier: exact-threshold mutation guards', () => {
     // Descending bands compare `<` not `<=`, so the threshold value itself is
     // outside the band.
     const notifier = makePrimedNotifier();
-    const out = notifier.evaluate(snapshot({ visibility: 1852 }));
+    const out = publish(notifier, snapshot({ visibility: 1852 }));
     expect(out.find((pv) => pv.path === NOTIFICATION_PATHS.VISIBILITY_LOW)).toBeUndefined();
 
-    const below = notifier.evaluate(snapshot({ visibility: 1851 }));
+    const below = publish(notifier, snapshot({ visibility: 1851 }));
     expect(below.find((pv) => pv.path === NOTIFICATION_PATHS.VISIBILITY_LOW)).toBeDefined();
   });
 
   it('cold: stays normal at exactly 273.15 K (the CAUTION_K threshold)', () => {
     const notifier = makePrimedNotifier();
-    const out = notifier.evaluate(snapshot({ windChill: 273.15 }));
+    const out = publish(notifier, snapshot({ windChill: 273.15 }));
     expect(out.find((pv) => pv.path === NOTIFICATION_PATHS.COLD_CAUTION)).toBeUndefined();
 
-    const below = notifier.evaluate(snapshot({ windChill: 273.14 }));
+    const below = publish(notifier, snapshot({ windChill: 273.14 }));
     expect(below.find((pv) => pv.path === NOTIFICATION_PATHS.COLD_CAUTION)).toBeDefined();
   });
 });
@@ -567,7 +591,8 @@ describe('WeatherNotifier: exact-threshold mutation guards', () => {
 describe('WeatherNotifier: suffix coverage gaps', () => {
   it('wind: omits gust segment when gust equals sustained (gust factor 1.0)', () => {
     const notifier = makeNotifier();
-    const out = notifier.evaluate(
+    const out = publish(
+      notifier,
       snapshot({
         beaufortScale: 9,
         windSpeed: 22,
@@ -582,7 +607,8 @@ describe('WeatherNotifier: suffix coverage gaps', () => {
 
   it('wind: surfaces the gust even when sustained speed is missing', () => {
     const notifier = makeNotifier();
-    const out = notifier.evaluate(
+    const out = publish(
+      notifier,
       snapshot({
         beaufortScale: 9,
         windSpeed: Number.NaN,
@@ -597,7 +623,8 @@ describe('WeatherNotifier: suffix coverage gaps', () => {
 
   it('visibility: omits the rain segment when precipitation is zero', () => {
     const notifier = makeNotifier();
-    const out = notifier.evaluate(
+    const out = publish(
+      notifier,
       snapshot({ visibility: 800, cloudCeiling: 90, precipitationLastHour: 0 })
     );
     const low = out.find((pv) => pv.path === NOTIFICATION_PATHS.VISIBILITY_LOW);
@@ -607,7 +634,7 @@ describe('WeatherNotifier: suffix coverage gaps', () => {
 
   it('visibility: omits the rain segment when precipitation is undefined', () => {
     const notifier = makeNotifier();
-    const out = notifier.evaluate(snapshot({ visibility: 800, cloudCeiling: 90 }));
+    const out = publish(notifier, snapshot({ visibility: 800, cloudCeiling: 90 }));
     const low = out.find((pv) => pv.path === NOTIFICATION_PATHS.VISIBILITY_LOW);
     if (!low) throw new Error('expected visibility.low to fire');
     expect(readValue(low).message).not.toContain('rain');
@@ -615,7 +642,8 @@ describe('WeatherNotifier: suffix coverage gaps', () => {
 
   it('severe: emits just the label when description is missing', () => {
     const notifier = makeNotifier();
-    const out = notifier.evaluate(
+    const out = publish(
+      notifier,
       snapshot({ weatherIcon: 15, description: undefined, pressure: Number.NaN })
     );
     const severe = out.find((pv) => pv.path === NOTIFICATION_PATHS.WEATHER_SEVERE);
@@ -625,7 +653,8 @@ describe('WeatherNotifier: suffix coverage gaps', () => {
 
   it('severe: emits just the label when description is whitespace-only', () => {
     const notifier = makeNotifier();
-    const out = notifier.evaluate(
+    const out = publish(
+      notifier,
       snapshot({ weatherIcon: 15, description: '   ', pressure: Number.NaN })
     );
     const severe = out.find((pv) => pv.path === NOTIFICATION_PATHS.WEATHER_SEVERE);
@@ -635,7 +664,8 @@ describe('WeatherNotifier: suffix coverage gaps', () => {
 
   it('severe: omits pressure when not finite', () => {
     const notifier = makeNotifier();
-    const out = notifier.evaluate(
+    const out = publish(
+      notifier,
       snapshot({ weatherIcon: 15, description: 'Thunder', pressure: Number.NaN })
     );
     const severe = out.find((pv) => pv.path === NOTIFICATION_PATHS.WEATHER_SEVERE);
@@ -654,7 +684,7 @@ describe('WeatherNotifier: suffix coverage gaps', () => {
     ];
     for (const [radians, expected] of cases) {
       notifier.reset();
-      const out = notifier.evaluate(snapshot({ beaufortScale: 9, windDirection: radians }));
+      const out = publish(notifier, snapshot({ beaufortScale: 9, windDirection: radians }));
       const gale = out.find((pv) => pv.path === NOTIFICATION_PATHS.WIND_GALE);
       if (!gale) throw new Error(`expected gale to fire for ${radians}`);
       expect(readValue(gale).message).toContain(expected);
@@ -670,27 +700,27 @@ describe('WeatherNotifier: getActiveCount', () => {
 
   it('returns 3 after entering all wind bands at hurricane', () => {
     const notifier = makeNotifier();
-    notifier.evaluate(snapshot({ beaufortScale: 12 }));
+    publish(notifier, snapshot({ beaufortScale: 12 }));
     expect(notifier.getActiveCount()).toBe(3);
   });
 
   it('returns 0 after every band has cleared back to normal', () => {
     const notifier = makeNotifier();
-    notifier.evaluate(snapshot({ beaufortScale: 12 }));
-    notifier.evaluate(snapshot({ beaufortScale: 5 }));
+    publish(notifier, snapshot({ beaufortScale: 12 }));
+    publish(notifier, snapshot({ beaufortScale: 5 }));
     expect(notifier.getActiveCount()).toBe(0);
   });
 
   it('aggregates active counts across categories', () => {
     const notifier = makeNotifier();
-    notifier.evaluate(snapshot({ beaufortScale: 12, visibility: 400, heatStressIndex: 4 }));
+    publish(notifier, snapshot({ beaufortScale: 12, visibility: 400, heatStressIndex: 4 }));
     // 3 wind + 2 visibility + 3 heat.
     expect(notifier.getActiveCount()).toBe(8);
   });
 
   it('reset() zeroes the active count', () => {
     const notifier = makeNotifier();
-    notifier.evaluate(snapshot({ beaufortScale: 12 }));
+    publish(notifier, snapshot({ beaufortScale: 12 }));
     notifier.reset();
     expect(notifier.getActiveCount()).toBe(0);
   });
@@ -699,14 +729,14 @@ describe('WeatherNotifier: getActiveCount', () => {
 describe('WeatherNotifier: severe-condition defensive cases', () => {
   it('stays normal across the lifetime when icon is undefined', () => {
     const notifier = makePrimedNotifier();
-    const out = notifier.evaluate(snapshot({ weatherIcon: undefined }));
+    const out = publish(notifier, snapshot({ weatherIcon: undefined }));
     expect(out.find((pv) => pv.path === NOTIFICATION_PATHS.WEATHER_SEVERE)).toBeUndefined();
   });
 
   it('clears to normal when icon is NaN after a prior severe state', () => {
     const notifier = makeNotifier();
-    notifier.evaluate(snapshot({ weatherIcon: 15, description: 'Thunder' }));
-    const out = notifier.evaluate(snapshot({ weatherIcon: Number.NaN }));
+    publish(notifier, snapshot({ weatherIcon: 15, description: 'Thunder' }));
+    const out = publish(notifier, snapshot({ weatherIcon: Number.NaN }));
     const pv = out.find((p) => p.path === NOTIFICATION_PATHS.WEATHER_SEVERE);
     expect(pv && readValue(pv).state).toBe('normal');
   });
@@ -714,7 +744,7 @@ describe('WeatherNotifier: severe-condition defensive cases', () => {
   it('stays normal for out-of-range icon codes (0, 100, -1)', () => {
     for (const icon of [0, 100, -1]) {
       const notifier = makePrimedNotifier();
-      const out = notifier.evaluate(snapshot({ weatherIcon: icon }));
+      const out = publish(notifier, snapshot({ weatherIcon: icon }));
       expect(out.find((pv) => pv.path === NOTIFICATION_PATHS.WEATHER_SEVERE)).toBeUndefined();
     }
   });
@@ -725,9 +755,122 @@ describe('WeatherNotifier: purity', () => {
     const notifier = makeNotifier();
     const data = snapshot({ beaufortScale: 12, windSpeed: 35, pressure: 99800 });
     const before = JSON.parse(JSON.stringify(data));
-    notifier.evaluate(data);
+    publish(notifier, data);
     expect(data).toEqual(before);
-    notifier.evaluate(data);
+    publish(notifier, data);
     expect(data).toEqual(before);
+  });
+});
+
+describe('WeatherNotifier: deferred commit', () => {
+  it('re-emits an entry edge that was evaluated but never committed', () => {
+    const notifier = makePrimedNotifier();
+
+    // Models a throw between evaluate() and app.handleMessage: the transitions
+    // are computed but never reach the bus, so nothing is committed.
+    const dropped = notifier.evaluate(snapshot({ beaufortScale: 12 }));
+    expect(dropped.map((p) => p.path)).toContain(NOTIFICATION_PATHS.WIND_GALE);
+
+    const retried = publish(notifier, snapshot({ beaufortScale: 12 }));
+    const gale = retried.find((p) => p.path === NOTIFICATION_PATHS.WIND_GALE);
+    expect(gale && readValue(gale).state).toBe('warn');
+  });
+
+  it('does not count an uncommitted band as active', () => {
+    const notifier = makePrimedNotifier();
+    notifier.evaluate(snapshot({ beaufortScale: 12 }));
+    expect(notifier.getActiveCount()).toBe(0);
+    notifier.commit();
+    expect(notifier.getActiveCount()).toBe(3);
+  });
+
+  it('stays unprimed until the first evaluation is committed', () => {
+    const notifier = makeNotifier();
+    const dropped = notifier.evaluate(snapshot({}));
+    expect(dropped.length).toBeGreaterThan(0);
+
+    // Still unprimed, so the leading normals are offered again rather than
+    // suppressed on the assumption the bus already received them.
+    const retried = publish(notifier, snapshot({}));
+    expect(retried.map((p) => p.path)).toEqual(dropped.map((p) => p.path));
+  });
+});
+
+describe('WeatherNotifier: staleness marking', () => {
+  it('re-emits each active band once with the age appended', () => {
+    const notifier = makePrimedNotifier();
+    publish(notifier, snapshot({ beaufortScale: 12, windSpeed: 35, pressure: 99800 }));
+
+    const marked = notifier.markStale('data 75 min old');
+    expect(marked.map((p) => p.path).sort()).toEqual(
+      [
+        NOTIFICATION_PATHS.WIND_GALE,
+        NOTIFICATION_PATHS.WIND_HURRICANE,
+        NOTIFICATION_PATHS.WIND_STORM,
+      ].sort()
+    );
+    for (const entry of marked) {
+      const value = readValue(entry);
+      expect(value.state).not.toBe('normal');
+      expect(value.message).toContain('(data 75 min old)');
+      expect(Array.from(value.message).length).toBeLessThanOrEqual(MAX_MESSAGE_LENGTH);
+    }
+
+    // Latched: one marking per stale episode, not one per emission tick.
+    expect(notifier.markStale('data 80 min old')).toEqual([]);
+  });
+
+  it('emits nothing when no band is active', () => {
+    const notifier = makePrimedNotifier();
+    publish(notifier, snapshot({ beaufortScale: 2 }));
+    expect(notifier.markStale('data 75 min old')).toEqual([]);
+  });
+
+  it('re-arms after fresh data arrives', () => {
+    const notifier = makePrimedNotifier();
+    publish(notifier, snapshot({ beaufortScale: 12 }));
+    expect(notifier.markStale('data 75 min old').length).toBe(3);
+
+    publish(notifier, snapshot({ beaufortScale: 12 }));
+    expect(notifier.markStale('data 75 min old').length).toBe(3);
+  });
+});
+
+describe('WeatherNotifier: message format matches the documented template', () => {
+  it('reads the Beaufort force and its bearing as one phrase', () => {
+    const notifier = makeNotifier();
+    const out = publish(
+      notifier,
+      snapshot({
+        beaufortScale: 9,
+        windDirection: degreesToRadians(225),
+        windSpeed: 19,
+        windGustSpeed: 27,
+        pressure: 99800,
+      })
+    );
+    const gale = out.find((pv) => pv.path === NOTIFICATION_PATHS.WIND_GALE);
+    if (!gale) throw new Error('expected gale to fire');
+    expect(readValue(gale).message).toBe(
+      'Gale-force wind: Bf9 from SW, 19 m/s, gusts 27 m/s, 998 hPa'
+    );
+  });
+
+  it('never renders a visibility larger than the threshold that fired the band', () => {
+    const notifier = makeNotifier();
+    // 1851.9 m is inside the 1852 m band by a tenth of a metre. Rounding to
+    // nearest renders 1.9 km, a figure ABOVE the 1.852 km threshold.
+    const low = publish(notifier, snapshot({ visibility: 1851.9 })).find(
+      (pv) => pv.path === NOTIFICATION_PATHS.VISIBILITY_LOW
+    );
+    if (!low) throw new Error('expected visibility.low to fire');
+    expect(readValue(low).message).toBe('Reduced visibility: 1.8 km');
+
+    // Same one level down: 925.9 m is inside the 926 m very-low band.
+    const veryLow = publish(notifier, snapshot({ visibility: 925.9 })).find(
+      (pv) => pv.path === NOTIFICATION_PATHS.VISIBILITY_VERY_LOW
+    );
+    if (!veryLow) throw new Error('expected visibility.veryLow to fire');
+    expect(readValue(veryLow).message).toBe('Very low visibility: 0.9 km');
   });
 });

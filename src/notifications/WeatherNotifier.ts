@@ -76,15 +76,15 @@ function methodsFor(state: NotificationState): ReadonlyArray<NotificationMethod>
  */
 export const MAX_MESSAGE_LENGTH = 80;
 
-function capForChartplotter(message: string): string {
+function capForChartplotter(message: string, limit: number = MAX_MESSAGE_LENGTH): string {
   // UTF-16 length is an upper bound on code-point count: a string within the
   // cap by UTF-16 units is within it by code points too.
-  if (message.length <= MAX_MESSAGE_LENGTH) return message;
+  if (message.length <= limit) return message;
   const points = Array.from(message);
-  if (points.length <= MAX_MESSAGE_LENGTH) return message;
-  // Trim to MAX_MESSAGE_LENGTH - 1 code points and append the ellipsis so the
-  // result is exactly MAX_MESSAGE_LENGTH code points (ellipsis replaces, not adds).
-  return `${points.slice(0, MAX_MESSAGE_LENGTH - 1).join('')}…`;
+  if (points.length <= limit) return message;
+  // Trim to limit - 1 code points and append the ellipsis so the result is
+  // exactly `limit` code points (the ellipsis replaces, it does not add).
+  return `${points.slice(0, limit - 1).join('')}…`;
 }
 
 /** 16-point compass rose, indexed by floor((deg + 11.25) / 22.5) % 16 (the wrap maps [348.75, 360) back to N). */
@@ -133,10 +133,17 @@ function msRounded(ms: number): number {
   return Math.round(ms * 10) / 10;
 }
 
-// Returns a number like the sibling unit helpers (paToHpaRounded, kToCRounded,
-// msRounded); the call site applies the one-decimal presentation.
-function metersToKm(meters: number): number {
-  return meters / UNITS.LENGTH.KM_TO_M;
+/**
+ * Kilometres to one decimal, rounded DOWN.
+ *
+ * Nearest-rounding renders 1851.9 m as `1.9 km`, a figure larger than the
+ * 1.852 km threshold that just fired the band, which reads as a contradiction
+ * on a chartplotter. Flooring can only understate the visibility, which is the
+ * safe direction for a restricted-visibility warning, and it keeps the
+ * rendered figure below every threshold that can trigger the message.
+ */
+function metersToKmFloored(meters: number): string {
+  return (Math.floor((meters / UNITS.LENGTH.KM_TO_M) * 10) / 10).toFixed(1);
 }
 
 /**
@@ -154,10 +161,13 @@ function metersToKm(meters: number): number {
 function formatWindSuffix(data: WeatherData): string {
   const bft = data.beaufortScale;
   if (bft === undefined) return '';
-  const parts: string[] = [`Bf${bft}`];
-  if (Number.isFinite(data.windDirection)) {
-    parts.push(`from ${radiansToCardinal(data.windDirection)}`);
-  }
+  // Force and bearing read as one phrase ("Bf9 from SW"), matching the template
+  // in docs/signal-k-paths.md and the README, and saving a character against
+  // the 80-code-point message cap.
+  const heading = Number.isFinite(data.windDirection)
+    ? ` from ${radiansToCardinal(data.windDirection)}`
+    : '';
+  const parts: string[] = [`Bf${bft}${heading}`];
   const windSpeed = Number.isFinite(data.windSpeed) ? data.windSpeed : undefined;
   if (windSpeed !== undefined) {
     parts.push(`${msRounded(windSpeed)} m/s`);
@@ -176,7 +186,7 @@ function formatWindSuffix(data: WeatherData): string {
 function formatVisibilitySuffix(data: WeatherData): string {
   const vis = data.visibility;
   if (vis === undefined) return '';
-  const parts: string[] = [`${metersToKm(vis).toFixed(1)} km`];
+  const parts: string[] = [`${metersToKmFloored(vis)} km`];
   const ceilingVal = asOptionalNumber(data.cloudCeiling);
   if (ceilingVal !== undefined) {
     parts.push(`ceiling ${Math.round(ceilingVal)} m`);
@@ -358,17 +368,37 @@ const COLD_BANDS: BandSet = {
 export class WeatherNotifier {
   private readonly config: NotificationsConfig;
   private readonly logger: Logger;
-  /** Last state emitted per notification path; default `normal` until set. */
-  private readonly lastState = new Map<string, NotificationState>();
   /**
-   * False until the first evaluate() after construction or reset(). While
-   * unprimed, leading `normal` states ARE emitted: a previous plugin instance
-   * (stopped by a config change, or crashed) may have left an active
+   * Last state PUBLISHED per notification path; default `normal` until set.
+   * Only {@link commit} writes here, and only once the caller confirms the
+   * transitions reached the bus.
+   */
+  private readonly lastState = new Map<string, NotificationState>();
+  /** Last message published per active path, reused by {@link markStale}. */
+  private readonly lastMessage = new Map<string, string>();
+  /**
+   * States the current evaluation WOULD publish. Held back from `lastState`
+   * until {@link commit}, because the caller maps, evaluates, and publishes in
+   * separate statements: committing at evaluate time meant a throw anywhere in
+   * between discarded the delta while the notifier already believed the band
+   * had entered, and the band then never re-emitted (the next evaluation sees
+   * `prior === desired` and returns early).
+   */
+  private readonly pendingState = new Map<string, NotificationState>();
+  private readonly pendingMessage = new Map<string, string>();
+  /**
+   * False until the first COMMITTED evaluate() after construction or reset().
+   * While unprimed, leading `normal` states ARE emitted: a previous plugin
+   * instance (stopped by a config change, or crashed) may have left an active
    * notification latched in the server's full model, and only a fresh
    * `normal` write can clear it. Once primed, leading normals are suppressed
    * again because the bus is known to have nothing to clear.
    */
   private primed = false;
+  /** Priming deferred with the rest of the evaluation, applied by {@link commit}. */
+  private pendingPrimed = false;
+  /** True once the active bands have been re-emitted with a staleness marker. */
+  private staleMarked = false;
 
   constructor(config: NotificationsConfig, logger: Logger = () => {}) {
     this.config = config;
@@ -384,8 +414,18 @@ export class WeatherNotifier {
    * Timestamps and per-band message strings are computed lazily inside
    * `maybeTransition`: when no band transitions (the steady-state norm) the
    * notifier allocates nothing.
+   *
+   * The returned transitions are NOT recorded as published until the caller
+   * calls {@link commit}. Call it once the delta has reached the bus.
    */
   public evaluate(data: WeatherData): PathValue[] {
+    this.pendingState.clear();
+    this.pendingMessage.clear();
+    this.pendingPrimed = false;
+    // Fresh data has arrived, so any staleness marker on the active bands is
+    // superseded by this evaluation and a later stale edge should re-mark.
+    this.staleMarked = false;
+
     if (!this.config.enabled) {
       return this.primed ? [] : this.clearAll();
     }
@@ -410,8 +450,66 @@ export class WeatherNotifier {
       });
     }
 
-    this.primed = true;
+    this.pendingPrimed = true;
     return transitions;
+  }
+
+  /**
+   * Record the transitions from the last {@link evaluate} or {@link clearAll}
+   * as published. Call this only after the caller has handed the delta to the
+   * server; skipping it leaves the notifier believing nothing changed, so the
+   * next evaluation re-derives and re-emits the same edge.
+   */
+  public commit(): void {
+    for (const [path, state] of this.pendingState) {
+      this.lastState.set(path, state);
+    }
+    for (const [path, message] of this.pendingMessage) {
+      this.lastMessage.set(path, message);
+    }
+    this.pendingState.clear();
+    this.pendingMessage.clear();
+    if (this.pendingPrimed) {
+      this.primed = true;
+      this.pendingPrimed = false;
+    }
+  }
+
+  /**
+   * Re-emit every active band with a staleness marker appended to its message,
+   * once per stale episode. Returns an empty array when no band is active or
+   * when the marker has already been applied since the last fresh evaluation.
+   *
+   * Emission stops while data is stale, which is the safe direction (a
+   * provider outage must not silently clear an active warning), but it leaves
+   * the latched notification on the bus with nothing in the notification
+   * itself saying its driving observation is now hours old. A consumer
+   * subscribed to `notifications.environment.*` could not tell a live gale
+   * from one last confirmed 90 minutes ago; the marker closes that.
+   */
+  public markStale(ageLabel: string): PathValue[] {
+    if (this.staleMarked) return [];
+    const suffix = ` (${ageLabel})`;
+    const out: PathValue[] = [];
+    for (const [path, state] of this.lastState) {
+      if (state === 'normal') continue;
+      const base = capForChartplotter(
+        this.lastMessage.get(path) ?? '',
+        MAX_MESSAGE_LENGTH - suffix.length
+      );
+      out.push(
+        pv(path, {
+          state,
+          method: methodsFor(state),
+          message: `${base}${suffix}`,
+          timestamp: new Date().toISOString(),
+        } satisfies NotificationValue)
+      );
+    }
+    // Latch even with nothing to emit, so a stale episode with no active band
+    // does not re-scan `lastState` on every emission tick.
+    this.staleMarked = true;
+    return out;
   }
 
   /**
@@ -422,7 +520,12 @@ export class WeatherNotifier {
    */
   public reset(): void {
     this.lastState.clear();
+    this.lastMessage.clear();
+    this.pendingState.clear();
+    this.pendingMessage.clear();
     this.primed = false;
+    this.pendingPrimed = false;
+    this.staleMarked = false;
   }
 
   /**
@@ -433,7 +536,8 @@ export class WeatherNotifier {
   public clearAll(): PathValue[] {
     const transitions: PathValue[] = [];
     for (const path of ALL_NOTIFICATION_PATHS) {
-      this.lastState.set(path, 'normal');
+      this.pendingState.set(path, 'normal');
+      this.pendingMessage.set(path, '');
       transitions.push(
         pv(path, {
           state: 'normal',
@@ -443,7 +547,7 @@ export class WeatherNotifier {
         } satisfies NotificationValue)
       );
     }
-    this.primed = true;
+    this.pendingPrimed = true;
     return transitions;
   }
 
@@ -617,16 +721,18 @@ export class WeatherNotifier {
       // Suppress the leading `normal`: the band has never been active since
       // priming, so the bus has nothing to clear. Record the state so a later
       // transition to an active band correctly emits the entry delta.
-      this.lastState.set(path, desired);
+      this.pendingState.set(path, desired);
       return;
     }
     if (prior === desired) return;
 
-    this.lastState.set(path, desired);
+    this.pendingState.set(path, desired);
+    const capped = capForChartplotter(message());
+    this.pendingMessage.set(path, capped);
     const value: NotificationValue = {
       state: desired,
       method: methodsFor(desired),
-      message: capForChartplotter(message()),
+      message: capped,
       timestamp: new Date().toISOString(),
     };
     out.push(pv(path, value));
