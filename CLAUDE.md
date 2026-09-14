@@ -237,7 +237,7 @@ Test configuration in `vitest.config.ts` includes path aliases (`@/`, `@/service
 - esbuild 0.28+ for bundling (current runtime bundle ~172 KB)
 - Biome 2.5 for code linting and formatting, plus Markdown linting and cspell
 - Vitest 5 for unit and integration testing, with Stryker mutation testing as an opt-in check. Its `engines.node` is `^22.12.0 || ^24.0.0 || >=26.0.0`, so it cannot run on the Node 20.18 runtime floor; see the runtime-floor lane entry below for why that is not a reason to hold it. Its `@types/node` peer range of `^22.0.0 || >=24.0.0` is reconciled by an `overrides` block pinning that peer to the root `@types/node`, which stays in major 20 to match `engines.node`.
-- React 19.2, `signalk-nearlcrews-ui` 0.11.1, webpack 5, esbuild-loader 4.5,
+- React 19.3, `signalk-nearlcrews-ui` 0.11.1, webpack 5, esbuild-loader 4.5,
   Vite 8, and Playwright 1.63 for the federated panel
 - Repository-owned opt-in Git hooks under `.githooks/`, enabled with `npm run hooks`
 

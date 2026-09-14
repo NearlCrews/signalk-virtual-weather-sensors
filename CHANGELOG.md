@@ -7,41 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Changed
+<a id="v1140"></a>
 
-- Internal cleanup with no change to emitted data, notifications, or
-  configuration: provider names, coordinate rounding, external-text length
-  caps, and the AccuWeather cadence-cost wording each now have one definition
-  that every surface reads, the merged hazard policy table is what the merge
-  engine dispatches on rather than a parallel description of it, the fetch
-  loop's health is one value instead of four independent flags, and the
-  notifier hands its caller the recorder for the transitions it just returned
-  instead of exposing a separate commit step.
-- A locked row in the merge-provider list now uses the shared library's
-  `ariaDisabled` instead of the native `disabled` attribute. The box stays
-  focusable and in the tab order, so unchecking the second-to-last provider no
-  longer drops keyboard focus onto the page body, and the lock reason stays
-  reachable as the row's description.
-- Met.no's conditional-GET bookkeeping moved into the shared TTL cache, which
-  can now retain an expired value so the fetch that replaces it can revalidate
-  against it. One cache with one expiry and eviction policy replaces the two
-  that previously aged entries differently.
+## [1.14.0] - 2026-09-14
 
-### Fixed
-
-- The panel's status endpoint reports the redacted banner text for a stopped
-  plugin, matching what the admin UI banner shows.
-
-<a id="v1136"></a>
-
-## [1.13.6] - 2026-09-14
-
-This patch release keeps the AccuWeather API key out of request URLs, brings
-the plugin's AccuWeather call count inside the quota it documents, corrects
-several provider readings and the plugin's own status reporting, makes merged
-mode conservative about the values a warning reads, and rebuilds the
-configuration panel on the shared marine UI 0.11.1. No configuration migration
-is required.
+This release keeps the AccuWeather API key out of request URLs, brings the
+plugin's AccuWeather call count inside the quota it documents, corrects several
+provider readings and the plugin's own status reporting, makes merged mode
+conservative about the values a warning reads, and rebuilds the configuration
+panel on the shared marine UI 0.11.1. The panel renames its theme choices,
+blocks Save while a cadence value is invalid, and reports plugin status in a
+titled section, so this release is a minor one rather than a patch. No
+configuration migration is required.
 
 ### Fixed
 
@@ -166,6 +143,8 @@ is required.
   that browsers ignore on password fields.
 - The AccuWeather developer link in the API key help tells assistive
   technology that it opens in a new tab.
+- The panel's status endpoint reports the redacted banner text for a stopped
+  plugin, matching what the admin UI banner shows.
 
 ### Changed
 
@@ -250,9 +229,13 @@ is required.
   confirm it constructs and answers its configuration schema on that exact
   Node. The plugin bundle budget is 45 kB, the headroom the bundle needs rather
   than four times it.
-- Development dependencies moved to their current releases: Biome 2.5.12,
-  Playwright 1.63, webpack 5.110, webpack-cli 7.2.3, cspell 10.2.2, knip 6.34,
-  tsx 4.23.13, the React DOM types 19.2.7, and the Vite React plugin 6.1.1.
+- Development dependencies moved to their current releases: Biome 2.5.13,
+  Playwright 1.63, webpack 5.111, webpack-cli 7.2.3, cspell 10.3.1, knip 6.35,
+  size-limit 13.1.1, tsx 4.23.13, React and React DOM 19.3.0, the React DOM
+  types 19.2.7, the Signal K server API types 2.32.0, and the Vite React
+  plugin 6.1.1. The status hook states its single-flight guard as an explicit
+  null check, which the newer promise-misuse lint rule asks for and which
+  behaves the same at runtime.
 - Vitest 5 replaces Vitest 4, alongside its coverage and UI packages. Vitest 5
   requires Node 22.12 or newer, which the plugin's advertised Node 20.18
   runtime floor does not meet, so the two are now separated. The runtime floor
@@ -262,6 +245,23 @@ is required.
   or newer, so no supported installation runs this plugin on Node 20. The Node
   type definitions stay on major 20 to match the runtime floor, and Vitest's
   requirement for newer ones is redirected to that same copy.
+- A locked row in the merge-provider list now uses the shared library's
+  `ariaDisabled` instead of the native `disabled` attribute. The box stays
+  focusable and in the tab order, so unchecking the second-to-last provider no
+  longer drops keyboard focus onto the page body, and the lock reason stays
+  reachable as the row's description.
+- Met.no's conditional-GET bookkeeping moved into the shared TTL cache, which
+  can now retain an expired value so the fetch that replaces it can revalidate
+  against it. One cache with one expiry and eviction policy replaces the two
+  that previously aged entries differently.
+- Internal cleanup with no change to emitted data, notifications, or
+  configuration: provider names, coordinate rounding, external-text length
+  caps, and the AccuWeather cadence-cost wording each now have one definition
+  that every surface reads, the merged hazard policy table is what the merge
+  engine dispatches on rather than a parallel description of it, the fetch
+  loop's health is one value instead of four independent flags, and the
+  notifier hands its caller the recorder for the transitions it just returned
+  instead of exposing a separate commit step.
 
 <a id="v1135"></a>
 
@@ -2097,7 +2097,7 @@ First production release of signalk-virtual-weather-sensors: a comprehensive wea
 
 **For technical support and feature requests, please visit the GitHub repository.**
 
-[Unreleased]: https://github.com/NearlCrews/signalk-virtual-weather-sensors/compare/v1.13.6...HEAD
-[1.13.6]: https://github.com/NearlCrews/signalk-virtual-weather-sensors/compare/v1.13.5...v1.13.6
+[Unreleased]: https://github.com/NearlCrews/signalk-virtual-weather-sensors/compare/v1.14.0...HEAD
+[1.14.0]: https://github.com/NearlCrews/signalk-virtual-weather-sensors/compare/v1.13.5...v1.14.0
 [1.13.5]: https://github.com/NearlCrews/signalk-virtual-weather-sensors/compare/v1.13.4...v1.13.5
 [1.13.4]: https://github.com/NearlCrews/signalk-virtual-weather-sensors/compare/v1.13.3...v1.13.4

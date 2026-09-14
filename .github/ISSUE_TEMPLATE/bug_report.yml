@@ -64,7 +64,7 @@ body:
     attributes:
       label: Plugin Version
       description: Which version of signalk-virtual-weather-sensors are you using?
-      placeholder: "1.13.6"
+      placeholder: "1.14.0"
     validations:
       required: true
 

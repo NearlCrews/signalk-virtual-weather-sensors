@@ -18,9 +18,9 @@ service; AccuWeather is an optional source for users who have an API key.
 > for safety-of-life decisions: always cross-check official forecasts and
 > warnings against your primary instruments.
 
-## What's new in 1.13.6
+## What's new in 1.14.0
 
-Version 1.13.6 keeps your AccuWeather API key out of request URLs, makes the
+Version 1.14.0 keeps your AccuWeather API key out of request URLs, makes the
 documented AccuWeather call budget true, corrects several readings and the
 status the plugin reports about itself, makes merged mode conservative about
 the values a warning reads, and rebuilds the configuration panel on the shared
@@ -65,14 +65,16 @@ marine UI 0.11.1. Emitted paths and saved configuration fields are unchanged.
   than carried by color alone, every field error leads with a glyph and a
   spoken tone word, the API key test result and the merge-order and freshness
   announcements each speak once instead of twice, and the concealed key field
-  asks the browser not to offer or save the key.
+  asks the browser not to offer or save the key. A locked merge-provider row
+  stays focusable, so unchecking the second-to-last source no longer drops
+  keyboard focus onto the page.
 - **Shared marine UI 0.11.1.** The panel moves onto the library's panel shell,
   save bar, number field, and status section. Save is blocked, naming the
   section, while a cadence value is invalid, Save and Discard keep their place
   in the tab order while it is, a refused save is reported in its own banner,
   and a panel error now offers Try again instead of a blank card.
 
-See the [v1.13.6 changelog entry](https://github.com/NearlCrews/signalk-virtual-weather-sensors/blob/main/CHANGELOG.md#v1136), or the
+See the [v1.14.0 changelog entry](https://github.com/NearlCrews/signalk-virtual-weather-sensors/blob/main/CHANGELOG.md#v1140), or the
 [full changelog](https://github.com/NearlCrews/signalk-virtual-weather-sensors/blob/main/CHANGELOG.md).
 
 ## What it does
