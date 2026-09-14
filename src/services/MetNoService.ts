@@ -9,12 +9,13 @@
  *
  * Met.no requires an identifying User-Agent containing a contact URL or email
  * address; the service uses the plugin package name, version, and GitHub URL.
- * Coordinates are formatted with toFixed(4) because Met.no returns a hard 403
- * on five or more decimal places.
+ * Coordinates are formatted at `COORD_PARAM_DECIMALS` places because Met.no
+ * returns a hard 403 on five or more decimal places.
  */
 
 import type { WeatherData as SKWeatherData } from '@signalk/server-api';
-import { PLUGIN } from '../constants/index.js';
+import { COORD_CACHE_CELL_DECIMALS, PLUGIN } from '../constants/index.js';
+import { WEATHER_PROVIDER_SHORT_LABELS } from '../constants/notifications-shared.js';
 import {
   mapMetNoToDailyForecasts,
   mapMetNoToHourlyForecasts,
@@ -33,6 +34,7 @@ import {
   DEFAULT_REQUEST_TIMEOUT_MS,
   fetchJsonConditional,
   normalizeBaseUrl,
+  setCoordParams,
 } from '../utils/http.js';
 import { assertValidCoordinates } from '../utils/validation.js';
 import { CoalescingTtlCache } from './cache/CoalescingTtlCache.js';
@@ -58,33 +60,29 @@ const DAILY_FORECAST_DAYS = 9;
 const DOCUMENT_MEMO_TTL_MS = 10 * 60 * 1000;
 
 /**
- * Decimal places for the memo key, deliberately coarser than the four decimals
- * the REQUEST uses. Four decimals is about 11 m, so a vessel underway produced
- * a fresh key on every fetch and never hit the memo; two decimals is about
- * 1.1 km, comfortably inside a Met.no model grid cell, so a moving vessel keeps
- * reusing one document instead of refetching it for every metre travelled.
+ * How long an expired document is retained so the next fetch can revalidate
+ * against it. The memo TTL is ten minutes but the plugin's own fetch cadence
+ * runs from five minutes to a day, so a document dropped at its TTL would leave
+ * nothing to send `If-Modified-Since` against and every fetch would pay for a
+ * full body. A day is past any cadence the schema allows.
  */
-const MEMO_KEY_DECIMALS = 2;
+const DOCUMENT_RETENTION_MS = 24 * 60 * 60 * 1000;
 
 /**
- * The document last received for a memo key, with its cache validators.
- *
- * Retained separately from the TTL memo because the memo PRUNES an entry the
- * moment it expires, which is exactly the moment a revalidation needs the old
- * body to fall back on. Bounded by `MAX_RETAINED_DOCUMENTS`.
+ * Retained-document cap. The plugin fetches for one vessel position, and the
+ * v2 adapter caps its own concurrency at 4, so this is generous; the bound
+ * exists so a consumer polling many positions cannot grow the cache without
+ * end, and a /complete document is far larger than the cache's default cap
+ * assumes.
  */
+const MAX_RETAINED_DOCUMENTS = 16;
+
+/** A received document with the validators that let the next fetch revalidate it. */
 interface DocumentCacheMeta {
   readonly document: MetNoLocationforecastResponse;
   readonly lastModified: string | undefined;
   readonly expiresMs: number | undefined;
 }
-
-/**
- * Retained-document cap. The plugin fetches for one vessel position, and the
- * v2 adapter caps its own concurrency at 4, so this is generous; the bound
- * exists so a consumer polling many positions cannot grow the map without end.
- */
-const MAX_RETAINED_DOCUMENTS = 16;
 
 export interface MetNoOptions {
   /** Override the Met.no host for tests or a self-hosted proxy. */
@@ -96,7 +94,7 @@ export interface MetNoOptions {
 
 export class MetNoService implements ForecastCapableProvider {
   /** Provider name for logs and the v2 registration label. */
-  public readonly name = 'Met.no';
+  public readonly name = WEATHER_PROVIDER_SHORT_LABELS['met-no'];
   /** `$source` stamped on Met.no-sourced deltas, distinct from Open-Meteo and AccuWeather. */
   public readonly sourceRef = 'met-no';
   public readonly maxObservationAgeMs = 3 * 60 * 60 * 1000;
@@ -111,9 +109,7 @@ export class MetNoService implements ForecastCapableProvider {
   private readonly requestTimeoutMs: number;
   /** Cumulative attempted-fetch count (incremented before each request), for the status banner. */
   private requestCount = 0;
-  private readonly documentCache: CoalescingTtlCache<MetNoLocationforecastResponse>;
-  /** Retained documents and their cache validators, capped by `retainDocument`. */
-  private readonly documentMeta = new Map<string, DocumentCacheMeta>();
+  private readonly documentCache: CoalescingTtlCache<DocumentCacheMeta>;
   private readonly signal: AbortSignal | undefined;
 
   constructor(logger: Logger = () => {}, options?: MetNoOptions) {
@@ -124,7 +120,9 @@ export class MetNoService implements ForecastCapableProvider {
     this.documentCache = new CoalescingTtlCache(
       DOCUMENT_MEMO_TTL_MS,
       DOCUMENT_MEMO_TTL_MS,
-      this.logger
+      this.logger,
+      Date.now(),
+      { staleRetentionMs: DOCUMENT_RETENTION_MS, maxEntries: MAX_RETAINED_DOCUMENTS }
     );
 
     this.logger('info', 'MetNoService initialized', { baseUrl: this.baseUrl });
@@ -179,9 +177,12 @@ export class MetNoService implements ForecastCapableProvider {
     context: string
   ): Promise<MetNoLocationforecastResponse> {
     assertValidCoordinates(location, context);
-    const key = toCoordKey(location, MEMO_KEY_DECIMALS);
+    const key = toCoordKey(location, COORD_CACHE_CELL_DECIMALS);
     try {
-      return await this.documentCache.get(key, () => this.refreshDocument(key, location));
+      const entry = await this.documentCache.get(key, (held) =>
+        this.refreshDocument(key, location, held)
+      );
+      return entry.document;
     } catch (error) {
       if (isAbortError(error)) throw error;
       this.logger('error', 'Failed to fetch Met.no forecast', {
@@ -201,12 +202,10 @@ export class MetNoService implements ForecastCapableProvider {
    */
   private async refreshDocument(
     key: string,
-    location: GeoLocation
-  ): Promise<MetNoLocationforecastResponse> {
-    const meta = this.documentMeta.get(key);
-    const held = meta?.document;
-
-    if (held !== undefined && meta?.expiresMs !== undefined && meta.expiresMs > Date.now()) {
+    location: GeoLocation,
+    held: DocumentCacheMeta | undefined
+  ): Promise<DocumentCacheMeta> {
+    if (held !== undefined && held.expiresMs !== undefined && held.expiresMs > Date.now()) {
       this.logger('debug', 'Met.no document still within its Expires window', { key });
       return held;
     }
@@ -221,22 +220,24 @@ export class MetNoService implements ForecastCapableProvider {
           signal: this.signal,
           // Only send the validator when there is something to revalidate:
           // a 304 with nothing held would leave the caller without a document.
-          ...(held !== undefined &&
-            meta?.lastModified !== undefined && { ifModifiedSince: meta.lastModified }),
+          ...(held?.lastModified !== undefined && { ifModifiedSince: held.lastModified }),
         }
       );
-      // `held` is defined whenever a validator was sent, which is the only way
-      // a 304 can arrive, so the retained document always has a body to keep.
-      const document = result.body ?? (held as MetNoLocationforecastResponse);
-      this.retainDocument(key, {
-        document,
+      if (result.body === null) {
+        // `held` is defined whenever a validator was sent, which is the only
+        // way a 304 can arrive, so there is always a body to keep.
+        this.logger('debug', 'Met.no document unchanged (304)', { key });
+        return {
+          document: (held as DocumentCacheMeta).document,
+          lastModified: result.lastModified,
+          expiresMs: result.expiresMs,
+        };
+      }
+      return {
+        document: result.body,
         lastModified: result.lastModified,
         expiresMs: result.expiresMs,
-      });
-      if (result.body === null) {
-        this.logger('debug', 'Met.no document unchanged (304)', { key });
-      }
-      return document;
+      };
     } catch (error) {
       if (isAbortError(error)) this.requestCount--;
       throw error;
@@ -244,32 +245,13 @@ export class MetNoService implements ForecastCapableProvider {
   }
 
   /**
-   * Store the latest document for a key, evicting the oldest retained entry
-   * once the map is over its cap. Map iteration order is insertion order, and
-   * re-setting an existing key does not move it, so deleting the first key
-   * evicts the least recently ADDED entry.
-   * @private
-   */
-  private retainDocument(key: string, meta: DocumentCacheMeta): void {
-    this.documentMeta.delete(key);
-    this.documentMeta.set(key, meta);
-    while (this.documentMeta.size > MAX_RETAINED_DOCUMENTS) {
-      const oldest = this.documentMeta.keys().next();
-      if (oldest.done === true) break;
-      this.documentMeta.delete(oldest.value);
-    }
-  }
-
-  /**
-   * Build the Locationforecast /complete request URL. Coordinates use
-   * toFixed(4): at most 4 decimals, which is the hard 403 trigger in the Met.no
-   * terms of service. The memo key is rounded further; see MEMO_KEY_DECIMALS.
+   * Build the Locationforecast /complete request URL. Coordinates carry
+   * `COORD_PARAM_DECIMALS` places, at or under the five-decimal hard 403
+   * trigger in the Met.no terms of service. The memo key is rounded further;
+   * see `COORD_CACHE_CELL_DECIMALS`.
    */
   private buildUrl(location: GeoLocation): URL {
-    const url = new URL(`${this.baseUrl}${COMPLETE_ENDPOINT}`);
-    url.searchParams.set('lat', location.latitude.toFixed(4));
-    url.searchParams.set('lon', location.longitude.toFixed(4));
-    return url;
+    return setCoordParams(new URL(`${this.baseUrl}${COMPLETE_ENDPOINT}`), location, 'lat', 'lon');
   }
 
   /** Cumulative request count, for the status banner. */
