@@ -72,23 +72,32 @@ describe('mergeWeatherData', () => {
     expect(m.description).toBe('Clear');
     expect(m.precipitationType).toBe('Rain');
   });
-  it('recomputes heatStressIndex from the SELECTED WBGT, not a re-estimate of the merged base', () => {
-    // The primary WBGT (305) is chosen; heatStressIndex must come from it via
-    // calculateHeatStressIndex, NOT from estimateWetBulbGlobeTemperature(mergedTemp, mergedHumidity).
+  it('publishes the WBGT of the highest-priority survivor that supplies one', () => {
+    // A measured globe temperature and a shade estimate are different
+    // quantities, so the published WBGT is priority-present, not a mean.
     const m = mergeWeatherData([
       base({ wetBulbGlobeTemperature: 305 }),
-      base({ wetBulbGlobeTemperature: 305 }),
+      base({ wetBulbGlobeTemperature: 300 }),
     ]);
-    expect(m.heatStressIndex).toBe(calculateHeatStressIndex(305));
+    expect(m.wetBulbGlobeTemperature).toBe(305);
   });
-  it('recomputes derived fields from the merged base, never averaging them', () => {
+  it('takes the highest survivor heat-stress index, not the primary one', () => {
+    // Priority order chose the primary's WBGT, but the heat band is driven by
+    // the index, and a sibling reporting more heat stress must not be dropped.
+    const hot = base({ wetBulbGlobeTemperature: 306, heatStressIndex: 4 });
+    const mild = base({ wetBulbGlobeTemperature: 300, heatStressIndex: 1 });
+    expect(mergeWeatherData([mild, hot]).heatStressIndex).toBe(4);
+    expect(mergeWeatherData([mild, hot]).wetBulbGlobeTemperature).toBe(300);
+    expect(calculateHeatStressIndex(306)).toBe(4);
+  });
+  it('recomputes heat index and air density from the merged base, never averaging them', () => {
     const m = mergeWeatherData([
-      base({ temperature: 290, windSpeed: 5, windChill: 999, beaufortScale: 0 }),
-      base({ temperature: 300, windSpeed: 15, windChill: 999, beaufortScale: 0 }),
+      base({ temperature: 290, windSpeed: 5, heatIndex: 999 }),
+      base({ temperature: 300, windSpeed: 15, heatIndex: 999 }),
     ]);
-    // windChill and beaufort are recomputed from the merged base (temp 295, wind 10), not the bogus 999/0.
-    expect(m.windChill).not.toBe(999);
-    expect(m.beaufortScale).toBeGreaterThan(0);
+    expect(m.heatIndex).not.toBe(999);
+    expect(m.absoluteHumidity).toBeGreaterThan(0);
+    expect(m.airDensityEnhanced).toBeGreaterThan(0);
   });
   it('recomputes the gust factor via calculateGustFactor from the merged gust and sustained', () => {
     const m = mergeWeatherData([
@@ -157,5 +166,37 @@ describe('mergeWeatherData', () => {
       visibilityObstruction: 'Fog',
     };
     expect(Object.keys(FIELD_MERGE_KINDS).sort()).toEqual(Object.keys(full).sort());
+  });
+});
+
+describe('mergeWeatherData: conservative hazard drivers', () => {
+  it('keeps the gale band a second provider would have averaged away', () => {
+    // AccuWeather at 18.0 m/s is Bf8, Open-Meteo at 15.0 m/s is Bf7. The mean
+    // of 16.5 m/s is Bf7, so averaging the FORCE cancelled a gale warning that
+    // one provider raised on its own.
+    const accu = base({ windSpeed: 18, beaufortScale: 8 });
+    const openMeteo = base({ windSpeed: 15, beaufortScale: 7 });
+    const merged = mergeWeatherData([accu, openMeteo]);
+
+    expect(merged.beaufortScale).toBe(8);
+    // The published measurement stays the blend: only the hazard category is
+    // taken conservatively.
+    expect(merged.windSpeed).toBeCloseTo(16.5, 5);
+  });
+
+  it('keeps the coldest survivor wind chill', () => {
+    const cold = base({ temperature: 248.15, windSpeed: 20, windChill: 228.54 });
+    const mild = base({ temperature: 268.15, windSpeed: 2, windChill: 268.0 });
+    expect(mergeWeatherData([mild, cold]).windChill).toBeCloseTo(228.54, 5);
+  });
+
+  it('declares every hazard driver conservative in FIELD_MERGE_KINDS', () => {
+    expect(FIELD_MERGE_KINDS.beaufortScale).toBe('hazard-max');
+    expect(FIELD_MERGE_KINDS.heatStressIndex).toBe('hazard-max');
+    expect(FIELD_MERGE_KINDS.windChill).toBe('hazard-min');
+    expect(FIELD_MERGE_KINDS.windGustSpeed).toBe('hazard-max');
+    expect(FIELD_MERGE_KINDS.visibility).toBe('hazard-min');
+    expect(FIELD_MERGE_KINDS.precipitationLastHour).toBe('hazard-max');
+    expect(FIELD_MERGE_KINDS.severeCondition).toBe('hazard-max');
   });
 });

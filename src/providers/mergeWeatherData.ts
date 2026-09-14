@@ -16,15 +16,32 @@
  *                           oldest surviving child's)
  *   derived               - recomputed from the merged base through shared helpers
  *   excluded              - omitted (apparent-wind fields added downstream in WeatherService)
+ *
+ * Hazard drivers vs published measurements:
+ *   Every value a notification band reads is taken conservatively from the
+ *   survivors, never from the mean, because averaging two providers can cancel
+ *   a band that either one alone would raise: 18.0 m/s (Bf8, gale) blended with
+ *   15.0 m/s (Bf7) yields 16.5 m/s (Bf7) and no gale warning. The conservative
+ *   drivers are `beaufortScale` (highest survivor), `windChill` (lowest
+ *   survivor), `heatStressIndex` (highest survivor), `windGustSpeed`
+ *   (hazard-max), `visibility` (hazard-min), `precipitationLastHour`
+ *   (hazard-max), `severeCondition` (highest severity), and `pressureTendency`
+ *   (falling wins). Each is a value some contributing provider actually
+ *   reported or derived from its own coherent reading set, so no synthetic
+ *   number reaches an alarm.
+ *
+ *   The published measurements stay averaged: `windSpeed`, `temperature`,
+ *   `pressure`, `humidity`, and `dewPoint` are means, and
+ *   `wetBulbGlobeTemperature` stays priority-present so a measured globe
+ *   temperature is preferred over a shade estimate. A conservative category can
+ *   therefore sit beside a lower merged measurement (Bf8 next to 16.5 m/s);
+ *   that is deliberate, and it is the same trade `windGustSpeed: hazard-max`
+ *   beside `windSpeed: mean` already makes.
  */
 import { deriveBaseWeatherFields } from '../calculators/deriveWeatherFields.js';
 import type { SevereCondition, WeatherData } from '../types/index.js';
 import type { NotificationState } from '../types/plugin.js';
-import {
-  calculateGustFactor,
-  calculateHeatStressIndex,
-  normalizeAngle0To2Pi,
-} from '../utils/conversions.js';
+import { calculateGustFactor, normalizeAngle0To2Pi } from '../utils/conversions.js';
 
 // ---- Public types ----
 
@@ -55,7 +72,10 @@ export const FIELD_MERGE_KINDS: Readonly<Record<keyof WeatherData, MergeKind>> =
   windSpeed: 'mean',
   windDirection: 'circular',
   dewPoint: 'mean',
-  windChill: 'derived',
+  // Cold-exposure band driver: the coldest survivor wins rather than a value
+  // recomputed from the merged base, so a second provider reporting milder wind
+  // cannot cancel a cold-exposure alarm the first one raises.
+  windChill: 'hazard-min',
   heatIndex: 'derived',
   // Taken from the primary here, then replaced by MergingWeatherProvider with
   // the oldest surviving child's timestamp: a blend is only as fresh as its
@@ -97,10 +117,14 @@ export const FIELD_MERGE_KINDS: Readonly<Record<keyof WeatherData, MergeKind>> =
   weatherIcon: 'categorical',
   severeCondition: 'hazard-max',
   // Derived synthetics
-  beaufortScale: 'derived',
+  // Wind-band driver: the highest survivor's own Beaufort force, not the force
+  // of the averaged wind speed. See the hazard-driver note in the file header.
+  beaufortScale: 'hazard-max',
   airDensityEnhanced: 'derived',
   absoluteHumidity: 'derived',
-  heatStressIndex: 'derived',
+  // Heat-band driver: the highest survivor's own index, so a sibling reporting
+  // more heat stress than the primary is not discarded by priority order.
+  heatStressIndex: 'hazard-max',
   // Condition detail
   pressureTendency: 'conservative-tendency',
   precipitationType: 'categorical',
@@ -275,12 +299,15 @@ function hazardAndCategoricalOptionals(
   const tendency = mergeTendency(collectNums(dataList, 'pressureTendency'));
   if (tendency !== undefined) opt.pressureTendency = tendency;
 
+  // The published WBGT stays priority-present so a measured globe temperature
+  // wins over a shade estimate, but the band driver is the highest index any
+  // survivor derived from its own WBGT: a sibling reporting more heat stress
+  // than the primary must not be discarded by priority order.
   const wbgt = firstPresent(dataList, 'wetBulbGlobeTemperature');
-  if (wbgt !== undefined) {
-    opt.wetBulbGlobeTemperature = wbgt;
-    // heatStressIndex from the SELECTED WBGT, not a re-estimate from merged base.
-    opt.heatStressIndex = calculateHeatStressIndex(wbgt);
-  }
+  if (wbgt !== undefined) opt.wetBulbGlobeTemperature = wbgt;
+
+  const heatIndexVals = collectNums(dataList, 'heatStressIndex');
+  if (heatIndexVals.length > 0) opt.heatStressIndex = hazardMax(heatIndexVals);
 
   const severe = maxSeverity(dataList);
   if (severe !== undefined) opt.severeCondition = severe;
@@ -339,6 +366,17 @@ export function mergeWeatherData(dataList: ReadonlyArray<WeatherData>): WeatherD
     mergedWindSpeed
   );
 
+  // CONSERVATIVE HAZARD DRIVERS: taken from the survivors' own values rather
+  // than recomputed from the merged base, so a milder sibling cannot cancel a
+  // band the other provider raises. The fallbacks never fire today (both fields
+  // come from deriveBaseWeatherFields on every provider path) and exist so a
+  // future provider that omits them still yields a complete WeatherData.
+  const windChills = collectNums(dataList, 'windChill');
+  const mergedWindChill = windChills.length > 0 ? hazardMin(windChills) : derived.windChill;
+  const beaufortForces = collectNums(dataList, 'beaufortScale');
+  const mergedBeaufortScale =
+    beaufortForces.length > 0 ? hazardMax(beaufortForces) : derived.beaufortScale;
+
   // Optional fields by policy kind
   const optMeans = meanOptionals(dataList);
   const optHazard = hazardAndCategoricalOptionals(dataList, mergedWindSpeed);
@@ -353,10 +391,11 @@ export function mergeWeatherData(dataList: ReadonlyArray<WeatherData>): WeatherD
     windSpeed: mergedWindSpeed,
     windDirection: mergedWindDirection,
     dewPoint: mergedDewPoint,
+    // Conservative hazard drivers (survivor extremes, never averaged)
+    windChill: mergedWindChill,
+    beaufortScale: mergedBeaufortScale,
     // Derived base (recomputed, never averaged)
-    windChill: derived.windChill,
     heatIndex: derived.heatIndex,
-    beaufortScale: derived.beaufortScale,
     absoluteHumidity: derived.absoluteHumidity,
     airDensityEnhanced: derived.airDensityEnhanced,
     // Primary timestamp

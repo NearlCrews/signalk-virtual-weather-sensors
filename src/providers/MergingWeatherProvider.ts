@@ -195,7 +195,27 @@ export class MergingWeatherProvider implements ForecastCapableProvider {
     return { size: this.sumAcrossChildren((c) => c.getCacheStats().size) };
   }
 
+  /**
+   * True only when EVERY child is blocked, because one blocked child still
+   * leaves a usable blend. Returning a flat `false` made
+   * `WeatherService.isQuotaExhausted()` permanently false in merged mode, so
+   * the quota banner and the quota pause were both unreachable no matter how
+   * many children had stopped contributing.
+   */
   isCurrentWeatherFetchBlocked(): boolean {
-    return false;
+    return this.children.every((child) => child.isCurrentWeatherFetchBlocked?.() ?? false);
+  }
+
+  /**
+   * Names of the children that are currently quota-paused, in priority order.
+   * A blend that has quietly dropped from three sources to two is otherwise
+   * invisible: the child's `beforeRequest` hook throws, `collectSurvivors`
+   * logs a `warn`, and the blend continues on the remaining siblings with a
+   * green banner. The status line names them so the degradation is reported.
+   */
+  getBlockedChildNames(): string[] {
+    return this.children
+      .filter((child) => child.isCurrentWeatherFetchBlocked?.() ?? false)
+      .map((child) => child.name);
   }
 }

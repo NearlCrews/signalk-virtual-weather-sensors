@@ -51,6 +51,15 @@ export interface CurrentWeatherProvider {
 
   /** True only when this provider cannot make a current request right now. */
   isCurrentWeatherFetchBlocked?(): boolean;
+
+  /**
+   * Names of the children that cannot make a current request right now, for a
+   * provider that fans out to several. Implemented only by the merging
+   * provider; a single provider reports its whole state through
+   * `isCurrentWeatherFetchBlocked`. Lets the status banner say which source
+   * dropped out of a blend that is still producing values.
+   */
+  getBlockedChildNames?(): string[];
 }
 
 /** Forecast window a provider declares about itself, read by the v2 adapter. */
