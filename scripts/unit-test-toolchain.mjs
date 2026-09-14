@@ -18,8 +18,6 @@
 
 /** Lowest Node 22 release Vitest 5 supports. */
 const NODE_22_FLOOR = [22, 12, 0];
-/** Lowest Node 24 release Vitest 5 supports. */
-const NODE_24_FLOOR = [24, 0, 0];
 /**
  * Lowest major that qualifies outright. Vitest's range names 22, 24, and 26
  * and later, so the odd majors 23 and 25 fall in its gaps and never qualify.
@@ -46,7 +44,9 @@ export function supportsUnitTestToolchain(version) {
   if (parts.length < 3 || parts.some((part) => !Number.isInteger(part))) return false;
   const [major] = parts;
   if (major === 22) return atLeast(parts, NODE_22_FLOOR);
-  if (major === 24) return atLeast(parts, NODE_24_FLOOR);
+  // Vitest's `^24.0.0` admits the whole major, so no Node 24 release is below
+  // a floor; only the 22 range has one.
+  if (major === 24) return true;
   return major >= OPEN_ENDED_MAJOR_FLOOR;
 }
 

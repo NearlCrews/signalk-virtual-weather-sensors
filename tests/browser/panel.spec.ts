@@ -4,8 +4,14 @@ import packageJson from '../../package.json' with { type: 'json' };
 
 const EXPECTED_UI_VERSION = packageJson.devDependencies['signalk-nearlcrews-ui'];
 
+/** The Save button. Exact, so it can never resolve to a sibling whose name starts with Save. */
+const saveButton = (page: Page) => page.getByRole('button', { name: 'Save', exact: true });
+
+/** The AccuWeather key input, named exactly for the same reason. */
+const apiKeyField = (page: Page) => page.getByRole('textbox', { name: 'API key', exact: true });
+
 async function expectSaveBlockedAt(page: Page, fieldName: string): Promise<void> {
-  await page.getByRole('button', { name: 'Save', exact: true }).click();
+  await saveButton(page).click();
   const field = page.getByRole('textbox', { name: fieldName, exact: true });
   await expect(field).toBeFocused();
   await expect(field).toHaveAttribute('aria-invalid', 'true');
@@ -33,9 +39,9 @@ test('loads the production remote and never saves a stale number', async ({ page
   // The shared save bar blocks Save while a field is invalid and names the
   // section holding the bad value, since an invalid draft never commits and
   // so never dirties the form on its own.
-  const saveButton = page.getByRole('button', { name: 'Save', exact: true });
+  const save = saveButton(page);
   const actionBar = page.locator('[data-panel-action-bar]');
-  await expect(saveButton).toBeDisabled();
+  await expect(save).toBeDisabled();
   await expect(actionBar).toContainText(
     'Correct the invalid value under Fetch and emission cadence'
   );
@@ -43,7 +49,7 @@ test('loads the production remote and never saves a stale number', async ({ page
 
   await updateFrequency.fill('45');
   await expect(updateFrequency).not.toHaveAttribute('aria-invalid');
-  await saveButton.click();
+  await save.click();
   await expect(page.locator('body')).toHaveAttribute('data-save-count', '1');
   await expect(page.locator('body')).toHaveAttribute(
     'data-saved-configuration',
@@ -59,7 +65,7 @@ test('loads the production remote and never saves a stale number', async ({ page
   );
   const actionStatus = page.locator('[data-panel-action-bar] [tabindex="-1"]');
   await expect(actionStatus).toBeFocused();
-  await expect(saveButton).toHaveAttribute('aria-busy', 'true');
+  await expect(save).toHaveAttribute('aria-busy', 'true');
   await expect(actionStatus).toContainText(/save requested/i);
   await expect(actionStatus).toContainText('Current plugin status is running', { timeout: 5_000 });
 });
@@ -71,20 +77,20 @@ test('reports a synchronous host request failure without claiming persistence', 
   await expect(page.locator('body')).toHaveAttribute('data-fixture-ready', 'true');
   await page.getByRole('button', { name: /Fetch and emission cadence/ }).click();
   await page.getByRole('spinbutton', { name: 'Weather update frequency' }).fill('45');
-  const saveButton = page.getByRole('button', { name: 'Save', exact: true });
+  const save = saveButton(page);
   const actionBar = page.locator('[data-panel-action-bar]');
   const failure = page.getByRole('status').filter({ hasText: 'Save request failed' });
 
-  await saveButton.click();
+  await save.click();
   await expect(page.locator('body')).toHaveAttribute('data-save-attempt-count', '1');
   await expect(page.locator('body')).not.toHaveAttribute('data-save-count', /\d/);
   await expect(failure).toContainText('Could not request the configuration save');
   // The edit is still pending, so the bar keeps reporting it rather than a
   // request the host never accepted.
   await expect(actionBar).toContainText('Unsaved changes');
-  await expect(saveButton).not.toHaveAttribute('aria-busy');
+  await expect(save).not.toHaveAttribute('aria-busy');
 
-  await saveButton.click();
+  await save.click();
   await expect(page.locator('body')).toHaveAttribute('data-save-attempt-count', '2');
   await expect(page.locator('body')).toHaveAttribute('data-save-count', '1');
   await expect(failure).toHaveCount(0);
@@ -94,20 +100,20 @@ test('reports a synchronous host request failure without claiming persistence', 
 test('keeps an edit made during the status check dirty and visible', async ({ page }) => {
   await page.getByRole('button', { name: /Fetch and emission cadence/ }).click();
   const updateFrequency = page.getByRole('spinbutton', { name: 'Weather update frequency' });
-  const saveButton = page.getByRole('button', { name: 'Save', exact: true });
+  const save = saveButton(page);
 
   await updateFrequency.fill('45');
-  await saveButton.click();
+  await save.click();
   await expect(page.locator('body')).toHaveAttribute('data-save-count', '1');
   await updateFrequency.fill('46');
 
   // Once the status check settles, the bar must report the newer edit, not
   // the outcome of the request that preceded it.
   const actionBar = page.locator('[data-panel-action-bar]');
-  await expect(saveButton).not.toHaveAttribute('aria-busy', 'true', { timeout: 5_000 });
+  await expect(save).not.toHaveAttribute('aria-busy', 'true', { timeout: 5_000 });
   await expect(actionBar).toContainText('Unsaved changes');
   await expect(actionBar).not.toContainText('Current plugin status');
-  await expect(saveButton).toBeEnabled();
+  await expect(save).toBeEnabled();
 });
 
 test('uses Match Admin for a fresh profile without persisting an implicit choice', async ({
@@ -163,7 +169,7 @@ test('blocks a missing AccuWeather key and focuses its field', async ({ page }) 
 test('reveals an API key without losing its value, focus, or selection', async ({ page }) => {
   await page.getByRole('button', { name: /Weather source/ }).click();
   await page.getByRole('combobox', { name: 'Provider', exact: true }).selectOption('accuweather');
-  const apiKey = page.getByRole('textbox', { name: 'API key', exact: true });
+  const apiKey = apiKeyField(page);
   await expect(apiKey).toHaveAttribute('autocapitalize', 'off');
   await expect(apiKey).toHaveAttribute('autocomplete', 'new-password');
   await expect(apiKey).toHaveAttribute('autocorrect', 'off');
@@ -223,17 +229,17 @@ test('keeps an invalid cadence edit and its error across a collapse and reopen',
   const updateFrequency = page.getByRole('spinbutton', { name: 'Weather update frequency' });
   await updateFrequency.fill('999');
   await expect(updateFrequency).toHaveAttribute('aria-invalid', 'true');
-  const saveButton = page.getByRole('button', { name: 'Save', exact: true });
-  await expect(saveButton).toBeDisabled();
+  const save = saveButton(page);
+  await expect(save).toBeDisabled();
 
   await cadence.click();
-  await expect(saveButton).toBeDisabled();
+  await expect(save).toBeDisabled();
   await cadence.click();
 
   await expect(updateFrequency).toHaveValue('999');
   await expect(updateFrequency).toHaveAttribute('aria-invalid', 'true');
   await expect(page.getByText('Enter a whole number from 1 to 60.')).toBeVisible();
-  await expect(saveButton).toBeDisabled();
+  await expect(save).toBeDisabled();
   await expect(page.locator('body')).not.toHaveAttribute('data-save-count', /\d/);
 });
 
@@ -243,7 +249,7 @@ test('frees the API key test when its section is collapsed mid-request', async (
   const source = page.getByRole('button', { name: /Weather source/ });
   await source.click();
   await page.getByRole('combobox', { name: 'Provider', exact: true }).selectOption('accuweather');
-  await page.getByRole('textbox', { name: 'API key', exact: true }).fill('test-api-key-1234567890');
+  await apiKeyField(page).fill('test-api-key-1234567890');
 
   const testKey = page.getByRole('button', { name: 'Test API key' });
   await testKey.click();
@@ -315,22 +321,32 @@ test('keeps focus inside the merge list when a provider changes group', async ({
   await expect(page.getByRole('checkbox', { name: /Open-Meteo/ })).toBeFocused();
 });
 
-test('moves focus to a reachable row when the acted-on row locks', async ({ page }) => {
+test('keeps a locked row focusable when the last provider locks', async ({ page }) => {
   await page.getByRole('button', { name: /Weather source/ }).click();
   await page.getByRole('combobox', { name: 'Provider mode' }).selectOption('merged');
 
   // Leaving one provider in the merge locks that last row: an empty list is not
-  // saved as an empty merge. A browser blurs a focused control the moment it
-  // becomes disabled, so focus has to be placed deliberately.
+  // saved as an empty merge. The lock is `aria-disabled`, not native
+  // `disabled`, so the box stays in the tab order and the browser never blurs
+  // the control the operator is standing on.
   await page.getByRole('checkbox', { name: /AccuWeather/ }).uncheck();
   const metNo = page.getByRole('checkbox', { name: /Met\.no/ });
   await metNo.focus();
   await metNo.uncheck();
 
-  await expect(page.getByRole('checkbox', { name: /Open-Meteo/ })).toBeDisabled();
-  await expect
-    .poll(() => page.evaluate(() => document.activeElement?.tagName ?? 'NONE'))
-    .not.toBe('BODY');
+  const openMeteo = page.getByRole('checkbox', { name: /Open-Meteo/ });
+  await expect(openMeteo).toHaveAttribute('aria-disabled', 'true');
+  await expect(openMeteo).toBeChecked();
+  await expect(metNo).toBeFocused();
+
+  // The locked box refuses the toggle rather than leaving the tab order, so it
+  // is reached by keyboard here: Playwright's own actionability treats
+  // aria-disabled as unusable and would never dispatch the press.
+  await openMeteo.focus();
+  await expect(openMeteo).toBeFocused();
+  await page.keyboard.press(' ');
+  await expect(openMeteo).toBeChecked();
+  await expect(openMeteo).toBeFocused();
 });
 
 test('seeds the merge-order announcer empty on first render', async ({ page }) => {
@@ -357,7 +373,7 @@ test('announces the API-key test through a region that already existed', async (
     page.evaluate(() => document.querySelectorAll('[aria-live]').length);
   const before = await countRegions();
 
-  await page.getByRole('textbox', { name: 'API key' }).fill('a'.repeat(32));
+  await apiKeyField(page).fill('a'.repeat(32));
   await page.getByRole('button', { name: 'Test API key' }).click();
   await expect(page.getByText(/API key/).first()).toBeVisible();
 
@@ -522,9 +538,7 @@ test('gives every control a reachable target at the pointer size floor', async (
   // daily-quota field. Without this the sweep silently skips a whole control:
   // the panel's conditional branches, not the viewport, are what hide controls
   // from a measurement pass.
-  await page
-    .getByRole('textbox', { name: 'API key', exact: true })
-    .fill('sweep-api-key-1234567890');
+  await apiKeyField(page).fill('sweep-api-key-1234567890');
   await expect(page.getByRole('spinbutton', { name: /Daily API call quota/ })).toBeVisible();
 
   const result = await page.evaluate(async () => {
@@ -583,13 +597,19 @@ test('gives every control a reachable target at the pointer size floor', async (
     const controls = root.querySelectorAll(
       'button, input, select, textarea, [role="radio"], [role="checkbox"], [role="switch"]'
     );
-    // The viewport-docked action bar re-measures on the animation frame after
-    // a scroll and returns to the flow once its anchor is in view, so a probe
-    // taken in the same synchronous pass as the scroll reads the bar where it
-    // sat before and reports a trailing control it no longer covers. Give the
-    // bar its frames before asking what is on top.
-    const settle = async (): Promise<void> => {
-      for (let frame = 0; frame < 5; frame += 1) {
+    // Scroll a control to the middle, which is what a real tap causes, and keeps
+    // the docked action bar from sitting over a control that is perfectly
+    // reachable once the user has scrolled to it. The bar re-measures on the
+    // animation frame after a scroll and returns to the flow once its anchor is
+    // in view, so a probe taken in the same synchronous pass reads the bar where
+    // it sat before and blames it for covering a trailing control. Two frames
+    // are all a requestAnimationFrame-scheduled re-measure needs, and a scroll
+    // that moved nothing moved the bar nothing either, so it waits on neither.
+    const reveal = async (el: Element): Promise<void> => {
+      const before = scrollY;
+      el.scrollIntoView({ block: 'center', inline: 'center' });
+      if (scrollY === before) return;
+      for (let frame = 0; frame < 2; frame += 1) {
         await new Promise<void>((resolve) => {
           requestAnimationFrame(() => {
             resolve();
@@ -599,11 +619,7 @@ test('gives every control a reachable target at the pointer size floor', async (
     };
 
     for (const el of [...controls].filter(isRendered)) {
-      // Scroll to the middle first: that is what a real tap causes, and it
-      // keeps the docked action bar from sitting over a control that is
-      // perfectly reachable once the user has scrolled to it.
-      el.scrollIntoView({ block: 'center', inline: 'center' });
-      await settle();
+      await reveal(el);
       const name = el.getAttribute('aria-label') ?? el.textContent?.trim() ?? el.tagName;
       measured += 1;
 
@@ -628,9 +644,9 @@ test('gives every control a reachable target at the pointer size floor', async (
 test('lets an unconfigured plugin save defaults', async ({ page }) => {
   await page.goto('/?unconfigured');
   await expect(page.locator('body')).toHaveAttribute('data-fixture-ready', 'true');
-  const saveButton = page.getByRole('button', { name: 'Save', exact: true });
-  await expect(saveButton).toBeEnabled();
-  await saveButton.click();
+  const save = saveButton(page);
+  await expect(save).toBeEnabled();
+  await save.click();
   await expect(page.locator('body')).toHaveAttribute('data-save-count', '1');
 });
 
