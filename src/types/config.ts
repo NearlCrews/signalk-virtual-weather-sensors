@@ -73,11 +73,12 @@ export interface PluginConfiguration {
   readonly emissionInterval: number;
 
   /**
-   * Daily AccuWeather API call cap (rolling 24 hours). The free tier allows 50
-   * calls/day; this value lets operators surface that limit and stop fetching
-   * when it is reached. It applies whenever AccuWeather participates, including
-   * merged mode. Set to 0 to disable the cap (no quota tracking, no warnings,
-   * no auto-pause).
+   * Daily AccuWeather API call cap (rolling 24 hours). The default of 50 fits
+   * the default 30-minute cadence for a stationary vessel (at most 48
+   * conditions calls plus one location lookup per day); operators on a paid
+   * plan raise it to their allowance. It applies whenever AccuWeather
+   * participates, including merged mode. Set to 0 to disable the cap (no quota
+   * tracking, no warnings, no auto-pause).
    */
   readonly dailyApiQuota: number;
 

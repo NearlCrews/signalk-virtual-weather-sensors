@@ -36,6 +36,59 @@ export interface FetchJsonOptions {
   readonly signal?: AbortSignal | undefined;
 }
 
+export interface ConditionalFetchJsonOptions extends FetchJsonOptions {
+  /**
+   * `Last-Modified` value from a previous response for the same URL, replayed
+   * as `If-Modified-Since`. When the upstream answers `304 Not Modified` the
+   * result carries no body and the caller reuses what it already holds.
+   */
+  readonly ifModifiedSince?: string | undefined;
+}
+
+/** Outcome of a conditional GET: a parsed body, or a 304 with no body. */
+export interface ConditionalJsonResult<T> {
+  /** Parsed body, or null when the upstream answered `304 Not Modified`. */
+  readonly body: T | null;
+  /** `Last-Modified` response header, to replay on the next request. */
+  readonly lastModified: string | undefined;
+  /** `Expires` response header as epoch milliseconds, when present and parseable. */
+  readonly expiresMs: number | undefined;
+}
+
+/**
+ * Turn one response into a `ConditionalJsonResult`, treating `304` as a success
+ * with no body and every other non-2xx status as the same tagged throw
+ * `fetchJson` produces. Split out so `fetchJsonConditional` stays within the
+ * repository's cognitive-complexity budget alongside its abort scaffolding.
+ */
+async function readConditionalResponse<T>(
+  response: Response,
+  maxBytes: number
+): Promise<ConditionalJsonResult<T>> {
+  const lastModified = response.headers.get('Last-Modified') ?? undefined;
+  const expiresMs = parseHttpDate(response.headers.get('Expires'));
+
+  if (response.status === NOT_MODIFIED_STATUS) {
+    return { body: null, lastModified, expiresMs };
+  }
+  if (!response.ok) {
+    throw new Error(
+      `${classifyStatus(response.status)}: request failed (${response.status} ${response.statusText})`
+    );
+  }
+  return { body: await readBoundedJson<T>(response, maxBytes), lastModified, expiresMs };
+}
+
+/** `304 Not Modified`: a successful conditional GET that carries no body. */
+const NOT_MODIFIED_STATUS = 304;
+
+/** Parse an HTTP-date header to epoch milliseconds, or undefined when absent or invalid. */
+function parseHttpDate(value: string | null): number | undefined {
+  if (value === null) return undefined;
+  const ms = Date.parse(value);
+  return Number.isFinite(ms) ? ms : undefined;
+}
+
 /** Map an HTTP status onto the plugin's tagged error-code substring. */
 function classifyStatus(status: number): string {
   if (status === 401) return ERROR_CODES.NETWORK.API_UNAUTHORIZED;
@@ -130,7 +183,36 @@ async function readBoundedText(
  * caller's own update cadence provides the next attempt.
  */
 export async function fetchJson<T>(url: URL | string, options: FetchJsonOptions): Promise<T> {
-  const { timeoutMs, headers, maxBytes = DEFAULT_MAX_RESPONSE_BYTES, signal } = options;
+  const result = await fetchJsonConditional<T>(url, options);
+  // Unreachable without `ifModifiedSince`: a server cannot answer 304 to an
+  // unconditional request. Narrowing here keeps the unconditional signature
+  // free of a null the caller would have to handle.
+  if (result.body === null) {
+    throw new Error(
+      `${ERROR_CODES.NETWORK.API_INVALID_RESPONSE}: unconditional request answered 304`
+    );
+  }
+  return result.body;
+}
+
+/**
+ * GET a URL with an optional `If-Modified-Since`, returning the parsed body
+ * alongside the cache-validator headers. A `304 Not Modified` is a SUCCESS
+ * here, reported as a null body, so a caller holding the previous document can
+ * keep it without paying for the payload again. Every other non-2xx status
+ * throws exactly as `fetchJson` does.
+ */
+export async function fetchJsonConditional<T>(
+  url: URL | string,
+  options: ConditionalFetchJsonOptions
+): Promise<ConditionalJsonResult<T>> {
+  const {
+    timeoutMs,
+    headers,
+    maxBytes = DEFAULT_MAX_RESPONSE_BYTES,
+    signal,
+    ifModifiedSince,
+  } = options;
   signal?.throwIfAborted();
   const controller = new AbortController();
   let timedOut = false;
@@ -144,17 +226,15 @@ export async function fetchJson<T>(url: URL | string, options: FetchJsonOptions)
   try {
     const response = await fetch(typeof url === 'string' ? url : url.toString(), {
       method: 'GET',
-      headers: { Accept: 'application/json', ...headers },
+      headers: {
+        Accept: 'application/json',
+        ...headers,
+        ...(ifModifiedSince !== undefined && { 'If-Modified-Since': ifModifiedSince }),
+      },
       signal: controller.signal,
     });
 
-    if (!response.ok) {
-      throw new Error(
-        `${classifyStatus(response.status)}: request failed (${response.status} ${response.statusText})`
-      );
-    }
-
-    return await readBoundedJson<T>(response, maxBytes);
+    return await readConditionalResponse<T>(response, maxBytes);
   } catch (error) {
     if (error instanceof Error && error.name === 'AbortError') {
       if (signal?.aborted) signal.throwIfAborted();

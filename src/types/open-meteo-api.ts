@@ -11,10 +11,18 @@
  * `wind_speed_unit=ms`, so `wind_speed_10m` and `wind_gusts_10m` are m/s;
  * `pressure_msl` is hPa, temperatures are Celsius, `visibility` is meters, and
  * `cloud_cover` and `relative_humidity_2m` are percentages.
+ *
+ * The optional `hourly` companion block carries only `precipitation`: the
+ * current block's own `precipitation` is a backward-looking sum over its
+ * `interval` (900 s), while the hourly variable is documented as the "sum of
+ * the preceding hour", which is what `environment.weather.precipitationLastHour`
+ * promises. See `pastHourPrecipitationMm` in `src/mappers/OpenMeteoMapper.ts`.
  */
 export interface OpenMeteoCurrentResponse {
   readonly current?: {
     readonly time?: string;
+    /** Backward-looking sum window of the current block, in seconds (900). */
+    readonly interval?: number;
     readonly temperature_2m?: number;
     readonly relative_humidity_2m?: number;
     readonly apparent_temperature?: number;
@@ -28,6 +36,11 @@ export interface OpenMeteoCurrentResponse {
     readonly dew_point_2m?: number;
     readonly visibility?: number;
     readonly uv_index?: number;
+  };
+  readonly hourly?: {
+    readonly time?: ReadonlyArray<string>;
+    /** Millimetres accumulated over the hour ending at the matching `time`. */
+    readonly precipitation?: ReadonlyArray<number | null>;
   };
 }
 

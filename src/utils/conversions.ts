@@ -52,8 +52,19 @@ export function asOptionalNumber(value: unknown): number | undefined {
 /** Matches a zone designator at the end of an ISO 8601 string: Z, z, or ±hh:mm / ±hhmm. */
 const ISO_ZONE_RE = /([Zz]|[+-]\d{2}:?\d{2})$/;
 
-/** Maximum tolerated provider clock lead for a current observation. */
-export const MAX_OBSERVATION_FUTURE_MS = 5 * 60 * 1000;
+/**
+ * Maximum tolerated lead of a provider observation over the local clock.
+ *
+ * This bounds HOST clock error far more than provider error: providers stamp
+ * observations at or before real now, so anything ahead of the local clock
+ * means the host is behind UTC. A headless Raspberry Pi with no RTC is behind
+ * on every cold boot until NTP settles, and at the old 5-minute tolerance every
+ * current-conditions fetch threw `INVALID_WEATHER_DATA` during that window,
+ * which reads as a provider fault rather than a clock fault. One hour absorbs a
+ * plausible pre-NTP skew while still rejecting a genuinely nonsensical
+ * timestamp, and the error text names the real cause.
+ */
+export const MAX_OBSERVATION_FUTURE_MS = 60 * 60 * 1000;
 
 /**
  * Normalize an ISO 8601 value to a canonical RFC 3339 UTC instant. Provider
@@ -67,6 +78,22 @@ export function normalizeIsoTimestamp(value: unknown): string {
   const zoned = ISO_ZONE_RE.test(time) ? time : `${time}Z`;
   const epochMs = Date.parse(zoned);
   return Number.isFinite(epochMs) ? new Date(epochMs).toISOString() : '';
+}
+
+/** Milliseconds in one hour, used to floor an instant onto its hour boundary. */
+const MS_PER_HOUR = 60 * 60 * 1000;
+
+/**
+ * Floor an ISO 8601 instant onto the top of its UTC hour, returning a canonical
+ * RFC 3339 string, or an empty string when the input is not a valid instant.
+ * Used to line a provider's sub-hourly observation stamp up with the hourly
+ * accumulation bucket that covers the hour ending at that boundary.
+ */
+export function floorToUtcHour(value: unknown): string {
+  const normalized = normalizeIsoTimestamp(value);
+  if (normalized === '') return '';
+  const epochMs = Date.parse(normalized);
+  return new Date(Math.floor(epochMs / MS_PER_HOUR) * MS_PER_HOUR).toISOString();
 }
 
 /** Normalize a calendar date to UTC midnight, or return an empty string when invalid. */
@@ -97,7 +124,7 @@ export function requireObservationTimestamp(
   const normalized = requireIsoTimestamp(value, context);
   if (Date.parse(normalized) > now + MAX_OBSERVATION_FUTURE_MS) {
     throw new Error(
-      `${ERROR_CODES.DATA.INVALID_WEATHER_DATA}: ${context} timestamp is in the future`
+      `${ERROR_CODES.DATA.INVALID_WEATHER_DATA}: ${context} timestamp is far ahead of this host's clock. Check the system time and NTP.`
     );
   }
   return normalized;
@@ -305,9 +332,10 @@ export function isValidCoordinates(latitude: number, longitude: number): boolean
 }
 
 /**
- * Canonical `lat,lon` key for a location at 4-decimal precision (about 11 m).
- * Shared by the provider cache keys and the NWS point query so the rounding
- * policy lives in one place instead of three hand-copied template literals.
+ * Canonical `lat,lon` key for a location, at 4-decimal precision (about 11 m)
+ * unless the caller asks for a coarser cell. Shared by the provider cache keys
+ * and the NWS point query so the rounding policy lives in one place instead of
+ * three hand-copied template literals.
  */
 export function toCoordKey(location: GeoLocation, decimals = 4): string {
   return `${location.latitude.toFixed(decimals)},${location.longitude.toFixed(decimals)}`;
@@ -410,6 +438,28 @@ export function truncateToCodePoints(value: string, maxCodePoints: number): stri
 }
 
 /**
+ * Strip control characters from a provider-supplied string and truncate it to
+ * a safe length for downstream consumers.
+ *
+ * Truncation walks code points (via `truncateToCodePoints`) so a surrogate-pair
+ * character (emoji, CJK supplementary) at the boundary cannot leave a lone
+ * surrogate that breaks JSON-encoded downstream consumers. The runtime
+ * `typeof` guard catches real-world API responses where a field typed `string`
+ * arrives as null, undefined, or a number; a response schema is a contract for
+ * what the plugin uses, not a guarantee the wire matches it.
+ *
+ * Every externally-sourced string the plugin republishes goes through here, so
+ * no provider can put a control character or an unbounded payload on a Signal K
+ * path or in an HTTP response body.
+ */
+export function capExternalString(value: unknown, maxLength: number): string {
+  if (typeof value !== 'string') return '';
+  // biome-ignore lint/suspicious/noControlCharactersInRegex: deliberately stripping injection vectors
+  const stripped = value.replace(/[\x00-\x1f\x7f]/g, '');
+  return truncateToCodePoints(stripped, maxLength);
+}
+
+/**
  * Beaufort scale ceiling speeds in m/s, indexed by Beaufort number (0..11).
  * `windSpeed < BEAUFORT_THRESHOLDS[i]` activates scale `i`; anything above the
  * last ceiling is hurricane (12).
@@ -434,29 +484,45 @@ export function calculateBeaufortScale(windSpeed: number): number {
 }
 
 /**
- * US military WBGT flag cutoffs in Celsius (green, yellow, red, black). A
- * precautionary bias on a crew-safety index favours these standard flag values
- * over looser bands that would activate each warning roughly 0.5 to 1.5 C late.
+ * Lower bounds in Celsius of heat-stress index 1 through 4, applied to the
+ * wet-bulb globe temperature. Index 1 starts at 26.7 C (80 F), the first
+ * work-rest band in NWS wet-bulb globe temperature guidance. The remaining
+ * cutoffs are US military flag boundaries: 27.8 C (82 F) opens the green flag,
+ * 29.4 C (85 F) opens the yellow flag, and 32.2 C (90 F) opens the black flag.
+ * The red flag boundary at 31.1 C (88 F) has no cutoff of its own, so index 3
+ * spans the yellow and red flags. A precautionary bias on a crew-safety index
+ * favors these values over looser bands that would activate each warning
+ * roughly 0.5 to 1.5 C late.
  */
-const WBGT_FLAG_CUTOFFS_C = {
-  GREEN: 26.7,
-  YELLOW: 27.8,
-  RED: 29.4,
-  BLACK: 32.2,
-} as const;
+const HEAT_STRESS_INDEX_CUTOFFS_C: ReadonlyArray<number> = [26.7, 27.8, 29.4, 32.2];
+
+/**
+ * The same cutoffs in Kelvin, precomputed through the identical
+ * `celsiusToKelvin` the provider mappers use to build a WBGT.
+ *
+ * The comparison must not round-trip back to Celsius. `kelvinToCelsius(
+ * celsiusToKelvin(x))` loses an ULP on three of the four cutoffs, so a provider
+ * reporting a WBGT of exactly 29.4 C or 32.2 C (AccuWeather emits the Metric
+ * value at one decimal, so both are real wire values) landed one band low and
+ * the audible `alarm` and `emergency` heat bands opened a tenth of a degree
+ * late. Comparing in Kelvin against a cutoff built by the same conversion makes
+ * the boundary exact.
+ */
+const HEAT_STRESS_INDEX_CUTOFFS_K: ReadonlyArray<number> =
+  HEAT_STRESS_INDEX_CUTOFFS_C.map(celsiusToKelvin);
 
 /**
  * Heat-stress index (0 low to 4 extreme) from wet-bulb globe temperature in
- * Kelvin, banded on the WBGT military flags. Shared by every provider so the
- * heat-stress notification band behaves identically regardless of source.
+ * Kelvin, banded on `HEAT_STRESS_INDEX_CUTOFFS_C`. Shared by every provider so
+ * the heat-stress notification band behaves identically regardless of source.
  */
 export function calculateHeatStressIndex(wetBulbGlobeTemperatureK: number): number {
-  const wbgtC = kelvinToCelsius(wetBulbGlobeTemperatureK);
-  if (wbgtC < WBGT_FLAG_CUTOFFS_C.GREEN) return 0;
-  if (wbgtC < WBGT_FLAG_CUTOFFS_C.YELLOW) return 1;
-  if (wbgtC < WBGT_FLAG_CUTOFFS_C.RED) return 2;
-  if (wbgtC < WBGT_FLAG_CUTOFFS_C.BLACK) return 3;
-  return 4;
+  let index = 0;
+  for (const cutoff of HEAT_STRESS_INDEX_CUTOFFS_K) {
+    if (wetBulbGlobeTemperatureK < cutoff) break;
+    index++;
+  }
+  return index;
 }
 
 /**

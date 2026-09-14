@@ -112,6 +112,19 @@ export const WEATHER_PROVIDER_LABELS: Readonly<Record<WeatherProviderId, string>
 });
 
 /**
+ * Bare provider names, without the parenthetical that helps someone CHOOSE a
+ * provider. Used wherever the name is repeated rather than chosen: the merge
+ * list's reorder buttons and its order summary, where a screen-reader operator
+ * hears the name on every arrow press.
+ */
+export const WEATHER_PROVIDER_SHORT_LABELS: Readonly<Record<WeatherProviderId, string>> =
+  Object.freeze({
+    'open-meteo': 'Open-Meteo',
+    accuweather: 'AccuWeather',
+    'met-no': 'Met.no',
+  });
+
+/**
  * Resolve the effective provider from saved config. An explicit, valid
  * `weatherProvider` always wins. Otherwise (legacy config written before this
  * option existed) an existing AccuWeather key keeps AccuWeather active so an

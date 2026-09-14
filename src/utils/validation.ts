@@ -34,7 +34,6 @@ import type {
   WeatherData,
 } from '../types/index.js';
 import {
-  celsiusToKelvin,
   clamp,
   isValidCoordinates,
   normalizeAngle0To2Pi,
@@ -61,9 +60,21 @@ export function assertValidCoordinates(location: GeoLocation, context: string): 
   }
 }
 
-/** NMEA2000 temperature bounds expressed in Kelvin (precomputed to avoid C↔K work on the hot path). */
-const NMEA2000_TEMP_K_MIN = celsiusToKelvin(NMEA2000_LIMITS.TEMPERATURE_C.MIN);
-const NMEA2000_TEMP_K_MAX = celsiusToKelvin(NMEA2000_LIMITS.TEMPERATURE_C.MAX);
+/**
+ * Sanitizer temperature bounds in Kelvin, from the physical validation window
+ * (-100 C to +100 C) rather than `NMEA2000_LIMITS.TEMPERATURE_C`.
+ *
+ * The narrower -40 C to +85 C figure is a typical sensor operating envelope,
+ * not a wire limit: PGN 130312 carries temperature as 0.01 K over 0 to
+ * 655.35 K, and this plugin emits Signal K deltas only, leaving the NMEA 2000
+ * bridge to a separate plugin. Clamping at -40 C silently published a wind
+ * chill of -44.6 C as -40.0 C while the notification built from the same
+ * snapshot said -45 C, so the path and the alarm text disagreed on a
+ * life-threatening exposure figure. The physical window never clamps a real
+ * reading and still catches numerical garbage.
+ */
+const SANITIZER_TEMP_K_MIN = VALIDATION_LIMITS.TEMPERATURE.MIN;
+const SANITIZER_TEMP_K_MAX = VALIDATION_LIMITS.TEMPERATURE.MAX;
 
 /**
  * Top-level fields checked for presence on an AccuWeather current-conditions
@@ -481,7 +492,7 @@ type SanitizableNumericKey = {
   [K in keyof WeatherData]-?: WeatherData[K] extends number | undefined ? K : never;
 }[keyof WeatherData];
 
-const TEMP_K_BOUNDS = [NMEA2000_TEMP_K_MIN, NMEA2000_TEMP_K_MAX] as const;
+const TEMP_K_BOUNDS = [SANITIZER_TEMP_K_MIN, SANITIZER_TEMP_K_MAX] as const;
 const WIND_SPEED_BOUNDS = [0, NMEA2000_LIMITS.WIND_SPEED_MAX_MS] as const;
 const HUMIDITY_BOUNDS = [VALIDATION_LIMITS.HUMIDITY.MIN, VALIDATION_LIMITS.HUMIDITY.MAX] as const;
 
@@ -591,13 +602,22 @@ function isWithinNMEA2000Ranges(data: WeatherData): boolean {
  * When all fields already fit, the original object reference is returned to
  * avoid a 24-field shallow copy on the hot path.
  *
- * Coverage matches `NMEA2000PathMapper.mapToSignalKPaths`: temperatures and
- * wind speeds use NMEA2000 hardware bounds; ratios (humidity, cloudCover) are
- * spec 0..1; angles use the Signal K canonical convention (windDirection
- * 0..2π, apparentWindAngle port-negative -π..π); precipitation is capped in
- * raw mm units before the mapper converts to m.
+ * Coverage matches `NMEA2000PathMapper.mapToSignalKPaths`: temperatures use the
+ * physical -100 C to +100 C window, wind speeds use NMEA2000 hardware bounds,
+ * ratios (humidity, cloudCover) are spec 0..1, angles use the Signal K
+ * canonical convention (windDirection 0..2π, apparentWindAngle port-negative
+ * -π..π), and precipitation is capped in raw mm units before the mapper
+ * converts to m.
+ *
+ * `onClamp` is called once per field whose published value differs from the
+ * reading, so a clamp is never silent: the caller logs it. A clamped path and
+ * an unclamped notification message can otherwise disagree about the same
+ * observation with nothing in the log to explain the gap.
  */
-export function sanitizeForNMEA2000(data: WeatherData): WeatherData {
+export function sanitizeForNMEA2000(
+  data: WeatherData,
+  onClamp?: (field: string, reading: number, published: number | undefined) => void
+): WeatherData {
   if (isWithinNMEA2000Ranges(data)) {
     return data;
   }
@@ -616,9 +636,12 @@ export function sanitizeForNMEA2000(data: WeatherData): WeatherData {
     // temperatureDeparture24h -50 reads as a 50 K drop.
     if (!Number.isFinite(value) && !REQUIRED_NUMERIC_KEYS.has(key)) {
       delete sanitized[key];
+      onClamp?.(key, value, undefined);
       continue;
     }
-    sanitized[key] = clamp(value, min, max);
+    const clamped = clamp(value, min, max);
+    sanitized[key] = clamped;
+    if (clamped !== value) onClamp?.(key, value, clamped);
   }
   // windDirection is required, so it keeps the normalizer's non-finite fold to
   // 0 for the same reason the required scalars keep the clamp, even though 0

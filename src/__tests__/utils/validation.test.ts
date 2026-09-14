@@ -6,6 +6,7 @@
 
 import { describe, expect, it } from 'vitest';
 import type { WeatherData } from '../../types/index.js';
+import { celsiusToKelvin } from '../../utils/conversions.js';
 import {
   ConfigurationValidator,
   NMEA2000Validator,
@@ -124,7 +125,7 @@ describe('validateConfiguration / sanitizeConfiguration', () => {
   it('sanitizeConfiguration applies defaults and clamps', () => {
     const c = sanitizeConfiguration({});
     expect(c.accuWeatherApiKey).toBe('');
-    // Default 30 keeps free-tier keys within the 50/day quota (48 calls/day).
+    // Default 30 keeps a stationary vessel within the 50/day quota (48 calls plus one lookup).
     expect(c.updateFrequency).toBe(30);
     expect(c.emissionInterval).toBe(5);
 
@@ -354,11 +355,37 @@ describe('NMEA2000 helpers', () => {
       expect(sanitized.windDirection).toBeLessThan(2 * Math.PI);
     });
 
-    it('clamps temperature to NMEA2000 -40°C..+85°C', () => {
+    it('clamps temperature to the physical -100°C..+100°C window', () => {
       const cold = sanitizeForNMEA2000(fullData({ temperature: 100 })); // very cold
-      expect(cold.temperature).toBeCloseTo(233.15, 2); // -40°C
+      expect(cold.temperature).toBeCloseTo(173.15, 2); // -100°C
       const hot = sanitizeForNMEA2000(fullData({ temperature: 1000 }));
-      expect(hot.temperature).toBeCloseTo(358.15, 2); // +85°C
+      expect(hot.temperature).toBeCloseTo(373.15, 2); // +100°C
+    });
+
+    it('publishes a high-latitude wind chill instead of flooring it at -40 C', () => {
+      // Air -25 C in 20 m/s of wind gives a wind chill near -44.6 C. The old
+      // -40 C sensor-envelope floor published -40.0 C while the notification
+      // built from the same snapshot said -45 C.
+      const chillK = celsiusToKelvin(-44.61);
+      const out = sanitizeForNMEA2000(fullData({ windChill: chillK, temperature: 248.15 }));
+      expect(out.windChill).toBeCloseTo(chillK, 5);
+      expect(out.temperature).toBeCloseTo(248.15, 5);
+    });
+
+    it('reports every field it actually changed', () => {
+      const clamped: string[] = [];
+      sanitizeForNMEA2000(fullData({ temperature: 1000, pressure: 200000 }), (field) => {
+        clamped.push(field);
+      });
+      expect(clamped.sort()).toEqual(['pressure', 'temperature']);
+    });
+
+    it('reports nothing when no field needed clamping', () => {
+      const clamped: string[] = [];
+      sanitizeForNMEA2000(fullData({}), (field) => {
+        clamped.push(field);
+      });
+      expect(clamped).toEqual([]);
     });
 
     it('clamps pressure', () => {

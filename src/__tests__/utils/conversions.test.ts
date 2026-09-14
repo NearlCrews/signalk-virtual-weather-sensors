@@ -266,19 +266,40 @@ describe('Atmospheric calculations', () => {
 
 describe('Heat stress', () => {
   describe('calculateHeatStressIndex', () => {
-    it('bands WBGT (Kelvin) onto the 0..4 military-flag scale', () => {
+    it('bands WBGT (Kelvin) onto the 0..4 index', () => {
       expect(calculateHeatStressIndex(celsiusToKelvin(25))).toBe(0);
       expect(calculateHeatStressIndex(celsiusToKelvin(27))).toBe(1);
       expect(calculateHeatStressIndex(celsiusToKelvin(28))).toBe(2);
       expect(calculateHeatStressIndex(celsiusToKelvin(30))).toBe(3);
       expect(calculateHeatStressIndex(celsiusToKelvin(33))).toBe(4);
     });
-    it('applies the green cutoff near 26.7 C (mutation guard)', () => {
-      // GREEN cutoff is 26.7 C: just below stays 0, just above crosses to 1.
-      // Values are offset to avoid Celsius/Kelvin float round-trip noise at the
-      // exact boundary.
+    it('keeps index 3 across the yellow and red flags up to the black flag', () => {
+      // 31.1 C (88 F) opens the red flag but has no cutoff of its own, so the
+      // index stays at 3 until the black flag at 32.2 C.
+      expect(calculateHeatStressIndex(celsiusToKelvin(31.15))).toBe(3);
+      expect(calculateHeatStressIndex(celsiusToKelvin(32.15))).toBe(3);
+      expect(calculateHeatStressIndex(celsiusToKelvin(32.25))).toBe(4);
+    });
+    it('applies the index 1 cutoff near 26.7 C (mutation guard)', () => {
+      // The first cutoff is 26.7 C: just below stays 0, just above crosses to 1.
       expect(calculateHeatStressIndex(celsiusToKelvin(26.65))).toBe(0);
       expect(calculateHeatStressIndex(celsiusToKelvin(26.75))).toBe(1);
+    });
+    it('opens each band AT its documented cutoff, not a tenth of a degree late', () => {
+      // AccuWeather emits the Metric WBGT at one decimal, so every one of these
+      // is a real wire value. Comparing after a Kelvin-to-Celsius round trip
+      // lost an ULP on three of the four and left the audible alarm and
+      // emergency heat bands opening one tenth of a degree late.
+      expect(calculateHeatStressIndex(celsiusToKelvin(26.7))).toBe(1);
+      expect(calculateHeatStressIndex(celsiusToKelvin(27.8))).toBe(2);
+      expect(calculateHeatStressIndex(celsiusToKelvin(29.4))).toBe(3);
+      expect(calculateHeatStressIndex(celsiusToKelvin(32.2))).toBe(4);
+    });
+    it('stays one band below at a tenth under each cutoff', () => {
+      expect(calculateHeatStressIndex(celsiusToKelvin(26.6))).toBe(0);
+      expect(calculateHeatStressIndex(celsiusToKelvin(27.7))).toBe(1);
+      expect(calculateHeatStressIndex(celsiusToKelvin(29.3))).toBe(2);
+      expect(calculateHeatStressIndex(celsiusToKelvin(32.1))).toBe(3);
     });
   });
 

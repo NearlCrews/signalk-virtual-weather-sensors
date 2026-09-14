@@ -49,9 +49,21 @@ export const PLUGIN = {
   CONTACT_USER_AGENT: `${PLUGIN_NAME}/${process.env.PKG_VERSION || '1.0.0'} (+https://github.com/NearlCrews/signalk-virtual-weather-sensors)`,
   STATUS: {
     RUNNING: 'Running',
-    /** Banner prefix once 24h API usage crosses `API_QUOTA.WARN_RATIO`. */
-    RUNNING_QUOTA_WARN: `Running [quota ${Math.round(QUOTA_WARN_RATIO * 100)}% used]`,
+    /**
+     * Banner prefix once 24h API usage crosses `API_QUOTA.WARN_RATIO`. The
+     * percentage is the real rolling figure, not the warning threshold: a fixed
+     * `90% used` literal kept claiming 90 percent at 95 and at 100, and merged
+     * mode never reaches the quota error banner that used to mask the 100
+     * percent case.
+     */
+    runningQuotaWarn: (percentUsed: number): string => `Running [quota ${percentUsed}% used]`,
     STOPPED: 'Stopped',
+    /**
+     * Banner while the plugin has a usable configuration but no usable
+     * `navigation.position`, so no weather fetch can be attempted. The
+     * troubleshooting guide is keyed on this exact string.
+     */
+    WAITING_FOR_POSITION: 'Waiting for GPS position',
   },
   /** Delay before first weather fetch after start, in ms */
   INITIAL_UPDATE_DELAY_MS: 5000,
@@ -72,15 +84,23 @@ export const PLUGIN = {
  * `notifications-shared.ts` (`CONFIG_DEFAULTS`) so the rjsf schema, the
  * runtime sanitizer, and the federated JSX panel cannot drift.
  *
- * INVARIANT: if `UPDATE_FREQUENCY` drops below `Math.ceil(1440 / DAILY_API_QUOTA)`
- * minutes the plugin will exhaust the quota inside any rolling 24h window and
- * pause fetches.
+ * INVARIANT: a stationary vessel spends `1440 / UPDATE_FREQUENCY` current-
+ * conditions calls per day plus one location lookup per
+ * `LOCATION_CACHE_TIMEOUT`. If that sum reaches `DAILY_API_QUOTA` the plugin
+ * will exhaust the quota inside a rolling 24h window and pause fetches. At the
+ * defaults that is at most 48 plus 1, inside the cap of 50; the fetch timer's
+ * jitter only lengthens the interval, so the count cannot exceed 48.
  */
 export const DEFAULT_CONFIG = {
   UPDATE_FREQUENCY: CONFIG_DEFAULTS.UPDATE_FREQUENCY, // minutes
   EMISSION_INTERVAL: CONFIG_DEFAULTS.EMISSION_INTERVAL, // seconds
   DAILY_API_QUOTA: CONFIG_DEFAULTS.DAILY_API_QUOTA,
-  LOCATION_CACHE_TIMEOUT: 3600, // seconds (1 hour)
+  /**
+   * Seconds an AccuWeather location key stays cached (24 hours). A location
+   * key names a city-scale area rather than a point, so refreshing it once a
+   * day costs a stationary vessel one lookup per day instead of one per hour.
+   */
+  LOCATION_CACHE_TIMEOUT: 24 * 60 * 60,
   REQUEST_TIMEOUT: 10000, // milliseconds
   RETRY_ATTEMPTS: 3,
   RETRY_DELAY: 1000, // milliseconds
@@ -155,7 +175,7 @@ export const NOTIFICATION_PATHS = {
  *
  *   Wind:        Beaufort entry per WMO classification (8 gale, 10 storm, 12 hurricane).
  *   Visibility:  plugin restricted-visibility threshold (1 nm = 1852 m); very-low at 0.5 nm.
- *   Heat:        wet-bulb globe temperature heat stress index (military/marine bands).
+ *   Heat:        wet-bulb globe temperature heat stress index (see calculateHeatStressIndex).
  *   Cold:        wind chill in Kelvin (0 C caution, -20 C extreme).
  */
 export const NOTIFICATION_THRESHOLDS = {
@@ -351,6 +371,14 @@ export const ACCUWEATHER = {
     FORECAST_DAILY_5DAY: '/forecasts/v1/daily/5day',
   },
   DEFAULT_LANGUAGE: 'en-us',
+  /**
+   * Decimal places of latitude and longitude that key the location cache.
+   * Two decimals is a cell of about 1.1 km, far smaller than the area an
+   * AccuWeather location key covers, so a vessel swinging at anchor or drifting
+   * in a marina reuses its key and a vessel underway spends one Locations
+   * call per new cell rather than one per fetch.
+   */
+  LOCATION_CACHE_KEY_DECIMALS: 2,
   /** Maximum length for descriptive strings copied verbatim from API responses into Signal K deltas */
   MAX_DESCRIPTION_LENGTH: 128,
   /** Maximum length for short labels copied verbatim from API responses (e.g. observation timestamps). */
@@ -385,10 +413,15 @@ export const FORECAST_CACHE = {
  */
 const PRESSURE_MIN_PA = 80000;
 
-/** NMEA2000-spec sanitization ranges. Used by sanitizeForNMEA2000 to clamp before bus emission. */
+/**
+ * Sanitization ranges used by sanitizeForNMEA2000 to clamp before emission.
+ *
+ * Temperature is deliberately absent: the sanitizer bounds temperatures with
+ * `VALIDATION_LIMITS.TEMPERATURE` (-100 C to +100 C) instead, because the
+ * -40 C to +85 C figure that used to live here is a sensor operating envelope
+ * rather than a wire limit and clamped real high-latitude wind chills.
+ */
 export const NMEA2000_LIMITS = {
-  /** NMEA2000 environmental temperature range in Celsius */
-  TEMPERATURE_C: { MIN: -40, MAX: 85 },
   /** Atmospheric pressure range in Pascals (MAX raised above VALIDATION_LIMITS to allow extreme weather) */
   PRESSURE_PA: { MIN: PRESSURE_MIN_PA, MAX: 120000 },
   /** Maximum wind speed in m/s (200 knots, NMEA2000 max) */
@@ -466,8 +499,26 @@ export const VALIDATION_LIMITS = {
     MAX: 100,
   },
 
-  /** Navigation data age threshold (seconds) used by SignalKService cache. */
+  /**
+   * Age threshold (seconds) for the motion vector: speed over ground, course
+   * over ground, heading, and magnetic variation. These feed the apparent-wind
+   * composition, where a 30-second-old value is already misleading on a moving
+   * vessel.
+   */
   MAX_DATA_AGE: 30,
+  /**
+   * Age threshold (seconds) for `navigation.position`, deliberately far looser
+   * than `MAX_DATA_AGE`.
+   *
+   * Position here only selects a weather grid cell, and the plugin refetches
+   * every 30 minutes by default. At 12 knots a 10-minute-old fix is about 2 nm
+   * out, well inside any provider's cell. Holding position to the 30-second
+   * motion-vector budget meant any source publishing less often than that (a
+   * hand-written `baseDeltas.json` harbour position, a low-rate AIS-only feed)
+   * left the plugin permanently unable to fetch, reporting "Waiting for GPS
+   * position" with a valid fix on the bus.
+   */
+  MAX_POSITION_AGE: 30 * 60,
 } as const;
 
 // ===============================
