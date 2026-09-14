@@ -98,12 +98,22 @@
     "markdownlint-cli2": {
       "js-yaml": "5.2.2"
     },
-    "qs": "^6.15.2"
+    "qs": "^6.15.2",
+    "vitest": {
+      "@types/node": "$@types/node"
+    },
+    "@vitest/coverage-v8": {
+      "@types/node": "$@types/node"
+    },
+    "@vitest/ui": {
+      "@types/node": "$@types/node"
+    },
+    "smol-toml": "1.8.0"
   },
   "devDependencies": {
     "@axe-core/playwright": "^4.13.0",
-    "@biomejs/biome": "2.5.10",
-    "@playwright/test": "^1.62.1",
+    "@biomejs/biome": "2.5.12",
+    "@playwright/test": "^1.63.0",
     "@signalk/server-api": "2.31.1",
     "@signalk/signalk-schema": "^1.8.2",
     "@size-limit/file": "13.0.3",
@@ -112,36 +122,36 @@
     "@types/express": "^5.0.6",
     "@types/node": "^20.19.43",
     "@types/react": "^19.2.18",
-    "@types/react-dom": "^19.2.5",
-    "@vitejs/plugin-react": "^6.1.0",
-    "@vitest/coverage-v8": "^4.1.11",
-    "@vitest/ui": "^4.1.11",
+    "@types/react-dom": "^19.2.7",
+    "@vitejs/plugin-react": "^6.1.1",
+    "@vitest/coverage-v8": "^5.0.0",
+    "@vitest/ui": "^5.0.0",
     "ajv": "^8.20.0",
     "ajv-draft-04": "^1.0.0",
     "ajv-formats": "^3.0.1",
-    "cspell": "10.1.0",
+    "cspell": "10.2.2",
     "esbuild": "^0.28.2",
     "esbuild-loader": "^4.5.0",
-    "knip": "6.32.2",
+    "knip": "6.34.0",
     "markdownlint-cli2": "0.23.2",
     "publint": "0.3.24",
     "react": "19.2.8",
     "react-dom": "19.2.8",
-    "signalk-nearlcrews-ui": "0.8.2",
+    "signalk-nearlcrews-ui": "0.11.1",
     "size-limit": "13.0.3",
-    "tsx": "^4.23.12",
+    "tsx": "^4.23.13",
     "typescript": "7.0.2",
     "vite": "^8.2.2",
-    "vitest": "4.1.11",
-    "webpack": "^5.109.2",
-    "webpack-cli": "^7.2.2"
+    "vitest": "5.0.0",
+    "webpack": "^5.110.3",
+    "webpack-cli": "^7.2.3"
   },
   "scripts": {
     "build": "npm run clean && npm run build:types && npm run build:bundle && npm run build:panel && npm run check:panel",
     "build:types": "tsc --noEmit false --declaration --emitDeclarationOnly --outDir dist",
     "build:bundle": "node esbuild.config.js",
     "build:panel": "node scripts/build-panel.mjs",
-    "check:panel": "node scripts/check-panel-bundle.mjs",
+    "check:panel": "node scripts/check-panel-bundle.mjs && snui-check-consumer --root . --remote public/remoteEntry.js --baseline scripts/panel-size-baseline.json",
     "dev": "tsx watch src/index.ts",
     "test": "vitest run",
     "test:watch": "vitest",

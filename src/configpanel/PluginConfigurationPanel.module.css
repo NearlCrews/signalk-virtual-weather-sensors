@@ -1,8 +1,0 @@
-.actionStatus {
-  color: var(--snui-color-text-muted);
-}
-
-.actionError {
-  color: var(--snui-color-danger);
-  font-weight: 600;
-}

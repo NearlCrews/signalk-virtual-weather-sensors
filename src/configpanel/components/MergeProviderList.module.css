@@ -21,22 +21,9 @@
   margin-inline-start: var(--snui-space-2);
 }
 
+/* Sets the excluded providers apart from the ordered list above them. */
 .available {
-  margin-block: var(--snui-space-2) 0;
-  color: var(--snui-color-text-muted);
-  font-size: var(--snui-font-size-sm);
-}
-
-.visuallyHidden {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  padding: 0;
-  margin: -1px;
-  overflow: hidden;
-  clip: rect(0, 0, 0, 0);
-  white-space: nowrap;
-  border: 0;
+  margin-block-start: var(--snui-space-2);
 }
 
 @container snui-panel (max-width: 32rem) {

@@ -91,6 +91,7 @@ export function deriveSourceState(form: PanelFormState): SourceState {
   const showKeyField = merged || singleNeedsKey;
   // Open-Meteo's self-host base URL applies whenever an Open-Meteo host is
   // fetched: as the single provider, as one of the merged providers, or for the
+  // optional marine layer, which uses the same base URL.
   const openMeteoActive = isOpenMeteoActive(
     form.weatherMode,
     form.weatherProvider,

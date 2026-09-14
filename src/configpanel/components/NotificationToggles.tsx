@@ -19,18 +19,30 @@ export default function NotificationToggles({
   return (
     <Stack gap={4}>
       <Checkbox
-        id="svws-notif-enabled"
         label={NOTIFICATION_MASTER_LABEL}
         checked={notifications.enabled}
         onChange={(event) => onChange('enabled', event.target.checked)}
       />
 
-      <FieldGroup legend="Alert categories" disabled={!notifications.enabled}>
+      {/*
+       * Native `disabled` is right: the categories are genuinely unavailable
+       * until notifications are on. It also removes five checkboxes from the
+       * tab order, and this is the default state, so the description carries
+       * the reason a first-time operator would otherwise never be given.
+       */}
+      <FieldGroup
+        legend="Alert categories"
+        description={
+          notifications.enabled
+            ? undefined
+            : 'Turn on severe-weather notifications above to choose categories.'
+        }
+        disabled={!notifications.enabled}
+      >
         <Stack gap={2}>
           {NOTIFICATION_BAND_KEYS.map((key) => (
             <Checkbox
               key={key}
-              id={`svws-notif-${key}`}
               label={NOTIFICATION_LABELS[key]}
               checked={notifications[key]}
               onChange={(event) => onChange(key, event.target.checked)}

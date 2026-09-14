@@ -1,3 +1,11 @@
+/* The plugin glyph sits beside the section title as one heading line. */
+.heading {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--snui-space-3);
+  min-width: 0;
+}
+
 .icon {
   display: grid;
   place-items: center;
@@ -16,22 +24,4 @@
   stroke-linecap: round;
   stroke-linejoin: round;
   stroke-width: 1.75;
-}
-
-.title {
-  margin: 0;
-  color: var(--snui-color-text);
-}
-
-.meta,
-.freshness {
-  margin: 0;
-  color: var(--snui-color-text-muted);
-  font-size: var(--snui-font-size-sm);
-  line-height: var(--snui-line-height);
-}
-
-.freshness {
-  min-height: 1lh;
-  margin-block-start: var(--snui-space-2);
 }

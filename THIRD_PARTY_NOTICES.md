@@ -1,6 +1,6 @@
 # Third-party notices
 
-<!-- generated-for-signalk-nearlcrews-ui:0.8.2 -->
+<!-- generated-for-signalk-nearlcrews-ui:0.11.1 -->
 
 The configuration panel is a Module Federation remote, so the packages below
 are bundled into `public/*.mjs` and redistributed with this plugin. Their

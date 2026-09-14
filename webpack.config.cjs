@@ -29,6 +29,7 @@ const path = require('node:path');
 const webpack = require('webpack');
 const { ModuleFederationPlugin } = webpack.container;
 const packageJson = require('./package.json');
+const { shared } = require('signalk-nearlcrews-ui/federation');
 
 const containerName = packageJson.name.replace(/[-@/]/g, '_');
 
@@ -69,8 +70,9 @@ module.exports = {
         test: /\.[jt]sx?$/,
         loader: 'esbuild-loader',
         exclude: /node_modules/,
+        // No `loader` option: esbuild-loader picks ts or tsx from the file
+        // extension, so a `.ts` module keeps angle-bracket type assertions.
         options: {
-          loader: 'tsx',
           target: 'es2023',
           jsx: 'automatic',
         },
@@ -107,26 +109,12 @@ module.exports = {
       exposes: {
         './PluginConfigurationPanel': './src/configpanel/PluginConfigurationPanel',
       },
-      // `singleton` keeps React and its renderer as the host's matching pair.
-      // The host must supply React 19 and React DOM 19. `strictVersion` must
-      // stay off: the Signal K Admin registers its share as React 19.0.0
-      // while actually shipping a newer build (2.24.0 bundles 19.2.4), so a
-      // strict check rejects a fully compatible host and, with `import:
-      // false`, the panel never mounts. A version mismatch warns and
-      // continues instead. The shared UI package stays inside this remote and
-      // is intentionally absent from this map.
-      shared: {
-        react: {
-          singleton: true,
-          requiredVersion: '^19.2.0',
-          import: false,
-        },
-        'react-dom': {
-          singleton: true,
-          requiredVersion: '^19.2.0',
-          import: false,
-        },
-      },
+      // React and React DOM come from the Signal K Admin host through the
+      // share map the shared UI publishes and was verified with; `hostNotes`
+      // on the same entry records why the shares are non-strict singletons.
+      // The shared UI itself stays inside this remote and is absent from the
+      // map.
+      shared,
     }),
   ],
 };

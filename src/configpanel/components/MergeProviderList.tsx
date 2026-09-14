@@ -1,9 +1,20 @@
 import type * as React from 'react';
-import { Badge, Button, Checkbox, FieldGroup, Stack } from 'signalk-nearlcrews-ui';
+import { useEffect, useRef } from 'react';
+import {
+  Badge,
+  Button,
+  Checkbox,
+  FieldGroup,
+  LiveRegion,
+  Stack,
+  Text,
+  VisuallyHidden,
+} from 'signalk-nearlcrews-ui';
 import {
   providerRequiresApiKey,
   WEATHER_PROVIDER_IDS,
   WEATHER_PROVIDER_LABELS,
+  WEATHER_PROVIDER_SHORT_LABELS,
   type WeatherProviderId,
 } from '../../constants/notifications-shared.js';
 import styles from './MergeProviderList.module.css';
@@ -32,6 +43,7 @@ function ReorderButtons({
       <Button
         size="compact"
         variant="ghost"
+        iconOnly
         aria-label={`Move ${label} up`}
         ariaDisabled={atTop}
         onClick={() => onMove(-1)}
@@ -41,6 +53,7 @@ function ReorderButtons({
       <Button
         size="compact"
         variant="ghost"
+        iconOnly
         aria-label={`Move ${label} down`}
         ariaDisabled={atBottom}
         onClick={() => onMove(1)}
@@ -59,6 +72,67 @@ export default function MergeProviderList({
   const included = mergeProviders;
   const excluded = WEATHER_PROVIDER_IDS.filter((id) => !included.includes(id));
   const lastIndex = included.length - 1;
+
+  /**
+   * Row containers by provider id, so focus can be restored to a specific row
+   * after the list re-renders. Populated by the ref callback in `renderRow`.
+   */
+  const rowRefs = useRef(new Map<WeatherProviderId, HTMLDivElement | null>());
+  /** The row the operator last acted on, consumed once by the focus effect. */
+  const pendingFocusId = useRef<WeatherProviderId | null>(null);
+  /**
+   * False until after the first render. The merge list mounts only when the
+   * operator switches Provider mode to "merged", at which point the order
+   * summary is already a complete sentence, and a live region whose FIRST
+   * render carries text is not reliably observed (some screen readers instead
+   * announce the whole thing on arrival). Seed it empty, then let the first
+   * real change speak.
+   */
+  const announcerReady = useRef(false);
+
+  useEffect(() => {
+    announcerReady.current = true;
+  }, []);
+
+  /**
+   * Put focus back where the operator left it after a change re-renders the
+   * list.
+   *
+   * Two things can take focus away. A row that changes group is a different
+   * child of the same list, and a row can become natively `disabled` as a
+   * direct result of the change (the last included provider locks, and an
+   * excluded provider that needs a key locks): a browser blurs a focused
+   * control the moment it becomes disabled. Either way focus lands on
+   * `document.body` with nothing announced, and a keyboard or screen-reader
+   * operator has to tab through the whole panel again.
+   */
+  useEffect(() => {
+    const id = pendingFocusId.current;
+    if (id === null) return;
+    pendingFocusId.current = null;
+
+    const rows = rowRefs.current;
+    const active = document.activeElement;
+    // Only intervene when the browser actually dropped focus out of the list;
+    // never steal it from wherever the operator has since moved.
+    if (active !== null && Array.from(rows.values()).some((node) => node?.contains(active))) {
+      return;
+    }
+
+    const focusRow = (candidate: WeatherProviderId): boolean => {
+      const input = rows.get(candidate)?.querySelector('input');
+      if (!input || input.disabled) return false;
+      input.focus();
+      return true;
+    };
+
+    if (focusRow(id)) return;
+    // The row the operator acted on is now locked, so fall to the nearest
+    // control that can still be reached, in the order the list renders.
+    for (const candidate of [...included, ...excluded]) {
+      if (candidate !== id && focusRow(candidate)) return;
+    }
+  });
 
   const include = (id: WeatherProviderId): void => {
     if (!included.includes(id)) onChange([...included, id]);
@@ -83,7 +157,7 @@ export default function MergeProviderList({
       : `Merge order: ${included
           .map(
             (id, index) =>
-              `${index + 1} ${WEATHER_PROVIDER_LABELS[id]}${index === 0 ? ' (primary)' : ''}`
+              `${index + 1} ${WEATHER_PROVIDER_SHORT_LABELS[id]}${index === 0 ? ' (primary)' : ''}`
           )
           .join(', ')}.`;
 
@@ -118,16 +192,22 @@ export default function MergeProviderList({
     const isLastIncluded = isIncluded && includedIndex === lastIndex;
     const { disabled, note } = rowLockState(id, isIncluded);
     const label = WEATHER_PROVIDER_LABELS[id];
+    const shortLabel = WEATHER_PROVIDER_SHORT_LABELS[id];
 
     return (
-      <div className={styles.row} key={id}>
+      <div
+        className={styles.row}
+        key={id}
+        ref={(node) => {
+          rowRefs.current.set(id, node);
+        }}
+      >
         <Checkbox
-          id={`svws-merge-${id}`}
           className={styles.checkbox}
           label={
             <>
               {label}
-              {isPrimary ? <span className={styles.visuallyHidden}>, primary</span> : null}
+              {isPrimary ? <VisuallyHidden>, primary</VisuallyHidden> : null}
               {isPrimary ? (
                 <Badge aria-hidden="true" className={styles.badge} tone="info">
                   primary
@@ -138,37 +218,53 @@ export default function MergeProviderList({
           description={note}
           checked={isIncluded}
           disabled={disabled}
-          onChange={(event) => (event.target.checked ? include(id) : exclude(id))}
+          onChange={(event) => {
+            pendingFocusId.current = id;
+            if (event.target.checked) include(id);
+            else exclude(id);
+          }}
         />
         {isIncluded ? (
           <ReorderButtons
-            label={label}
+            // The short name, not the provider picker's full marketing string:
+            // there are six of these buttons and a screen-reader operator hears
+            // the name on every arrow press.
+            label={shortLabel}
             atTop={isPrimary}
             atBottom={isLastIncluded}
-            onMove={(direction) => move(includedIndex, direction)}
+            onMove={(direction) => {
+              pendingFocusId.current = id;
+              move(includedIndex, direction);
+            }}
           />
         ) : null}
       </div>
     );
   };
 
+  /**
+   * ONE keyed list across both groups. Rendering the included and excluded
+   * arrays as separate children of the Stack made a provider that changes group
+   * an unmount plus a mount rather than a move, so the checkbox the operator
+   * just activated ceased to exist and focus fell to the document body.
+   */
+  const rows: React.ReactNode[] = included.map((id, index) => renderRow(id, index));
+  if (excluded.length > 0) {
+    rows.push(
+      <Text as="p" tone="muted" size="sm" className={styles.available} key="available-heading">
+        Available providers are added to the bottom of the order.
+      </Text>,
+      ...excluded.map((id) => renderRow(id, null))
+    );
+  }
+
   return (
     <FieldGroup
       legend="Providers in the merge"
       description="The first provider is primary. It supplies categorical fields, tie-breaks, and the forecast source."
     >
-      <Stack gap={2}>
-        {included.map((id, index) => renderRow(id, index))}
-        {excluded.length > 0 ? (
-          <p className={styles.available}>
-            Available providers are added to the bottom of the order.
-          </p>
-        ) : null}
-        {excluded.map((id) => renderRow(id, null))}
-      </Stack>
-      <p className={styles.visuallyHidden} role="status" aria-live="polite">
-        {orderSummary}
-      </p>
+      <Stack gap={2}>{rows}</Stack>
+      <LiveRegion as="p" message={announcerReady.current ? orderSummary : ''} />
     </FieldGroup>
   );
 }

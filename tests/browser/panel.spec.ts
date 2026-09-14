@@ -5,7 +5,7 @@ import packageJson from '../../package.json' with { type: 'json' };
 const EXPECTED_UI_VERSION = packageJson.devDependencies['signalk-nearlcrews-ui'];
 
 async function expectSaveBlockedAt(page: Page, fieldName: string): Promise<void> {
-  await page.getByRole('button', { name: 'Save configuration' }).click();
+  await page.getByRole('button', { name: 'Save', exact: true }).click();
   const field = page.getByRole('textbox', { name: fieldName, exact: true });
   await expect(field).toBeFocused();
   await expect(field).toHaveAttribute('aria-invalid', 'true');
@@ -25,16 +25,20 @@ test('loads the production remote and never saves a stale number', async ({ page
   );
   await page.getByRole('button', { name: /Fetch and emission cadence/ }).click();
 
-  const updateFrequency = page.getByRole('spinbutton', {
-    name: 'Weather update frequency (minutes)',
-  });
+  const updateFrequency = page.getByRole('spinbutton', { name: 'Weather update frequency' });
   await updateFrequency.fill('999');
   await expect(updateFrequency).toHaveAttribute('aria-invalid', 'true');
-  await expect(page.getByText('Enter a value from 1 to 60.')).toBeVisible();
+  await expect(page.getByText('Enter a whole number from 1 to 60.')).toBeVisible();
 
-  const saveButton = page.getByRole('button', { name: 'Save configuration' });
-  await saveButton.click();
-  await expect(updateFrequency).toBeFocused();
+  // The shared save bar blocks Save while a field is invalid and names the
+  // section holding the bad value, since an invalid draft never commits and
+  // so never dirties the form on its own.
+  const saveButton = page.getByRole('button', { name: 'Save', exact: true });
+  const actionBar = page.locator('[data-panel-action-bar]');
+  await expect(saveButton).toBeDisabled();
+  await expect(actionBar).toContainText(
+    'Correct the invalid value under Fetch and emission cadence'
+  );
   await expect(page.locator('body')).not.toHaveAttribute('data-save-count', /\d/);
 
   await updateFrequency.fill('45');
@@ -66,50 +70,53 @@ test('reports a synchronous host request failure without claiming persistence', 
   await page.goto('/?save-failure');
   await expect(page.locator('body')).toHaveAttribute('data-fixture-ready', 'true');
   await page.getByRole('button', { name: /Fetch and emission cadence/ }).click();
-  await page.getByRole('spinbutton', { name: 'Weather update frequency (minutes)' }).fill('45');
-  const saveButton = page.getByRole('button', { name: 'Save configuration' });
+  await page.getByRole('spinbutton', { name: 'Weather update frequency' }).fill('45');
+  const saveButton = page.getByRole('button', { name: 'Save', exact: true });
+  const actionBar = page.locator('[data-panel-action-bar]');
+  const failure = page.getByRole('status').filter({ hasText: 'Save request failed' });
 
   await saveButton.click();
   await expect(page.locator('body')).toHaveAttribute('data-save-attempt-count', '1');
   await expect(page.locator('body')).not.toHaveAttribute('data-save-count', /\d/);
-  await expect(page.locator('[data-panel-action-bar]')).toContainText(
-    'Could not request the configuration save'
-  );
+  await expect(failure).toContainText('Could not request the configuration save');
+  // The edit is still pending, so the bar keeps reporting it rather than a
+  // request the host never accepted.
+  await expect(actionBar).toContainText('Unsaved changes');
   await expect(saveButton).not.toHaveAttribute('aria-busy');
 
   await saveButton.click();
   await expect(page.locator('body')).toHaveAttribute('data-save-attempt-count', '2');
   await expect(page.locator('body')).toHaveAttribute('data-save-count', '1');
-  await expect(page.locator('[data-panel-action-bar]')).toContainText(
-    'Current plugin status is running',
-    { timeout: 5_000 }
-  );
+  await expect(failure).toHaveCount(0);
+  await expect(actionBar).toContainText('Current plugin status is running', { timeout: 5_000 });
 });
 
 test('keeps an edit made during the status check dirty and visible', async ({ page }) => {
   await page.getByRole('button', { name: /Fetch and emission cadence/ }).click();
-  const updateFrequency = page.getByRole('spinbutton', {
-    name: 'Weather update frequency (minutes)',
-  });
-  const saveButton = page.getByRole('button', { name: 'Save configuration' });
+  const updateFrequency = page.getByRole('spinbutton', { name: 'Weather update frequency' });
+  const saveButton = page.getByRole('button', { name: 'Save', exact: true });
 
   await updateFrequency.fill('45');
   await saveButton.click();
   await expect(page.locator('body')).toHaveAttribute('data-save-count', '1');
   await updateFrequency.fill('46');
 
+  // Once the status check settles, the bar must report the newer edit, not
+  // the outcome of the request that preceded it.
   const actionBar = page.locator('[data-panel-action-bar]');
-  await expect(actionBar).toContainText('Unsaved changes.');
   await expect(saveButton).not.toHaveAttribute('aria-busy', 'true', { timeout: 5_000 });
-  await expect(actionBar).toContainText('Unsaved changes.');
+  await expect(actionBar).toContainText('Unsaved changes');
+  await expect(actionBar).not.toContainText('Current plugin status');
   await expect(saveButton).toBeEnabled();
 });
 
-test('uses Auto for a fresh profile without persisting an implicit choice', async ({ page }) => {
+test('uses Match Admin for a fresh profile without persisting an implicit choice', async ({
+  page,
+}) => {
   const root = page.locator('[data-snui-root]');
   const themeGroup = page.getByRole('radiogroup', { name: 'Panel theme' });
   const light = themeGroup.getByRole('radio', { name: 'Light' });
-  const auto = themeGroup.getByRole('radio', { name: 'Auto' });
+  const auto = themeGroup.getByRole('radio', { name: 'Match Admin' });
 
   await expect(root).not.toHaveAttribute('data-snui-theme');
   await expect(root).toHaveCSS('background-color', 'rgb(244, 246, 248)');
@@ -125,17 +132,19 @@ test('uses Auto for a fresh profile without persisting an implicit choice', asyn
   ).toEqual({ legacy: null, shared: null });
 });
 
-test('keeps Auto light without a host marker and lets System follow the OS', async ({ page }) => {
+test('keeps Match Admin light without a host marker and lets Match device follow the OS', async ({
+  page,
+}) => {
   await page.emulateMedia({ colorScheme: 'dark' });
   const root = page.locator('[data-snui-root]');
   const themeGroup = page.getByRole('radiogroup', { name: 'Panel theme' });
 
-  await themeGroup.getByRole('radio', { name: 'Auto' }).click();
+  await themeGroup.getByRole('radio', { name: 'Match Admin' }).click();
   await expect(root).not.toHaveAttribute('data-snui-theme');
   await expect(root).toHaveCSS('background-color', 'rgb(244, 246, 248)');
   await expect(root).toHaveCSS('color', 'rgb(24, 32, 44)');
 
-  await themeGroup.getByRole('radio', { name: 'System' }).click();
+  await themeGroup.getByRole('radio', { name: 'Match device' }).click();
   await expect(root).toHaveAttribute('data-snui-theme', 'system');
   await expect(root).toHaveCSS('background-color', 'rgb(16, 19, 28)');
   await expect(root).toHaveCSS('color', 'rgb(245, 247, 250)');
@@ -154,9 +163,9 @@ test('blocks a missing AccuWeather key and focuses its field', async ({ page }) 
 test('reveals an API key without losing its value, focus, or selection', async ({ page }) => {
   await page.getByRole('button', { name: /Weather source/ }).click();
   await page.getByRole('combobox', { name: 'Provider', exact: true }).selectOption('accuweather');
-  const apiKey = page.locator('#svws-apikey');
-  await expect(apiKey).toHaveAttribute('autocapitalize', 'none');
-  await expect(apiKey).toHaveAttribute('autocomplete', 'off');
+  const apiKey = page.getByRole('textbox', { name: 'API key', exact: true });
+  await expect(apiKey).toHaveAttribute('autocapitalize', 'off');
+  await expect(apiKey).toHaveAttribute('autocomplete', 'new-password');
   await expect(apiKey).toHaveAttribute('autocorrect', 'off');
   await expect(apiKey).toHaveAttribute('spellcheck', 'false');
   await apiKey.fill('test-api-key-1234567890');
@@ -211,20 +220,20 @@ test('keeps an invalid cadence edit and its error across a collapse and reopen',
 }) => {
   const cadence = page.getByRole('button', { name: /Fetch and emission cadence/ });
   await cadence.click();
-  const updateFrequency = page.getByRole('spinbutton', {
-    name: 'Weather update frequency (minutes)',
-  });
+  const updateFrequency = page.getByRole('spinbutton', { name: 'Weather update frequency' });
   await updateFrequency.fill('999');
   await expect(updateFrequency).toHaveAttribute('aria-invalid', 'true');
+  const saveButton = page.getByRole('button', { name: 'Save', exact: true });
+  await expect(saveButton).toBeDisabled();
 
   await cadence.click();
+  await expect(saveButton).toBeDisabled();
   await cadence.click();
 
   await expect(updateFrequency).toHaveValue('999');
   await expect(updateFrequency).toHaveAttribute('aria-invalid', 'true');
-  await expect(page.getByText('Enter a value from 1 to 60.')).toBeVisible();
-  await page.getByRole('button', { name: 'Save configuration' }).click();
-  await expect(updateFrequency).toBeFocused();
+  await expect(page.getByText('Enter a whole number from 1 to 60.')).toBeVisible();
+  await expect(saveButton).toBeDisabled();
   await expect(page.locator('body')).not.toHaveAttribute('data-save-count', /\d/);
 });
 
@@ -234,7 +243,7 @@ test('frees the API key test when its section is collapsed mid-request', async (
   const source = page.getByRole('button', { name: /Weather source/ });
   await source.click();
   await page.getByRole('combobox', { name: 'Provider', exact: true }).selectOption('accuweather');
-  await page.locator('#svws-apikey').fill('test-api-key-1234567890');
+  await page.getByRole('textbox', { name: 'API key', exact: true }).fill('test-api-key-1234567890');
 
   const testKey = page.getByRole('button', { name: 'Test API key' });
   await testKey.click();
@@ -256,6 +265,20 @@ test('blocks an invalid Open-Meteo base URL and focuses its field', async ({ pag
   await expectSaveBlockedAt(page, 'Open-Meteo base URL');
 });
 
+// Met.no and Open-Meteo are CC BY 4.0, so the panel owes each an attribution
+// wherever it is the selected source. Open-Meteo carries its own inside the
+// base-URL field description; Met.no needs no field, so its note stands alone
+// and nothing else would fail if it stopped rendering.
+test('attributes Met.no and Open-Meteo wherever each is the selected source', async ({ page }) => {
+  await page.getByRole('button', { name: /Weather source/ }).click();
+  await expect(page.getByText(/Weather data by Open-Meteo\.com \(CC BY 4\.0\)/)).toBeVisible();
+
+  await page.getByRole('combobox', { name: 'Provider', exact: true }).selectOption('met-no');
+  await expect(
+    page.getByText(/Norwegian Meteorological Institute \(api\.met\.no, CC BY 4\.0\)/)
+  ).toBeVisible();
+});
+
 test('keeps reorder controls focusable and announces the new merge order', async ({ page }) => {
   await page.getByRole('button', { name: /Weather source/ }).click();
   await page.getByRole('combobox', { name: 'Provider mode' }).selectOption('merged');
@@ -274,6 +297,76 @@ test('keeps reorder controls focusable and announces the new merge order', async
   );
 });
 
+test('keeps focus inside the merge list when a provider changes group', async ({ page }) => {
+  await page.getByRole('button', { name: /Weather source/ }).click();
+  await page.getByRole('combobox', { name: 'Provider mode' }).selectOption('merged');
+
+  // Unchecking moves the row from the included group to the excluded one.
+  // Rendering the two groups as separate keyed lists made that an unmount plus
+  // a mount, so the checkbox the operator just activated ceased to exist and
+  // focus fell to document.body with nothing announced.
+  const openMeteo = page.getByRole('checkbox', { name: /Open-Meteo/ });
+  await openMeteo.focus();
+  await openMeteo.uncheck();
+
+  await expect
+    .poll(() => page.evaluate(() => document.activeElement?.tagName ?? 'NONE'))
+    .not.toBe('BODY');
+  await expect(page.getByRole('checkbox', { name: /Open-Meteo/ })).toBeFocused();
+});
+
+test('moves focus to a reachable row when the acted-on row locks', async ({ page }) => {
+  await page.getByRole('button', { name: /Weather source/ }).click();
+  await page.getByRole('combobox', { name: 'Provider mode' }).selectOption('merged');
+
+  // Leaving one provider in the merge locks that last row: an empty list is not
+  // saved as an empty merge. A browser blurs a focused control the moment it
+  // becomes disabled, so focus has to be placed deliberately.
+  await page.getByRole('checkbox', { name: /AccuWeather/ }).uncheck();
+  const metNo = page.getByRole('checkbox', { name: /Met\.no/ });
+  await metNo.focus();
+  await metNo.uncheck();
+
+  await expect(page.getByRole('checkbox', { name: /Open-Meteo/ })).toBeDisabled();
+  await expect
+    .poll(() => page.evaluate(() => document.activeElement?.tagName ?? 'NONE'))
+    .not.toBe('BODY');
+});
+
+test('seeds the merge-order announcer empty on first render', async ({ page }) => {
+  await page.getByRole('button', { name: /Weather source/ }).click();
+  await page.getByRole('combobox', { name: 'Provider mode' }).selectOption('merged');
+
+  // The list mounts with a complete order sentence already available, and a
+  // live region whose FIRST render carries text is not reliably observed.
+  const announcer = page.getByRole('status').filter({ hasText: 'Merge order:' });
+  await expect(announcer).toHaveCount(0);
+
+  await page.getByRole('button', { name: /Move Open-Meteo.* down/ }).click();
+  await expect(page.getByRole('status').filter({ hasText: 'Merge order:' })).toContainText(
+    /Merge order: 1 Met.no/
+  );
+});
+
+test('announces the API-key test through a region that already existed', async ({ page }) => {
+  await page.getByRole('button', { name: /Weather source/ }).click();
+  await page.getByRole('combobox', { name: 'Provider mode' }).selectOption('merged');
+  await expect(page.getByRole('button', { name: 'Test API key' })).toBeVisible();
+
+  const countRegions = (): Promise<number> =>
+    page.evaluate(() => document.querySelectorAll('[aria-live]').length);
+  const before = await countRegions();
+
+  await page.getByRole('textbox', { name: 'API key' }).fill('a'.repeat(32));
+  await page.getByRole('button', { name: 'Test API key' }).click();
+  await expect(page.getByText(/API key/).first()).toBeVisible();
+
+  // The region and its first message used to be created in one commit, which
+  // screen readers do not reliably observe, so the result of a test that spends
+  // a real AccuWeather call could go unannounced. The count must not move.
+  expect(await countRegions()).toBe(before);
+});
+
 test('blocks a keyless merge when every selected provider needs a key', async ({ page }) => {
   await page.getByRole('button', { name: /Weather source/ }).click();
   await page.getByRole('combobox', { name: 'Provider mode' }).selectOption('merged');
@@ -290,7 +383,7 @@ test('ignores the retired legacy preference and supports every theme', async ({ 
   await page.reload();
   await expect(page.locator('body')).toHaveAttribute('data-fixture-ready', 'true');
   await expect(page.locator('[data-snui-root]')).not.toHaveAttribute('data-snui-theme');
-  await expect(page.getByRole('radio', { name: 'Auto' })).toBeChecked();
+  await expect(page.getByRole('radio', { name: 'Match Admin' })).toBeChecked();
   expect(
     await page.evaluate(() => ({
       legacy: localStorage.getItem('svws-theme'),
@@ -300,7 +393,7 @@ test('ignores the retired legacy preference and supports every theme', async ({ 
 
   const themeGroup = page.getByRole('radiogroup', { name: 'Panel theme' });
   for (const [label, value] of [
-    ['System', 'system'],
+    ['Match device', 'system'],
     ['Light', 'light'],
     ['Dark', 'dark'],
     ['Night', 'night'],
@@ -308,7 +401,7 @@ test('ignores the retired legacy preference and supports every theme', async ({ 
     await themeGroup.getByRole('radio', { name: label }).click();
     await expect(page.locator('[data-snui-root]')).toHaveAttribute('data-snui-theme', value);
   }
-  await themeGroup.getByRole('radio', { name: 'Auto' }).click();
+  await themeGroup.getByRole('radio', { name: 'Match Admin' }).click();
   await expect(page.locator('[data-snui-root]')).not.toHaveAttribute('data-snui-theme');
 });
 
@@ -320,8 +413,8 @@ test('has no Axe findings in every theme', async ({ page, browserName, isMobile 
   await page.addStyleTag({ content: '* { transition: none !important; }' });
 
   for (const [label, value] of [
-    ['Auto', null],
-    ['System', 'system'],
+    ['Match Admin', null],
+    ['Match device', 'system'],
     ['Light', 'light'],
     ['Dark', 'dark'],
     ['Night', 'night'],
@@ -429,10 +522,12 @@ test('gives every control a reachable target at the pointer size floor', async (
   // daily-quota field. Without this the sweep silently skips a whole control:
   // the panel's conditional branches, not the viewport, are what hide controls
   // from a measurement pass.
-  await page.locator('#svws-apikey').fill('sweep-api-key-1234567890');
+  await page
+    .getByRole('textbox', { name: 'API key', exact: true })
+    .fill('sweep-api-key-1234567890');
   await expect(page.getByRole('spinbutton', { name: /Daily API call quota/ })).toBeVisible();
 
-  const result = await page.evaluate(() => {
+  const result = await page.evaluate(async () => {
     const isRendered = (el: Element): boolean => {
       const style = getComputedStyle(el);
       return (
@@ -488,11 +583,27 @@ test('gives every control a reachable target at the pointer size floor', async (
     const controls = root.querySelectorAll(
       'button, input, select, textarea, [role="radio"], [role="checkbox"], [role="switch"]'
     );
+    // The viewport-docked action bar re-measures on the animation frame after
+    // a scroll and returns to the flow once its anchor is in view, so a probe
+    // taken in the same synchronous pass as the scroll reads the bar where it
+    // sat before and reports a trailing control it no longer covers. Give the
+    // bar its frames before asking what is on top.
+    const settle = async (): Promise<void> => {
+      for (let frame = 0; frame < 5; frame += 1) {
+        await new Promise<void>((resolve) => {
+          requestAnimationFrame(() => {
+            resolve();
+          });
+        });
+      }
+    };
+
     for (const el of [...controls].filter(isRendered)) {
       // Scroll to the middle first: that is what a real tap causes, and it
       // keeps the docked action bar from sitting over a control that is
       // perfectly reachable once the user has scrolled to it.
       el.scrollIntoView({ block: 'center', inline: 'center' });
+      await settle();
       const name = el.getAttribute('aria-label') ?? el.textContent?.trim() ?? el.tagName;
       measured += 1;
 
@@ -517,7 +628,7 @@ test('gives every control a reachable target at the pointer size floor', async (
 test('lets an unconfigured plugin save defaults', async ({ page }) => {
   await page.goto('/?unconfigured');
   await expect(page.locator('body')).toHaveAttribute('data-fixture-ready', 'true');
-  const saveButton = page.getByRole('button', { name: 'Save configuration' });
+  const saveButton = page.getByRole('button', { name: 'Save', exact: true });
   await expect(saveButton).toBeEnabled();
   await saveButton.click();
   await expect(page.locator('body')).toHaveAttribute('data-save-count', '1');
@@ -530,7 +641,7 @@ test('shows a compatibility message when native CSS scope is unavailable', async
     'Browser update required'
   );
   await expect(page.locator('[data-browser-compatibility-message]')).toContainText(
-    'newer browser or embedded WebView'
+    'Update the browser, or the app that opens Signal K Admin'
   );
   await expect(page.locator('[data-snui-root]')).toHaveCount(0);
   await expect(page.locator('style[data-snui-styles]')).toHaveCount(0);

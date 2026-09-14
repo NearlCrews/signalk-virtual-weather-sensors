@@ -32,11 +32,17 @@ export type PanelFormState = Omit<Mutable<PluginConfiguration>, 'notifications'>
   notifications: NotificationsFormState;
 };
 
-export type SaveBlockerId = 'svws-apikey' | 'svws-ombase';
+/** The field that rejected a save, so the panel can open its section and focus it. */
+export type SaveBlocker = 'apiKey' | 'baseUrl';
 
 interface SaveAction {
   message: string;
-  isError: boolean;
+  /**
+   * True once the host accepted the request and the message describes the
+   * plugin status read afterwards; false when the request itself could not be
+   * made, so the panel can report the failure as an error.
+   */
+  requested: boolean;
 }
 
 function openRecord(value: unknown): Record<string, unknown> {
@@ -215,14 +221,14 @@ async function checkStatusAfterRequest(
   if (!data) {
     return {
       message: 'Save requested, but the current plugin status could not be read.',
-      isError: true,
+      requested: true,
     };
   }
   return {
     message: data.running
       ? 'Save requested. Current plugin status is running.'
       : `Save requested. Current plugin status is not running: ${data.banner || 'unknown'}.`,
-    isError: !data.running,
+    requested: true,
   };
 }
 
@@ -231,8 +237,12 @@ export interface UsePanelConfigResult {
   requestedForm: PanelFormState;
   dirty: boolean;
   saving: boolean;
-  // Request and current-status outcome for the footer status line.
+  // Outcome of the last save: the plugin status read after the request, or
+  // the reason the request could not be made. Cleared by the next edit.
   action: SaveAction | null;
+  // When the host last accepted a save request, or null before the first
+  // request and after any later edit.
+  saveRequestedAt: number | null;
   // Inline blocker shown by ApiKeyField when Save rejects an invalid key.
   keyError: string | null;
   // Inline blocker shown by the Open-Meteo field when its URL cannot be used.
@@ -244,7 +254,7 @@ export interface UsePanelConfigResult {
   clearBaseUrlError: () => void;
   // Identifies the field that blocked a save, or null after submission, so the
   // caller can open the Weather source section and focus the inline error.
-  doSave: () => Promise<SaveBlockerId | null>;
+  doSave: () => Promise<SaveBlocker | null>;
 }
 
 /**
@@ -268,6 +278,7 @@ export function usePanelConfig(
   const requestedConfigurationRef = useRef<Record<string, unknown>>(openRecord(configuration));
   const [saving, setSaving] = useState(false);
   const [action, setAction] = useState<SaveAction | null>(null);
+  const [saveRequestedAt, setSaveRequestedAt] = useState<number | null>(null);
   const [keyError, setKeyError] = useState<string | null>(null);
   const [baseUrlError, setBaseUrlError] = useState<string | null>(null);
   const editVersionRef = useRef(0);
@@ -290,6 +301,7 @@ export function usePanelConfig(
     <K extends keyof PanelFormState>(key: K, value: PanelFormState[K]): void => {
       editVersionRef.current += 1;
       setAction(null);
+      setSaveRequestedAt(null);
       setForm((prev) => ({ ...prev, [key]: value }));
     },
     []
@@ -298,6 +310,7 @@ export function usePanelConfig(
   const setNotification = useCallback((key: keyof NotificationsFormState, value: boolean): void => {
     editVersionRef.current += 1;
     setAction(null);
+    setSaveRequestedAt(null);
     setForm((prev) => ({
       ...prev,
       notifications: { ...prev.notifications, [key]: value },
@@ -317,23 +330,22 @@ export function usePanelConfig(
     if (editVersionRef.current === version) setAction(next);
   }, []);
 
-  const doSave = useCallback(async (): Promise<SaveBlockerId | null> => {
+  const doSave = useCallback(async (): Promise<SaveBlocker | null> => {
     const submittedEditVersion = editVersionRef.current;
     const trimmedKey = form.accuWeatherApiKey.trim();
     const keyFormatError = apiKeyErrorFor(form, trimmedKey);
     if (keyFormatError) {
       setKeyError(keyFormatError);
-      return 'svws-apikey';
+      return 'apiKey';
     }
     setKeyError(null);
     const baseUrlError = baseUrlErrorFor(form);
     if (baseUrlError) {
       setBaseUrlError(baseUrlError);
-      return 'svws-ombase';
+      return 'baseUrl';
     }
     setBaseUrlError(null);
     setSaving(true);
-    setAction({ message: 'Requesting configuration save...', isError: false });
     try {
       const normalizedForm: PanelFormState = {
         ...form,
@@ -351,14 +363,15 @@ export function usePanelConfig(
       } catch (err) {
         setAction({
           message: `Could not request the configuration save: ${toErrorText(err)}`,
-          isError: true,
+          requested: false,
         });
         return null;
       }
-      setAction({
-        message: 'Configuration save requested. Checking current plugin status...',
-        isError: false,
-      });
+      // The host has the request. The action bar reports the status check
+      // while it runs, so an earlier outcome is cleared rather than shown beside
+      // it.
+      setAction(null);
+      setSaveRequestedAt(Date.now());
       // What we handed the host is the requested baseline; adopting it as the form
       // too keeps dirty false even when trimming changed the key. Adopt only
       // if the user has not typed since Save was clicked: a mid-confirmation edit
@@ -372,13 +385,13 @@ export function usePanelConfig(
       } catch (err) {
         setActionForEditVersion(submittedEditVersion, {
           message: `Save requested, but the current status check failed: ${toErrorText(err)}`,
-          isError: true,
+          requested: true,
         });
       }
     } catch (err) {
       setAction({
         message: `Could not prepare the configuration request: ${toErrorText(err)}`,
-        isError: true,
+        requested: false,
       });
     } finally {
       setSaving(false);
@@ -392,6 +405,7 @@ export function usePanelConfig(
     dirty: !formsEqual(form, requestedForm),
     saving,
     action,
+    saveRequestedAt,
     keyError,
     baseUrlError,
     setField,

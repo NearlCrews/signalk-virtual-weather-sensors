@@ -1,5 +1,5 @@
 import type * as React from 'react';
-import { Checkbox, LabeledField, Select, Stack, TextInput } from 'signalk-nearlcrews-ui';
+import { Checkbox, LabeledField, Select, Stack, Text, TextInput } from 'signalk-nearlcrews-ui';
 import {
   WEATHER_MODE_IDS,
   WEATHER_MODE_LABELS,
@@ -9,7 +9,6 @@ import {
   type WeatherProviderId,
 } from '../../constants/notifications-shared.js';
 import type { PanelFormState } from '../hooks/usePanelConfig.js';
-import utilities from '../panel-utilities.module.css';
 import ApiKeyField from './ApiKeyField.js';
 import MergeProviderList from './MergeProviderList.js';
 
@@ -22,6 +21,9 @@ interface Props {
   openMeteoActive: boolean;
   keyError: string | null;
   baseUrlError: string | null;
+  /** Focus targets for a save the key or the base URL blocked. */
+  apiKeyRef: React.Ref<HTMLInputElement>;
+  baseUrlRef: React.Ref<HTMLInputElement>;
   clearKeyError: () => void;
   clearBaseUrlError: () => void;
 }
@@ -35,6 +37,8 @@ export default function WeatherSourceSection({
   openMeteoActive,
   keyError,
   baseUrlError,
+  apiKeyRef,
+  baseUrlRef,
   clearKeyError,
   clearBaseUrlError,
 }: Props): React.ReactElement {
@@ -42,7 +46,6 @@ export default function WeatherSourceSection({
     <Stack gap={4}>
       <LabeledField label="Provider mode">
         <Select
-          id="svws-mode"
           value={form.weatherMode}
           onChange={(event) => setField('weatherMode', event.target.value as WeatherMode)}
         >
@@ -63,7 +66,6 @@ export default function WeatherSourceSection({
       ) : (
         <LabeledField label="Provider">
           <Select
-            id="svws-provider"
             value={form.weatherProvider}
             onChange={(event) =>
               setField('weatherProvider', event.target.value as WeatherProviderId)
@@ -82,6 +84,7 @@ export default function WeatherSourceSection({
         <ApiKeyField
           value={form.accuWeatherApiKey}
           keyError={keyError}
+          inputRef={apiKeyRef}
           onChange={(next) => {
             setField('accuWeatherApiKey', next);
             clearKeyError();
@@ -97,8 +100,8 @@ export default function WeatherSourceSection({
           errorLive="polite"
         >
           <TextInput
-            id="svws-ombase"
-            className={utilities.identifier}
+            ref={baseUrlRef}
+            monospace
             value={form.openMeteoBaseUrl}
             placeholder="https://api.open-meteo.com"
             onChange={(event) => {
@@ -110,14 +113,16 @@ export default function WeatherSourceSection({
       ) : null}
 
       {!merged && form.weatherProvider === 'met-no' ? (
-        <p>
+        // Met.no needs no field of its own, so its attribution stands alone.
+        // It reads at the size and color the other providers' notes get from
+        // their field description.
+        <Text as="p" tone="muted" size="sm">
           Weather data from the Norwegian Meteorological Institute (api.met.no, CC BY 4.0), no API
           key required. Global coverage includes Nordic and European weather alerts.
-        </p>
+        </Text>
       ) : null}
 
       <Checkbox
-        id="svws-marine"
         label="Emit sea state"
         description="Adds waves, swell, sea temperature, and current from the keyless Open-Meteo Marine layer. Coastal and offshore only; inland points have no data."
         checked={form.marineData}

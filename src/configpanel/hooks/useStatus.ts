@@ -8,8 +8,8 @@ export const POLL_MS = 10_000;
 
 // A snapshot older than two and a half poll intervals reads as stale: the
 // poll has likely stalled (server restart, lost connection), so the dashboard
-// shows a dim "updated Ns ago" marker. Defined here because staleness is a
-// property of the polling cadence, not of any one component.
+// shows how old its numbers are. Defined here because staleness is a property
+// of the polling cadence, not of any one component.
 const STALE_AFTER_MS = 2.5 * POLL_MS;
 
 export interface UseStatusResult {
@@ -20,10 +20,6 @@ export interface UseStatusResult {
   // Wall-clock timestamp (ms) of the last successful poll, or null before the
   // first success.
   lastUpdatedMs: number | null;
-  // Wall-clock timestamp (ms) of the last FAILED poll attempt (0 before any
-  // failure). State, not a ref: each failed attempt bumps it so the dashboard
-  // re-renders during an outage and its staleness marker keeps advancing.
-  lastAttemptMs: number;
   // True once the last successful poll is older than STALE_AFTER_MS,
   // recomputed on every poll attempt.
   stale: boolean;
@@ -87,7 +83,6 @@ export function useStatus(): UseStatusResult {
   const [error, setError] = useState<string | null>(null);
   const [stale, setStale] = useState(false);
   const [loading, setLoading] = useState(true);
-  const [lastAttemptMs, setLastAttemptMs] = useState(0);
   // Raw text of the last successful poll: the changed-payload gate for setStatus.
   const lastTextRef = useRef<string | null>(null);
   // Wall-clock time of the last successful poll. A ref, not state, so a
@@ -113,9 +108,6 @@ export function useStatus(): UseStatusResult {
         setError(null);
       } else {
         setError(result.error);
-        // Failure-only re-render driver: lets the dashboard's "updated Ns ago"
-        // marker advance per attempt while the poll is down.
-        setLastAttemptMs(Date.now());
       }
       setStale(
         lastUpdatedRef.current !== null && Date.now() - lastUpdatedRef.current > STALE_AFTER_MS
@@ -163,7 +155,6 @@ export function useStatus(): UseStatusResult {
     status,
     error,
     lastUpdatedMs: lastUpdatedRef.current,
-    lastAttemptMs,
     stale,
     loading,
     refresh,

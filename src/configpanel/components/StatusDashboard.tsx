@@ -1,22 +1,34 @@
 import type * as React from 'react';
 import {
-  Card,
-  Cluster,
-  formatRelativeAge,
+  LiveRegion,
   Metric,
   MetricGrid,
-  Stack,
+  RelativeAge,
+  Section,
   StatusIndicator,
 } from 'signalk-nearlcrews-ui';
 import { PLUGIN_DISPLAY_NAME } from '../../constants/notifications-shared.js';
 import type { PanelStatusResponse } from '../../types/index.js';
-import { RELATIVE_AGE_FORMAT } from '../relative-age.js';
 import styles from './StatusDashboard.module.css';
 
 const NA = 'n/a';
 
+const STALE_ANNOUNCEMENT = 'Status updates have stalled. These numbers may be out of date.';
+
+/** Announced beside a metric the panel knows may be out of date. */
+const STALE_TONE_LABEL = 'Possibly out of date';
+
+// The panel ships no translations, so the age stays in the language of the
+// sentence around it rather than following the browser locale. The wording
+// itself is the library default.
+const AGE_OPTIONS = { locale: 'en' } as const;
+
+// Counts follow the same rule as the relative age: one pinned locale, so a
+// grouping separator cannot disagree with the English sentence around it.
+const COUNT_LOCALE = 'en';
+
 function count(value: number | undefined): string {
-  return value === undefined ? NA : value.toLocaleString();
+  return value === undefined ? NA : value.toLocaleString(COUNT_LOCALE);
 }
 
 function WeatherGlyph(): React.ReactElement {
@@ -33,65 +45,111 @@ interface Props {
   status: PanelStatusResponse | null;
   loading: boolean;
   lastUpdatedMs: number | null;
-  lastAttemptMs: number;
   stale: boolean;
+}
+
+interface MetricsProps {
+  status: PanelStatusResponse | null;
+  stale: boolean;
+}
+
+/**
+ * The five status counters.
+ *
+ * While the poll is stalled every metric carries a warning tone, so a stale
+ * number is never visually identical to a live one. The tone badge renders a
+ * glyph plus a visually hidden announcement, so the marking does not depend on
+ * color. Split out of `StatusDashboard` so both halves stay within the
+ * repository's cognitive-complexity budget.
+ */
+function StatusMetrics({ status, stale }: MetricsProps): React.ReactElement {
+  const activeAlerts = status?.activeNotifications ?? 0;
+  const weatherApiOn = status?.weatherProviderRegistered === true;
+  const staleTone = stale ? ('warning' as const) : undefined;
+  const staleToneLabel = stale ? STALE_TONE_LABEL : undefined;
+
+  return (
+    <MetricGrid>
+      <Metric
+        tone={staleTone}
+        toneLabel={staleToneLabel}
+        value={count(status?.updates)}
+        label="Updates"
+      />
+      <Metric
+        tone={staleTone}
+        toneLabel={staleToneLabel}
+        value={count(status?.quotaUsedLast24h)}
+        unit="calls"
+        label="API usage (24h)"
+      />
+      <Metric
+        tone={activeAlerts > 0 ? 'warning' : staleTone}
+        toneLabel={activeAlerts > 0 ? `${activeAlerts} active` : staleToneLabel}
+        value={count(status?.activeNotifications)}
+        label="Active alerts"
+      />
+      {/*
+       * `lastUpdateMinutesAgo` is a server snapshot captured at the last
+       * SUCCESSFUL poll, so while the poll is stalled it keeps reporting the
+       * value it held then: ten minutes into a stall it would claim the weather
+       * was one minute old. Report n/a rather than a number known to be wrong.
+       */}
+      <Metric
+        tone={staleTone}
+        toneLabel={staleToneLabel}
+        value={stale || status?.lastUpdateMinutesAgo == null ? NA : status.lastUpdateMinutesAgo}
+        unit="minutes"
+        label="Since last fetch"
+      />
+      <Metric
+        tone={status && !weatherApiOn ? 'warning' : staleTone}
+        toneLabel={status && !weatherApiOn ? 'Not registered' : staleToneLabel}
+        value={weatherApiOn ? 'On' : status ? 'Off' : NA}
+        label="Weather API"
+      />
+    </MetricGrid>
+  );
 }
 
 export default function StatusDashboard({
   status,
   loading,
   lastUpdatedMs,
-  lastAttemptMs,
   stale,
 }: Props): React.ReactElement {
   const stateLabel = status ? (status.running ? 'Running' : 'Not running') : 'Unknown';
   const tone = status ? (status.running ? 'success' : 'danger') : 'neutral';
-  const meta = status?.banner || (loading ? 'Loading status...' : stateLabel);
-  const staleAgeMs = lastUpdatedMs === null ? 0 : Math.max(0, lastAttemptMs - lastUpdatedMs);
+  const meta = status?.banner || (loading ? 'Loading status…' : stateLabel);
 
   return (
-    <section aria-labelledby="svws-status-heading">
-      <Stack gap={3}>
-        <Card>
-          <Cluster align="center" justify="between">
-            <Cluster align="center">
-              <span className={styles.icon} aria-hidden="true">
-                <WeatherGlyph />
-              </span>
-              <div>
-                <h2 className={styles.title} id="svws-status-heading">
-                  {PLUGIN_DISPLAY_NAME}
-                </h2>
-                <p className={styles.meta}>{meta}</p>
-              </div>
-            </Cluster>
-            <StatusIndicator tone={tone}>{stateLabel}</StatusIndicator>
-          </Cluster>
-          <p className={styles.freshness} role="status" aria-live="polite">
-            {stale
-              ? `Updated ${formatRelativeAge(staleAgeMs, {
-                  ...RELATIVE_AGE_FORMAT,
-                  fallback: 'unknown',
-                  locale: 'en',
-                })}`
-              : ''}
-          </p>
-        </Card>
+    <Section
+      title={
+        <span className={styles.heading}>
+          <span className={styles.icon} aria-hidden="true">
+            <WeatherGlyph />
+          </span>
+          {PLUGIN_DISPLAY_NAME}
+        </span>
+      }
+      description={meta}
+      actions={<StatusIndicator tone={tone}>{stateLabel}</StatusIndicator>}
+    >
+      {stale ? (
+        <StatusIndicator tone="warning">
+          Updated <RelativeAge since={lastUpdatedMs} options={AGE_OPTIONS} />
+        </StatusIndicator>
+      ) : null}
+      {/*
+       * The visible marker is deliberately not a live region. Its age ticks
+       * every ten seconds, so a region wrapping it would re-announce for as
+       * long as the poll stays down, and a region mounted with its text
+       * already in place is not reliably observed anyway. This announcer is
+       * always mounted and speaks the transition once.
+       */}
+      <LiveRegion message={stale ? STALE_ANNOUNCEMENT : ''} />
 
-        <MetricGrid aria-live="off">
-          <Metric value={count(status?.updates)} label="Updates" />
-          <Metric value={count(status?.quotaUsedLast24h)} label="API calls (24h)" />
-          <Metric value={count(status?.activeNotifications)} label="Active alerts" />
-          <Metric
-            value={status?.lastUpdateMinutesAgo == null ? NA : status.lastUpdateMinutesAgo}
-            label="Minutes since fetch"
-          />
-          <Metric
-            value={status ? (status.weatherProviderRegistered ? 'On' : 'Off') : NA}
-            label="Weather API"
-          />
-        </MetricGrid>
-      </Stack>
-    </section>
+      <StatusMetrics status={status} stale={stale} />
+    </Section>
   );
 }

@@ -1,14 +1,20 @@
 import type * as React from 'react';
 import { useEffect, useRef, useState } from 'react';
-import { Button, Cluster, LabeledField } from 'signalk-nearlcrews-ui';
+import {
+  Button,
+  LabeledField,
+  LiveRegion,
+  Stack,
+  StatusIndicator,
+  splitLabeledFieldControlProps,
+  VisuallyHidden,
+} from 'signalk-nearlcrews-ui';
 import { SecretInput } from 'signalk-nearlcrews-ui/forms';
 import {
   API_KEY_MIN_LENGTH,
   validateApiKeyCandidate,
 } from '../../constants/notifications-shared.js';
 import { asJsonObject, fetchJson, toErrorText } from '../api-base.js';
-import utilities from '../panel-utilities.module.css';
-import styles from './ApiKeyField.module.css';
 
 interface TestState {
   state: null | 'pending' | 'ok' | 'error';
@@ -18,6 +24,8 @@ interface TestState {
 interface Props {
   value: string;
   keyError: string | null;
+  /** Reaches the key input, so a save blocked on the key can focus it. */
+  inputRef: React.Ref<HTMLInputElement>;
   onChange: (next: string) => void;
 }
 
@@ -35,7 +43,12 @@ async function requestKeyTest(apiKey: string, signal: AbortSignal): Promise<Test
     : { state: 'error', message: message || `Test failed (HTTP ${status}).` };
 }
 
-export default function ApiKeyField({ value, keyError, onChange }: Props): React.ReactElement {
+export default function ApiKeyField({
+  value,
+  keyError,
+  inputRef,
+  onChange,
+}: Props): React.ReactElement {
   const [testKey, setTestKey] = useState<TestState>({ state: null, message: '' });
   const controllerRef = useRef<AbortController | null>(null);
 
@@ -75,11 +88,13 @@ export default function ApiKeyField({ value, keyError, onChange }: Props): React
   };
 
   const error = keyError ?? (testKey.state === 'error' ? testKey.message : null);
-  const statusMessage =
-    testKey.state === 'pending' || testKey.state === 'ok' ? testKey.message : '';
+  const pending = testKey.state === 'pending';
+  // A failed test reads as the field error above; the in-progress and passing
+  // results are status, not validation, so they get their own line.
+  const result = pending || testKey.state === 'ok' ? testKey : null;
 
   return (
-    <>
+    <Stack gap={2}>
       <LabeledField
         label="API key"
         description={
@@ -87,6 +102,7 @@ export default function ApiKeyField({ value, keyError, onChange }: Props): React
             Get a key at{' '}
             <a href="https://developer.accuweather.com/" target="_blank" rel="noreferrer">
               developer.accuweather.com
+              <VisuallyHidden> (opens in a new tab)</VisuallyHidden>
             </a>
             . Minimum {API_KEY_MIN_LENGTH} characters. Each Test spends one AccuWeather API call.
           </>
@@ -94,40 +110,50 @@ export default function ApiKeyField({ value, keyError, onChange }: Props): React
         error={error}
         errorLive="polite"
       >
-        <SecretInput
-          id="svws-apikey"
-          className={utilities.identifier}
-          autoCapitalize="none"
-          autoComplete="off"
-          autoCorrect="off"
-          placeholder="Paste your AccuWeather developer API key"
-          spellCheck={false}
-          value={value}
-          onChange={(event) => {
-            controllerRef.current?.abort();
-            onChange(event.target.value);
-            setTestKey({ state: null, message: '' });
-          }}
-        />
+        {(field) => {
+          const { controlProps, descriptionId } = splitLabeledFieldControlProps(field);
+          return (
+            <SecretInput
+              {...controlProps}
+              ref={inputRef}
+              monospace
+              placeholder="Paste your AccuWeather developer API key"
+              value={value}
+              onChange={(event) => {
+                controllerRef.current?.abort();
+                onChange(event.target.value);
+                setTestKey({ state: null, message: '' });
+              }}
+              trailingContent={
+                <Button
+                  size="compact"
+                  aria-label="Test API key"
+                  aria-describedby={descriptionId}
+                  loading={pending}
+                  loadingLabel="Testing"
+                  onClick={() => void doTestKey()}
+                >
+                  Test
+                </Button>
+              }
+            />
+          );
+        }}
       </LabeledField>
-      <Cluster justify="between">
-        <p
-          className={styles.result}
-          data-tone={testKey.state === 'ok' ? 'ok' : undefined}
-          role="status"
-          aria-live="polite"
-        >
-          {statusMessage}
-        </p>
-        <Button
-          aria-label="Test API key"
-          loading={testKey.state === 'pending'}
-          loadingLabel="Testing"
-          onClick={() => void doTestKey()}
-        >
-          Test
-        </Button>
-      </Cluster>
-    </>
+      {result ? (
+        <StatusIndicator tone={result.state === 'ok' ? 'success' : 'info'}>
+          {result.message}
+        </StatusIndicator>
+      ) : null}
+      {/*
+       * The announcer is always mounted and only its text changes. `live` on
+       * the StatusIndicator above would have put `role` and `aria-live` on the
+       * element that carries the text, so the region and its content would be
+       * created in one commit: screen readers only observe a region that
+       * already existed, and the result of a key test, which spends a real
+       * AccuWeather API call, might never be announced.
+       */}
+      <LiveRegion message={result?.message ?? ''} />
+    </Stack>
   );
 }

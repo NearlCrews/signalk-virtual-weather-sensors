@@ -1,6 +1,6 @@
 import { spawnSync } from 'node:child_process';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
-import { assertSharedUiVersion } from './shared-ui-version.mjs';
+import { createRequire } from 'node:module';
 
 /**
  * The configuration panel is a Module Federation remote whose dependency tree
@@ -22,7 +22,11 @@ import { assertSharedUiVersion } from './shared-ui-version.mjs';
 const repositoryDir = new URL('../', import.meta.url);
 const noticesUrl = new URL('THIRD_PARTY_NOTICES.md', repositoryDir);
 const checkOnly = process.argv.includes('--check');
-const sharedUiVersion = assertSharedUiVersion(repositoryDir);
+// The installed release, read through Node resolution rather than a path into
+// node_modules. `snui-check-consumer` asserts that it equals the exact pin.
+const sharedUiVersion = createRequire(import.meta.url)(
+  'signalk-nearlcrews-ui/package.json'
+).version;
 
 const HEADER_MARKER = '<!-- generated-for-signalk-nearlcrews-ui:';
 

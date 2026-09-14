@@ -1,7 +1,6 @@
 import { execFile } from 'node:child_process';
 import { readdir, readFile } from 'node:fs/promises';
 import { promisify } from 'node:util';
-import { assertExactSharedUiPin } from './shared-ui-version.mjs';
 
 const execFileAsync = promisify(execFile);
 const packageJson = JSON.parse(await readFile('package.json', 'utf8'));
@@ -124,20 +123,11 @@ for (const file of files) {
   }
 }
 
+// The panel bundles the shared UI into its remote, so the package must never
+// declare it as a runtime dependency. The exact pin and its agreement with the
+// installed release are asserted by `snui-check-consumer` in `check:panel`.
 if (packageJson.dependencies?.['signalk-nearlcrews-ui']) {
   throw new Error('signalk-nearlcrews-ui must be a bundled development dependency.');
-}
-// Two invariants, deliberately separate. The shape guard is permanent and
-// imported rather than restated, so it cannot be hand-edited here to admit a
-// range; the literal below is the deliberate-bump tripwire, and it stays
-// independent of the one in shared-ui-version.mjs so that editing one pin site
-// still fails the other.
-const sharedUiPin = packageJson.devDependencies?.['signalk-nearlcrews-ui'];
-assertExactSharedUiPin(sharedUiPin, 'package.json');
-if (sharedUiPin !== '0.8.2') {
-  throw new Error(
-    `The UI package must be pinned to exact version 0.8.2 during its 0.x series, not ${sharedUiPin}.`
-  );
 }
 
 // @types/node must track the engines.node floor so type-checking sees the API
@@ -153,6 +143,19 @@ if (nodeFloorMajor === undefined) {
 if (typesNodeMajor !== nodeFloorMajor) {
   throw new Error(
     `@types/node must stay on major ${nodeFloorMajor} to match the engines.node floor, not ${String(typesNodeMajor)}.`
+  );
+}
+
+// biome.json pins a versioned `$schema` URL. Dependabot bumps the package but
+// cannot touch the JSON, so a bump alone leaves `biome ci` emitting "The
+// configuration schema version does not match the CLI version" as a warning
+// that no gate reads. Fail loudly instead, so the two move together.
+const biomeConfig = JSON.parse(await readFile('biome.json', 'utf8'));
+const biomeSchemaVersion = /schemas\/([\d.]+)\/schema\.json$/.exec(biomeConfig.$schema ?? '')?.[1];
+const biomePinnedVersion = packageJson.devDependencies?.['@biomejs/biome'];
+if (biomeSchemaVersion !== biomePinnedVersion) {
+  throw new Error(
+    `biome.json $schema names version ${String(biomeSchemaVersion)} but @biomejs/biome is pinned to ${String(biomePinnedVersion)}. Bump both together.`
   );
 }
 
