@@ -7,6 +7,237 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+<a id="v1136"></a>
+
+## [1.13.6] - 2026-09-14
+
+This patch release keeps the AccuWeather API key out of request URLs, brings
+the plugin's AccuWeather call count inside the quota it documents, corrects
+several provider readings and the plugin's own status reporting, makes merged
+mode conservative about the values a warning reads, and rebuilds the
+configuration panel on the shared marine UI 0.11.1. No configuration migration
+is required.
+
+### Fixed
+
+- AccuWeather requests now authenticate with the `Authorization: Bearer`
+  header that AccuWeather documents, instead of an `apikey` query parameter.
+  The key no longer appears in request URLs, so it cannot leak through a log
+  line or an error body that echoes the URL.
+- The documented AccuWeather cost is now true. The location-key cache was keyed
+  by position rounded to about 11 m and expired after one hour, so a docked
+  vessel on the default 30-minute cadence spent a Locations call every second
+  or third fetch, and the fetch timer's plus or minus 10 percent jitter could
+  shorten the interval to 27 minutes. Together that put a docked vessel at 64
+  to 72 calls per day and a vessel underway at 87 to 107, both over the default
+  quota of 50, while the README, the schema help text, and the troubleshooting
+  guide all claimed 48. The cache is now keyed by a 0.01 degree cell (about
+  1 km) and held for 24 hours, and the jitter only lengthens the interval, so
+  a stationary vessel spends at most 48 conditions calls plus 1 location lookup
+  per day and a vessel underway spends 1 lookup per new cell. The README,
+  schema help text, panel copy, examples guide, and troubleshooting guide state
+  the new arithmetic.
+- The Signal K v2 Weather API warnings endpoint returns an empty list for a
+  position outside NWS and MET Norway coverage, as the paths guide already
+  said, instead of throwing `Not supported!`, which the server reported to
+  consumers as an HTTP 400 for every position outside the US and Norway. An
+  upstream failure inside a covered region still reports an error.
+- The heat-stress bands open at the temperature they name. The index compared
+  in Celsius against cutoffs it converted back from Kelvin, which loses an
+  accuracy unit on three of the four boundaries, so a wet-bulb globe
+  temperature of exactly 29.4 C or 32.2 C, both values AccuWeather puts on the
+  wire, landed one band low and the audible `alarm` and `emergency` heat bands
+  opened a tenth of a degree late. The comparison is now made in Kelvin against
+  cutoffs built by the same conversion the provider mappers use.
+- The heat-stress index documentation, path metadata, and code comments now
+  describe what the index does: index 2 opens at the US military green flag
+  (27.8 C), index 3 spans the yellow and red flags (29.4 C to 32.2 C), index 4
+  opens at the black flag (32.2 C), and index 1 starts at the 26.7 C (80 F) NWS
+  work-rest band rather than a flag boundary. The thresholds are unchanged.
+- Emitted temperatures are no longer clamped to a sensor operating envelope. The
+  delta sanitizer bounded them at -40 C to +85 C, a figure that describes a
+  typical sensor rather than any wire limit, so a wind chill of -44.6 C was
+  published as -40.0 C while the cold-exposure notification built from the same
+  snapshot said -45 C, and the path and the alarm text disagreed about a
+  life-threatening exposure figure. Temperatures now use the physical -100 C to
+  +100 C validation window, and every field the sanitizer changes is logged, so
+  a clamp is never silent.
+- A notification band is recorded as entered only after its delta reaches the
+  bus. The notifier marked the transition when it evaluated one, so anything
+  that threw between evaluation and publication discarded the delta while the
+  notifier believed the band had entered, and that band never emitted again.
+- Active notifications are marked while data is stale. Emission stops during a
+  provider outage, which correctly refuses to clear a live warning, but the
+  latched notification then sat on the bus with no sign that its driving
+  observation was hours old, and a consumer subscribed to
+  `notifications.environment.*` cannot see the admin banner that said so. Each
+  active band is now re-emitted once per stale episode with the observation age
+  appended to its message.
+- Merged mode no longer averages away a warning. Every value a notification band
+  reads is taken conservatively from the contributing providers, joining the
+  gust, visibility, precipitation, severe-condition, and pressure-tendency rules
+  that already worked that way: Beaufort force takes the highest contributor's
+  own force, wind chill the lowest, and the heat-stress index the highest.
+  Averaging 18.0 m/s (Beaufort 8, gale) with 15.0 m/s (Beaufort 7) yielded
+  16.5 m/s and no gale warning. Published measurements stay averaged, so a
+  conservative category can sit beside a lower merged measurement.
+- Merged mode reports its own quota state. The merging provider always answered
+  that a fetch was possible, which made the quota check permanently false in
+  merged mode, so neither the quota warning nor the quota pause could be
+  reached however many sources had stopped contributing.
+- The admin banner and the panel's status route now agree, and they name the
+  most specific cause first: a rejected key, then the quota pause, then a
+  missing position, then stale data, then the last failed fetch, then the live
+  status line. A fetch failure and a missing position are held until something
+  changes them, because the emission tick overwrote both within seconds with a
+  green status line while data fetched before the outage was still inside the
+  staleness window, so a plugin whose fetches were all failing could read green
+  for up to twice the update frequency.
+- The quota warning prefix carries the real rolling percentage. A fixed
+  `Running [quota 90% used]` literal kept claiming 90 percent at 95 and at 100.
+- A vessel whose position source publishes slowly can fetch weather again.
+  Position was held to the same 30-second age budget as the speed, course, and
+  heading trio that feeds apparent wind, so a hand-written harbour position or a
+  low-rate feed left the plugin reporting "Waiting for GPS position" with a
+  valid fix on the bus. Position selects a weather grid cell and nothing else,
+  so it now has its own 30-minute budget.
+- A host clock behind UTC no longer fails every fetch. A provider observation
+  may lead the local clock by an hour rather than five minutes, which absorbs a
+  headless Raspberry Pi with no real-time clock booting before NTP settles, and
+  the error text and a new log line name the clock rather than the provider.
+- `environment.weather.precipitationLastHour` reports a past hour. Open-Meteo's
+  current block sums over its own 900-second interval, so the path published a
+  15-minute depth. It now reads the hourly series Open-Meteo documents as the
+  sum of the preceding hour, and leaves the path unset when that bucket is
+  absent rather than scaling a shorter sample up.
+- Met.no daily forecasts cover whole days. A document fetched mid-afternoon
+  begins at the current hour, so the earlier windows of today were simply
+  absent and the remaining ones were reported as the whole day: on a live
+  document fetched at 14:47 UTC, "today" carried only the 18:00 window and
+  reported a high of 8.9 C while the instrument panel read 15.1 C from the same
+  plugin. The partial leading and trailing days are now omitted.
+- AccuWeather daily forecast entries carry UTC midnight of the local calendar
+  day they describe, matching the Open-Meteo and Met.no daily mappers, so a
+  consumer bucketing v2 daily entries by date no longer sees the boundary move
+  by hours when the source changes.
+- Warning text from NWS and MET Norway is control-stripped and bounded before it
+  reaches the v2 warnings payload. An NWS description routinely runs to several
+  kilobytes, and the only other ceiling in the path was the 1 MiB whole-body cap.
+- A visibility figure in a notification message is rounded down, so it can never
+  read above the threshold that fired the band. Nearest-rounding rendered
+  1851.9 m as `1.9 km` beside a warning whose threshold is 1.852 km.
+- The coverage thresholds were enforcing nothing. Vitest 5 reads any key under
+  `thresholds` other than its own option names as a per-file glob, so the
+  `global` wrapper matched no file and an impossible floor still exited 0. The
+  four thresholds are flat keys again and hold at 80 percent.
+- The configuration panel's save status no longer signals an error by color
+  and weight alone. The shared save bar reports each state with a shaped,
+  glyph-marked indicator and a spoken tone label.
+- The API key test result, the merge-order announcement, and the status
+  freshness marker each announce once. They carry either a status role or a
+  live attribute, not both, which double-spoke on some screen readers.
+- The concealed API key field asks the browser not to offer or save the key
+  with the `new-password` autocomplete value. The previous `off` value is one
+  that browsers ignore on password fields.
+- The AccuWeather developer link in the API key help tells assistive
+  technology that it opens in a new tab.
+
+### Changed
+
+- Upgraded the exactly pinned `signalk-nearlcrews-ui` package to 0.11.1 and
+  moved the panel onto the primitives it now ships: the panel shell (browser
+  check, theme selector, and an error boundary that offers Try again instead of
+  a blank card), the save bar, the number field, and the relative-age,
+  visually hidden, live-region, and text primitives. The panel's own number
+  field, relative-age wording, action-bar styling, hidden-text CSS, and
+  identifier font rule are gone, and the merge list's reorder controls are
+  declared as icon-only buttons. The theme selector shows its "Panel theme"
+  group label and a line saying what the automatic choice follows, and it names
+  the two automatic choices "Match Admin" and "Match device" instead of "Auto"
+  and "System"; the themes themselves and the stored preference are unchanged.
+  Every field and group error leads with the danger glyph and a spoken tone
+  word, so an error never rests on color alone.
+- Save is blocked, with the status line naming the section, while a cadence
+  field holds an invalid value, instead of staying enabled and jumping to the
+  field when pressed. Save and Discard keep their place in the tab order while
+  it does, and Discard stays available while there are edits to drop. An
+  invalid value never reached the saved configuration before either.
+- A save the host refuses is reported in an error banner beside the save bar
+  while the bar keeps reporting the pending edits. During the status check
+  that follows an accepted request the status line reads "Save requested.
+  Checking the current plugin status...", then the plugin status it read. The
+  save bar's resting wording is "All changes saved" for a configured panel with
+  nothing to save, and "Save to enable the plugin" for a plugin that has never
+  been saved.
+- The status dashboard is a titled section. The plugin name and glyph head
+  it, the live banner text is its description, the running indicator sits in
+  its header, and the "Updated N seconds ago" marker appears with a warning
+  glyph only while status polling is stale, keeping its own clock.
+- Stalled status polling is announced once, when it stalls, rather than every
+  ten seconds as the marker's age advanced.
+- The cadence fields show their unit beside the input instead of in the label,
+  so the field is named "Weather update frequency" with "minutes" read as its
+  description, and an out-of-range or fractional entry reports "Enter a whole
+  number from 1 to 60."
+- The API key Test button sits inside the key field's input group beside Show,
+  the test result is a tone-coded status line, and the key and the Open-Meteo
+  base URL use the shared monospace rendering.
+- The Met.no attribution note in Weather source reads at the size and color
+  the other providers' notes take from their field description, instead of as
+  an unstyled paragraph.
+- The panel shell now holds the theme selector at the trailing edge itself, so
+  the panel's own rule for that placement is gone along with the last
+  stylesheet at the composition root.
+- The panel sets no hard-coded control ids. The shared fields generate them,
+  and a save blocked on the API key or the Open-Meteo base URL focuses its
+  field through a ref.
+- In merged mode the status banner names any provider that has stopped
+  contributing, so a blend that has quietly dropped from three sources to two
+  says so rather than reporting a healthy blend.
+- Met.no now does the least work its terms of service ask of a client: the
+  document memo is keyed by a 1 km cell rather than an 11 m one, so a moving
+  vessel reuses one document instead of refetching it after every metre of
+  progress; the response's own `Expires` suppresses a request entirely; and a
+  request past it carries `If-Modified-Since`, so an unchanged model answers
+  304 with no body. Met.no and the Open-Meteo Marine layer request coordinates
+  at four decimal places, the rounding the other providers already used.
+- webpack reads the Module Federation share map from
+  `signalk-nearlcrews-ui/federation` instead of a copied block, and
+  `npm run check:panel` runs the shared `snui-check-consumer` command (exact
+  pin against the installed release, version stamp, bundled React guard, host
+  share map, and gzip size baseline) after the repository's own ESM, CSS, and
+  JSX-runtime checks. The local pin module and its version tripwire are gone,
+  and the third-party notices read the installed release through Node
+  resolution.
+- Dependabot delivers the shared UI in its own group, so a 0.x minor arrives
+  as a separate pull request with the migration guide open, and delivers the
+  two CodeQL action paths together, because they must run at the same version
+  inside one workflow run.
+- The pull-request lane runs `verify` plus the cross-browser matrix rather than
+  `verify:release`. That chain ends in an audit of the whole development tree,
+  and the advisory database changes without a commit, so one new development
+  advisory turned every open pull request red for something none of them
+  introduced. The runtime audit users are exposed to still runs on every pull
+  request, the release path still runs the full audit, and a scheduled job runs
+  both weekly.
+- The Node 20.18 runtime-floor lane proves more than it did: it installs,
+  type-checks, checks module boundaries, builds, and loads the built plugin to
+  confirm it constructs and answers its configuration schema on that exact
+  Node. The plugin bundle budget is 45 kB, the headroom the bundle needs rather
+  than four times it.
+- Development dependencies moved to their current releases: Biome 2.5.12,
+  Playwright 1.63, webpack 5.110, webpack-cli 7.2.3, cspell 10.2.2, knip 6.34,
+  tsx 4.23.13, the React DOM types 19.2.7, and the Vite React plugin 6.1.1.
+- Vitest 5 replaces Vitest 4, alongside its coverage and UI packages. Vitest 5
+  requires Node 22.12 or newer, which the plugin's advertised Node 20.18
+  runtime floor does not meet, so the two are now separated. The runtime floor
+  is unchanged and still published. The unit suite skips on the floor lane with
+  a printed notice naming the version floor, rather than failing. A Signal K
+  plugin runs inside the server process and the server itself requires Node 22
+  or newer, so no supported installation runs this plugin on Node 20. The Node
+  type definitions stay on major 20 to match the runtime floor, and Vitest's
+  requirement for newer ones is redirected to that same copy.
+
 <a id="v1135"></a>
 
 ## [1.13.5] - 2026-08-22
@@ -1841,6 +2072,7 @@ First production release of signalk-virtual-weather-sensors: a comprehensive wea
 
 **For technical support and feature requests, please visit the GitHub repository.**
 
-[Unreleased]: https://github.com/NearlCrews/signalk-virtual-weather-sensors/compare/v1.13.5...HEAD
+[Unreleased]: https://github.com/NearlCrews/signalk-virtual-weather-sensors/compare/v1.13.6...HEAD
+[1.13.6]: https://github.com/NearlCrews/signalk-virtual-weather-sensors/compare/v1.13.5...v1.13.6
 [1.13.5]: https://github.com/NearlCrews/signalk-virtual-weather-sensors/compare/v1.13.4...v1.13.5
 [1.13.4]: https://github.com/NearlCrews/signalk-virtual-weather-sensors/compare/v1.13.3...v1.13.4

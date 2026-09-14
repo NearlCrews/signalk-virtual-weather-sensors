@@ -18,35 +18,61 @@ service; AccuWeather is an optional source for users who have an API key.
 > for safety-of-life decisions: always cross-check official forecasts and
 > warnings against your primary instruments.
 
-## What's new in 1.13.5
+## What's new in 1.13.6
 
-Version 1.13.5 restores the configuration panel that 1.13.4 left unable to
-load on Signal K 2.24.x hosts, stops the panel from discarding work when a
-section is collapsed, makes the status banner report paused and stale states,
-corrects a Met.no observation value, and refreshes the shared panel. Emitted
-paths and saved configuration fields are unchanged.
+Version 1.13.6 keeps your AccuWeather API key out of request URLs, makes the
+documented AccuWeather call budget true, corrects several readings and the
+status the plugin reports about itself, makes merged mode conservative about
+the values a warning reads, and rebuilds the configuration panel on the shared
+marine UI 0.11.1. Emitted paths and saved configuration fields are unchanged.
 
-- **The panel loads again on Signal K 2.24.x hosts.** The 1.13.4 panel did
-  not mount there at all: the Admin registers its React share below the React
-  it actually ships, and the panel's strict version check refused the fully
-  compatible host. The check now warns and continues.
-- **Collapsed sections keep your edits.** Collapsing and reopening the cadence
-  section no longer throws away an in-progress value or clears its error, and
-  collapsing mid-test no longer strands the API-key Test button in its testing
-  state.
-- **The status banner tells the truth.** A plugin paused on its quota or gone
-  stale no longer shows a green Running banner in the panel while the admin UI
-  shows an error, and the stale message names which age tripped it.
-- **The merge list saves what you chose.** The last included provider can no
-  longer be unchecked, so a save cannot silently restore every provider, and
-  the self-hosted Open-Meteo base URL stays visible whenever the sea-state
-  layer uses it.
-- **Shared marine UI 0.8.2.** The panel's action bar now delivers the first
-  click reliably and settles its docking, every button meets the touch-target
-  size for your pointer, and the theme follows a section you reopen. Verified
-  across Chromium, Firefox, WebKit, and a mobile viewport.
+- **Your API key stays out of request URLs.** AccuWeather requests now
+  authenticate with the `Authorization: Bearer` header AccuWeather documents,
+  instead of an `apikey` query parameter, so the key cannot leak through a log
+  line or an error body that echoes the URL.
+- **The documented call budget is now true.** The location-key cache is held
+  for 24 hours per 1 km cell, and the fetch timer's jitter only lengthens the
+  interval, so the default 30-minute cadence costs at most 48 conditions calls
+  plus 1 location lookup per day at a fixed position. The old hourly cache,
+  keyed to about 11 m, pushed a docked vessel past the default 50-call quota
+  while every document still claimed 48.
+- **Warnings work outside the US and Norway.** A position beyond NWS and MET
+  Norway coverage returns an empty warning list, which is what the paths guide
+  always described, instead of an error the server reported to consumers as an
+  HTTP 400.
+- **Warnings say what the instruments say.** Heat-stress bands open at the
+  temperature they name rather than a tenth of a degree late, emitted
+  temperatures are no longer clamped to a sensor envelope that published a
+  -44.6 C wind chill as -40.0 C, visibility in a message is rounded down so it
+  can never read above the threshold that fired it, and an active notification
+  is marked with the observation age instead of sitting unlabeled through a
+  provider outage.
+- **Merged mode no longer averages away a warning.** Every value a
+  notification band reads is taken conservatively from the contributing
+  sources, so one provider reporting gale force is not cancelled by a milder
+  sibling, and the banner names any source that has stopped contributing.
+- **The banner tells you which thing is wrong.** A rejected key, a quota pause,
+  a missing position, stale data, and a failed fetch each hold the banner until
+  they clear, instead of being overwritten seconds later by a green status line.
+  A slow position source no longer strands the plugin: position now gets a
+  30-minute age budget of its own.
+- **Better readings from the keyless sources.** Open-Meteo's past-hour
+  precipitation is the real past hour rather than a 15-minute sum, Met.no
+  reports only whole forecast days instead of labeling a single evening window
+  as today, and Met.no revalidates its forecast document instead of refetching
+  it.
+- **A panel you can read and hear.** Save status is shaped and labeled rather
+  than carried by color alone, every field error leads with a glyph and a
+  spoken tone word, the API key test result and the merge-order and freshness
+  announcements each speak once instead of twice, and the concealed key field
+  asks the browser not to offer or save the key.
+- **Shared marine UI 0.11.1.** The panel moves onto the library's panel shell,
+  save bar, number field, and status section. Save is blocked, naming the
+  section, while a cadence value is invalid, Save and Discard keep their place
+  in the tab order while it is, a refused save is reported in its own banner,
+  and a panel error now offers Try again instead of a blank card.
 
-See the [v1.13.5 changelog entry](https://github.com/NearlCrews/signalk-virtual-weather-sensors/blob/main/CHANGELOG.md#v1135), or the
+See the [v1.13.6 changelog entry](https://github.com/NearlCrews/signalk-virtual-weather-sensors/blob/main/CHANGELOG.md#v1136), or the
 [full changelog](https://github.com/NearlCrews/signalk-virtual-weather-sensors/blob/main/CHANGELOG.md).
 
 ## What it does

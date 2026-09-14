@@ -1,6 +1,6 @@
 {
   "name": "signalk-virtual-weather-sensors",
-  "version": "1.13.5",
+  "version": "1.13.6",
   "description": "Signal K plugin: keyless Open-Meteo, Met.no, or AccuWeather marine weather as 30+ environment deltas, severe-weather notifications, NMEA2000-ready",
   "keywords": [
     "signalk-node-server-plugin",
@@ -39,7 +39,8 @@
     "recommends": [
       "signalk-nmea2000-emitter-cannon",
       "signalk-binnacle",
-      "signalk-openrouter-companion"
+      "signalk-openrouter-companion",
+      "signalk-synthetic-values"
     ]
   },
   "main": "dist/index.js",
