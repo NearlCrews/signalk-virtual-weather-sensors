@@ -93,7 +93,7 @@ export function useStatus(): UseStatusResult {
   const inFlightRef = useRef<Promise<PanelStatusResponse | null> | null>(null);
 
   const refresh = useCallback((): Promise<PanelStatusResponse | null> => {
-    if (inFlightRef.current) return inFlightRef.current;
+    if (inFlightRef.current !== null) return inFlightRef.current;
     const controller = new AbortController();
     controllerRef.current = controller;
     const request = (async (): Promise<PanelStatusResponse | null> => {
