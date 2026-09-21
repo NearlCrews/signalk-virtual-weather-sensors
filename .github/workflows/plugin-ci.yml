@@ -17,7 +17,7 @@ concurrency:
 
 jobs:
   validate:
-    uses: SignalK/signalk-server/.github/workflows/plugin-ci.yml@dd87569c6425789799eb83e83f0d6edc06cbc9fe
+    uses: SignalK/signalk-server/.github/workflows/plugin-ci.yml@dac6cc931d4b03f7ccb08dfe69f8f3d5c1e79980
     with:
       test-command: npm run test:run
       build-command: npm run build
