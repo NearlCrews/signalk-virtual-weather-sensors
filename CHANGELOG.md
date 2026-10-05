@@ -15,6 +15,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   library left that property alone; the doubled class wins on specificity,
   which is the override the shared UI supports. The list renders as before.
 
+### Changed
+
+- The Signal K plugin CI runs the official workflow from its 2026-10-04 master
+  commit, which has no armv7 or Node 20 job, so the retired `enable-armv7`
+  input is gone. Its Node 22 lanes now install with npm 11. The blocking Node
+  20.18 runtime-floor lane is the only CI coverage of Node 20, and no CI lane
+  runs on 32-bit ARM hardware such as the Cerbo GX. The advertised runtime
+  floor is unchanged.
+
 <a id="v1140"></a>
 
 ## [1.14.0] - 2026-09-14

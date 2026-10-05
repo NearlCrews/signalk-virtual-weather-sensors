@@ -40,11 +40,7 @@ if (!ci.includes('node-version: 24.19.0') || !ci.includes('npx --yes npm@12.0.2'
 }
 
 const pluginCi = await readFile('.github/workflows/plugin-ci.yml', 'utf8');
-for (const expected of [
-  'enable-signalk-integration: true',
-  'signalk-server-versions:',
-  'enable-armv7: true',
-]) {
+for (const expected of ['enable-signalk-integration: true', 'signalk-server-versions:']) {
   if (!pluginCi.includes(expected)) failures.push(`plugin-ci.yml must include ${expected}.`);
 }
 

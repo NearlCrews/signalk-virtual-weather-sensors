@@ -66,7 +66,10 @@ jobs:
     # and signalk-server declares node >=22, so no supported installation ever
     # executes this plugin on Node 20. What the floor still promises is that
     # the plugin's own compiled code installs, type-checks, builds, and loads
-    # there, which is what the steps below check.
+    # there, which is what the steps below check. This is the only CI lane
+    # that runs Node 20: the official Signal K plugin workflow has no armv7 or
+    # Node 20 job and runs only on 64-bit runners, so no CI exercises 32-bit
+    # ARM hardware such as the Cerbo GX.
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:

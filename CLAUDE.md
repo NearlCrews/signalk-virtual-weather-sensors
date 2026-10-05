@@ -194,8 +194,11 @@ Test configuration in `vitest.config.ts` includes path aliases (`@/`, `@/service
 - **The Node 20.18 lane proves the plugin runtime, not the test toolchain (load-bearing)**:
   `engines.node` stays `>=20.18` because that is the published runtime contract, and the blocking
   `node-20-compatibility` job in `ci.yml` defends it by installing, type-checking, checking module
-  boundaries, building, and smoke-loading the built plugin on that exact Node. What it deliberately
-  does NOT do is run the unit suite. Vitest 5 declares `node: ^22.12.0 || ^24.0.0 || >=26.0.0`, and
+  boundaries, building, and smoke-loading the built plugin on that exact Node. That job is the only
+  CI coverage of Node 20: the official Signal K plugin workflow dropped its armv7 and Node 20 job,
+  and its `enable-armv7` input is now ignored, so leave the input out of `plugin-ci.yml`. No CI lane
+  runs on 32-bit ARM hardware such as the Cerbo GX. What the job deliberately does NOT do is run the
+  unit suite. Vitest 5 declares `node: ^22.12.0 || ^24.0.0 || >=26.0.0`, and
   the two floors are separable: a plugin runs inside the Signal K server process, `signalk-server`
   declares `node: >=22`, so no supported installation ever executes this plugin on Node 20. What the
   floor still promises is that the plugin's own compiled code loads and runs there, which

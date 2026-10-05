@@ -17,13 +17,12 @@ concurrency:
 
 jobs:
   validate:
-    uses: SignalK/signalk-server/.github/workflows/plugin-ci.yml@dd87569c6425789799eb83e83f0d6edc06cbc9fe
+    uses: SignalK/signalk-server/.github/workflows/plugin-ci.yml@faab2be886fa7d52f926e7d2acf91c910623d4d7 # master 2026-10-04
     with:
       test-command: npm run test:run
       build-command: npm run build
       format-check-command: npm run format:check
       coverage-command: npm run test:coverage
       node-versions: '["22", "24"]'
-      enable-armv7: true
       enable-signalk-integration: true
       signalk-server-versions: '["2.24.0", "latest"]'

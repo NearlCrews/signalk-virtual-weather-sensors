@@ -32,11 +32,10 @@ npm pack --dry-run --json --ignore-scripts
 
 Also verify:
 
-- The blocking Node 20.18 compatibility lane passes.
+- The blocking Node 20.18 compatibility lane passes. It is the only CI lane
+  that runs Node 20, and no CI lane runs on 32-bit ARM hardware.
 - The official Signal K plugin workflow passes on the release commit.
 - Signal K 2.24 and current integration lanes pass.
-- The armv7 result is green. Although upstream marks it advisory, this project
-  treats it as release-blocking.
 - CodeQL completes successfully and no open alert is introduced.
 - The built panel uses host-shared React and stays within its approved bundle
   budget.

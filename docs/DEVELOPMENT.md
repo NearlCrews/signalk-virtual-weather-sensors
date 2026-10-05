@@ -222,7 +222,8 @@ its migration notes before changing that version.
   npm 12 starts at Node 22.22.2. The unit suite runs on the supported
   development runtimes instead.
 - `plugin-ci.yml` pins the official Signal K reusable workflow and tests Node
-  22 and 24, Signal K 2.24 and current, armv7, packaging, and installation.
+  22 and 24 on Linux x64, Linux arm64, macOS, and Windows, plus Signal K 2.24
+  and current, packaging, and installation.
 - `codeql.yml` runs the extended JavaScript and TypeScript query suite.
 - `workflow-security.yml` runs actionlint and zizmor against workflow changes
   and on a weekly schedule, and audits both the runtime dependencies and the
@@ -230,8 +231,9 @@ its migration notes before changing that version.
 - `publish.yml` verifies a release, packs once, uploads the exact tarball, and
   publishes that artifact in a separate job.
 
-The upstream armv7 job is advisory in the reusable workflow, but a red armv7
-result is release-blocking for this project.
+The reusable workflow no longer has an armv7 or Node 20 job, so the blocking
+runtime-floor lane in `ci.yml` is the only CI coverage of Node 20, and no CI
+lane runs on 32-bit ARM hardware such as the Cerbo GX.
 
 ## Signal K standards compliance
 

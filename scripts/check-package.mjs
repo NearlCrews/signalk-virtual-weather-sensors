@@ -132,9 +132,9 @@ if (packageJson.dependencies?.['signalk-nearlcrews-ui']) {
 
 // @types/node must track the engines.node floor so type-checking sees the API
 // surface the published package actually promises rather than a newer one.
-// The official Signal K plugin workflow does run an armv7 Cerbo GX lane on
-// Node 20, but that lane is continue-on-error and cannot fail a release, so
-// the floor is defended here and by the blocking node-20-compatibility CI job.
+// The official Signal K plugin workflow has no Node 20 job, so the floor is
+// defended here and by the blocking node-20-compatibility CI job, the only CI
+// lane that runs Node 20.
 const nodeFloorMajor = /\d+/.exec(packageJson.engines?.node ?? '')?.[0];
 const typesNodeMajor = /\d+/.exec(packageJson.devDependencies?.['@types/node'] ?? '')?.[0];
 if (nodeFloorMajor === undefined) {
