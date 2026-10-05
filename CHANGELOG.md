@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- The merge provider list declares its checkbox, badge, and note overrides
+  as doubled classes. A single class loses to the shared UI's scoped rule for
+  any property the library also sets, so each override held only while the
+  library left that property alone; the doubled class wins on specificity,
+  which is the override the shared UI supports. The list renders as before.
+
 <a id="v1140"></a>
 
 ## [1.14.0] - 2026-09-14

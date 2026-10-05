@@ -1,4 +1,14 @@
-.row {
+/*
+ * Every class here is declared doubled. The shared UI ships its rules inside a
+ * native CSS scope, and at equal specificity the cascade prefers the scoped
+ * rule whatever the stylesheet order, so a single-class plugin rule silently
+ * loses on any class that lands on a library component: here the Checkbox,
+ * the Badge, and the Text. Doubling costs nothing on a class that lands on a
+ * native element, so the rule is the same for all of them. The container query
+ * repeats the doubled form, or the base `.row.row` rule would outrank it.
+ */
+
+.row.row {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -6,28 +16,28 @@
   min-width: 0;
 }
 
-.checkbox {
+.checkbox.checkbox {
   flex: 1 1 auto;
   min-width: 0;
 }
 
-.reorder {
+.reorder.reorder {
   display: flex;
   flex: 0 0 auto;
   gap: var(--snui-space-1);
 }
 
-.badge {
+.badge.badge {
   margin-inline-start: var(--snui-space-2);
 }
 
 /* Sets the excluded providers apart from the ordered list above them. */
-.available {
+.available.available {
   margin-block-start: var(--snui-space-2);
 }
 
 @container snui-panel (max-width: 32rem) {
-  .row {
+  .row.row {
     align-items: flex-start;
   }
 }
