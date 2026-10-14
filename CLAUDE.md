@@ -27,7 +27,7 @@ npm run dev            # Development with hot reload (tsx watch)
 ```bash
 npm run test           # Run suite once (Vitest); registry/CI safe
 npm run test:watch     # Watch mode (Vitest)
-npm run test:run       # Run once (alias of test, used by `validate`)
+npm run test:run       # Run once (alias of test, used by the Signal K plugin CI)
 npm run test:coverage  # Coverage report (80% thresholds)
 npm run test:browser   # Built-remote Chromium panel suite
 npm run test:browser:cross # Built-remote cross-browser panel suite
@@ -40,8 +40,11 @@ npm run lint           # Code, Markdown, and spelling checks
 npm run lint:fix       # Auto-fix issues
 npm run format         # Format code
 npm run type-check     # TypeScript verification
-npm run verify         # Full non-browser verification
-npm run verify:release # Full cross-browser release verification
+npm run verify:commit  # Pre-commit hook gate: format, lint, docs, workflows, boundaries, dead code
+npm run verify         # Pre-push hook and CI gate: full non-browser verification
+npm run verify:browser # verify plus the Chromium panel suite
+npm run verify:release # Full cross-browser release verification plus the full audit
+npm run test:integration # Admin mount check against a running server named by SIGNALK_URL
 ```
 
 ## Architecture
@@ -164,7 +167,7 @@ Test configuration in `vitest.config.ts` includes path aliases (`@/`, `@/service
 - **Notification message enrichment**: each band's `message` packs adjacent context the operator can act on without subscribing to extra paths. Wind: `"Gale-force wind: Bf9 from SW, 19 m/s, gusts 27 m/s, 998 hPa"`. Visibility: `"Reduced visibility: 0.8 km, ceiling 90 m, rain 2.5 mm/h"` (ceiling and precip rate appended when finite; kilometers are rounded DOWN so the figure can never read above the threshold that fired the band). Heat: `"High heat stress: HSI 3, WBGT 32 C, RH 78%, RealFeel (shade) 35 C"`. Cold: `"Cold exposure caution: wind chill -2 C, air 1 C, wind 12 m/s"`. Severe: `"Thunderstorms: Severe thunderstorms approaching, 998 hPa"`. Every message is capped at `MAX_MESSAGE_LENGTH = 80` chars (with `…` truncation) so it renders cleanly on the marine displays most likely to bridge through `signalk-to-nmea2000` (NMEA 2000 Alert PGN Text fields render 64..128 chars across the Garmin/Raymarine/B&G/Furuno fleet; 80 is a safe common denominator). Helpers `formatWindSuffix` / `formatVisibilitySuffix` / `formatHeatSuffix` / `formatColdSuffix` / `formatSevereSuffix` live alongside the `WeatherNotifier` class in `src/notifications/WeatherNotifier.ts` so the format and the band evaluators stay together.
 - **Banner dedupe**: every `setPluginStatus` / `setPluginError` call in `index.ts` routes through `setBanner()` which dedupes consecutive identical `(kind, message)` pairs. A flapping API or steady-state quota pause therefore lands one banner write per unique message, not one per 5-second emission tick. `WeatherService.updateWeatherData` also pushes the live banner directly on the first successful update so the "awaiting first update" string flips the moment data lands.
 - **Shared SK delta primitives**: `src/utils/skDelta.ts` exports `pv` (PathValue builder), `me` (Meta builder), `buildValuesDelta(values, timestamp, sourceRef)`, `buildMetaDelta(meta, sourceRef)`, the `SELF_CONTEXT` branded-cast constant, and the `toSourceRef` brand helper. Both delta builders REQUIRE an explicit `sourceRef` (there is deliberately no default ref), so a caller that forgets one fails to compile instead of silently mis-stamping a provider. Mapper, notifier, and plugin entry all build deltas through this module instead of hand-rolling the envelope.
-- **Federated React config panel**: `src/configpanel/PluginConfigurationPanel.tsx` is the composition root, with domain-specific components and hooks under `src/configpanel/`. `signalk-nearlcrews-ui` 0.11.1 provides the panel shell (`PanelShell`: browser preflight, theme toggle, and `PanelErrorBoundary`), theme persistence, layouts, fields, `NumberField`, feedback, metrics, `Section`, collapsible sections, `RelativeAge`, `LiveRegion`, `VisuallyHidden`, `Text`, and the `SaveActionBar` paired with `useUnsavedChangesGuard`. The panel never re-implements a primitive the library ships. Project CSS stays in focused CSS modules (the glyph tile and the merge-row layout) and consumes public `--snui-*` tokens. The composition root carries no stylesheet at all: `PanelShell` holds the theme selector at the trailing edge itself, in both the `between` and `end` placements, so the panel's own rule for that placement is gone. webpack bundles the shared UI library but consumes React and React DOM from the host through the `shared` map exported by `signalk-nearlcrews-ui/federation`: non-strict singletons with `requiredVersion: '^19.2.0'` and `import: false`, deliberately WITHOUT `strictVersion` (load-bearing): the Signal K Admin registers its React share below the version it actually ships (2.24.0 registers 19.0.0 while bundling 19.2.4), so a strict check rejects a fully compatible host and, with `import: false`, the panel never mounts; the mismatch must warn and continue. The exposed panel stays in one async chunk to avoid duplicate compression overhead. `npm run check:panel` runs `scripts/check-panel-bundle.mjs` (the ESM container export, CSS identifiers, tokens, and the container name surviving webpack, and only the production JSX runtime from React) and then the library's `snui-check-consumer` bin (exact pin equal to the installed release, the `data-snui-version` stamp, no bundled React runtime, the remote and the webpack config consuming exactly the published share map, which also rejects a reintroduced `strictVersion`, and the gzip baseline in `scripts/panel-size-baseline.json`). The JSON `schema()` remains the fallback for older admin UIs.
+- **Federated React config panel**: `src/configpanel/PluginConfigurationPanel.tsx` is the composition root, with domain-specific components and hooks under `src/configpanel/`. `signalk-nearlcrews-ui` 0.11.1 provides the panel shell (`PanelShell`: browser preflight, theme toggle, and `PanelErrorBoundary`), theme persistence, layouts, fields, `NumberField`, feedback, metrics, `Section`, collapsible sections, `RelativeAge`, `LiveRegion`, `VisuallyHidden`, `Text`, and the `SaveActionBar` paired with `useUnsavedChangesGuard`. The panel never re-implements a primitive the library ships. Project CSS stays in focused CSS modules (the glyph tile and the merge-row layout) and consumes public `--snui-*` tokens. The composition root carries no stylesheet at all: `PanelShell` holds the theme selector at the trailing edge itself, in both the `between` and `end` placements, so the panel's own rule for that placement is gone. webpack bundles the shared UI library but consumes React and React DOM from the host through the `shared` map exported by `signalk-nearlcrews-ui/federation`: non-strict singletons with `requiredVersion: '^19.2.0'` and `import: false`, deliberately WITHOUT `strictVersion` (load-bearing): the Signal K Admin registers its React share below the version it actually ships (2.24.0 registers 19.0.0 while bundling 19.2.4), so a strict check rejects a fully compatible host and, with `import: false`, the panel never mounts; the mismatch must warn and continue. The exposed panel stays in one async chunk to avoid duplicate compression overhead. `npm run check:panel` runs `scripts/check-panel-bundle.mjs` (the ESM container export, CSS identifiers, tokens, and the container name surviving webpack, and only the production JSX runtime from React) and then the library's `snui-check-consumer` bin (exact pin equal to the installed release, the `data-snui-version` stamp, no bundled React runtime, the remote and the webpack config consuming exactly the published share map, which also rejects a reintroduced `strictVersion`, and the gzip baseline in `scripts/panel-size-baseline.json`). The JSON `schema()` remains the form for Admin builds without custom panel support. Admin 2.24 and earlier support custom panels but load remotes only as classic `window` globals, so they cannot import this ESM remote and show "Error loading component" with no settings form (verified 2026-10-14 on signalk-server 2.24.0); the README requirement says so.
 - **Save bar and focus contract**: `SaveActionBar` owns the Save and Discard rules. Save is enabled for edits or for a plugin the host has never configured and blocked while `invalidMessage` names an invalid cadence draft (an invalid draft never commits, so it never dirties the form on its own); the message names the section so the operator can find the field, because the bar disables Save rather than jumping to it. Submit-time blockers (the API key and the Open-Meteo base URL) keep Save enabled: `doSave` returns a `SaveBlocker` key and the composition root opens the Weather source section and focuses the field through a ref (`inputRef` on `ApiKeyField`, `ref` on the base URL `TextInput`). The panel sets no hard-coded control ids; the shared fields generate them and the browser suite locates controls by role and name. `usePanelConfig` exposes `saveRequestedAt` (set when the host accepted a request, cleared by the next edit) and `action.requested`: a post-request status outcome feeds the bar's `savedMessage` in the library's info tone, while a request the host refused renders a danger `Banner` beside the bar, because the bar has no failure slot and the form is still dirty. The bar's `saving` label reads "Save requested. Checking the current plugin status..." because the host callback is fire-and-forget and the busy state covers the status poll, not a write the panel can observe.
 - **Panel compatibility and accessibility**: the shared UI library requires native CSS `@scope`. `PanelShell` runs the `supportsNativeCssScope` preflight and renders the compatibility notice on unsupported browsers. Supported floors are Chromium and Edge 118, Firefox 146, and Safari 17.4. The retired `svws-theme` preference is ignored, not migrated: a panel with only that key present starts at Auto and leaves it untouched. A locked merge row (the last included provider, or an excluded provider that needs a key) takes the library's `ariaDisabled` rather than native `disabled`, so the box the operator is standing on stays focusable and in the tab order instead of being blurred onto the document body; the lock reason rides its description. Built-remote Playwright coverage checks Axe, 320-pixel layouts, a narrow panel inside a wide host, every theme choice including System, number validation, save behavior, focus-preserving merge reordering and group changes, the merge-order and API-key announcers existing before their first message, and the CC BY 4.0 attributions Open-Meteo and Met.no each owe while selected (Open-Meteo's rides its base-URL field description, Met.no's stands alone, so nothing else fails if it stops rendering). Hit targets get their own sweep on every browser project: each control is scrolled to the middle of the viewport first, then measured against the floor the pointer implies (40 with a fine pointer, 44 under `any-pointer: coarse`) and required to be the topmost element at its own centre. Both halves matter. Size alone passes a control that something covers, and measuring without scrolling first falsely blames the docked action bar for overlapping a control the user would have scrolled to anyway. A label counts toward its control's target, which is why a 20-pixel checkbox inside a full-width label passes. Links inside a sentence are out of scope, since their height follows the surrounding line. The merge list's single-glyph reorder buttons are `iconOnly` compact buttons and draw that floor from the shared library, so the panel carries no local size override for them. The stale-poll marker in `StatusDashboard` is deliberately NOT a live region: it wraps a `RelativeAge` that ticks every ten seconds, so announcing it would repeat for as long as the poll stayed down, and a region first mounted with its text already present is not reliably observed. An always-mounted `LiveRegion` beside it carries the one-time transition message instead.
 - **ESM federation gotcha (load-bearing)**: because `package.json` has `"type": "module"`, `signalk-server` injects the panel script as `<script type="module">` (see `signalk-server/src/serverroutes.ts` ~line 265), and the admin UI loader expects ESM `.get` / `.init` exports on the resolved module. The webpack config therefore MUST use `experiments.outputModule: true`, `output.module: true`, `output.chunkFormat: 'module'`, and `library: { type: 'module' }`. A `library: { type: 'var' }` bundle would assign to `window.<safeName>` via a classic script and export nothing via ESM, so the admin UI's `await import()` resolves to an empty module and logs `Could not load module signalk-virtual-weather-sensors` with no other diagnostic. v1.5.0 shipped with this bug; v1.5.1 fixes it. Panel chunks are emitted as `.mjs`.
@@ -193,8 +196,9 @@ Test configuration in `vitest.config.ts` includes path aliases (`@/`, `@/service
   pinned by browser tests that collapse and reopen a section.
 - **The Node 20.18 lane proves the plugin runtime, not the test toolchain (load-bearing)**:
   `engines.node` stays `>=20.18` because that is the published runtime contract, and the blocking
-  `node-20-compatibility` job in `ci.yml` defends it by installing, type-checking, checking module
-  boundaries, building, and smoke-loading the built plugin on that exact Node. That job is the only
+  `node-20-compatibility` job in `ci.yml` defends it by installing, building, and smoke-loading the
+  built plugin on that exact Node. Type-checking and module boundaries do not vary by Node, so they
+  run once in the verify lane, against `@types/node` held to the floor major. That job is the only
   CI coverage of Node 20: the official Signal K plugin workflow dropped its armv7 and Node 20 job,
   and its `enable-armv7` input is now ignored, so leave the input out of `plugin-ci.yml`. No CI lane
   runs on 32-bit ARM hardware such as the Cerbo GX. What the job deliberately does NOT do is run the
@@ -208,14 +212,14 @@ Test configuration in `vitest.config.ts` includes path aliases (`@/`, `@/service
   with the floors written out rather than parsed, including the gaps at Node 23 and Node 25, and
   `scripts/test-unit-test-toolchain.mjs` pins them at their boundaries from `package:check`. Bump
   the floors there when Vitest bumps its own, and extend the boundary test. `check-workflows.mjs`
-  asserts the lane keeps its type-check, boundary, build, and runtime steps, so the proof cannot
-  quietly erode into a type-check alone.
+  asserts the lane keeps its install, build, runtime, and test steps, so the proof cannot quietly
+  erode into an install alone.
 - **`devEngines.runtime` stays on `onFail: "warn"` (load-bearing)**: the range
   is the toolchain floor (`^22.22.2 || ^24.15.0 || ^26.0.0`), which deliberately
   excludes the Node 20.18 runtime floor this plugin advertises. The blocking
   `node-20-compatibility` CI job installs the full dev tree on Node 20.18, so
   `onFail: "error"` would abort that job with `EBADDEVENGINES` (npm exits 1)
-  before it could type-check or build. Sibling plugins whose runtime floor is
+  before it could build. Sibling plugins whose runtime floor is
   Node 22 or newer use `"error"` safely; this one cannot while it defends a
   Node 20 floor.
 - **Third-party notices**: the panel remote bundles its dependency tree into
@@ -242,7 +246,40 @@ Test configuration in `vitest.config.ts` includes path aliases (`@/`, `@/service
 - Vitest 5 for unit and integration testing, with Stryker mutation testing as an opt-in check. Its `engines.node` is `^22.12.0 || ^24.0.0 || >=26.0.0`, so it cannot run on the Node 20.18 runtime floor; see the runtime-floor lane entry below for why that is not a reason to hold it. Its `@types/node` peer range of `^22.0.0 || >=24.0.0` is reconciled by an `overrides` block pinning that peer to the root `@types/node`, which stays in major 20 to match `engines.node`.
 - React 19.3, `signalk-nearlcrews-ui` 0.11.1, webpack 5, esbuild-loader 4.5,
   Vite 8, and Playwright 1.63 for the federated panel
-- Repository-owned opt-in Git hooks under `.githooks/`, enabled with `npm run hooks`
+- Repository-owned opt-in Git hooks under `.githooks/`, enabled with `npm run hooks` (never a
+  `prepare` script): pre-commit runs `npm run verify:commit`, pre-push runs `npm run verify`.
+  `verify` carries no browser suite and no development-tree audit; those live in `verify:browser`
+  and `verify:release`.
+
+## CI and pipeline guards
+
+- `ci.yml`: `verify` plus the cross-browser matrix once on Node 24.19.0, the Node 20.18 floor lane,
+  and the `signalk-admin` job, which installs the packed tarball into Signal K 2.27.0 and the
+  latest server and mounts the production panel through the Admin with `npm run test:integration`.
+  2.27.0 is the documented panel floor: the panel is an ESM remote and the Admin first imports ESM
+  remotes in 2.25.0, so on 2.24 the plugin runs but the panel cannot mount (verified 2026-10-14
+  against signalk-server 2.24.0, whose Admin 2.24.2 reports the module as not available).
+- `plugin-ci.yml` calls the official reusable workflow with only test, build, and Node versions:
+  no format, coverage, or integration jobs (ci.yml owns them) and no tag trigger (the registry
+  credits the release commit's push run). It also runs weekly at Monday 08:00 UTC, after every
+  other schedule: the registry reads only the newest 20 Actions runs on the published commit
+  (signalk-plugin-registry `scripts/build-api.ts`, `per_page=20`), so scheduled and Dependabot
+  runs on main HEAD can evict the plugin-ci run and cost the -10 no-plugin-ci penalty.
+- `workflow-security.yml` runs actionlint and zizmor on workflow and Dependabot changes and weekly.
+  Its `dependency-audit` job runs `audit:full` only on the schedule and on dispatch (job-level
+  `if`), never on push or pull request. It lives there, not in its own workflow, because each
+  extra workflow adds runs that compete for that 20-run window; `check-workflows.mjs` pins the
+  workflow set for the same reason. The runtime audit (`audit:runtime`) gates every push inside
+  `verify`, and `publish.yml` runs `verify:release` as the release gate (npm skips
+  `prepublishOnly` when publishing a tarball).
+- Deterministic guards, kept as pure predicates in `scripts/pipeline-guards.mjs` and pinned by
+  `scripts/test-pipeline-guards.mjs`: `check-workflows.mjs` (the workflow set, SHA pins,
+  concurrency on every workflow, no development-tree audit on push or pull request, the weekly
+  plugin-ci schedule after every other schedule, Playwright engines installed per
+  `playwright.config.ts`, hook and `verify` shapes, the floor and Admin lanes, publish handoff),
+  `check-package.mjs` (no relative README link targets, `biome.json` reading the installed Biome
+  schema), and `check-panel-bundle.mjs` (no `strictVersion` federation share). Update a guard in
+  the same change as the thing it guards.
 
 ## Documentation Structure
 
@@ -268,15 +305,15 @@ docs/
 ```
 
 - **README is the npm page AND the Signal K App Store page.** Keep it a landing page (features, requirements, install, config, what-it-emits, integration, notifications, troubleshooting summary, doc index), not a reference manual. Deep reference lives in `docs/`.
-- **`README.md` must contain NO relative markdown file links.** The App Store README view renders link targets unmodified and rewrites only IMAGE paths (against the package CDN), so a relative link to `docs/…`, `CHANGELOG.md`, or `LICENSE` is dead there even though it works on npm and GitHub. Use absolute `https://github.com/NearlCrews/signalk-virtual-weather-sensors/blob/main/…` URLs for every file link; relative image paths stay relative, because the images ship inside the tarball. Nothing enforces this: `lint:docs` and `spellcheck` have no relative-link rule.
+- **`README.md` must contain NO relative markdown file links.** The App Store README view renders link targets unmodified and rewrites only IMAGE paths (against the package CDN), so a relative link to `docs/…`, `CHANGELOG.md`, or `LICENSE` is dead there even though it works on npm and GitHub. Use absolute `https://github.com/NearlCrews/signalk-virtual-weather-sensors/blob/main/…` URLs for every file link; relative image paths stay relative, because the images ship inside the tarball. `npm run package:check` enforces this: it fails on any README markdown link, reference definition, or HTML anchor whose target is not `http:`, `https:`, `mailto:`, or a `#` anchor.
 - **Relative links cross directories.** Files in `.github/` and `docs/` reach the root with `../` (for example `.github/CONTRIBUTING.md` links `../LICENSE`, `../docs/DEVELOPMENT.md`). After any doc move, re-verify every relative markdown link.
 - **`docs/DEVELOPMENT.md` heading anchors are load-bearing.** `.github/pull_request_template.md` links `../docs/DEVELOPMENT.md#signal-k-standards-compliance`; keep that heading text stable.
 
 ## Release Process
 
 - **README carries the latest release's notes.** The README has a `## What's new in X.Y.Z` section, placed right after the intro and safety blockquote and before `## What it does`. It holds ONLY the most recent release, overwritten on every release (never an accumulating list); the full history stays in `CHANGELOG.md`.
-- **What's new content shape.** A one-sentence lead, then 3 to 5 bolded-lead bullets sourced from the `CHANGELOG.md` entry (`CHANGELOG.md` is canonical, written first), then a closing line linking the version's changelog anchor and the changelog for the full list. Each release heading in `CHANGELOG.md` carries an explicit `<a id="vXYZ"></a>` anchor (version digits without dots, e.g. `#v180` for 1.8.0); link that anchor, not the GitHub auto-generated heading anchor.
-- **Release step.** `docs/maintainers/RELEASE.md` Fast Path step 1 includes overwriting the README `## What's new` section. Bump the heading version, add the new `<a id="vXYZ"></a>` anchor in `CHANGELOG.md`, and update the README link each release.
+- **What's new content shape.** A one-sentence lead, then 3 to 5 bolded-lead bullets sourced from the `CHANGELOG.md` entry (`CHANGELOG.md` is canonical, written first), then a closing line linking the version's changelog anchor and the changelog for the full list, both as absolute GitHub URLs (`https://github.com/NearlCrews/signalk-virtual-weather-sensors/blob/main/CHANGELOG.md#vXYZ`), never a relative `CHANGELOG.md` link. Each release heading in `CHANGELOG.md` carries an explicit `<a id="vXYZ"></a>` anchor (version digits without dots, e.g. `#v180` for 1.8.0); link that anchor, not the GitHub auto-generated heading anchor.
+- **Release step.** `docs/maintainers/RELEASE.md` Prepare step 4 overwrites the README `## What's new` section. Bump the heading version, add the new `<a id="vXYZ"></a>` anchor in `CHANGELOG.md`, and update the README link each release.
 
 ## Shared skills
 

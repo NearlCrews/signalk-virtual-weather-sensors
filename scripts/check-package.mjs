@@ -1,6 +1,7 @@
 import { execFile } from 'node:child_process';
 import { readdir, readFile } from 'node:fs/promises';
 import { promisify } from 'node:util';
+import { findRelativeReadmeLinks } from './pipeline-guards.mjs';
 
 const execFileAsync = promisify(execFile);
 const packageJson = JSON.parse(await readFile('package.json', 'utf8'));
@@ -146,16 +147,27 @@ if (typesNodeMajor !== nodeFloorMajor) {
   );
 }
 
-// biome.json pins a versioned `$schema` URL. Dependabot bumps the package but
-// cannot touch the JSON, so a bump alone leaves `biome ci` emitting "The
-// configuration schema version does not match the CLI version" as a warning
-// that no gate reads. Fail loudly instead, so the two move together.
+// biome.json reads its schema from the installed package, never a versioned
+// URL. Dependabot bumps @biomejs/biome but cannot touch the JSON, so a URL that
+// names a version drifts on every bump and `biome ci` then warns that the
+// configuration schema does not match the CLI. The installed copy always
+// matches the CLI that reads it.
+const biomeSchema = './node_modules/@biomejs/biome/configuration_schema.json';
 const biomeConfig = JSON.parse(await readFile('biome.json', 'utf8'));
-const biomeSchemaVersion = /schemas\/([\d.]+)\/schema\.json$/.exec(biomeConfig.$schema ?? '')?.[1];
-const biomePinnedVersion = packageJson.devDependencies?.['@biomejs/biome'];
-if (biomeSchemaVersion !== biomePinnedVersion) {
+if (biomeConfig.$schema !== biomeSchema) {
   throw new Error(
-    `biome.json $schema names version ${String(biomeSchemaVersion)} but @biomejs/biome is pinned to ${String(biomePinnedVersion)}. Bump both together.`
+    `biome.json $schema must be ${biomeSchema} so a Biome bump cannot leave it naming another version.`
+  );
+}
+
+// README.md is also the Signal K App Store page, which renders link targets
+// unmodified and rewrites only image paths, so a relative link is dead there.
+const readmeLinks = findRelativeReadmeLinks(await readFile('README.md', 'utf8'));
+if (readmeLinks.length > 0) {
+  throw new Error(
+    `README.md must use absolute link targets; relative links are dead in the Signal K App Store:\n${readmeLinks
+      .map(({ line, target }) => `  README.md:${line} ${target || '(empty)'}`)
+      .join('\n')}`
   );
 }
 

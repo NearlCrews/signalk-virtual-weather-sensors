@@ -34,8 +34,9 @@ Also verify:
 
 - The blocking Node 20.18 compatibility lane passes. It is the only CI lane
   that runs Node 20, and no CI lane runs on 32-bit ARM hardware.
-- The official Signal K plugin workflow passes on the release commit.
-- Signal K 2.24 and current integration lanes pass.
+- CI is green on `main` HEAD, which is the release commit: the official Signal
+  K plugin workflow and the `signalk-admin` job, which mounts the production
+  panel in Signal K 2.27.0 and the latest server, both pass there.
 - CodeQL completes successfully and no open alert is introduced.
 - The built panel uses host-shared React and stays within its approved bundle
   budget.
@@ -53,7 +54,9 @@ Also verify:
 Publishing the GitHub Release triggers `.github/workflows/publish.yml`. The
 workflow verifies the tag and commit, runs `verify:release`, packs once, uploads
 the exact tarball, and publishes that downloaded artifact from a separate job
-with npm provenance.
+with npm provenance. npm skips lifecycle scripts such as `prepublishOnly` when it
+publishes a packed tarball, so the workflow's explicit `verify:release` step,
+which includes the full dependency audit, is the release gate.
 
 The local approval guard is intentionally explicit:
 
@@ -78,8 +81,7 @@ Then confirm:
 - The npm version and GitHub Release tag match.
 - The npm `gitHead` matches the approved release commit.
 - Provenance is present on npm.
-- The App Store listing shows the current Admin hero first, and the official
-  Signal K plugin score is 100 on the published commit.
+- The App Store listing shows the current Admin hero first.
 - The package installs in a clean temporary Signal K environment.
 - `dist/index.js`, declarations, `public/remoteEntry.js`, panel chunks, CSS,
   icons, screenshots, README, license, and changelog are present.
@@ -89,3 +91,14 @@ Then confirm:
   degrades cleanly when optional Weather API support is unavailable.
 
 Do not call the release complete while any required job is queued or running.
+
+## Registry follow-up
+
+The Signal K plugin registry scores the published version on its own schedule
+(a nightly run, or on demand through a `/rescore` request in the registry
+repository), and the server caches its index, so the score cannot be known at
+release time. After the registry has run, read
+`https://signalk.org/signalk-plugin-registry/plugins/signalk-virtual-weather-sensors.json`
+and check which `version` it scored. If it still lists the previous version,
+the new one is simply not scored yet; do not cut another release to chase it.
+Only when it scored the new version below 100 is there something to fix.

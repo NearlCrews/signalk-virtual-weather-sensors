@@ -3,26 +3,34 @@ name: Signal K Plugin CI
 on:
   push:
     branches: [main]
-    tags: ["v*"]
   pull_request:
     branches: [main]
+  # Weekly, after every other Monday schedule in this repository. The plugin
+  # registry reads only the newest 20 Actions runs on the published commit,
+  # and scheduled and Dependabot runs on main HEAD can push the release
+  # commit's plugin-ci run out of that window, which costs the no-plugin-ci
+  # penalty. A fresh scheduled run keeps one inside it.
+  schedule:
+    - cron: '0 8 * * 1'
   workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: plugin-ci-${{ github.workflow }}-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+# Formatting and coverage run once in ci.yml, and the signalk-admin job there
+# installs the packed plugin into a real server and mounts its panel, so this
+# caller leaves the reusable workflow's format, coverage, and integration jobs
+# off. A release needs no tag trigger: the registry credits the run on the
+# release commit's push to main, or the weekly run when main HEAD is still the
+# release commit.
 jobs:
   validate:
     uses: SignalK/signalk-server/.github/workflows/plugin-ci.yml@faab2be886fa7d52f926e7d2acf91c910623d4d7 # master 2026-10-04
     with:
       test-command: npm run test:run
       build-command: npm run build
-      format-check-command: npm run format:check
-      coverage-command: npm run test:coverage
       node-versions: '["22", "24"]'
-      enable-signalk-integration: true
-      signalk-server-versions: '["2.24.0", "latest"]'

@@ -180,7 +180,7 @@
     "clean": "node scripts/clean.mjs",
     "size": "size-limit",
     "licenses": "node scripts/generate-third-party-notices.mjs",
-    "package:check": "node scripts/test-unit-test-toolchain.mjs && publint --pack npm --strict && node scripts/check-package.mjs && node scripts/generate-third-party-notices.mjs --check",
+    "package:check": "node scripts/test-unit-test-toolchain.mjs && node scripts/test-pipeline-guards.mjs && publint --pack npm --strict && node scripts/check-package.mjs && node scripts/generate-third-party-notices.mjs --check",
     "validate": "npm run verify",
     "verify:commit": "npm run ci:biome && npm run lint:docs && npm run spellcheck && npm run ci:workflows && npm run boundaries && npm run deadcode",
     "verify:fast": "npm run verify:commit && npm run type-check",

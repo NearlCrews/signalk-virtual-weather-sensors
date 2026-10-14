@@ -29,12 +29,15 @@ serves, and any implementation ideas you have.
 
 1. Fork the repository and create a feature branch from `main`.
 2. Follow the [development guide](../docs/DEVELOPMENT.md) for setup, build,
-   and test commands. Optional: enable the repository Git hooks with
-   `npm run hooks` (it is not auto-installed).
+   and test commands. Enable the repository Git hooks with `npm run hooks`
+   (they are not auto-installed): pre-commit runs `npm run verify:commit` and
+   pre-push runs `npm run verify`.
 3. Make focused commits with clear messages (see below).
 4. Add tests for any new functionality and keep the existing suite green.
-5. Run `npm run verify:browser` before pushing. Run `npm run verify:release`
-   when panel behavior or release infrastructure changes.
+5. Make sure `npm run verify` passes before pushing; the pre-push hook runs it
+   for you. It runs no browser suite, so also run `npm run verify:browser`
+   when panel behavior changes, and `npm run verify:release` when release
+   infrastructure changes.
 6. Update documentation (`README.md`, `CHANGELOG.md`, `docs/`) as needed.
 7. Open a pull request with a clear description of the change. For changes
    that touch emitted Signal K paths or NMEA2000 alignment, see the

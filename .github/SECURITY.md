@@ -60,8 +60,9 @@ When using this plugin:
 
 This project uses:
 
-- Separate production and full dependency audits (`npm run audit:runtime` and
-  `npm run audit:full`)
+- Separate production and full dependency audits: `npm run audit:runtime` on
+  every push and pull request, and `npm run audit:full` weekly and before every
+  release
 - Automated dependency updates via Dependabot for security patches
 - CodeQL static analysis on every push to `main`
 - Pinned GitHub Actions and automated workflow security analysis

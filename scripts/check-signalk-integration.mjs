@@ -1,33 +1,46 @@
 import { readFile } from 'node:fs/promises';
+import { chromium } from '@playwright/test';
+
+// Proves an installed copy of this plugin works inside a running Signal K
+// server: the server loads and enables it, its status API and panel remote are
+// served, and the Signal K Admin mounts the production configuration panel in
+// a real browser. CI runs it against a throwaway server with the packed
+// tarball installed; see the signalk-admin job in .github/workflows/ci.yml.
 
 const packageJson = JSON.parse(await readFile('package.json', 'utf8'));
 const pluginId = 'signalk-virtual-weather-sensors';
 if (packageJson.name !== pluginId) {
   throw new Error(`Expected package.json name ${pluginId}.`);
 }
-const baseUrl = new URL(process.env.SIGNALK_URL ?? 'http://127.0.0.1:3000');
-const authorization = process.env.SIGNALK_AUTHORIZATION?.trim();
-const remotePath = `/${pluginId}/remoteEntry.js`;
-const requestOptions = () => ({
-  ...(authorization ? { headers: { Authorization: authorization } } : {}),
-  signal: AbortSignal.timeout(10_000),
-});
-
-const serverResponse = await fetch(new URL('/signalk', baseUrl), requestOptions());
-if (!serverResponse.ok) {
-  throw new Error(`Signal K discovery failed with HTTP ${serverResponse.status}.`);
+// No default: the only server listening on a developer machine may be a live
+// boat server, so the target must always be named.
+if (!process.env.SIGNALK_URL) {
+  throw new Error(
+    'Set SIGNALK_URL to the Signal K server under test, for example a throwaway one.'
+  );
 }
+const baseUrl = new URL(process.env.SIGNALK_URL);
+const authorization = process.env.SIGNALK_AUTHORIZATION?.trim();
+const headers = authorization ? { Authorization: authorization } : {};
+const remotePath = `/${pluginId}/remoteEntry.js`;
 
-const pluginsResponse = await fetch(new URL('/skServer/plugins', baseUrl), requestOptions());
-if (!pluginsResponse.ok) {
-  if (pluginsResponse.status === 401 && !authorization) {
+async function request(path) {
+  const response = await fetch(new URL(path, baseUrl), {
+    headers,
+    signal: AbortSignal.timeout(10_000),
+  });
+  if (response.status === 401 && !authorization) {
     throw new Error(
-      'Signal K plugin discovery requires authentication. Set SIGNALK_AUTHORIZATION to the complete Authorization header value.'
+      `${path} requires authentication. Set SIGNALK_AUTHORIZATION to the complete Authorization header value.`
     );
   }
-  throw new Error(`Signal K plugin discovery failed with HTTP ${pluginsResponse.status}.`);
+  if (!response.ok) throw new Error(`${path} failed with HTTP ${response.status}.`);
+  return response;
 }
-const plugins = await pluginsResponse.json();
+
+await request('/signalk');
+
+const plugins = await (await request('/skServer/plugins')).json();
 const installedPlugin = Array.isArray(plugins)
   ? plugins.find((plugin) => plugin.packageName === pluginId)
   : undefined;
@@ -41,25 +54,53 @@ for (const keyword of ['signalk-node-server-plugin', 'signalk-plugin-configurato
   }
 }
 
-const statusResponse = await fetch(
-  new URL(`/plugins/${pluginId}/api/status`, baseUrl),
-  requestOptions()
-);
-if (!statusResponse.ok) {
-  throw new Error(`The status API failed with HTTP ${statusResponse.status}.`);
-}
-const status = await statusResponse.json();
+const status = await (await request(`/plugins/${pluginId}/api/status`)).json();
 if (typeof status !== 'object' || status === null || typeof status.running !== 'boolean') {
   throw new Error('The status API did not return a running flag.');
 }
 
-const remoteResponse = await fetch(new URL(remotePath, baseUrl), requestOptions());
-if (!remoteResponse.ok) {
-  throw new Error(`The installed configuration remote failed with HTTP ${remoteResponse.status}.`);
-}
-const remoteSource = await remoteResponse.text();
+const remoteSource = await (await request(remotePath)).text();
 if (!remoteSource.includes('export')) {
   throw new Error('The installed configuration remote is not an ESM container.');
 }
+const adminHtml = await (await request('/admin/')).text();
+if (!adminHtml.includes(`src="${remotePath}"`)) {
+  throw new Error('The Signal K Admin did not inject the configuration remote.');
+}
 
-console.log(`Signal K registered the plugin, status API, and ${remotePath} at ${baseUrl.origin}.`);
+const browser = await chromium.launch({
+  ...(process.env.SIGNALK_BROWSER_CHANNEL ? { channel: process.env.SIGNALK_BROWSER_CHANNEL } : {}),
+  headless: true,
+});
+try {
+  const context = await browser.newContext({ extraHTTPHeaders: headers });
+  const page = await context.newPage();
+  await page.goto(new URL(`/admin/#/serverConfiguration/plugins/${pluginId}`, baseUrl).href, {
+    waitUntil: 'domcontentloaded',
+    timeout: 30_000,
+  });
+  const panelRoot = page.locator('[data-snui-root]');
+  const hostFailure = page.getByText(/Plugin Configuration Unavailable|Error loading component/);
+  await panelRoot.or(hostFailure).first().waitFor({ state: 'visible', timeout: 30_000 });
+  if ((await hostFailure.count()) > 0) {
+    const detail = await hostFailure.first().locator('xpath=..').innerText();
+    throw new Error(`The Signal K Admin could not mount the panel: ${detail.replace(/\s+/g, ' ')}`);
+  }
+
+  const expectedUiVersion = packageJson.devDependencies['signalk-nearlcrews-ui'];
+  const mountedUiVersion = await panelRoot.first().getAttribute('data-snui-version');
+  if (mountedUiVersion !== expectedUiVersion) {
+    throw new Error(
+      `The mounted panel reports shared UI ${String(mountedUiVersion)}, not the pinned ${expectedUiVersion}.`
+    );
+  }
+  await page
+    .getByRole('button', { name: /Fetch and emission cadence/ })
+    .waitFor({ state: 'visible', timeout: 10_000 });
+} finally {
+  await browser.close();
+}
+
+console.log(
+  `Signal K at ${baseUrl.origin} loaded the plugin, served its status API and ${remotePath}, and mounted the production panel in the Admin.`
+);

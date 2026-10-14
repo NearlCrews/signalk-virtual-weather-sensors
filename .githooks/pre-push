@@ -1,4 +1,4 @@
 #!/bin/sh
 set -eu
 
-npm run verify:fast
+npm run verify

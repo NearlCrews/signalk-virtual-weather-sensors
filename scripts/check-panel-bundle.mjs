@@ -1,15 +1,33 @@
 import { readdir, readFile } from 'node:fs/promises';
+import { createRequire } from 'node:module';
 import { join } from 'node:path';
+import { findStrictVersionShares } from './pipeline-guards.mjs';
 
 /**
  * Repository-specific assertions about the built panel: the ESM container
- * export the Signal K Admin loader needs, the CSS module pipeline, and the
- * production JSX runtime contract. The checks every consumer of the shared UI
- * shares (exact pin against the installed release, version stamp, no bundled
- * React runtime, the published host share map, and the gzip size baseline) run
- * afterwards through `snui-check-consumer`, which the shared UI ships; see the
- * `check:panel` script.
+ * export the Signal K Admin loader needs, non-strict federation shares, the CSS
+ * module pipeline, and the production JSX runtime contract. The checks every
+ * consumer of the shared UI shares (exact pin against the installed release,
+ * version stamp, no bundled React runtime, the published host share map, and
+ * the gzip size baseline) run afterwards through `snui-check-consumer`, which
+ * the shared UI ships; see the `check:panel` script.
  */
+
+// The share map is checked as webpack receives it, the shared UI's published
+// map included, so a strict share from either source fails.
+const require = createRequire(import.meta.url);
+const federation = require('../webpack.config.cjs').plugins.find(
+  (plugin) => plugin.constructor.name === 'ModuleFederationPlugin'
+);
+if (!federation) {
+  throw new Error('webpack.config.cjs no longer configures the ModuleFederationPlugin.');
+}
+const strictShares = findStrictVersionShares(federation.options?.shared);
+if (strictShares.length > 0) {
+  throw new Error(
+    `Module Federation shares must not set strictVersion: ${strictShares.join(', ')}. Signal K 2.24 Admin registers React 19.0.0 while shipping 19.2.4, so a strict share never mounts on it.`
+  );
+}
 
 const outputDirectory = 'public';
 const names = await readdir(outputDirectory);
@@ -72,5 +90,5 @@ if (unexpectedReactModules.length > 0) {
 }
 
 console.log(
-  `Panel bundle passed: ${javascriptNames.length} JavaScript files and ${cssNames.length} CSS ${cssNames.length === 1 ? 'file' : 'files'} with the ESM container export, preserved CSS identifiers and tokens, and only the production JSX runtime from React.`
+  `Panel bundle passed: ${javascriptNames.length} JavaScript files and ${cssNames.length} CSS ${cssNames.length === 1 ? 'file' : 'files'} with the ESM container export, non-strict shares, preserved CSS identifiers and tokens, and only the production JSX runtime from React.`
 );

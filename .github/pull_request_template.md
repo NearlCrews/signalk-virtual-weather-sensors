@@ -15,10 +15,8 @@
 
 ## Verification
 
-- [ ] `npm test` passes
-- [ ] `npm run type-check` passes
-- [ ] `npm run lint` passes
-- [ ] `npm run build` passes
+- [ ] `npm run verify` passes (the pre-push hook gate)
+- [ ] `npm run verify:browser` passes (when the configuration panel changed)
 - [ ] CHANGELOG.md updated (for user-visible changes)
 
 ## Signal K paths / PGNs / notification bands affected

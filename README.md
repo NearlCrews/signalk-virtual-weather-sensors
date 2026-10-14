@@ -120,8 +120,8 @@ severe conditions.
   `signalk-nearlcrews-ui`, with a live status dashboard, an inline API key
   test, a concealed field with explicit Show and Hide controls, accessible
   validation and reordering, unsaved-change tracking, Auto and System
-  preferences, and light, dark, and night-red themes. Older admin UIs retain
-  the JSON-schema form fallback.
+  preferences, and light, dark, and night-red themes. Admin builds without
+  custom panel support show the JSON-schema form instead.
 - **NMEA2000 path alignment** for bridging onto a physical bus via a
   companion emitter plugin.
 - **Per-provider `$source` on every delta** (`open-meteo`, `met-no`,
@@ -153,10 +153,12 @@ since the last fetch.
   participate in a merged source.
 - A GPS position published on `navigation.position` (the plugin queries the
   active weather provider for the vessel's current location).
-- The configuration panel needs Signal K admin UI 2.27.0 or newer. On older
-  servers the plugin still works and falls back to the standard settings
-  form. The custom panel also requires native CSS `@scope`, available in
-  Chromium and Edge 118+, Firefox 146+, and Safari 17.4+.
+- The configuration panel needs Signal K admin UI 2.27.0 or newer. The
+  plugin itself still runs on older 2.x servers, but some of them cannot load
+  the panel: Signal K 2.24 shows "Error loading component" where the settings
+  belong, with no fallback form, so upgrade the server to configure the plugin
+  from the Admin. The custom panel also requires native CSS `@scope`,
+  available in Chromium and Edge 118+, Firefox 146+, and Safari 17.4+.
 
 ## Installation
 
@@ -195,8 +197,8 @@ does not prove that the void callback completed persistence, so the panel does
 not claim that it does. The panel preserves unknown top-level and notification
 fields when it writes known settings, keeping configurations forward compatible.
 
-Labels below are the ones the custom panel shows. The rjsf fallback form, used
-on older Signal K Admin builds, titles the same four controls "Weather source",
+Labels below are the ones the custom panel shows. The rjsf form, used by
+Signal K Admin builds without custom panel support, titles the same four controls "Weather source",
 "AccuWeather API Key", "Weather Update Frequency", and "Daily API Call Quota".
 
 | Setting | Description | Default | Range |

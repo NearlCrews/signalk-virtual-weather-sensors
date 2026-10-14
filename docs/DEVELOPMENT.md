@@ -15,7 +15,10 @@ for publication steps.
 - Panel browser: Chromium or Edge 118+, Firefox 146+, or Safari 17.4+
 
 The custom panel requires native CSS `@scope`. Unsupported browsers receive a
-compatibility message. Older Signal K admin UIs use the JSON-schema fallback.
+compatibility message. Admin builds without custom panel support use the
+JSON-schema form. Admin 2.24 and earlier support custom panels but cannot
+import an ESM remote (that arrived in 2.25), so they show "Error loading
+component" with no form; verified on Signal K 2.24.0.
 
 ## Setup
 
@@ -27,7 +30,7 @@ npm run hooks
 ```
 
 `npm run hooks` opts into repository-owned hooks. Pre-commit runs
-`verify:commit`, and pre-push runs `verify:fast`.
+`verify:commit`, and pre-push runs `verify`.
 
 ## Architecture
 
@@ -110,9 +113,15 @@ npm run mutation-test
 `test:browser:cross` runs Chromium, Firefox, WebKit, and mobile Chromium. Use
 `test:browser:built` and `test:browser:cross:built` only after a current build.
 
-`test:integration` expects a running Signal K server at `SIGNALK_URL`, which
-defaults to `http://127.0.0.1:3000`. Set `SIGNALK_AUTHORIZATION` to the complete
-Authorization header when the server protects plugin discovery.
+`test:integration` checks an installed copy of the plugin inside a running
+Signal K server: the server loads and enables it, serves its status API and
+panel remote, and the Admin mounts the production panel in headless Chromium.
+`SIGNALK_URL` must name the server under test; there is deliberately no default,
+so the check never touches a live boat server by accident. Point it at a
+throwaway server with the packed tarball installed, the way the `signalk-admin`
+CI job does. Set `SIGNALK_AUTHORIZATION` to the complete Authorization header
+when that server has security enabled, and `SIGNALK_BROWSER_CHANNEL` to use an
+installed browser channel such as `chrome` instead of Playwright's Chromium.
 
 ### Quality and verification
 
@@ -134,13 +143,24 @@ npm run verify:release
 The layers are intentional:
 
 - `verify:commit`: formatting, linting, Markdown, spelling, workflow policy,
-  boundaries, and dead code
+  boundaries, and dead code (the pre-commit hook)
 - `verify:fast`: commit checks plus all TypeScript programs
 - `verify`: fast checks, coverage, build, size, package contents, and runtime
-  audit
+  audit (the pre-push hook and the CI gate); no browser suite and no
+  development-tree audit
 - `verify:browser`: verify plus Chromium against the built remote
 - `verify:release`: verify plus all supported browser projects and the full
   dependency audit
+
+`npm run ci:workflows` and `npm run package:check` also pin the shape of this
+pipeline: the workflow set is fixed, every workflow pins actions by SHA and
+declares concurrency, the development-tree audit never runs on push or pull
+request, plugin CI runs weekly after every other schedule, every workflow that
+runs a Playwright suite installs each engine `playwright.config.ts` uses, the
+hooks run the gates above, `README.md` carries no relative link targets (the
+Signal K App Store renders them dead), and `biome.json` reads its schema from
+the installed Biome. `npm run check:panel` rejects any `strictVersion`
+federation share.
 
 ## Browser and screenshot work
 
@@ -178,8 +198,8 @@ TypeScript 6 compiler API. A tool that reports success without inspecting
 TypeScript modules is not an acceptable gate.
 
 Node 20.18 remains the plugin runtime floor, so the blocking Node 20.18
-type-check and production-build lane must stay green, and runtime code must not
-rely on APIs introduced after that floor. Two dependency rules follow from it.
+build and smoke-load lane must stay green, and runtime code must not rely on
+APIs introduced after that floor. Two dependency rules follow from it.
 
 `@types/node` stays on the major that matches `engines.node`, taking the latest
 release within that major, so type-checking sees the API surface the published
@@ -190,9 +210,10 @@ The test toolchain does not have to meet the runtime floor. Vitest 5 declares
 `engines.node` of `^22.12.0 || ^24.0.0 || >=26.0.0`, which excludes Node 20, but
 a Signal K plugin runs inside the server process and `signalk-server` declares
 `node: >=22`, so no supported installation ever executes this plugin on Node 20.
-The Node 20.18 lane therefore proves the plugin runtime: it installs,
-type-checks, checks module boundaries, builds, and smoke-loads the built plugin
-with `npm run check:runtime`. `npm test` there prints a notice naming the Vitest
+The Node 20.18 lane therefore proves the plugin runtime: it installs, builds,
+and smoke-loads the built plugin with `npm run check:runtime`. Type-checking and
+module boundaries do not vary by Node, so they run once, in the verify lane.
+`@types/node` pinned to the floor major keeps that type-check honest. `npm test` there prints a notice naming the Vitest
 floor and exits 0, guarded by `scripts/unit-test-toolchain.mjs`, whose floors are
 written out rather than parsed and are pinned at their boundaries by
 `scripts/test-unit-test-toolchain.mjs` from `npm run package:check`. Bump those
@@ -208,28 +229,42 @@ its migration notes before changing that version.
 
 ## Continuous integration
 
-- `ci.yml` runs `verify` and the cross-browser matrix on Node 24.19.0, plus a
-  separate, blocking runtime-floor lane on Node 20.18 that installs,
-  type-checks, checks module boundaries, builds, and smoke-loads the built
-  plugin. The pull-request lane stops short of `verify:release`, whose last
-  step audits the whole development tree: that advisory database changes
-  without a commit, so one new development advisory would turn every open
-  pull request red for something none of them introduced. The runtime audit
-  users are exposed to still runs inside `verify`, and the release path runs
-  the full audit through `prepublishOnly`. The floor lane proves the plugin
-  runtime, not the test toolchain: Vitest 5 requires Node 22.12 or newer, so
-  `npm test` there prints a notice and skips. The lane uses npm 11.19 because
-  npm 12 starts at Node 22.22.2. The unit suite runs on the supported
-  development runtimes instead.
+- `ci.yml` runs `verify` and the cross-browser matrix once, on Node 24.19.0.
+  The lane stops short of `verify:release`, whose last step audits the whole
+  development tree: that advisory database changes without a commit, so one
+  new development advisory would turn every open pull request red for
+  something none of them introduced. The runtime audit the registry scores
+  still runs inside `verify`.
+- `ci.yml` also runs a blocking runtime-floor lane on Node 20.18 that installs,
+  builds, and smoke-loads the built plugin. It proves the plugin runtime, not
+  the test toolchain: Vitest 5 requires Node 22.12 or newer, so `npm test`
+  there prints a notice and skips. The lane uses npm 11.19 because npm 12
+  starts at Node 22.22.2.
+- The `signalk-admin` job in `ci.yml` installs the packed tarball into a real
+  Signal K server, 2.27.0 (the documented panel floor) and the latest release,
+  starts it, and runs `npm run test:integration`, which mounts the production
+  panel through the Admin in a real browser. The panel is an ESM remote, and
+  the Admin first imports ESM remotes in 2.25.0, so on 2.24 the plugin runs
+  but its panel cannot mount.
 - `plugin-ci.yml` pins the official Signal K reusable workflow and tests Node
-  22 and 24 on Linux x64, Linux arm64, macOS, and Windows, plus Signal K 2.24
-  and current, packaging, and installation.
+  22 and 24 on Linux x64, Linux arm64, macOS, and Windows, plus packaging and
+  installation. Its format, coverage, and integration jobs stay off because
+  `ci.yml` covers them. It has no tag trigger: the registry credits the run on
+  the release commit's push to `main`. It also runs weekly, after every other
+  Monday schedule, because the registry reads only the newest 20 Actions runs
+  on the published commit and scheduled and Dependabot runs can otherwise push
+  the plugin-ci run out of that window.
 - `codeql.yml` runs the extended JavaScript and TypeScript query suite.
-- `workflow-security.yml` runs actionlint and zizmor against workflow changes
-  and on a weekly schedule, and audits both the runtime dependencies and the
-  full development tree in the same run.
-- `publish.yml` verifies a release, packs once, uploads the exact tarball, and
-  publishes that artifact in a separate job.
+- `workflow-security.yml` runs actionlint and zizmor against workflow and
+  Dependabot changes and on a weekly schedule. Its `dependency-audit` job runs
+  the full development-tree audit only on that schedule and on demand, never
+  on push or pull request; a scheduled failure emails the owner. It shares this
+  workflow instead of adding one, since every extra run on `main` competes for
+  the registry's 20-run window.
+- `publish.yml` verifies a release, runs `verify:release` (including the full
+  audit) as its release gate, packs once, uploads the exact tarball, and
+  publishes that artifact in a separate job. npm skips `prepublishOnly` when it
+  publishes a packed tarball, so that explicit step is the gate.
 
 The reusable workflow no longer has an armv7 or Node 20 job, so the blocking
 runtime-floor lane in `ci.yml` is the only CI coverage of Node 20, and no CI

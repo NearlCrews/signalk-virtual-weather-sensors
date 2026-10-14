@@ -10,7 +10,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: ci-${{ github.workflow }}-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -32,10 +32,12 @@ jobs:
       # whole development tree, and the advisory database is an external input
       # that changes without a commit: one new devDependency advisory turned
       # every open pull request red for reasons none of them introduced. The
-      # runtime audit users are actually exposed to (`audit:runtime`) still runs
-      # inside `verify` here, `audit:full` still gates the release through
-      # `prepublishOnly`, and the scheduled job in workflow-security.yml
-      # surfaces a new development advisory on its own.
+      # runtime audit the registry scores and users are exposed to
+      # (`audit:runtime`) still runs inside `verify` here. `audit:full` gates
+      # the release through the `verify:release` step in publish.yml (npm skips
+      # `prepublishOnly` when it publishes a packed tarball), and the scheduled
+      # dependency-audit job in workflow-security.yml surfaces a new
+      # development advisory weekly.
       - run: npx --yes npm@12.0.2 run verify
       - run: npx --yes npm@12.0.2 run test:browser:cross:built
       - name: Upload coverage reports to Codecov
@@ -65,11 +67,12 @@ jobs:
     # not the test toolchain. A Signal K plugin runs inside the server process
     # and signalk-server declares node >=22, so no supported installation ever
     # executes this plugin on Node 20. What the floor still promises is that
-    # the plugin's own compiled code installs, type-checks, builds, and loads
-    # there, which is what the steps below check. This is the only CI lane
-    # that runs Node 20: the official Signal K plugin workflow has no armv7 or
-    # Node 20 job and runs only on 64-bit runners, so no CI exercises 32-bit
-    # ARM hardware such as the Cerbo GX.
+    # the plugin installs, builds, and loads there, which is what the steps
+    # below check. Node-independent gates (type-check, boundaries, lint) run
+    # once, in the verify lane. This is the only CI lane that runs Node 20:
+    # the official Signal K plugin workflow has no armv7 or Node 20 job and
+    # runs only on 64-bit runners, so no CI exercises 32-bit ARM hardware such
+    # as the Cerbo GX.
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -81,8 +84,6 @@ jobs:
       # npm 12 starts at Node 22.22.2. Use the newest npm 11 release in this
       # runtime-floor lane so Node 20.18 is exercised by a supported npm.
       - run: npx --yes npm@11.19.0 ci
-      - run: npx --yes npm@11.19.0 run type-check
-      - run: npx --yes npm@11.19.0 run boundaries
       - run: npx --yes npm@11.19.0 run build
       # Turns "it compiled" into "it loads and constructs" on the runtime
       # floor: imports the built bundle, builds the plugin object, and checks
@@ -97,3 +98,85 @@ jobs:
       # boundaries. Running it here proves the guard reports rather than
       # fails; the suite itself runs in the verify lane on Node 24.
       - run: npx --yes npm@11.19.0 test
+
+  signalk-admin:
+    # Installs the packed tarball into a real signalk-server, starts it, and
+    # mounts the production configuration panel through the Signal K Admin in
+    # a real browser. 2.27.0 is the documented panel floor: this panel is an
+    # ESM remote, and the Admin first imports ESM remotes in 2.25.0, so on
+    # 2.24 the plugin runs but its panel cannot mount. A strict React share is
+    # caught before this job by the share check in `check:panel`. The job
+    # supersedes the official plugin workflow's integration job, which
+    # plugin-ci.yml leaves off, because it also starts a real server with the
+    # plugin enabled.
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        signalk_server: ['2.27.0', 'latest']
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24.19.0
+          package-manager-cache: false
+      - run: npx --yes npm@12.0.2 ci
+      - run: npx --yes npm@12.0.2 run build
+      - name: Pack the plugin
+        run: npx --yes npm@12.0.2 pack --ignore-scripts --pack-destination "$RUNNER_TEMP"
+      - name: Install into Signal K ${{ matrix.signalk_server }}
+        env:
+          SIGNALK_SERVER_VERSION: ${{ matrix.signalk_server }}
+        # The host install uses the runner's own npm, as an operator's server
+        # install would, and installs the tarball without lifecycle scripts, as
+        # the App Store does.
+        # zizmor: ignore[adhoc-packages] The job must install the matrix server
+        # version and the tarball just packed, because those are what it tests.
+        run: |
+          set -euo pipefail
+          host="$RUNNER_TEMP/sk-test"
+          mkdir -p "$host/plugin-config-data"
+          (
+            cd "$host"
+            npm init --yes > /dev/null
+            npm install "signalk-server@${SIGNALK_SERVER_VERSION}"
+            npm install "$RUNNER_TEMP"/signalk-virtual-weather-sensors-*.tgz --ignore-scripts
+          )
+          # npm may hoist the Admin package even though signalk-server serves it
+          # from its dependency-local path. Link it back to that location.
+          node scripts/link-signalk-admin.mjs "$host"
+          echo '{"enabled":true,"configuration":{}}' > "$host/plugin-config-data/signalk-virtual-weather-sensors.json"
+      - name: Start Signal K and mount the production panel
+        env:
+          PORT: '3000'
+          SIGNALK_BROWSER_CHANNEL: chrome
+          SIGNALK_URL: http://127.0.0.1:3000
+        run: |
+          set -euo pipefail
+          export SIGNALK_NODE_CONFIG_DIR="$RUNNER_TEMP/sk-test"
+          cd "$SIGNALK_NODE_CONFIG_DIR"
+          # The server binary runs directly, not through npx, so the trap
+          # stops the server itself rather than a wrapper.
+          node_modules/.bin/signalk-server > "$RUNNER_TEMP/signalk.log" 2>&1 &
+          server_pid=$!
+          trap 'kill "$server_pid" 2>/dev/null || true' EXIT
+          ready=false
+          for _ in $(seq 1 45); do
+            if curl --fail --silent "$SIGNALK_URL/signalk/v1/api/" > /dev/null; then
+              ready=true
+              break
+            fi
+            sleep 2
+          done
+          if [ "$ready" != true ]; then
+            cat "$RUNNER_TEMP/signalk.log"
+            exit 1
+          fi
+          cd "$GITHUB_WORKSPACE"
+          if ! npx --yes npm@12.0.2 run test:integration; then
+            cat "$RUNNER_TEMP/signalk.log"
+            exit 1
+          fi

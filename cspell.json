@@ -67,6 +67,7 @@
     "OpenAPI",
     "openrouter",
     "Precip",
+    "pipefail",
     "publint",
     "QuestDB",
     "Raymarine",
