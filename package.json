@@ -96,9 +96,6 @@
     "@signalk/server-api": ">=2.24.0 <3"
   },
   "overrides": {
-    "markdownlint-cli2": {
-      "js-yaml": "5.2.2"
-    },
     "qs": "^6.15.2",
     "vitest": {
       "@types/node": "$@types/node"
@@ -108,8 +105,7 @@
     },
     "@vitest/ui": {
       "@types/node": "$@types/node"
-    },
-    "smol-toml": "1.8.0"
+    }
   },
   "devDependencies": {
     "@axe-core/playwright": "^4.13.0",
@@ -130,11 +126,11 @@
     "ajv": "^8.20.0",
     "ajv-draft-04": "^1.0.0",
     "ajv-formats": "^3.0.1",
-    "cspell": "10.3.1",
+    "cspell": "10.4.0",
     "esbuild": "^0.28.2",
     "esbuild-loader": "^4.5.0",
-    "knip": "6.35.1",
-    "markdownlint-cli2": "0.23.2",
+    "knip": "6.41.0",
+    "markdownlint": "0.41.1",
     "publint": "0.3.24",
     "react": "19.3.0",
     "react-dom": "19.3.0",
@@ -172,7 +168,7 @@
     "type-check:browser": "tsc -p tsconfig.browser.json --noEmit",
     "lint": "npm run lint:code && npm run lint:docs && npm run spellcheck",
     "lint:code": "biome lint .",
-    "lint:docs": "markdownlint-cli2 \"*.md\" \".github/*.md\" \"docs/*.md\" \"docs/decisions/*.md\" \"docs/maintainers/*.md\"",
+    "lint:docs": "node scripts/check-markdown.mjs",
     "spellcheck": "cspell --no-progress --show-suggestions README.md CHANGELOG.md CLAUDE.md \".github/**/*.{md,yml,yaml}\" \"docs/*.md\" \"docs/decisions/*.md\" \"docs/maintainers/*.md\"",
     "ci:biome": "biome ci .",
     "ci:workflows": "node scripts/check-workflows.mjs",
