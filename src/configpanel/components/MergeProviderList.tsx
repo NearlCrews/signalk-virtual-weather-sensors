@@ -46,6 +46,7 @@ function ReorderButtons({
         iconOnly
         aria-label={`Move ${label} up`}
         ariaDisabled={atTop}
+        disabledReason="Already first in the order."
         onClick={() => onMove(-1)}
       >
         <span aria-hidden="true">↑</span>
@@ -56,6 +57,7 @@ function ReorderButtons({
         iconOnly
         aria-label={`Move ${label} down`}
         ariaDisabled={atBottom}
+        disabledReason="Already last in the order."
         onClick={() => onMove(1)}
       >
         <span aria-hidden="true">↓</span>
@@ -161,7 +163,12 @@ export default function MergeProviderList({
               ) : null}
             </>
           }
-          description={note}
+          // The note is the lock reason while the row is blocked and a plain
+          // description otherwise; passing it one way each keeps it from being
+          // read twice.
+          description={disabled ? undefined : note}
+          disabledReason={disabled ? note : undefined}
+          disabledReasonVisibility="visible"
           checked={isIncluded}
           // `ariaDisabled`, not native `disabled`: a locked row is one the
           // operator may well be standing on (unchecking the last included

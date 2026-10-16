@@ -33,6 +33,8 @@ test('loads the production remote and never saves a stale number', async ({ page
 
   const updateFrequency = page.getByRole('spinbutton', { name: 'Weather update frequency' });
   await updateFrequency.fill('999');
+  // The message and aria-invalid wait for the edit to finish.
+  await updateFrequency.press('Enter');
   await expect(updateFrequency).toHaveAttribute('aria-invalid', 'true');
   await expect(page.getByText('Enter a whole number from 1 to 60.')).toBeVisible();
 
@@ -40,7 +42,7 @@ test('loads the production remote and never saves a stale number', async ({ page
   // section holding the bad value, since an invalid draft never commits and
   // so never dirties the form on its own.
   const save = saveButton(page);
-  const actionBar = page.locator('[data-panel-action-bar]');
+  const actionBar = page.locator('[data-snui-action-bar]');
   await expect(save).toBeDisabled();
   await expect(actionBar).toContainText(
     'Correct the invalid value under Fetch and emission cadence'
@@ -63,7 +65,7 @@ test('loads the production remote and never saves a stale number', async ({ page
     'data-saved-configuration',
     /"futureBand":true/
   );
-  const actionStatus = page.locator('[data-panel-action-bar] [tabindex="-1"]');
+  const actionStatus = page.locator('[data-snui-action-bar-status]');
   await expect(actionStatus).toBeFocused();
   await expect(save).toHaveAttribute('aria-busy', 'true');
   await expect(actionStatus).toContainText(/save requested/i);
@@ -78,22 +80,22 @@ test('reports a synchronous host request failure without claiming persistence', 
   await page.getByRole('button', { name: /Fetch and emission cadence/ }).click();
   await page.getByRole('spinbutton', { name: 'Weather update frequency' }).fill('45');
   const save = saveButton(page);
-  const actionBar = page.locator('[data-panel-action-bar]');
-  const failure = page.getByRole('status').filter({ hasText: 'Save request failed' });
+  const actionBar = page.locator('[data-snui-action-bar]');
+  const failure = page.locator('[data-snui-action-bar-status]');
 
   await save.click();
   await expect(page.locator('body')).toHaveAttribute('data-save-attempt-count', '1');
   await expect(page.locator('body')).not.toHaveAttribute('data-save-count', /\d/);
+  // The refused request is the bar's danger outcome, so Save stays available
+  // for a retry and nothing claims the host accepted it.
   await expect(failure).toContainText('Could not request the configuration save');
-  // The edit is still pending, so the bar keeps reporting it rather than a
-  // request the host never accepted.
-  await expect(actionBar).toContainText('Unsaved changes');
   await expect(save).not.toHaveAttribute('aria-busy');
+  await expect(save).toBeEnabled();
 
   await save.click();
   await expect(page.locator('body')).toHaveAttribute('data-save-attempt-count', '2');
   await expect(page.locator('body')).toHaveAttribute('data-save-count', '1');
-  await expect(failure).toHaveCount(0);
+  await expect(failure).not.toContainText('Could not request the configuration save');
   await expect(actionBar).toContainText('Current plugin status is running', { timeout: 5_000 });
 });
 
@@ -109,7 +111,7 @@ test('keeps an edit made during the status check dirty and visible', async ({ pa
 
   // Once the status check settles, the bar must report the newer edit, not
   // the outcome of the request that preceded it.
-  const actionBar = page.locator('[data-panel-action-bar]');
+  const actionBar = page.locator('[data-snui-action-bar]');
   await expect(save).not.toHaveAttribute('aria-busy', 'true', { timeout: 5_000 });
   await expect(actionBar).toContainText('Unsaved changes');
   await expect(actionBar).not.toContainText('Current plugin status');
@@ -180,7 +182,7 @@ test('reveals an API key without losing its value, focus, or selection', async (
     (element as HTMLInputElement).setSelectionRange(5, 12);
   });
 
-  await page.getByRole('button', { name: 'Show' }).click();
+  await page.getByRole('button', { name: /^Show/ }).click();
   await expect(apiKey).toHaveAttribute('type', 'text');
   await expect(apiKey).toHaveValue('test-api-key-1234567890');
   await expect(apiKey).toBeFocused();
@@ -228,6 +230,8 @@ test('keeps an invalid cadence edit and its error across a collapse and reopen',
   await cadence.click();
   const updateFrequency = page.getByRole('spinbutton', { name: 'Weather update frequency' });
   await updateFrequency.fill('999');
+  // The message and aria-invalid wait for the edit to finish.
+  await updateFrequency.press('Enter');
   await expect(updateFrequency).toHaveAttribute('aria-invalid', 'true');
   const save = saveButton(page);
   await expect(save).toBeDisabled();
@@ -496,12 +500,12 @@ test('keeps the viewport action bar reachable inside the Admin overflow contract
     await page.getByRole('button', { name: heading }).click();
   }
 
-  const actionBar = page.locator('[data-panel-action-bar]');
-  await expect(actionBar).toHaveClass(/snui-action-bar--sticky-viewport-bottom/);
+  const actionBar = page.locator('[data-snui-action-bar]');
+  await expect(actionBar).toHaveAttribute('data-snui-sticky', 'viewport-bottom');
   await actionBar.evaluate((element) => element.scrollIntoView({ block: 'end' }));
   await page.evaluate(() => window.scrollBy(0, -160));
   expect(await page.evaluate(() => window.scrollY)).toBeGreaterThan(0);
-  await expect(actionBar.locator('..')).toHaveAttribute('data-snui-docked', '');
+  await expect(actionBar).toHaveAttribute('data-snui-docked', '');
 
   await expect
     .poll(async () => {

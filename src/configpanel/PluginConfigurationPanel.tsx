@@ -1,14 +1,16 @@
 import type * as React from 'react';
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { flushSync } from 'react-dom';
 import {
   Banner,
   CollapsibleSection,
   NumberField,
   PanelShell,
   Stack,
+  useResetDrafts,
   useUnsavedChangesGuard,
 } from 'signalk-nearlcrews-ui';
-import { SaveActionBar } from 'signalk-nearlcrews-ui/composites';
+import { SaveActionBar, type SaveActionBarOutcome } from 'signalk-nearlcrews-ui/composites';
 import {
   ACCUWEATHER_FETCH_COST_NOTE,
   CONFIG_DEFAULTS,
@@ -80,7 +82,7 @@ function WeatherPanel({ configuration, save }: Props): React.ReactElement {
   const [invalidCadenceFields, setInvalidCadenceFields] = useState<ReadonlySet<CadenceField>>(
     () => new Set()
   );
-  const [cadenceResetKey, setCadenceResetKey] = useState(0);
+  const resetDrafts = useResetDrafts();
   const apiKeyRef = useRef<HTMLInputElement>(null);
   const baseUrlRef = useRef<HTMLInputElement>(null);
 
@@ -126,28 +128,35 @@ function WeatherPanel({ configuration, save }: Props): React.ReactElement {
     (field) => field !== 'dailyApiQuota' || src.accuWeatherInPlay
   );
 
-  const handleSave = (): void => {
-    void doSave().then((blocker) => {
-      if (blocker === null) return;
-      // The refs are stable; the lookup is built here rather than per render
-      // because the save-failure branch is its only reader.
-      const blockerRefs: Record<SaveBlocker, React.RefObject<HTMLInputElement | null>> = {
-        apiKey: apiKeyRef,
-        baseUrl: baseUrlRef,
-      };
-      setOpenSections((previous) => ({ ...previous, apiKey: true }));
-      requestAnimationFrame(() => blockerRefs[blocker].current?.focus());
-    });
+  const handleSave = (): React.RefObject<HTMLInputElement | null> | undefined => {
+    const blocker = doSave();
+    if (blocker === null) return undefined;
+    // The refs are stable; the lookup is built here rather than per render
+    // because the save-failure branch is its only reader.
+    const blockerRefs: Record<SaveBlocker, React.RefObject<HTMLInputElement | null>> = {
+      apiKey: apiKeyRef,
+      baseUrl: baseUrlRef,
+    };
+    // Commit the reveal first, so the field handed back is connected and
+    // visible when the bar moves focus to it.
+    flushSync(() => setOpenSections((previous) => ({ ...previous, apiKey: true })));
+    return blockerRefs[blocker];
   };
 
   const handleDiscard = (): void => {
     discard();
-    // The reset key drops every cadence draft, and the set is cleared here as
-    // well because a field inside a collapsed section reports its validity
-    // only once that section is open again.
-    setInvalidCadenceFields(new Set());
-    setCadenceResetKey((value) => value + 1);
+    // Drops every cadence draft, including an invalid one inside a collapsed
+    // section, and each field reports itself valid again.
+    resetDrafts();
   };
+
+  // What the panel heard back about its last save request. A request that
+  // never reached the host is the danger outcome, which keeps Save available
+  // for a retry; an accepted request reports the plugin status read after it.
+  const outcome: SaveActionBarOutcome | null =
+    action === null
+      ? null
+      : { message: action.message, tone: action.requested ? 'info' : 'danger' };
 
   const enabledBands = NOTIFICATION_BAND_KEYS.filter((key) => form.notifications[key]).length;
 
@@ -160,11 +169,11 @@ function WeatherPanel({ configuration, save }: Props): React.ReactElement {
         stale={stale}
       />
 
-      {error ? (
-        <Banner live="polite" tone="danger" title="Status unavailable">
-          {error}. Retrying automatically.
-        </Banner>
-      ) : null}
+      {/* Mounted always so a status failure that arrives later is announced;
+          with nothing to say it renders empty and takes no space. */}
+      <Banner live="polite" tone="danger" title={error ? 'Status unavailable' : undefined}>
+        {error ? <>{error}. Retrying automatically.</> : null}
+      </Banner>
 
       {firstRun ? (
         <Banner tone="info" title="AccuWeather setup required">
@@ -215,7 +224,6 @@ function WeatherPanel({ configuration, save }: Props): React.ReactElement {
             value={form.updateFrequency}
             onValueChange={(value) => setField('updateFrequency', value)}
             onValidityChange={(valid) => setCadenceValidity('updateFrequency', valid)}
-            resetKey={cadenceResetKey}
             errorLive="polite"
             description={
               src.accuWeatherInPlay
@@ -233,7 +241,6 @@ function WeatherPanel({ configuration, save }: Props): React.ReactElement {
             value={form.emissionInterval}
             onValueChange={(value) => setField('emissionInterval', value)}
             onValidityChange={(valid) => setCadenceValidity('emissionInterval', valid)}
-            resetKey={cadenceResetKey}
             errorLive="polite"
             description="How often the cached weather payload is re-emitted to the Signal K bus. This is independent of the weather fetch cadence."
           />
@@ -248,7 +255,6 @@ function WeatherPanel({ configuration, save }: Props): React.ReactElement {
               value={form.dailyApiQuota}
               onValueChange={(value) => setField('dailyApiQuota', value)}
               onValidityChange={(valid) => setCadenceValidity('dailyApiQuota', valid)}
-              resetKey={cadenceResetKey}
               errorLive="polite"
               description={`At ${Math.round(QUOTA_WARN_RATIO * 100)}% usage the panel warns. At 100%, fetches pause until the rolling window drops. Set 0 for no cap. Applies to AccuWeather only.`}
             />
@@ -273,26 +279,14 @@ function WeatherPanel({ configuration, save }: Props): React.ReactElement {
         <NotificationToggles notifications={form.notifications} onChange={setNotification} />
       </CollapsibleSection>
 
-      {action !== null && !action.requested ? (
-        <Banner live="polite" tone="danger" title="Save request failed">
-          {action.message}
-        </Banner>
-      ) : null}
-
       <SaveActionBar
-        data-panel-action-bar=""
         dirty={dirty}
         saving={saving}
-        unconfigured={configuration == null}
+        unconfigured={configuration === undefined}
         saveRequestedAt={saveRequestedAt}
         invalidMessage={saveBlockedOnCadence ? INVALID_CADENCE_MESSAGE : null}
-        // The bar's own 2,500 ms window would close before the status poll
-        // that follows a save request settles, so the panel keeps the window
-        // and takes the message down on the next edit, which is the same
-        // instant that clears `saveRequestedAt`. An empty string reads as
-        // absent, so the bar's own wording covers the wait.
-        savedMessageDurationMs={0}
-        labels={{ saved: action?.requested ? action.message : '', saving: SAVING_MESSAGE }}
+        outcome={outcome}
+        labels={{ saving: SAVING_MESSAGE }}
         onSave={handleSave}
         onDiscard={handleDiscard}
       />

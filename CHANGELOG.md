@@ -17,6 +17,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- The configuration panel moves from shared marine UI 0.11.1 to 0.14.0. A save
+  the plugin cannot hand to Signal K, or whose status check fails, now shows in
+  the save bar's own status rather than in a banner beside it, and Save stays
+  available for a retry. A refused API key or base URL moves focus to the field
+  as soon as the save is pressed. Invalid checkboxes, switches, and sliders
+  draw a dashed outline, the reorder buttons and a locked merge row say why
+  they are blocked, and the Light border and disabled text are slightly
+  darker. Discard drops an invalid cadence value even inside a closed section.
+  The panel bundle is about 2.5 KB smaller. Emitted paths and saved
+  configuration fields are unchanged.
 - The Signal K plugin CI runs the official workflow from its 2026-10-04 master
   commit, which has no armv7 or Node 20 job, so the retired `enable-armv7`
   input is gone. Its Node 22 lanes now install with npm 11. The blocking Node

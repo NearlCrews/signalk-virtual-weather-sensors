@@ -54,7 +54,7 @@ bar. Keep provider, quota, status, and save-confirmation behavior local to this
 plugin. Project CSS must stay in focused CSS modules and use public `--snui-*`
 tokens; the panel never re-implements a primitive the shared UI provides.
 
-The shared UI is pinned exactly at 0.11.1. Fresh profiles use Match Admin
+The shared UI is pinned exactly at 0.14.0. Fresh profiles use Match Admin
 without writing an implicit preference. Match Admin follows an explicit host
 theme and otherwise stays Light; Match device is the explicit operating-system
 preference.
@@ -68,13 +68,16 @@ UI was verified with: the range `^19.2.0`, `import: false`, and deliberately no
 version it actually ships (2.24.0 registers 19.0.0 while bundling 19.2.4), so a
 strict check refuses to mount on a fully compatible host. A version mismatch
 warns and continues. The shared UI library is bundled into the remote.
-`npm run check:panel` runs the repository's own checks (the ESM container
-export, CSS identifiers and container names surviving webpack, and only the
-production JSX runtime from React) and then `snui-check-consumer` from the
-shared UI, which proves the exact pin matches the installed release, the remote
-is stamped with that version, no React runtime is bundled, the remote and the
-webpack configuration consume exactly the published share map, and the gzip
-size stays within `scripts/panel-size-baseline.json`.
+`npm run check:panel` runs the repository's own checks (non-strict shares, the
+shared container name surviving webpack, and CSS file endings) and then
+`snui-check-consumer` from the shared UI with `--stats`, `--styles`, and
+`--runtime`. That proves the host loading contract and ESM container export, the
+exact pin and where it is declared, the version stamp, the CSS token and
+container names, the production JSX runtime and single copies of the library
+and React Aria from the build stats, no single-class CSS module override of a
+package component under `src/configpanel`, a render of the built panel with
+`configuration` undefined and `{}`, the published share map, and a gzip size
+within `scripts/panel-size-baseline.json`.
 
 `npm run boundaries` rejects circular imports, server-to-panel imports, and
 panel imports of Node-only runtime modules. The panel may import pure constants

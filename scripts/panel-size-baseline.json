@@ -1,5 +1,5 @@
 {
-  "description": "Configuration panel remote (JavaScript and CSS assets beside remoteEntry.js) on signalk-nearlcrews-ui 0.11.1, measured at gzip level 9 the way snui-check-consumer measures it. Raised from 38501 bytes, the 0.9.0 figure, when the panel moved to 0.11.1: the release adds the panel label bundle, the repeat-announcement and freshness helpers, and the theme selector's visible group label and description, and the shared modules behind them reach the panel through the components it already renders. Re-record deliberately after reviewing what changed, so the percentage gate catches unexpected growth rather than a library upgrade.",
-  "gzipBytes": 46490,
+  "description": "Configuration panel remote (JavaScript and CSS assets beside remoteEntry.js) on signalk-nearlcrews-ui 0.14.0, measured at gzip level 9 the way snui-check-consumer measures it. Lowered from 46490 bytes, the 0.11.1 figure, when the panel moved to 0.14.0: the release compacts its shipped style text, which more than pays for the additions. Re-record deliberately after reviewing what changed, so the percentage gate catches unexpected growth rather than a library upgrade.",
+  "gzipBytes": 43891,
   "maximumIncreasePercent": 5
 }

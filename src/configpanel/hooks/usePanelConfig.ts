@@ -252,9 +252,10 @@ export interface UsePanelConfigResult {
   discard: () => void;
   clearKeyError: () => void;
   clearBaseUrlError: () => void;
-  // Identifies the field that blocked a save, or null after submission, so the
-  // caller can open the Weather source section and focus the inline error.
-  doSave: () => Promise<SaveBlocker | null>;
+  // Identifies the field that blocked a save, or null once the request is under
+  // way, so the caller can open the Weather source section and focus the inline
+  // error. The request itself continues in the background.
+  doSave: () => SaveBlocker | null;
 }
 
 /**
@@ -330,7 +331,7 @@ export function usePanelConfig(
     if (editVersionRef.current === version) setAction(next);
   }, []);
 
-  const doSave = useCallback(async (): Promise<SaveBlocker | null> => {
+  const doSave = useCallback((): SaveBlocker | null => {
     const submittedEditVersion = editVersionRef.current;
     const trimmedKey = form.accuWeatherApiKey.trim();
     const keyFormatError = apiKeyErrorFor(form, trimmedKey);
@@ -346,56 +347,59 @@ export function usePanelConfig(
     }
     setBaseUrlError(null);
     setSaving(true);
-    try {
-      const normalizedForm: PanelFormState = {
-        ...form,
-        accuWeatherApiKey: trimmedKey,
-        openMeteoBaseUrl: form.openMeteoBaseUrl.trim(),
-        notifications: { ...form.notifications },
-      };
-      const payload = configurationFromForm(
-        normalizedForm,
-        requestedConfigurationRef.current,
-        requestedForm
-      );
+    const request = async (): Promise<void> => {
       try {
-        hostSave(payload);
+        const normalizedForm: PanelFormState = {
+          ...form,
+          accuWeatherApiKey: trimmedKey,
+          openMeteoBaseUrl: form.openMeteoBaseUrl.trim(),
+          notifications: { ...form.notifications },
+        };
+        const payload = configurationFromForm(
+          normalizedForm,
+          requestedConfigurationRef.current,
+          requestedForm
+        );
+        try {
+          hostSave(payload);
+        } catch (err) {
+          setAction({
+            message: `Could not request the configuration save: ${toErrorText(err)}`,
+            requested: false,
+          });
+          return;
+        }
+        // The host has the request. The action bar reports the status check
+        // while it runs, so an earlier outcome is cleared rather than shown
+        // beside it.
+        setAction(null);
+        setSaveRequestedAt(Date.now());
+        // What we handed the host is the requested baseline; adopting it as the form
+        // too keeps dirty false even when trimming changed the key. Adopt only
+        // if the user has not typed since Save was clicked: a mid-confirmation edit
+        // must survive and stay dirty against the new baseline.
+        setForm((current) => (formsEqual(current, form) ? normalizedForm : current));
+        setRequestedForm(normalizedForm);
+        requestedConfigurationRef.current = payload;
+        try {
+          const statusAction = await checkStatusAfterRequest(refreshStatus);
+          setActionForEditVersion(submittedEditVersion, statusAction);
+        } catch (err) {
+          setActionForEditVersion(submittedEditVersion, {
+            message: `Save requested, but the current status check failed: ${toErrorText(err)}`,
+            requested: true,
+          });
+        }
       } catch (err) {
         setAction({
-          message: `Could not request the configuration save: ${toErrorText(err)}`,
+          message: `Could not prepare the configuration request: ${toErrorText(err)}`,
           requested: false,
         });
-        return null;
+      } finally {
+        setSaving(false);
       }
-      // The host has the request. The action bar reports the status check
-      // while it runs, so an earlier outcome is cleared rather than shown beside
-      // it.
-      setAction(null);
-      setSaveRequestedAt(Date.now());
-      // What we handed the host is the requested baseline; adopting it as the form
-      // too keeps dirty false even when trimming changed the key. Adopt only
-      // if the user has not typed since Save was clicked: a mid-confirmation edit
-      // must survive and stay dirty against the new baseline.
-      setForm((current) => (formsEqual(current, form) ? normalizedForm : current));
-      setRequestedForm(normalizedForm);
-      requestedConfigurationRef.current = payload;
-      try {
-        const statusAction = await checkStatusAfterRequest(refreshStatus);
-        setActionForEditVersion(submittedEditVersion, statusAction);
-      } catch (err) {
-        setActionForEditVersion(submittedEditVersion, {
-          message: `Save requested, but the current status check failed: ${toErrorText(err)}`,
-          requested: true,
-        });
-      }
-    } catch (err) {
-      setAction({
-        message: `Could not prepare the configuration request: ${toErrorText(err)}`,
-        requested: false,
-      });
-    } finally {
-      setSaving(false);
-    }
+    };
+    void request();
     return null;
   }, [form, hostSave, refreshStatus, requestedForm, setActionForEditVersion]);
 

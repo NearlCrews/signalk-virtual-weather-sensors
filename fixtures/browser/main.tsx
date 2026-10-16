@@ -6,7 +6,7 @@ import type { PluginConfiguration } from '../../src/types/config.js';
 declare const __REMOTE_URL__: string;
 
 interface PanelProps {
-  configuration?: Partial<PluginConfiguration> | null;
+  configuration?: Partial<PluginConfiguration> | undefined;
   save: (configuration: PluginConfiguration) => void;
 }
 
@@ -145,8 +145,8 @@ try {
   if (!(rootElement instanceof HTMLElement)) throw new Error('Fixture root is missing.');
 
   function HostFixture(): React.ReactElement {
-    const [configuration, setConfiguration] = React.useState<PluginConfiguration | null>(
-      unconfigured ? null : initialConfiguration
+    const [configuration, setConfiguration] = React.useState<PluginConfiguration | undefined>(
+      unconfigured ? undefined : initialConfiguration
     );
     const saveAttempts = React.useRef(0);
 
