@@ -155,8 +155,8 @@ const ci = workflows.get('ci.yml') ?? '';
 if (!runsScript(block(ci, '  verify:'), 'verify')) {
   failures.push('The ci.yml verify job must run npm run verify.');
 }
-if (!ci.includes('node-version: 24.19.0') || !ci.includes('npx --yes npm@12.0.2')) {
-  failures.push('ci.yml must retain Node 24.19.0 and npm 12.0.2 for the full verification lane.');
+if (!ci.includes('node-version: 24.22.0') || !ci.includes('npx --yes npm@12.2.0')) {
+  failures.push('ci.yml must retain Node 24.22.0 and npm 12.2.0 for the full verification lane.');
 }
 // The Node 20.18 lane proves the plugin runtime, not the test toolchain: it
 // must keep building AND loading the built plugin there, or the advertised
@@ -165,10 +165,10 @@ if (!ci.includes('node-version: 24.19.0') || !ci.includes('npx --yes npm@12.0.2'
 const floorLane = block(ci, '  node-20-compatibility:');
 for (const expected of [
   'node-version: 20.18.0',
-  'npm@11.19.0 ci',
+  'npm@11.21.1 ci',
   'run build',
   'run check:runtime',
-  'npm@11.19.0 test',
+  'npm@11.21.1 test',
 ]) {
   if (!floorLane.includes(expected)) {
     failures.push(`The blocking Node 20.18 lane in ci.yml must retain ${expected}.`);
@@ -244,8 +244,8 @@ for (const expected of [
   // `scripts/run-unit-tests.mjs`, and on any Node below the Vitest 5 floor that
   // script prints a notice and exits 0 without running a test. Dropping this
   // lane to Node 20 would publish a release whose unit suite never executed.
-  'node-version: 24.19.0',
-  'npm@12.0.2',
+  'node-version: 24.22.0',
+  'npm@12.2.0',
   // npm skips lifecycle scripts when it publishes a packed tarball, so this
   // explicit step, not `prepublishOnly`, is the release gate.
   'run verify:release',

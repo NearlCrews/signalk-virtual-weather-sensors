@@ -308,8 +308,8 @@ See the [troubleshooting guide](https://github.com/NearlCrews/signalk-virtual-we
 ## Development
 
 This project runs on Node 20.18 or newer and supports `@signalk/server-api`
-2.24 through 2.x. Development uses Node 24.19.0, npm 12.0.2, Signal K server API
-2.31, and TypeScript 7.
+2.24 through 2.x. Development uses Node 24.22.0, npm 12.2.0, Signal K server API
+2.33, and TypeScript 7.
 
 ```bash
 git clone https://github.com/NearlCrews/signalk-virtual-weather-sensors.git

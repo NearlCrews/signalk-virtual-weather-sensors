@@ -240,13 +240,13 @@ Test configuration in `vitest.config.ts` includes path aliases (`@/`, `@/service
 ## Technology Stack
 
 - TypeScript 7.0+ (strict mode, ES2023 target)
-- Node.js 20.18+ runtime, with Node.js 24.19.0 and npm 12.0.2 for development
+- Node.js 20.18+ runtime, with Node.js 24.22.0 and npm 12.2.0 for development
 - `@signalk/server-api` 2.24+ as a `peerDependency` (the Signal K server provides it at runtime; not bundled). Used for `Plugin`, `ServerAPI`, `Delta`, `PathValue`, `Meta`, `MetaValue`, `SourceRef`, and `SKVersion` types.
 - esbuild 0.28+ for bundling (current runtime bundle ~172 KB)
 - Biome 2.5 for code linting and formatting, plus Markdown linting and cspell
 - Vitest 5 for unit and integration testing, with Stryker mutation testing as an opt-in check. Its `engines.node` is `^22.12.0 || ^24.0.0 || >=26.0.0`, so it cannot run on the Node 20.18 runtime floor; see the runtime-floor lane entry below for why that is not a reason to hold it. Its `@types/node` peer range of `^22.0.0 || >=24.0.0` is reconciled by an `overrides` block pinning that peer to the root `@types/node`, which stays in major 20 to match `engines.node`.
 - React 19.3, `signalk-nearlcrews-ui` 0.14.0, webpack 5, esbuild-loader 4.5,
-  Vite 8, and Playwright 1.63 for the federated panel
+  Vite 8, and Playwright 1.64 for the federated panel
 - Repository-owned opt-in Git hooks under `.githooks/`, enabled with `npm run hooks` (never a
   `prepare` script): pre-commit runs `npm run verify:commit`, pre-push runs `npm run verify`.
   `verify` carries no browser suite and no development-tree audit; those live in `verify:browser`
@@ -254,7 +254,7 @@ Test configuration in `vitest.config.ts` includes path aliases (`@/`, `@/service
 
 ## CI and pipeline guards
 
-- `ci.yml`: `verify` plus the cross-browser matrix once on Node 24.19.0, the Node 20.18 floor lane,
+- `ci.yml`: `verify` plus the cross-browser matrix once on Node 24.22.0, the Node 20.18 floor lane,
   and the `signalk-admin` job, which installs the packed tarball into Signal K 2.27.0 and the
   latest server and mounts the production panel through the Admin with `npm run test:integration`.
   2.27.0 is the documented panel floor: the panel is an ESM remote and the Admin first imports ESM

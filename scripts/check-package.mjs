@@ -10,8 +10,8 @@ if (Object.hasOwn(packageJson, 'gitHead')) {
     'gitHead must be injected into the release artifact, not committed to package.json.'
   );
 }
-if (packageJson.packageManager !== 'npm@12.0.2') {
-  throw new Error('packageManager must pin the contributor and release toolchain to npm 12.0.2.');
+if (packageJson.packageManager !== 'npm@12.2.0') {
+  throw new Error('packageManager must pin the contributor and release toolchain to npm 12.2.0.');
 }
 const { stdout } = await execFileAsync(
   process.platform === 'win32' ? 'npm.cmd' : 'npm',

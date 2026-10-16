@@ -18,7 +18,7 @@ publish to npm until that approval has been given for the prepared commit.
 
 ## Verify
 
-Use Node 24.19.0 and npm 12.0.2:
+Use Node 24.22.0 and npm 12.2.0:
 
 ```bash
 npm ci

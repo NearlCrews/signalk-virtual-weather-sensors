@@ -17,6 +17,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Development dependencies are current: Biome 2.5.15, Playwright 1.64.1, the
+  Signal K server API 2.33.0, size-limit 14.2.0, markdownlint 0.42.0, Vitest
+  5.0.5, React 19.3.1, and webpack 5.111.1. Webpack stays on 5.111 because
+  5.112 moved the internal range encoder the shared UI's panel bundle check
+  loads. Development and CI use Node 24.22.0 and npm 12.2.0, the
+  runtime-floor lane uses npm 11.21.1, and every GitHub Action is pinned to
+  its latest release.
 - The configuration panel moves from shared marine UI 0.11.1 to 0.14.0. A save
   the plugin cannot hand to Signal K, or whose status check fails, now shows in
   the save bar's own status rather than in a banner beside it, and Save stays
@@ -27,7 +34,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   darker. Discard drops an invalid cadence value even inside a closed section.
   The panel bundle is about 2.5 KB smaller. Emitted paths and saved
   configuration fields are unchanged.
-- The Signal K plugin CI runs the official workflow from its 2026-10-04 master
+- The Signal K plugin CI runs the official workflow from its 2026-10-16 master
   commit, which has no armv7 or Node 20 job, so the retired `enable-armv7`
   input is gone. Its Node 22 lanes now install with npm 11. The blocking Node
   20.18 runtime-floor lane is the only CI coverage of Node 20, and no CI lane

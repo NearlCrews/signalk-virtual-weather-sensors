@@ -44,7 +44,7 @@ jobs:
         with:
           persist-credentials: false
       - name: Audit workflow security
-        uses: zizmorcore/zizmor-action@70fb788f84895a7701f5643d103d587e460b5c99 # v0.6.3
+        uses: zizmorcore/zizmor-action@85b2b9fb8e3325e7a23d7d0a9d7ba5ae0f999e3e # v0.7.1
         with:
           advanced-security: false
           online-audits: false
@@ -66,10 +66,10 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: 24.19.0
+          node-version: 24.22.0
           package-manager-cache: false
-      - run: npx --yes npm@12.0.2 ci
+      - run: npx --yes npm@12.2.0 ci
       - name: Audit the full development tree
-        run: npx --yes npm@12.0.2 run audit:full
+        run: npx --yes npm@12.2.0 run audit:full

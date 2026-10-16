@@ -21,11 +21,11 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: 24.19.0
+          node-version: 24.22.0
           package-manager-cache: false
-      - run: npx --yes npm@12.0.2 ci
+      - run: npx --yes npm@12.2.0 ci
       - run: npx playwright install --with-deps chromium firefox webkit
       # `verify` plus the cross-browser matrix, deliberately NOT
       # `verify:release`. That chain ends with `audit:full`, an audit of the
@@ -38,10 +38,10 @@ jobs:
       # `prepublishOnly` when it publishes a packed tarball), and the scheduled
       # dependency-audit job in workflow-security.yml surfaces a new
       # development advisory weekly.
-      - run: npx --yes npm@12.0.2 run verify
-      - run: npx --yes npm@12.0.2 run test:browser:cross:built
+      - run: npx --yes npm@12.2.0 run verify
+      - run: npx --yes npm@12.2.0 run test:browser:cross:built
       - name: Upload coverage reports to Codecov
-        uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f # v7.0.0
+        uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1
         with:
           files: ./coverage/coverage-final.json,./coverage/lcov.info
           flags: unittests
@@ -51,7 +51,7 @@ jobs:
           CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
       - name: Upload browser failure artifacts
         if: failure()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: playwright-failures
           path: |
@@ -77,18 +77,18 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 20.18.0
           package-manager-cache: false
       # npm 12 starts at Node 22.22.2. Use the newest npm 11 release in this
       # runtime-floor lane so Node 20.18 is exercised by a supported npm.
-      - run: npx --yes npm@11.19.0 ci
-      - run: npx --yes npm@11.19.0 run build
+      - run: npx --yes npm@11.21.1 ci
+      - run: npx --yes npm@11.21.1 run build
       # Turns "it compiled" into "it loads and constructs" on the runtime
       # floor: imports the built bundle, builds the plugin object, and checks
       # the surface signalk-server calls into, including the schema() fallback.
-      - run: npx --yes npm@11.19.0 run check:runtime
+      - run: npx --yes npm@11.21.1 run check:runtime
       # The unit suite is skipped here, by design and out loud. Vitest 5
       # declares node ^22.12.0 || ^24.0.0 || >=26.0.0, so
       # scripts/run-unit-tests.mjs prints a notice naming that floor and exits
@@ -97,7 +97,7 @@ jobs:
       # and scripts/test-unit-test-toolchain.mjs pins them at their
       # boundaries. Running it here proves the guard reports rather than
       # fails; the suite itself runs in the verify lane on Node 24.
-      - run: npx --yes npm@11.19.0 test
+      - run: npx --yes npm@11.21.1 test
 
   signalk-admin:
     # Installs the packed tarball into a real signalk-server, starts it, and
@@ -119,14 +119,14 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: 24.19.0
+          node-version: 24.22.0
           package-manager-cache: false
-      - run: npx --yes npm@12.0.2 ci
-      - run: npx --yes npm@12.0.2 run build
+      - run: npx --yes npm@12.2.0 ci
+      - run: npx --yes npm@12.2.0 run build
       - name: Pack the plugin
-        run: npx --yes npm@12.0.2 pack --ignore-scripts --pack-destination "$RUNNER_TEMP"
+        run: npx --yes npm@12.2.0 pack --ignore-scripts --pack-destination "$RUNNER_TEMP"
       - name: Install into Signal K ${{ matrix.signalk_server }}
         env:
           SIGNALK_SERVER_VERSION: ${{ matrix.signalk_server }}
@@ -176,7 +176,7 @@ jobs:
             exit 1
           fi
           cd "$GITHUB_WORKSPACE"
-          if ! npx --yes npm@12.0.2 run test:integration; then
+          if ! npx --yes npm@12.2.0 run test:integration; then
             cat "$RUNNER_TEMP/signalk.log"
             exit 1
           fi

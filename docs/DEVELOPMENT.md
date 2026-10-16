@@ -7,7 +7,7 @@ for publication steps.
 ## Supported environments
 
 - Plugin runtime: Node.js 20.18 or newer
-- Development: Node.js `^22.22.2 || ^24.15.0 || ^26.0.0` and npm 12.0.2
+- Development: Node.js `^22.22.2 || ^24.15.0 || ^26.0.0` and npm 12.2.0
 - Language: TypeScript 7, strict mode, ES2023 target
 - Signal K: server 2.x with `@signalk/server-api` 2.24 or newer for Weather API
   registration
@@ -232,7 +232,7 @@ its migration notes before changing that version.
 
 ## Continuous integration
 
-- `ci.yml` runs `verify` and the cross-browser matrix once, on Node 24.19.0.
+- `ci.yml` runs `verify` and the cross-browser matrix once, on Node 24.22.0.
   The lane stops short of `verify:release`, whose last step audits the whole
   development tree: that advisory database changes without a commit, so one
   new development advisory would turn every open pull request red for

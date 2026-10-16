@@ -128,7 +128,7 @@ assert.deepEqual(suites, [
 
 assert.deepEqual(
   workflowScripts(
-    '- run: npm run build\n- run: npx --yes npm@12.0.2 run verify:release\n- run: npm ci'
+    '- run: npm run build\n- run: npx --yes npm@12.2.0 run verify:release\n- run: npm ci'
   ),
   ['build', 'verify:release'],
   'workflow scripts are read with or without a pinned npm'
@@ -136,7 +136,7 @@ assert.deepEqual(
 
 const engines = ['chromium', 'firefox', 'webkit'];
 assert.deepEqual(
-  findMissingPlaywrightEngines('- run: npx --yes npm@12.0.2 run verify', engines, suites),
+  findMissingPlaywrightEngines('- run: npx --yes npm@12.2.0 run verify', engines, suites),
   [],
   'a workflow without a browser suite needs no browsers'
 );
@@ -151,7 +151,7 @@ assert.deepEqual(
 );
 assert.deepEqual(
   findMissingPlaywrightEngines(
-    '- run: npx playwright install --with-deps chromium\n- run: npx --yes npm@12.0.2 run verify:release',
+    '- run: npx playwright install --with-deps chromium\n- run: npx --yes npm@12.2.0 run verify:release',
     engines,
     suites
   ),
