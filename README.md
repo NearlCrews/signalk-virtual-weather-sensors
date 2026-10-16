@@ -18,63 +18,32 @@ service; AccuWeather is an optional source for users who have an API key.
 > for safety-of-life decisions: always cross-check official forecasts and
 > warnings against your primary instruments.
 
-## What's new in 1.14.0
+## What's new in 1.15.0
 
-Version 1.14.0 keeps your AccuWeather API key out of request URLs, makes the
-documented AccuWeather call budget true, corrects several readings and the
-status the plugin reports about itself, makes merged mode conservative about
-the values a warning reads, and rebuilds the configuration panel on the shared
-marine UI 0.11.1. Emitted paths and saved configuration fields are unchanged.
+Version 1.15.0 corrects several weather readings and alerts after a live check
+of every data source, moves the configuration panel to the shared marine UI
+0.14.0, and brings the development toolchain current. Emitted paths and saved
+configuration fields are unchanged.
 
-- **Your API key stays out of request URLs.** AccuWeather requests now
-  authenticate with the `Authorization: Bearer` header AccuWeather documents,
-  instead of an `apikey` query parameter, so the key cannot leak through a log
-  line or an error body that echoes the URL.
-- **The documented call budget is now true.** The location-key cache is held
-  for 24 hours per 1 km cell, and the fetch timer's jitter only lengthens the
-  interval, so the default 30-minute cadence costs at most 48 conditions calls
-  plus 1 location lookup per day at a fixed position. The old hourly cache,
-  keyed to about 11 m, pushed a docked vessel past the default 50-call quota
-  while every document still claimed 48.
-- **Warnings work outside the US and Norway.** A position beyond NWS and MET
-  Norway coverage returns an empty warning list, which is what the paths guide
-  always described, instead of an error the server reported to consumers as an
-  HTTP 400.
-- **Warnings say what the instruments say.** Heat-stress bands open at the
-  temperature they name rather than a tenth of a degree late, emitted
-  temperatures are no longer clamped to a sensor envelope that published a
-  -44.6 C wind chill as -40.0 C, visibility in a message is rounded down so it
-  can never read above the threshold that fired it, and an active notification
-  is marked with the observation age instead of sitting unlabeled through a
-  provider outage.
-- **Merged mode no longer averages away a warning.** Every value a
-  notification band reads is taken conservatively from the contributing
-  sources, so one provider reporting gale force is not cancelled by a milder
-  sibling, and the banner names any source that has stopped contributing.
-- **The banner tells you which thing is wrong.** A rejected key, a quota pause,
-  a missing position, stale data, and a failed fetch each hold the banner until
-  they clear, instead of being overwritten seconds later by a green status line.
-  A slow position source no longer strands the plugin: position now gets a
-  30-minute age budget of its own.
-- **Better readings from the keyless sources.** Open-Meteo's past-hour
-  precipitation is the real past hour rather than a 15-minute sum, Met.no
-  reports only whole forecast days instead of labeling a single evening window
-  as today, and Met.no revalidates its forecast document instead of refetching
-  it.
-- **A panel you can read and hear.** Save status is shaped and labeled rather
-  than carried by color alone, every field error leads with a glyph and a
-  spoken tone word, the API key test result and the merge-order and freshness
-  announcements each speak once instead of twice, and the concealed key field
-  asks the browser not to offer or save the key. A locked merge-provider row
-  stays focusable, so unchecking the second-to-last source no longer drops
-  keyboard focus onto the page.
-- **Shared marine UI 0.11.1.** The panel moves onto the library's panel shell,
-  save bar, number field, and status section. Save is blocked, naming the
-  section, while a cadence value is invalid, Save and Discard keep their place
-  in the tab order while it is, a refused save is reported in its own banner,
-  and a panel error now offers Try again instead of a blank card.
+- **Heavy thunderstorms raise an alert under Open-Meteo.** WMO code 97, which
+  models without a hail forecast report for every strong thunderstorm, was
+  unmapped, so those storms raised no severe-weather notification.
+- **Past-hour precipitation is a rolling hour.** Open-Meteo's
+  `precipitationLastHour` sums the four 15-minute buckets that end at the
+  observation instead of reading the last completed clock hour, which lagged
+  by up to 59 minutes and could read 0 mm while it rained.
+- **Warnings reach the US territories and fail less.** Guam, the Northern
+  Marianas, the western Aleutians, and American Samoa now get NWS warnings, and
+  a position near the US that NWS does not cover, such as British Columbia,
+  Bermuda, or Mexico, gets an empty list instead of an error.
+- **The banner reports a quota only where one exists.** A keyless install no
+  longer shows `0/50 today`, and a merged configuration that falls back to
+  AccuWeather alone stops retrying a rejected key.
+- **Shared marine UI 0.14.0.** A save the plugin cannot hand to Signal K shows
+  in the save bar with Save still available, a refused API key or base URL
+  moves focus to its field, and locked controls say why they are blocked.
 
-See the [v1.14.0 changelog entry](https://github.com/NearlCrews/signalk-virtual-weather-sensors/blob/main/CHANGELOG.md#v1140), or the
+See the [v1.15.0 changelog entry](https://github.com/NearlCrews/signalk-virtual-weather-sensors/blob/main/CHANGELOG.md#v1150), or the
 [full changelog](https://github.com/NearlCrews/signalk-virtual-weather-sensors/blob/main/CHANGELOG.md).
 
 ## What it does

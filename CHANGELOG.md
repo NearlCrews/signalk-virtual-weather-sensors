@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+<a id="v1150"></a>
+
+## [1.15.0] - 2026-10-16
+
 ### Fixed
 
 - Open-Meteo's heavy thunderstorm code (WMO 97) raises the severe-weather
@@ -62,6 +66,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   20.18 runtime-floor lane is the only CI coverage of Node 20, and no CI lane
   runs on 32-bit ARM hardware such as the Cerbo GX. The advertised runtime
   floor is unchanged.
+- Internal cleanup with no change to emitted data, notifications, or
+  configuration: the measurement and sea-state leaves are each emitted from
+  one ordered table, the wind, visibility, heat, and cold notification bands
+  run through one loop, the keyless providers share one request counter and
+  one builder for their core readings, unit conversions and condition
+  descriptions each have one helper, and the unused cache and health status
+  accessors are gone.
 
 <a id="v1140"></a>
 
