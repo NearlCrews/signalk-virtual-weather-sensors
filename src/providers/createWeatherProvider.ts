@@ -7,7 +7,7 @@
  * fewer than two selected providers are available.
  */
 import {
-  providerRequiresApiKey,
+  isProviderAvailable,
   resolveMergeProviders,
   resolveWeatherMode,
   WEATHER_PROVIDER_IDS,
@@ -21,12 +21,8 @@ import { type CurrentWeatherProvider, supportsForecasts } from './WeatherProvide
 
 /** Provider ids available given the config: keyless always, keyed only when a key is present. */
 function availableProviderIds(config: PluginConfiguration): WeatherProviderId[] {
-  // The `id === 'accuweather'` check ties the AccuWeather key to its specific
-  // provider; a future keyed provider needs its own clause here, not a generic
-  // `!!config.accuWeatherApiKey` that would wrongly mark it available on the wrong key.
-  return WEATHER_PROVIDER_IDS.filter(
-    (id) => !providerRequiresApiKey(id) || (id === 'accuweather' && !!config.accuWeatherApiKey)
-  );
+  const hasAccuWeatherKey = !!config.accuWeatherApiKey;
+  return WEATHER_PROVIDER_IDS.filter((id) => isProviderAvailable(id, hasAccuWeatherKey));
 }
 
 export function createWeatherProvider(

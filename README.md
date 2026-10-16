@@ -255,9 +255,9 @@ designated forecast child backs the endpoints:
   the requested position (with pressure and pressure tendency the forecasts
   omit).
 - `GET /signalk/v2/api/weather/warnings` returns region-aware severe-weather
-  alerts: NWS active alerts for US waters, Met.no MetAlerts for Norwegian
-  waters (both keyless), and reports unsupported positions outside those
-  regions.
+  alerts: NWS active alerts for US waters and territories, Met.no MetAlerts
+  for Norwegian waters (both keyless), and an empty list for any other
+  position.
 
 Registering the provider is what makes the server list `weather` under
 `/signalk/v2/features`, which is how dashboards such as

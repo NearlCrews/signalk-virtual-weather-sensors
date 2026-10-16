@@ -12,10 +12,10 @@
 import type { MarineData, OpenMeteoMarineResponse } from '../types/index.js';
 import {
   asOptionalNumber,
-  celsiusToKelvin,
   degreesToRadians,
-  kmhToMS,
   normalizeAngle0To2Pi,
+  optionalCelsiusToKelvin,
+  optionalKmhToMS,
   requireObservationTimestamp,
 } from '../utils/conversions.js';
 
@@ -37,11 +37,9 @@ export function mapOpenMeteoMarineToMarineData(response: OpenMeteoMarineResponse
   const swellDirection = toRadians(current.swell_wave_direction);
   const swellPeriod = asOptionalNumber(current.swell_wave_period);
 
-  const rawSst = asOptionalNumber(current.sea_surface_temperature);
-  const seaSurfaceTemperature = rawSst !== undefined ? celsiusToKelvin(rawSst) : undefined;
+  const seaSurfaceTemperature = optionalCelsiusToKelvin(current.sea_surface_temperature);
 
-  const rawCurrentKmh = asOptionalNumber(current.ocean_current_velocity);
-  const surfaceCurrentSpeed = rawCurrentKmh !== undefined ? kmhToMS(rawCurrentKmh) : undefined;
+  const surfaceCurrentSpeed = optionalKmhToMS(current.ocean_current_velocity);
   const surfaceCurrentDirection = toRadians(current.ocean_current_direction);
 
   return {

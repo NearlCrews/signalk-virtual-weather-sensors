@@ -5,8 +5,10 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { WindCalculator } from '../../calculators/WindCalculator.js';
+import type { AccuWeatherService } from '../../services/AccuWeatherService.js';
 import { WeatherService } from '../../services/WeatherService.js';
 import type { PluginConfiguration } from '../../types/index.js';
+import { isApiQuotaReached } from '../../utils/conversions.js';
 import { createMockWeatherData } from '../setup.js';
 
 // Mock ServerAPI
@@ -34,7 +36,6 @@ const DEFAULT_VESSEL_DATA = {
  */
 const makeSignalK = (vesselData: unknown = DEFAULT_VESSEL_DATA) => ({
   getVesselNavigationData: vi.fn(() => vesselData),
-  getHealthStatus: vi.fn(() => ({ status: 'ok', isStale: false })),
   clearCache: vi.fn(),
 });
 
@@ -47,6 +48,21 @@ const createTestConfig = (overrides?: Partial<PluginConfiguration>): PluginConfi
   dailyApiQuota: 50,
   ...overrides,
 });
+
+/**
+ * Stand-in AccuWeatherService that pins both request counters and declares the
+ * cap and the key the real service reads from its own config. Bypasses the
+ * real constructor (no API key, no fetch).
+ */
+const makeFakeAccu = (last24h: number, cumulative = last24h, dailyQuota = 50) =>
+  ({
+    name: 'AccuWeather',
+    usesApiKey: true,
+    dailyQuota,
+    getRequestCount: () => cumulative,
+    getRequestCountLast24h: () => last24h,
+    isCurrentWeatherFetchBlocked: () => isApiQuotaReached(last24h, dailyQuota),
+  }) as unknown as AccuWeatherService;
 
 describe('WeatherService', () => {
   let mockApp: ReturnType<typeof createMockApp>;
@@ -159,7 +175,6 @@ describe('WeatherService', () => {
           fetchCurrentWeather,
           getRequestCount: () => 0,
           getRequestCountLast24h: () => 0,
-          getCacheStats: () => ({ size: 0 }),
         };
         const service = new WeatherService(mockApp as never, config, mockLogger, {
           weatherProvider: provider as never,
@@ -255,25 +270,6 @@ describe('WeatherService', () => {
 
       expect(status.state).toBe('running');
     });
-
-    it('should include signalK health status', async () => {
-      const service = new WeatherService(mockApp as never, config, mockLogger);
-
-      const status = service.getServiceStatus();
-
-      expect(status.signalKHealth).toBeDefined();
-      expect(status.signalKHealth).toHaveProperty('status');
-      expect(status.signalKHealth).toHaveProperty('isStale');
-    });
-
-    it('should include cache stats', async () => {
-      const service = new WeatherService(mockApp as never, config, mockLogger);
-
-      const status = service.getServiceStatus();
-
-      expect(status.cacheStats).toBeDefined();
-      expect(status.cacheStats).toHaveProperty('size');
-    });
   });
 
   describe('forceUpdate', () => {
@@ -326,11 +322,9 @@ describe('WeatherService', () => {
         fetchCurrentWeather: vi.fn(),
         getRequestCount: vi.fn(() => 0),
         getRequestCountLast24h: vi.fn(() => 0),
-        getCacheStats: vi.fn(() => ({ size: 0 })),
       };
       const signalKService = {
         getVesselNavigationData: vi.fn(() => ({ position: null, isComplete: false })),
-        getHealthStatus: vi.fn(() => ({ status: 'ok', isStale: false })),
         clearCache: vi.fn(),
       };
       const service = new WeatherService(mockApp as never, config, mockLogger, {
@@ -538,14 +532,12 @@ describe('WeatherService - Data Emission', () => {
       ),
       getRequestCount: vi.fn(() => 1),
       getRequestCountLast24h: vi.fn(() => 1),
-      getCacheStats: vi.fn(() => ({ size: 0 })),
     };
     const mockSignalK = {
       getVesselNavigationData: vi.fn(() => ({
         position: { latitude: 60, longitude: 5 },
         isComplete: false,
       })),
-      getHealthStatus: vi.fn(() => ({ status: 'ok', isStale: false })),
       clearCache: vi.fn(),
     };
 
@@ -581,19 +573,6 @@ describe('WeatherService - Quota Banner', () => {
   let mockApp: ReturnType<typeof createMockApp>;
   let mockLogger: ReturnType<typeof createMockLogger>;
 
-  /**
-   * Build a minimal AccuWeatherService stand-in that lets each test pin the
-   * rolling 24h count to a chosen value. We bypass the real constructor (no
-   * API key, no fetch) by casting the stub to AccuWeatherService.
-   */
-  const makeFakeAccu = (last24h: number, cumulative = last24h) =>
-    ({
-      name: 'AccuWeather',
-      getRequestCount: () => cumulative,
-      getRequestCountLast24h: () => last24h,
-      getCacheStats: () => ({ size: 0 }),
-    }) as unknown as import('../../services/AccuWeatherService.js').AccuWeatherService;
-
   beforeEach(() => {
     mockApp = createMockApp();
     mockLogger = createMockLogger();
@@ -602,12 +581,34 @@ describe('WeatherService - Quota Banner', () => {
   it('omits the quota suffix when dailyApiQuota is 0', () => {
     const config = createTestConfig({ dailyApiQuota: 0 });
     const service = new WeatherService(mockApp as never, config, mockLogger, {
-      weatherProvider: makeFakeAccu(40),
+      weatherProvider: makeFakeAccu(40, 40, 0),
     });
 
     const banner = service.formatStatusBanner();
     expect(banner).toBe('Running, awaiting first update');
     expect(banner).not.toContain('today');
+  });
+
+  it('omits the quota suffix for a keyless provider whatever dailyApiQuota says', () => {
+    // dailyApiQuota defaults to 50, and the default provider is keyless: it has
+    // no cap, so "0/50 today" would describe a quota that does not exist.
+    const keyless = {
+      name: 'Open-Meteo',
+      getRequestCount: () => 3,
+      getRequestCountLast24h: () => 0,
+    };
+    const service = new WeatherService(
+      mockApp as never,
+      createTestConfig({ dailyApiQuota: 50 }),
+      mockLogger,
+      { weatherProvider: keyless as never }
+    );
+    (service as unknown as { lastUpdate: Date }).lastUpdate = new Date();
+
+    const banner = service.formatStatusBanner();
+    expect(banner).not.toContain('today');
+    expect(banner).not.toContain('quota');
+    expect(service.isQuotaExhausted()).toBe(false);
   });
 
   it('appends ", K/Q today" with the running prefix at 50% usage', () => {
@@ -676,15 +677,6 @@ describe('WeatherService - Tick Banner and Staleness', () => {
   let mockApp: ReturnType<typeof createMockApp>;
   let mockLogger: ReturnType<typeof createMockLogger>;
 
-  /** Stand-in AccuWeatherService that pins both counters; see Quota Banner block. */
-  const makeFakeAccu = (last24h: number, cumulative = last24h) =>
-    ({
-      name: 'AccuWeather',
-      getRequestCount: () => cumulative,
-      getRequestCountLast24h: () => last24h,
-      getCacheStats: () => ({ size: 0 }),
-    }) as unknown as import('../../services/AccuWeatherService.js').AccuWeatherService;
-
   /** Pin the last successful fetch `ageMinutes` in the past without a real fetch. */
   const pinLastUpdate = (service: WeatherService, ageMinutes: number): void => {
     (service as unknown as { lastUpdate: Date }).lastUpdate = new Date(
@@ -701,7 +693,7 @@ describe('WeatherService - Tick Banner and Staleness', () => {
     // updateFrequency 5 min, STALENESS_FACTOR 2: stale past 10 minutes.
     const config = createTestConfig({ updateFrequency: 5, dailyApiQuota: 0 });
     const service = new WeatherService(mockApp as never, config, mockLogger, {
-      weatherProvider: makeFakeAccu(0),
+      weatherProvider: makeFakeAccu(0, 0, 0),
     });
 
     expect(service.isDataStale()).toBe(false);
@@ -728,7 +720,7 @@ describe('WeatherService - Tick Banner and Staleness', () => {
   it('returns the stale-data error once age crosses the staleness window', () => {
     const config = createTestConfig({ updateFrequency: 5, dailyApiQuota: 0 });
     const service = new WeatherService(mockApp as never, config, mockLogger, {
-      weatherProvider: makeFakeAccu(0),
+      weatherProvider: makeFakeAccu(0, 0, 0),
     });
     pinLastUpdate(service, 15);
 
@@ -742,7 +734,7 @@ describe('WeatherService - Tick Banner and Staleness', () => {
     // 1.5-minute age so the stale branch fires with a floored age of 1.
     const config = createTestConfig({ updateFrequency: 0.5, dailyApiQuota: 0 });
     const service = new WeatherService(mockApp as never, config, mockLogger, {
-      weatherProvider: makeFakeAccu(0),
+      weatherProvider: makeFakeAccu(0, 0, 0),
     });
     pinLastUpdate(service, 1.5);
 
@@ -770,15 +762,6 @@ describe('WeatherService - Banner Pluralization', () => {
   let mockApp: ReturnType<typeof createMockApp>;
   let mockLogger: ReturnType<typeof createMockLogger>;
 
-  /** Stand-in AccuWeatherService that pins both counters; see Quota Banner block. */
-  const makeFakeAccu = (last24h: number, cumulative = last24h) =>
-    ({
-      name: 'AccuWeather',
-      getRequestCount: () => cumulative,
-      getRequestCountLast24h: () => last24h,
-      getCacheStats: () => ({ size: 0 }),
-    }) as unknown as import('../../services/AccuWeatherService.js').AccuWeatherService;
-
   beforeEach(() => {
     mockApp = createMockApp();
     mockLogger = createMockLogger();
@@ -787,7 +770,7 @@ describe('WeatherService - Banner Pluralization', () => {
   it('uses singular "update" and singular "API request" when both counters are 1', () => {
     const config = createTestConfig({ dailyApiQuota: 0 });
     const service = new WeatherService(mockApp as never, config, mockLogger, {
-      weatherProvider: makeFakeAccu(0, 1),
+      weatherProvider: makeFakeAccu(0, 1, 0),
     });
 
     // Reach into the orchestrator to pin updateCount=1 and lastUpdate=now
@@ -805,7 +788,7 @@ describe('WeatherService - Banner Pluralization', () => {
   it('uses plural "updates" / "API requests" when counters are >1', () => {
     const config = createTestConfig({ dailyApiQuota: 0 });
     const service = new WeatherService(mockApp as never, config, mockLogger, {
-      weatherProvider: makeFakeAccu(0, 3),
+      weatherProvider: makeFakeAccu(0, 3, 0),
     });
 
     (service as unknown as { updateCount: number }).updateCount = 3;
@@ -859,9 +842,10 @@ describe('WeatherService - Fetch Skip and Error Escalation', () => {
     const mockProvider = {
       name: 'AccuWeather',
       fetchCurrentWeather: vi.fn().mockResolvedValue(weatherData),
+      dailyQuota: 50,
       getRequestCount: vi.fn(() => 50),
       getRequestCountLast24h: vi.fn(() => 50),
-      getCacheStats: vi.fn(() => ({ size: 0 })),
+      isCurrentWeatherFetchBlocked: vi.fn(() => true),
     };
 
     const service = new WeatherService(mockApp as never, config, mockLogger, {
@@ -886,13 +870,13 @@ describe('WeatherService - Fetch Skip and Error Escalation', () => {
     const config = createTestConfig({ dailyApiQuota: 0, weatherProvider: 'accuweather' });
     const mockProvider = {
       name: 'AccuWeather',
+      usesApiKey: true,
       // Error message carries the API_UNAUTHORIZED tag isAuthError() looks for.
       fetchCurrentWeather: vi
         .fn()
         .mockRejectedValue(new Error('AccuWeather request failed: API_UNAUTHORIZED (401)')),
       getRequestCount: vi.fn(() => 1),
       getRequestCountLast24h: vi.fn(() => 1),
-      getCacheStats: vi.fn(() => ({ size: 0 })),
     };
 
     const service = new WeatherService(mockApp as never, config, mockLogger, {
@@ -936,7 +920,6 @@ describe('WeatherService - Fetch Skip and Error Escalation', () => {
         .mockRejectedValue(new Error('Open-Meteo request failed: API_UNAUTHORIZED (401)')),
       getRequestCount: vi.fn(() => 0),
       getRequestCountLast24h: vi.fn(() => 0),
-      getCacheStats: vi.fn(() => ({ size: 0 })),
     };
 
     const service = new WeatherService(mockApp as never, config, mockLogger, {
@@ -975,7 +958,6 @@ describe('WeatherService - Fetch Skip and Error Escalation', () => {
       ),
       getRequestCount: vi.fn(() => 1),
       getRequestCountLast24h: vi.fn(() => 1),
-      getCacheStats: vi.fn(() => ({ size: 0 })),
     };
 
     const service = new WeatherService(mockApp as never, config, mockLogger, {
@@ -1022,7 +1004,6 @@ describe('WeatherService - Fetch Skip and Error Escalation', () => {
       ),
       getRequestCount: vi.fn(() => 1),
       getRequestCountLast24h: vi.fn(() => 1),
-      getCacheStats: vi.fn(() => ({ size: 0 })),
     };
 
     const service = new WeatherService(mockApp as never, config, mockLogger, {
@@ -1055,7 +1036,6 @@ describe('WeatherService - Fetch Skip and Error Escalation', () => {
       fetchCurrentWeather: vi.fn().mockResolvedValue(weatherData),
       getRequestCount: vi.fn(() => 1),
       getRequestCountLast24h: vi.fn(() => 1),
-      getCacheStats: vi.fn(() => ({ size: 0 })),
     };
 
     const service = new WeatherService(mockApp as never, config, mockLogger, {
@@ -1096,7 +1076,6 @@ describe('WeatherService - Fetch Skip and Error Escalation', () => {
       fetchCurrentWeather: vi.fn().mockResolvedValue(weatherData),
       getRequestCount: vi.fn(() => 1),
       getRequestCountLast24h: vi.fn(() => 1),
-      getCacheStats: vi.fn(() => ({ size: 0 })),
     };
 
     const service = new WeatherService(mockApp as never, config, mockLogger, {
@@ -1189,7 +1168,6 @@ describe('WeatherService - failure banner precedence', () => {
       }),
       getRequestCount: () => 1,
       getRequestCountLast24h: () => 0,
-      getCacheStats: () => ({ size: 0 }),
     };
     const service = new WeatherService(mockApp as never, createTestConfig(), mockLogger, {
       weatherProvider: provider as never,
@@ -1249,7 +1227,7 @@ describe('WeatherService - failure banner precedence', () => {
       fetchCurrentWeather: async () => createMockWeatherData({}),
       getRequestCount: () => 12,
       getRequestCountLast24h: () => 50,
-      getCacheStats: () => ({ size: 0 }),
+      dailyQuota: 50,
       isCurrentWeatherFetchBlocked: () => false,
       getBlockedChildNames: () => ['AccuWeather'],
     };

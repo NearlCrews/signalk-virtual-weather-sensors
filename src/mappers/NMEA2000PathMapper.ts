@@ -258,6 +258,65 @@ const NOTIFICATION_META: ReadonlyArray<Meta> = [
 /** Combined meta for the one-shot delta: non-canonical paths, canonical leaf overrides, and notification paths. */
 const ALL_META: Meta[] = [...NON_CANONICAL_META, ...CANONICAL_LEAF_META, ...NOTIFICATION_META];
 
+/** `WeatherData` fields that hold a publishable scalar. */
+type LeafField = {
+  [K in keyof WeatherData]-?: NonNullable<WeatherData[K]> extends number | string ? K : never;
+}[keyof WeatherData];
+
+/**
+ * Every leaf `mapToSignalKPaths` can emit, in emission order, with the field it
+ * reads and an optional unit scale. An absent field is skipped. The sanitizer
+ * clamps the required fields rather than dropping them, so those are always
+ * present.
+ */
+const EMITTED_LEAVES: ReadonlyArray<readonly [path: string, field: LeafField, scale?: number]> = [
+  [SIGNALK_PATHS.ENVIRONMENT.OUTSIDE.TEMPERATURE, 'temperature'],
+  [SIGNALK_PATHS.ENVIRONMENT.OUTSIDE.PRESSURE, 'pressure'],
+  [SIGNALK_PATHS.ENVIRONMENT.OUTSIDE.RELATIVE_HUMIDITY, 'humidity'],
+  [SIGNALK_PATHS.ENVIRONMENT.OUTSIDE.DEW_POINT_TEMPERATURE, 'dewPoint'],
+  // windChill is the theoretical (true-wind) wind chill. Apparent wind chill is
+  // present only when fresh vessel motion data allowed it to be derived.
+  [SIGNALK_PATHS.ENVIRONMENT.OUTSIDE.THEORETICAL_WIND_CHILL_TEMPERATURE, 'windChill'],
+  [SIGNALK_PATHS.ENVIRONMENT.OUTSIDE.HEAT_INDEX_TEMPERATURE, 'heatIndex'],
+  [SIGNALK_PATHS.ENVIRONMENT.OUTSIDE.APPARENT_WIND_CHILL_TEMPERATURE, 'apparentWindChill'],
+  [SIGNALK_PATHS.ENVIRONMENT.WEATHER.REAL_FEEL, 'realFeel'],
+  [SIGNALK_PATHS.ENVIRONMENT.WEATHER.REAL_FEEL_SHADE, 'realFeelShade'],
+  [SIGNALK_PATHS.ENVIRONMENT.WEATHER.WET_BULB_TEMPERATURE, 'wetBulbTemperature'],
+  [SIGNALK_PATHS.ENVIRONMENT.WEATHER.WET_BULB_GLOBE_TEMPERATURE, 'wetBulbGlobeTemperature'],
+  [SIGNALK_PATHS.ENVIRONMENT.WEATHER.APPARENT_TEMPERATURE, 'apparentTemperature'],
+  [SIGNALK_PATHS.ENVIRONMENT.WEATHER.ABSOLUTE_HUMIDITY, 'absoluteHumidity'],
+  // Provider wind is ground-referenced: emit only speedOverGround and
+  // directionTrue. speedTrue and the canonical apparent leaves are left unset
+  // so they cannot clobber a real anemometer feed. Calculated apparent wind
+  // goes on producer-namespaced environment.weather.* paths instead.
+  [SIGNALK_PATHS.ENVIRONMENT.WIND.SPEED_OVER_GROUND, 'windSpeed'],
+  [SIGNALK_PATHS.ENVIRONMENT.WIND.DIRECTION_TRUE, 'windDirection'],
+  [SIGNALK_PATHS.ENVIRONMENT.WEATHER.SPEED_GUST, 'windGustSpeed'],
+  [SIGNALK_PATHS.ENVIRONMENT.WEATHER.GUST_FACTOR, 'windGustFactor'],
+  [SIGNALK_PATHS.ENVIRONMENT.WEATHER.BEAUFORT_SCALE, 'beaufortScale'],
+  [SIGNALK_PATHS.ENVIRONMENT.WEATHER.WIND_SPEED_APPARENT, 'apparentWindSpeed'],
+  [SIGNALK_PATHS.ENVIRONMENT.WEATHER.WIND_ANGLE_APPARENT, 'apparentWindAngle'],
+  [SIGNALK_PATHS.ENVIRONMENT.WEATHER.UV_INDEX, 'uvIndex'],
+  [SIGNALK_PATHS.ENVIRONMENT.WEATHER.VISIBILITY, 'visibility'],
+  [SIGNALK_PATHS.ENVIRONMENT.WEATHER.CLOUD_COVER, 'cloudCover'],
+  [SIGNALK_PATHS.ENVIRONMENT.WEATHER.CLOUD_CEILING, 'cloudCeiling'],
+  [SIGNALK_PATHS.ENVIRONMENT.OUTSIDE.AIR_DENSITY, 'airDensityEnhanced'],
+  // Held in mm, published in m.
+  [
+    SIGNALK_PATHS.ENVIRONMENT.WEATHER.PRECIPITATION_LAST_HOUR,
+    'precipitationLastHour',
+    UNITS.PRECIPITATION.MM_TO_M,
+  ],
+  [SIGNALK_PATHS.ENVIRONMENT.WEATHER.HEAT_STRESS_INDEX, 'heatStressIndex'],
+  [SIGNALK_PATHS.ENVIRONMENT.WEATHER.TEMPERATURE_DEPARTURE_24H, 'temperatureDeparture24h'],
+  // Condition details: the description comes from every provider; pressure
+  // tendency, precipitation type, and visibility obstruction are AccuWeather-only.
+  [SIGNALK_PATHS.ENVIRONMENT.WEATHER.PRESSURE_TENDENCY, 'pressureTendency'],
+  [SIGNALK_PATHS.ENVIRONMENT.WEATHER.DESCRIPTION, 'description'],
+  [SIGNALK_PATHS.ENVIRONMENT.WEATHER.PRECIPITATION_TYPE, 'precipitationType'],
+  [SIGNALK_PATHS.ENVIRONMENT.WEATHER.VISIBILITY_OBSTRUCTION, 'visibilityObstruction'],
+];
+
 /**
  * NMEA2000 Path Mapper Service
  * Provides comprehensive mapping of weather data to NMEA2000-compatible Signal K paths
@@ -278,12 +337,13 @@ export class NMEA2000PathMapper {
    * non-canonical paths is emitted separately via {@link buildMetaDelta} so it
    * is shipped only when it changes (Signal K spec data_model.html).
    *
-   * Every numeric leaf this method emits is clamped or normalized upstream by
+   * The leaves and their order come from `EMITTED_LEAVES`. Every numeric leaf
+   * this method emits is clamped or normalized upstream by
    * `NMEA2000Validator.sanitizeForNMEA2000`: temperatures into the physical
    * -100 C to +100 C window, apparent wind angle into the canonical (-pi, pi]
    * convention, speeds/visibility/ceilings into non-negative physical bounds,
    * and derived categorical indices (Beaufort, heat stress) into their defined
-   * ranges. Adding a new emitted numeric field here requires a matching rule in
+   * ranges. Adding a new emitted numeric field to the table requires a matching rule in
    * the sanitizer's NUMERIC_FIELD_RULES table. String leaves (description,
    * precipitationType, visibilityObstruction) carry no numeric range and pass
    * through the sanitizer untouched. Any field the sanitizer actually changes
@@ -302,16 +362,11 @@ export class NMEA2000PathMapper {
       }
     );
     const values: PathValue[] = [];
-
-    this.addCoreEnvironmentalPaths(values, sanitizedData);
-    this.addEnhancedTemperaturePaths(values, sanitizedData);
-    this.addHumidityPaths(values, sanitizedData);
-    this.addWindPaths(values, sanitizedData);
-    this.addAtmosphericPaths(values, sanitizedData);
-    this.addCalculatedPaths(values, sanitizedData);
-    this.addPrecipitationPaths(values, sanitizedData);
-    this.addSafetyPaths(values, sanitizedData);
-    this.addConditionDetailPaths(values, sanitizedData);
+    for (const [path, field, scale] of EMITTED_LEAVES) {
+      const value = sanitizedData[field];
+      if (value === undefined) continue;
+      values.push(pv(path, scale !== undefined ? (value as number) * scale : value));
+    }
 
     this.logger('debug', 'Enhanced NMEA2000 path mapping completed', {
       totalPaths: values.length,
@@ -329,178 +384,5 @@ export class NMEA2000PathMapper {
    */
   public buildMetaDelta(): Delta {
     return buildSkMetaDelta(ALL_META, this.sourceRef);
-  }
-
-  private addCoreEnvironmentalPaths(values: PathValue[], data: WeatherData): void {
-    values.push(
-      pv(SIGNALK_PATHS.ENVIRONMENT.OUTSIDE.TEMPERATURE, data.temperature),
-      pv(SIGNALK_PATHS.ENVIRONMENT.OUTSIDE.PRESSURE, data.pressure),
-      pv(SIGNALK_PATHS.ENVIRONMENT.OUTSIDE.RELATIVE_HUMIDITY, data.humidity)
-    );
-  }
-
-  /**
-   * Condition-detail leaves under environment.weather.*: the plain-language
-   * description is populated by every provider. Pressure tendency, precipitation
-   * type, and visibility obstruction are AccuWeather-only; they are emitted only
-   * when the upstream field is present.
-   */
-  private addConditionDetailPaths(values: PathValue[], data: WeatherData): void {
-    if (data.pressureTendency !== undefined) {
-      values.push(pv(SIGNALK_PATHS.ENVIRONMENT.WEATHER.PRESSURE_TENDENCY, data.pressureTendency));
-    }
-
-    if (data.description !== undefined) {
-      values.push(pv(SIGNALK_PATHS.ENVIRONMENT.WEATHER.DESCRIPTION, data.description));
-    }
-
-    if (data.precipitationType !== undefined) {
-      values.push(pv(SIGNALK_PATHS.ENVIRONMENT.WEATHER.PRECIPITATION_TYPE, data.precipitationType));
-    }
-
-    if (data.visibilityObstruction !== undefined) {
-      values.push(
-        pv(SIGNALK_PATHS.ENVIRONMENT.WEATHER.VISIBILITY_OBSTRUCTION, data.visibilityObstruction)
-      );
-    }
-  }
-
-  private addEnhancedTemperaturePaths(values: PathValue[], data: WeatherData): void {
-    // windChill is the theoretical (true-wind) wind chill. Apparent wind chill
-    // is emitted only when fresh vessel motion data allowed it to be derived.
-    values.push(
-      pv(SIGNALK_PATHS.ENVIRONMENT.OUTSIDE.DEW_POINT_TEMPERATURE, data.dewPoint),
-      pv(SIGNALK_PATHS.ENVIRONMENT.OUTSIDE.THEORETICAL_WIND_CHILL_TEMPERATURE, data.windChill),
-      pv(SIGNALK_PATHS.ENVIRONMENT.OUTSIDE.HEAT_INDEX_TEMPERATURE, data.heatIndex)
-    );
-
-    if (data.apparentWindChill !== undefined) {
-      values.push(
-        pv(
-          SIGNALK_PATHS.ENVIRONMENT.OUTSIDE.APPARENT_WIND_CHILL_TEMPERATURE,
-          data.apparentWindChill
-        )
-      );
-    }
-
-    if (data.realFeel !== undefined) {
-      values.push(pv(SIGNALK_PATHS.ENVIRONMENT.WEATHER.REAL_FEEL, data.realFeel));
-    }
-
-    if (data.realFeelShade !== undefined) {
-      values.push(pv(SIGNALK_PATHS.ENVIRONMENT.WEATHER.REAL_FEEL_SHADE, data.realFeelShade));
-    }
-
-    if (data.wetBulbTemperature !== undefined) {
-      values.push(
-        pv(SIGNALK_PATHS.ENVIRONMENT.WEATHER.WET_BULB_TEMPERATURE, data.wetBulbTemperature)
-      );
-    }
-
-    if (data.wetBulbGlobeTemperature !== undefined) {
-      values.push(
-        pv(
-          SIGNALK_PATHS.ENVIRONMENT.WEATHER.WET_BULB_GLOBE_TEMPERATURE,
-          data.wetBulbGlobeTemperature
-        )
-      );
-    }
-
-    if (data.apparentTemperature !== undefined) {
-      values.push(
-        pv(SIGNALK_PATHS.ENVIRONMENT.WEATHER.APPARENT_TEMPERATURE, data.apparentTemperature)
-      );
-    }
-  }
-
-  private addHumidityPaths(values: PathValue[], data: WeatherData): void {
-    if (data.absoluteHumidity !== undefined) {
-      values.push(pv(SIGNALK_PATHS.ENVIRONMENT.WEATHER.ABSOLUTE_HUMIDITY, data.absoluteHumidity));
-    }
-  }
-
-  private addWindPaths(values: PathValue[], data: WeatherData): void {
-    // AccuWeather wind is ground-referenced: emit only speedOverGround and
-    // directionTrue. speedTrue and the canonical apparent leaves are left
-    // unset so they cannot clobber a real anemometer feed. Calculated apparent
-    // wind goes on producer-namespaced environment.weather.* paths instead.
-    values.push(
-      pv(SIGNALK_PATHS.ENVIRONMENT.WIND.SPEED_OVER_GROUND, data.windSpeed),
-      pv(SIGNALK_PATHS.ENVIRONMENT.WIND.DIRECTION_TRUE, data.windDirection)
-    );
-
-    if (data.windGustSpeed !== undefined) {
-      values.push(pv(SIGNALK_PATHS.ENVIRONMENT.WEATHER.SPEED_GUST, data.windGustSpeed));
-    }
-
-    if (data.windGustFactor !== undefined) {
-      values.push(pv(SIGNALK_PATHS.ENVIRONMENT.WEATHER.GUST_FACTOR, data.windGustFactor));
-    }
-
-    if (data.beaufortScale !== undefined) {
-      values.push(pv(SIGNALK_PATHS.ENVIRONMENT.WEATHER.BEAUFORT_SCALE, data.beaufortScale));
-    }
-
-    if (data.apparentWindSpeed !== undefined) {
-      values.push(
-        pv(SIGNALK_PATHS.ENVIRONMENT.WEATHER.WIND_SPEED_APPARENT, data.apparentWindSpeed)
-      );
-    }
-
-    if (data.apparentWindAngle !== undefined) {
-      values.push(
-        pv(SIGNALK_PATHS.ENVIRONMENT.WEATHER.WIND_ANGLE_APPARENT, data.apparentWindAngle)
-      );
-    }
-  }
-
-  private addAtmosphericPaths(values: PathValue[], data: WeatherData): void {
-    if (data.uvIndex !== undefined) {
-      values.push(pv(SIGNALK_PATHS.ENVIRONMENT.WEATHER.UV_INDEX, data.uvIndex));
-    }
-
-    if (data.visibility !== undefined) {
-      values.push(pv(SIGNALK_PATHS.ENVIRONMENT.WEATHER.VISIBILITY, data.visibility));
-    }
-
-    if (data.cloudCover !== undefined) {
-      values.push(pv(SIGNALK_PATHS.ENVIRONMENT.WEATHER.CLOUD_COVER, data.cloudCover));
-    }
-
-    if (data.cloudCeiling !== undefined) {
-      values.push(pv(SIGNALK_PATHS.ENVIRONMENT.WEATHER.CLOUD_CEILING, data.cloudCeiling));
-    }
-  }
-
-  private addCalculatedPaths(values: PathValue[], data: WeatherData): void {
-    if (data.airDensityEnhanced !== undefined) {
-      values.push(pv(SIGNALK_PATHS.ENVIRONMENT.OUTSIDE.AIR_DENSITY, data.airDensityEnhanced));
-    }
-  }
-
-  private addPrecipitationPaths(values: PathValue[], data: WeatherData): void {
-    if (data.precipitationLastHour !== undefined) {
-      values.push(
-        pv(
-          SIGNALK_PATHS.ENVIRONMENT.WEATHER.PRECIPITATION_LAST_HOUR,
-          data.precipitationLastHour * UNITS.PRECIPITATION.MM_TO_M
-        )
-      );
-    }
-  }
-
-  private addSafetyPaths(values: PathValue[], data: WeatherData): void {
-    if (data.heatStressIndex !== undefined) {
-      values.push(pv(SIGNALK_PATHS.ENVIRONMENT.WEATHER.HEAT_STRESS_INDEX, data.heatStressIndex));
-    }
-
-    if (data.temperatureDeparture24h !== undefined) {
-      values.push(
-        pv(
-          SIGNALK_PATHS.ENVIRONMENT.WEATHER.TEMPERATURE_DEPARTURE_24H,
-          data.temperatureDeparture24h
-        )
-      );
-    }
   }
 }

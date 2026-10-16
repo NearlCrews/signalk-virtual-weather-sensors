@@ -12,7 +12,7 @@
  * still functions.
  */
 
-import { deriveBaseWeatherFields } from '../calculators/deriveWeatherFields.js';
+import { buildKeylessBaseWeatherData } from '../calculators/deriveWeatherFields.js';
 import { ERROR_CODES } from '../constants/index.js';
 import { metNoSevereCondition, metNoSymbolBase } from '../providers/met-no-severity.js';
 import type {
@@ -23,14 +23,7 @@ import type {
 import {
   asOptionalNumber,
   calculateGustFactor,
-  calculateHeatStressIndex,
-  celsiusToKelvin,
-  degreesToRadians,
-  estimateWetBulbGlobeTemperature,
-  millibarsToPA,
-  normalizeAngle0To2Pi,
   optionalPercentageToRatio,
-  percentageToRatio,
   requireObservationTimestamp,
 } from '../utils/conversions.js';
 import { requireNumber } from './mapperUtils.js';
@@ -40,6 +33,11 @@ import { requireNumber } from './mapperUtils.js';
  * Parallels `WMO_DESCRIPTIONS` in `OpenMeteoMapper.ts` and populates
  * `environment.weather.description` and the severe-condition notification lead.
  * Exported so the forecast mapper (phase 2) can reuse it without a second copy.
+ *
+ * Two keys are doubled on purpose. The API emits `lightssleetshowersandthunder`
+ * and `lightssnowshowersandthunder` (an extra "s"), as the official legend at
+ * github.com/metno/weathericons lists them; the regular spellings stay so a
+ * future correction upstream keeps its description.
  */
 export const MET_NO_DESCRIPTIONS: ReadonlyMap<string, string> = new Map([
   ['clearsky', 'Clear sky'],
@@ -74,16 +72,24 @@ export const MET_NO_DESCRIPTIONS: ReadonlyMap<string, string> = new Map([
   ['lightsleetandthunder', 'Light sleet and thunder'],
   ['sleetandthunder', 'Sleet and thunder'],
   ['heavysleetandthunder', 'Heavy sleet and thunder'],
+  ['lightssleetshowersandthunder', 'Light sleet showers and thunder'],
   ['lightsleetshowersandthunder', 'Light sleet showers and thunder'],
   ['sleetshowersandthunder', 'Sleet showers and thunder'],
   ['heavysleetshowersandthunder', 'Heavy sleet showers and thunder'],
   ['lightsnowandthunder', 'Light snow and thunder'],
   ['snowandthunder', 'Snow and thunder'],
   ['heavysnowandthunder', 'Heavy snow and thunder'],
+  ['lightssnowshowersandthunder', 'Light snow showers and thunder'],
   ['lightsnowshowersandthunder', 'Light snow showers and thunder'],
   ['snowshowersandthunder', 'Snow showers and thunder'],
   ['heavysnowshowersandthunder', 'Heavy snow showers and thunder'],
 ]);
+
+/** Describe a Met.no symbol code (daylight suffix ignored), or undefined when absent or unmapped. */
+export function metNoDescription(symbolCode: string | undefined): string | undefined {
+  const base = metNoSymbolBase(symbolCode);
+  return base !== undefined ? MET_NO_DESCRIPTIONS.get(base) : undefined;
+}
 
 type InstantDetails = NonNullable<NonNullable<MetNoTimeseriesEntry['data']>['instant']>['details'];
 type Next1h = NonNullable<MetNoTimeseriesEntry['data']>['next_1_hours'];
@@ -119,8 +125,7 @@ function extractOptionalFields(
   // not the one the other providers contribute. A forward-looking value belongs
   // on its own leaf, which is deferred work rather than a rename of this one.
   const symbolCode = next1h?.summary?.symbol_code;
-  const base = metNoSymbolBase(symbolCode);
-  const description = base !== undefined ? MET_NO_DESCRIPTIONS.get(base) : undefined;
+  const description = metNoDescription(symbolCode);
   const severeCondition = metNoSevereCondition(symbolCode);
 
   return {
@@ -155,55 +160,22 @@ export function mapMetNoCurrentToWeatherData(response: MetNoLocationforecastResp
     );
   }
 
-  const temperature = celsiusToKelvin(
-    requireNumber(details.air_temperature, 'air_temperature', 'Met.no')
-  );
-  const pressure = millibarsToPA(
-    requireNumber(details.air_pressure_at_sea_level, 'air_pressure_at_sea_level', 'Met.no')
-  );
-  const humidity = percentageToRatio(
-    requireNumber(details.relative_humidity, 'relative_humidity', 'Met.no')
-  );
   const windSpeed = requireNumber(details.wind_speed, 'wind_speed', 'Met.no');
-  const windDirection = normalizeAngle0To2Pi(
-    degreesToRadians(requireNumber(details.wind_from_direction, 'wind_from_direction', 'Met.no'))
-  );
-  const dewPoint = celsiusToKelvin(
-    requireNumber(details.dew_point_temperature, 'dew_point_temperature', 'Met.no')
-  );
-
-  // Met.no carries no wind chill: recompute from the true wind (as the
-  // AccuWeather path does when WindChillTemperature is absent). Heat index is
-  // always computed (NWS Rothfusz), matching the AccuWeather path.
-  const { windChill, heatIndex, beaufortScale, absoluteHumidity, airDensityEnhanced } =
-    deriveBaseWeatherFields(temperature, pressure, humidity, windSpeed);
-
-  // Met.no provides no measured wet-bulb globe temperature: estimate it so
-  // the heat-stress band still works. This is a shade estimate (see
-  // estimateWetBulbGlobeTemperature), conservative under strong sun.
-  const wetBulbGlobeTemperature = estimateWetBulbGlobeTemperature(temperature, humidity);
-  const heatStressIndex = calculateHeatStressIndex(wetBulbGlobeTemperature);
-
-  // Met.no emits ISO 8601 with a trailing Z, so the call is a passthrough.
-  const timestamp = requireObservationTimestamp(entry.time, 'Met.no current conditions');
-
-  const next1h = entry.data?.next_1_hours;
-
   return {
-    temperature,
-    pressure,
-    humidity,
-    windSpeed,
-    windDirection,
-    dewPoint,
-    windChill,
-    heatIndex,
-    beaufortScale,
-    absoluteHumidity,
-    airDensityEnhanced,
-    wetBulbGlobeTemperature,
-    heatStressIndex,
-    timestamp,
-    ...extractOptionalFields(details, next1h, windSpeed),
+    ...buildKeylessBaseWeatherData({
+      temperatureC: requireNumber(details.air_temperature, 'air_temperature', 'Met.no'),
+      pressureHpa: requireNumber(
+        details.air_pressure_at_sea_level,
+        'air_pressure_at_sea_level',
+        'Met.no'
+      ),
+      humidityPercent: requireNumber(details.relative_humidity, 'relative_humidity', 'Met.no'),
+      windSpeedMs: windSpeed,
+      windFromDeg: requireNumber(details.wind_from_direction, 'wind_from_direction', 'Met.no'),
+      dewPointC: requireNumber(details.dew_point_temperature, 'dew_point_temperature', 'Met.no'),
+      // Met.no emits ISO 8601 with a trailing Z, so the call is a passthrough.
+      timestamp: requireObservationTimestamp(entry.time, 'Met.no current conditions'),
+    }),
+    ...extractOptionalFields(details, entry.data?.next_1_hours, windSpeed),
   };
 }

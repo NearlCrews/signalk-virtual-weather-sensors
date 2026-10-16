@@ -34,6 +34,7 @@ import {
   DEFAULT_REQUEST_TIMEOUT_MS,
   fetchJsonConditional,
   normalizeBaseUrl,
+  RequestCounter,
   setCoordParams,
 } from '../utils/http.js';
 import { assertValidCoordinates } from '../utils/validation.js';
@@ -107,8 +108,8 @@ export class MetNoService implements ForecastCapableProvider {
   private readonly logger: Logger;
   private readonly baseUrl: string;
   private readonly requestTimeoutMs: number;
-  /** Cumulative attempted-fetch count (incremented before each request), for the status banner. */
-  private requestCount = 0;
+  /** Cumulative attempted-fetch count, for the status banner. */
+  private readonly requests = new RequestCounter();
   private readonly documentCache: CoalescingTtlCache<DocumentCacheMeta>;
   private readonly signal: AbortSignal | undefined;
 
@@ -129,25 +130,17 @@ export class MetNoService implements ForecastCapableProvider {
   }
 
   public async fetchCurrentWeather(location: GeoLocation): Promise<WeatherData> {
-    try {
-      const response = await this.fetchForecastDocument(location, 'Met.no request');
-      const weatherData = mapMetNoCurrentToWeatherData(response);
-
-      this.logger('info', 'Met.no weather retrieved', {
-        location: `${location.latitude},${location.longitude}`,
-        temperature: weatherData.temperature,
-        windSpeed: weatherData.windSpeed,
-      });
-
-      return weatherData;
-    } catch (error) {
-      if (isAbortError(error)) throw error;
-      this.logger('error', 'Failed to fetch Met.no weather', {
-        location: `${location.latitude},${location.longitude}`,
-        error: toErrorMessage(error),
-      });
-      throw error;
-    }
+    // A fetch failure is logged once, by fetchForecastDocument, and a mapping
+    // failure by the WeatherService update that called this.
+    const weatherData = mapMetNoCurrentToWeatherData(
+      await this.fetchForecastDocument(location, 'Met.no request')
+    );
+    this.logger('info', 'Met.no weather retrieved', {
+      location: `${location.latitude},${location.longitude}`,
+      temperature: weatherData.temperature,
+      windSpeed: weatherData.windSpeed,
+    });
+    return weatherData;
   }
 
   public async getObservation(location: GeoLocation): Promise<SKWeatherData> {
@@ -210,38 +203,31 @@ export class MetNoService implements ForecastCapableProvider {
       return held;
     }
 
-    this.requestCount++;
-    try {
-      const result = await fetchJsonConditional<MetNoLocationforecastResponse>(
-        this.buildUrl(location),
-        {
-          timeoutMs: this.requestTimeoutMs,
-          headers: { 'User-Agent': PLUGIN.CONTACT_USER_AGENT },
-          signal: this.signal,
-          // Only send the validator when there is something to revalidate:
-          // a 304 with nothing held would leave the caller without a document.
-          ...(held?.lastModified !== undefined && { ifModifiedSince: held.lastModified }),
-        }
-      );
-      if (result.body === null) {
-        // `held` is defined whenever a validator was sent, which is the only
-        // way a 304 can arrive, so there is always a body to keep.
-        this.logger('debug', 'Met.no document unchanged (304)', { key });
-        return {
-          document: (held as DocumentCacheMeta).document,
-          lastModified: result.lastModified,
-          expiresMs: result.expiresMs,
-        };
-      }
+    const result = await this.requests.track(() =>
+      fetchJsonConditional<MetNoLocationforecastResponse>(this.buildUrl(location), {
+        timeoutMs: this.requestTimeoutMs,
+        headers: { 'User-Agent': PLUGIN.CONTACT_USER_AGENT },
+        signal: this.signal,
+        // Only send the validator when there is something to revalidate:
+        // a 304 with nothing held would leave the caller without a document.
+        ...(held?.lastModified !== undefined && { ifModifiedSince: held.lastModified }),
+      })
+    );
+    if (result.body === null) {
+      // `held` is defined whenever a validator was sent, which is the only
+      // way a 304 can arrive, so there is always a body to keep.
+      this.logger('debug', 'Met.no document unchanged (304)', { key });
       return {
-        document: result.body,
+        document: (held as DocumentCacheMeta).document,
         lastModified: result.lastModified,
         expiresMs: result.expiresMs,
       };
-    } catch (error) {
-      if (isAbortError(error)) this.requestCount--;
-      throw error;
     }
+    return {
+      document: result.body,
+      lastModified: result.lastModified,
+      expiresMs: result.expiresMs,
+    };
   }
 
   /**
@@ -256,17 +242,12 @@ export class MetNoService implements ForecastCapableProvider {
 
   /** Cumulative request count, for the status banner. */
   public getRequestCount(): number {
-    return this.requestCount;
+    return this.requests.value;
   }
 
   /** Keyless: Met.no has no per-key daily cap, so there is no rolling window to report. */
   public getRequestCountLast24h(): number {
     return 0;
-  }
-
-  /** Met.no needs no location-key cache (it takes lat/lon directly). */
-  public getCacheStats(): { size: number } {
-    return { size: this.documentCache.size() };
   }
 
   public isCurrentWeatherFetchBlocked(): boolean {

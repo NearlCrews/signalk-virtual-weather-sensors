@@ -46,9 +46,6 @@ vi.mock('../services/WeatherService.js', () => {
         updateCount: 1,
         errorCount: 0,
         hasWeatherData: true,
-        signalKHealth: { status: 'running', dataAge: 1, isStale: false, hasComplete: true },
-        cacheStats: { size: 1 },
-        apiRequestCount: 0,
       })
     );
     public start = vi.fn(async () => {});

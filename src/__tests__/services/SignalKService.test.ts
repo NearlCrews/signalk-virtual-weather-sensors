@@ -307,36 +307,6 @@ describe('SignalKService', () => {
     });
   });
 
-  describe('getMagneticVariation', () => {
-    it('should return variation when available', () => {
-      const mockApp = createMockApp({
-        'navigation.magneticVariation': {
-          value: 0.2, // ~11.5 degrees
-          timestamp: new Date().toISOString(),
-        },
-      });
-
-      const service = new SignalKService(mockApp as never, mockLogger);
-      const variation = service.getMagneticVariation();
-
-      expect(variation).toBe(0.2);
-    });
-
-    it('should return null for out-of-range variation', () => {
-      const mockApp = createMockApp({
-        'navigation.magneticVariation': {
-          value: 5, // > PI
-          timestamp: new Date().toISOString(),
-        },
-      });
-
-      const service = new SignalKService(mockApp as never, mockLogger);
-      const variation = service.getMagneticVariation();
-
-      expect(variation).toBeNull();
-    });
-  });
-
   describe('getVesselNavigationData', () => {
     it('should return complete navigation data', () => {
       const mockApp = createMockApp({
@@ -612,8 +582,8 @@ describe('SignalKService', () => {
     });
   });
 
-  describe('getHealthStatus', () => {
-    it('should return running status for fresh data', () => {
+  describe('navigation completeness', () => {
+    it('reports complete when position, speed, and course are all fresh', () => {
       const mockApp = createMockApp({
         'navigation.position': {
           value: { latitude: 37.0, longitude: -122.0 },
@@ -632,14 +602,10 @@ describe('SignalKService', () => {
       const service = new SignalKService(mockApp as never, mockLogger);
       service.getVesselNavigationData();
 
-      const health = service.getHealthStatus();
-
-      expect(health.status).toBe('running');
-      expect(health.isStale).toBe(false);
-      expect(health.hasComplete).toBe(true);
+      expect(service.getCachedNavigationData().isComplete).toBe(true);
     });
 
-    it('should report incomplete when data missing', () => {
+    it('reports incomplete when speed and course are missing', () => {
       const mockApp = createMockApp({
         'navigation.position': {
           value: { latitude: 37.0, longitude: -122.0 },
@@ -650,9 +616,7 @@ describe('SignalKService', () => {
       const service = new SignalKService(mockApp as never, mockLogger);
       service.getVesselNavigationData();
 
-      const health = service.getHealthStatus();
-
-      expect(health.hasComplete).toBe(false);
+      expect(service.getCachedNavigationData().isComplete).toBe(false);
     });
   });
 

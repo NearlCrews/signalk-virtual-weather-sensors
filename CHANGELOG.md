@@ -9,6 +9,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Open-Meteo's heavy thunderstorm code (WMO 97) raises the severe-weather
+  notification and carries a description. Models without a hail forecast, the
+  GFS family among them, report every strong thunderstorm as 97, which was
+  unmapped, so those storms raised nothing.
+- Weather warnings for a position inside the generous US box but outside NWS
+  coverage (British Columbia, Bermuda, Mexico, the western Caribbean) return
+  no warnings instead of an error. NWS answers those positions with 400 "out
+  of bounds", which reached v2 consumers as a failure. Guam, the Northern
+  Marianas, the western Aleutians, and American Samoa now get NWS warnings.
+- Met.no's "light sleet showers and thunder" and "light snow showers and
+  thunder" carry a description. The API spells both codes with an extra "s"
+  (`lightssleetshowersandthunder`), as the official legend lists them.
+- The status banner shows the `K/Q today` count, the quota warning, and the
+  quota pause only for a provider with a daily cap. A keyless install no
+  longer reports `0/50 today` against a quota it does not have.
+- A merged configuration that falls back to AccuWeather alone stops fetching
+  on a rejected API key, as a single AccuWeather configuration does, instead
+  of retrying a key that cannot succeed.
 - The merge provider list declares its checkbox, badge, and note overrides
   as doubled classes. A single class loses to the shared UI's scoped rule for
   any property the library also sets, so each override held only while the
@@ -17,6 +35,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Open-Meteo's `environment.weather.precipitationLastHour` is the rolling 60
+  minutes ending at the observation, summed from four 15-minute buckets,
+  rather than the last completed clock hour. The old figure lagged by up to 59
+  minutes and could read 0 mm while it rained.
 - Development dependencies are current: Biome 2.5.15, Playwright 1.64.1, the
   Signal K server API 2.33.0, size-limit 14.2.0, markdownlint 0.42.0, Vitest
   5.0.5, React 19.3.1, and webpack 5.111.1. Webpack stays on 5.111 because

@@ -11,8 +11,10 @@ import { describe, expect, it } from 'vitest';
 import { openMeteoSevereCondition } from '../../providers/open-meteo-severity.js';
 
 describe('openMeteoSevereCondition', () => {
-  it('maps a plain thunderstorm (95) to warn/Thunderstorms', () => {
-    expect(openMeteoSevereCondition(95)).toEqual({ state: 'warn', label: 'Thunderstorms' });
+  it('maps a plain or heavy thunderstorm without hail (95, 97) to warn/Thunderstorms', () => {
+    for (const code of [95, 97]) {
+      expect(openMeteoSevereCondition(code)).toEqual({ state: 'warn', label: 'Thunderstorms' });
+    }
   });
 
   it('escalates thunderstorm with hail (96, 99) to alarm', () => {

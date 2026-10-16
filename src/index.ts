@@ -6,12 +6,12 @@
  */
 
 import { join } from 'node:path';
-import { type Plugin, type ServerAPI, SKVersion } from '@signalk/server-api';
+import type { Plugin, ServerAPI } from '@signalk/server-api';
 import { DEFAULT_CONFIG, ERROR_CODES, PLUGIN } from './constants/index.js';
 import { MarinePathMapper } from './mappers/MarinePathMapper.js';
 import { NMEA2000PathMapper } from './mappers/NMEA2000PathMapper.js';
 import { WeatherNotifier } from './notifications/WeatherNotifier.js';
-import { setupEnhancedEmissionSystem } from './plugin/emission.js';
+import { publishNotificationDelta, setupEnhancedEmissionSystem } from './plugin/emission.js';
 import { type PluginInstance, setBanner } from './plugin/instance.js';
 import { createLogger } from './plugin/logging.js';
 import { PANEL_OPENAPI, registerPanelRoutes } from './plugin/panelRoutes.js';
@@ -24,7 +24,7 @@ import { WeatherProviderAdapter } from './services/WeatherProviderAdapter.js';
 import { WeatherService } from './services/WeatherService.js';
 import type { Logger, PluginConfiguration } from './types/index.js';
 import { elapsedSinceMs, toErrorMessage } from './utils/conversions.js';
-import { buildValuesDelta, toSourceRef } from './utils/skDelta.js';
+import { toSourceRef } from './utils/skDelta.js';
 import { ConfigurationValidator } from './utils/validation.js';
 
 /**
@@ -386,11 +386,7 @@ async function cleanup(instance: PluginInstance, app: ServerAPI): Promise<void> 
   if (instance.notifier) {
     try {
       const cleared = instance.notifier.clearAll();
-      app.handleMessage(
-        PLUGIN.NAME,
-        buildValuesDelta(cleared.transitions, undefined, instance.sourceRef),
-        SKVersion.v1
-      );
+      publishNotificationDelta(instance, app, cleared.transitions);
       cleared.commit();
     } catch (error) {
       instance.logger('error', 'Error clearing weather notifications', {

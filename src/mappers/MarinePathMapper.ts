@@ -27,6 +27,17 @@ const WATER = SIGNALK_PATHS.ENVIRONMENT.WATER;
 /** Default `$source` for marine model data, distinct so users can deprioritize it. */
 export const MARINE_SOURCE: SourceRef = toSourceRef('open-meteo-marine');
 
+/** Producer-namespaced wave and swell leaves, in emission order, with the field each reads. */
+const SEA_STATE_LEAVES: ReadonlyArray<readonly [path: string, field: keyof MarineData]> = [
+  [WATER.WAVE_SIGNIFICANT_HEIGHT, 'significantWaveHeight'],
+  [WATER.WAVE_PERIOD, 'wavePeriod'],
+  [WATER.WAVE_DIRECTION, 'waveDirection'],
+  [WATER.WIND_WAVE_HEIGHT, 'windWaveHeight'],
+  [WATER.SWELL_HEIGHT, 'swellHeight'],
+  [WATER.SWELL_PERIOD, 'swellPeriod'],
+  [WATER.SWELL_DIRECTION, 'swellDirection'],
+];
+
 /** Meta for the producer-namespaced wave and swell leaves (non-canonical vocabulary). */
 const MARINE_META: ReadonlyArray<Meta> = [
   me(WATER.WAVE_SIGNIFICANT_HEIGHT, {
@@ -94,20 +105,9 @@ export class MarinePathMapper {
       values.push(pv(SIGNALK_PATHS.ENVIRONMENT.CURRENT, current));
     }
 
-    if (marine.significantWaveHeight !== undefined) {
-      values.push(pv(WATER.WAVE_SIGNIFICANT_HEIGHT, marine.significantWaveHeight));
-    }
-    if (marine.wavePeriod !== undefined) values.push(pv(WATER.WAVE_PERIOD, marine.wavePeriod));
-    if (marine.waveDirection !== undefined) {
-      values.push(pv(WATER.WAVE_DIRECTION, marine.waveDirection));
-    }
-    if (marine.windWaveHeight !== undefined) {
-      values.push(pv(WATER.WIND_WAVE_HEIGHT, marine.windWaveHeight));
-    }
-    if (marine.swellHeight !== undefined) values.push(pv(WATER.SWELL_HEIGHT, marine.swellHeight));
-    if (marine.swellPeriod !== undefined) values.push(pv(WATER.SWELL_PERIOD, marine.swellPeriod));
-    if (marine.swellDirection !== undefined) {
-      values.push(pv(WATER.SWELL_DIRECTION, marine.swellDirection));
+    for (const [path, field] of SEA_STATE_LEAVES) {
+      const value = marine[field];
+      if (value !== undefined) values.push(pv(path, value));
     }
 
     this.logger('debug', 'Marine path mapping completed', { totalPaths: values.length });

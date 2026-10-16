@@ -59,7 +59,6 @@ export function setupEnhancedEmissionSystem(
 export function emitWeatherTick(instance: PluginInstance, app: ServerAPI): void {
   const weatherService = instance.weatherService;
   if (!weatherService) return;
-  const weatherData = weatherService.getCurrentWeatherData();
 
   // Banner precedence (rejected key, quota pause, missing position, stale
   // data, last fetch failure, then live status) is owned by
@@ -74,10 +73,26 @@ export function emitWeatherTick(instance: PluginInstance, app: ServerAPI): void 
   const banner = weatherService.getTickBanner();
   setBanner(instance, app, banner.kind, banner.message);
 
-  if (!weatherData || !instance.pathMapper) {
-    emitMarineTick(instance, app);
-    return;
-  }
+  emitWeatherDelta(instance, app, weatherService, banner.stale);
+  // The marine layer has its own data, staleness, and meta, so it emits
+  // whatever happened to the weather delta above.
+  emitMarineTick(instance, app);
+}
+
+/**
+ * Emit the cached weather values delta, its notification transitions, and its
+ * one-shot meta. Returns early, emitting nothing, before the first fetch and
+ * while the data is stale.
+ * @private
+ */
+function emitWeatherDelta(
+  instance: PluginInstance,
+  app: ServerAPI,
+  weatherService: WeatherService,
+  stale: boolean
+): void {
+  const weatherData = weatherService.getCurrentWeatherData();
+  if (!weatherData || !instance.pathMapper) return;
 
   // Staleness gates emission, not just the banner: quota exhaustion alone
   // keeps broadcasting cached in-window data on the configured cadence, but
@@ -85,9 +100,8 @@ export function emitWeatherTick(instance: PluginInstance, app: ServerAPI): void 
   // The flag rides on the banner because `getTickBanner` already derived it to
   // rank the banner, and re-asking would prune and re-count the rolling quota
   // window a second time on every tick.
-  if (banner.stale) {
+  if (stale) {
     markNotificationsStale(instance, app, weatherService);
-    emitMarineTick(instance, app);
     return;
   }
 
@@ -98,17 +112,11 @@ export function emitWeatherTick(instance: PluginInstance, app: ServerAPI): void 
   let evaluation: NotificationEvaluation | undefined;
   if (weatherData !== instance.cachedWeatherDataRef) {
     const refreshed = refreshCachedDelta(instance, app, weatherData, instance.pathMapper);
-    if (refreshed === null) {
-      emitMarineTick(instance, app);
-      return;
-    }
+    if (refreshed === null) return;
     evaluation = refreshed;
   }
 
-  if (!instance.cachedDelta) {
-    emitMarineTick(instance, app);
-    return;
-  }
+  if (!instance.cachedDelta) return;
 
   app.handleMessage(PLUGIN.NAME, instance.cachedDelta, SKVersion.v1);
 
@@ -131,8 +139,6 @@ export function emitWeatherTick(instance: PluginInstance, app: ServerAPI): void 
     app.handleMessage(PLUGIN.NAME, instance.pathMapper.buildMetaDelta(), SKVersion.v1);
     instance.metaEmitted = true;
   }
-
-  emitMarineTick(instance, app);
 }
 
 /**
@@ -176,9 +182,8 @@ function markNotificationsStale(
  * publish through here keeps the source reference, the untouched timestamp
  * slot, and the SK version identical across the transition and staleness
  * paths, so a consumer sees one coherent notification stream.
- * @private
  */
-function publishNotificationDelta(
+export function publishNotificationDelta(
   instance: PluginInstance,
   app: ServerAPI,
   values: PathValue[]

@@ -5,7 +5,7 @@
 
 import type { ServerAPI } from '@signalk/server-api';
 import { SIGNALK_PATHS, VALIDATION_LIMITS } from '../constants/index.js';
-import type { GeoLocation, Logger, PluginState, VesselNavigationData } from '../types/index.js';
+import type { GeoLocation, Logger, VesselNavigationData } from '../types/index.js';
 import {
   elapsedSinceMs,
   isValidBearing,
@@ -329,19 +329,6 @@ export class SignalKService {
   }
 
   /**
-   * Get magnetic variation from SignalK navigation data
-   * @returns Magnetic variation in radians (positive = East) or null if not available
-   */
-  public getMagneticVariation(): number | null {
-    // Magnetic variation is a signed offset in radians: plausible range is -π to π.
-    return this.readNumericSelfPath(
-      NAV.MAGNETIC_VARIATION,
-      (variation) => Math.abs(variation) <= Math.PI,
-      'magnetic variation'
-    ).value;
-  }
-
-  /**
    * Get cached vessel data without making new SignalK calls
    * @returns Cached vessel navigation data
    */
@@ -368,9 +355,7 @@ export class SignalKService {
 
   /**
    * True when the cache holds the position, speed, and course trio the
-   * apparent-wind math needs. Shared by `getCachedNavigationData` and
-   * `getHealthStatus` so the latter does not build a full navigation snapshot
-   * (with its second `Date.now()` read) just to extract this flag.
+   * apparent-wind math needs.
    * @private
    */
   private hasCompleteData(): boolean {
@@ -505,25 +490,5 @@ export class SignalKService {
       if (source.includes(excluded)) return true;
     }
     return false;
-  }
-
-  /**
-   * Get service health status
-   */
-  public getHealthStatus(): {
-    status: PluginState;
-    dataAge: number | null;
-    isStale: boolean;
-    hasComplete: boolean;
-  } {
-    const dataAge = this.getDataAge();
-    const isStale = this.isAgeStale(dataAge);
-
-    return {
-      status: isStale ? 'error' : 'running',
-      dataAge,
-      isStale,
-      hasComplete: this.hasCompleteData(),
-    };
   }
 }

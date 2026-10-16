@@ -13,16 +13,23 @@ import {
 import type { OpenMeteoCurrentResponse } from '../../types/index.js';
 
 /**
- * A current block plus the two-hour `precipitation` companion the service now
- * requests. `current.precipitation` is deliberately a DIFFERENT value from the
- * hourly bucket: it is a 15-minute backward sum, and every assertion about
- * `precipitationLastHour` must show the hourly figure winning.
+ * A current block plus the 15-minutely `precipitation` companion the service
+ * requests. The four buckets after 18:00 sum to 1.6 mm, the 18:00 bucket (9.9)
+ * sits on the excluded edge of the hour ending at 19:00, and
+ * `current.precipitation` is deliberately a DIFFERENT value: every assertion
+ * about `precipitationLastHour` must show the four-bucket sum winning.
  */
 function sample(
   overrides: Record<string, unknown> = {},
-  hourly: OpenMeteoCurrentResponse['hourly'] | null = {
-    time: ['2026-06-16T18:00', '2026-06-16T19:00'],
-    precipitation: [2.6, 1.6],
+  minutely: OpenMeteoCurrentResponse['minutely_15'] | null = {
+    time: [
+      '2026-06-16T18:00',
+      '2026-06-16T18:15',
+      '2026-06-16T18:30',
+      '2026-06-16T18:45',
+      '2026-06-16T19:00',
+    ],
+    precipitation: [9.9, 0.2, 0.3, 0.5, 0.6],
   }
 ): OpenMeteoCurrentResponse {
   return {
@@ -44,7 +51,7 @@ function sample(
       uv_index: 3.2,
       ...overrides,
     },
-    ...(hourly !== null && { hourly }),
+    ...(minutely !== null && { minutely_15: minutely }),
   };
 }
 
@@ -78,8 +85,8 @@ describe('mapOpenMeteoCurrentToWeatherData', () => {
     expect(data.uvIndex).toBe(3.2);
     expect(data.visibility).toBe(24000);
     expect(data.apparentTemperature).toBeCloseTo(292.15, 2);
-    // The hourly bucket for the observation's own hour, NOT the 0.4 mm
-    // 15-minute sum in the current block.
+    // The four 15-minute buckets ending at the observation, NOT the 0.4 mm
+    // single 15-minute sum in the current block.
     expect(data.precipitationLastHour).toBe(1.6);
   });
 
@@ -135,43 +142,54 @@ describe('mapOpenMeteoCurrentToWeatherData', () => {
 });
 
 describe('pastHourPrecipitationMm', () => {
-  it('reads the bucket stamped at the top of the observation hour', () => {
-    // Open-Meteo documents the hourly variable as the "sum of the preceding
-    // hour", so the 19:00 entry is the completed 18:00-to-19:00 accumulation.
+  it('sums the four buckets that end at the observation stamp', () => {
+    // Each bucket is the sum of the 15 minutes ending at its stamp, so the four
+    // after 18:00 tile the hour ending at 19:00 and the 18:00 bucket does not.
     expect(pastHourPrecipitationMm(sample(), '2026-06-16T19:00')).toBe(1.6);
-  });
-
-  it('floors a sub-hourly observation stamp onto its own hour', () => {
-    // The current block reports at 15-minute boundaries, so 19:45 must still
-    // resolve to the 19:00 bucket rather than falling through to undefined.
-    expect(pastHourPrecipitationMm(sample(), '2026-06-16T19:45')).toBe(1.6);
   });
 
   it('matches across timezone representations of the same instant', () => {
     const zoned = sample(
       {},
       {
-        time: ['2026-06-16T20:00+01:00', '2026-06-16T21:00+01:00'],
-        precipitation: [2.6, 1.6],
+        time: [
+          '2026-06-16T19:15+01:00',
+          '2026-06-16T19:30+01:00',
+          '2026-06-16T19:45+01:00',
+          '2026-06-16T20:00+01:00',
+        ],
+        precipitation: [0.2, 0.3, 0.5, 0.6],
       }
     );
-    expect(pastHourPrecipitationMm(zoned, '2026-06-16T19:30Z')).toBe(2.6);
+    expect(pastHourPrecipitationMm(zoned, '2026-06-16T19:00Z')).toBe(1.6);
   });
 
-  it('returns undefined rather than the shorter current-block value', () => {
-    // No companion block, a bucket that does not cover the observation, and a
-    // null reading all leave the path unset. Publishing the 15-minute sum under
-    // an hourly label is the defect this guards.
+  it('rounds the sum to the 0.01 mm the API reports', () => {
+    const noisy = sample(
+      {},
+      {
+        time: ['2026-06-16T18:15', '2026-06-16T18:30', '2026-06-16T18:45', '2026-06-16T19:00'],
+        precipitation: [0.1, 0.2, 0.1, 0.2],
+      }
+    );
+    expect(pastHourPrecipitationMm(noisy, '2026-06-16T19:00')).toBe(0.6);
+  });
+
+  it('returns undefined rather than a partial or shorter sum', () => {
+    // No companion block, fewer than four buckets inside the hour, and a null
+    // reading all leave the path unset. Publishing a partial hour, or the
+    // 15-minute current-block sum, under an hourly label is the defect this guards.
     expect(pastHourPrecipitationMm(sample({}, null), '2026-06-16T19:00')).toBeUndefined();
+    expect(pastHourPrecipitationMm(sample(), '2026-06-16T19:15')).toBeUndefined();
     expect(
       pastHourPrecipitationMm(
-        sample({}, { time: ['2026-06-16T17:00'], precipitation: [2.6] }),
-        '2026-06-16T19:00'
-      )
-    ).toBeUndefined();
-    expect(
-      pastHourPrecipitationMm(
-        sample({}, { time: ['2026-06-16T19:00'], precipitation: [null] }),
+        sample(
+          {},
+          {
+            time: ['2026-06-16T18:15', '2026-06-16T18:30', '2026-06-16T18:45', '2026-06-16T19:00'],
+            precipitation: [0.2, null, 0.5, 0.6],
+          }
+        ),
         '2026-06-16T19:00'
       )
     ).toBeUndefined();

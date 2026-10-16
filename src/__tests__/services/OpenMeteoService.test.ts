@@ -39,7 +39,7 @@ describe('OpenMeteoService', () => {
     expect(data.windSpeed).toBe(5);
     expect(service.getRequestCount()).toBe(1);
     expect(service.getRequestCountLast24h()).toBe(0);
-    expect(service.getCacheStats()).toEqual({ size: 0 });
+    expect(service.dailyQuota).toBeUndefined();
     expect(service.name).toBe('Open-Meteo');
     expect(service.sourceRef).toBe('open-meteo');
   });
@@ -59,19 +59,20 @@ describe('OpenMeteoService', () => {
     expect(calledUrl).toContain('weather_code');
   });
 
-  it('requests the hourly precipitation companion beside the current block', async () => {
+  it('requests the 15-minutely precipitation companion beside the current block', async () => {
     (global.fetch as Mock).mockResolvedValueOnce(createMockFetchResponse(SAMPLE));
     const service = new OpenMeteoService();
 
     await service.fetchCurrentWeather(GREENWICH);
 
     // The current block's precipitation is a 15-minute backward sum, so the
-    // past-hour depth `environment.weather.precipitationLastHour` promises has
-    // to come from the hourly series covering the elapsed hour.
+    // past-hour depth `environment.weather.precipitationLastHour` promises is
+    // summed from the four 15-minutely buckets ending at the observation.
     const calledUrl = new URL(String((global.fetch as Mock).mock.calls[0][0]));
-    expect(calledUrl.searchParams.get('hourly')).toBe('precipitation');
-    expect(calledUrl.searchParams.get('past_hours')).toBe('1');
-    expect(calledUrl.searchParams.get('forecast_hours')).toBe('1');
+    expect(calledUrl.searchParams.get('minutely_15')).toBe('precipitation');
+    expect(calledUrl.searchParams.get('past_minutely_15')).toBe('4');
+    expect(calledUrl.searchParams.get('forecast_minutely_15')).toBe('1');
+    expect(calledUrl.searchParams.get('hourly')).toBeNull();
   });
 
   it('limits coordinates sent upstream to four decimal places', async () => {
@@ -206,7 +207,6 @@ describe('OpenMeteoService v2 capability', () => {
     expect(c).toEqual(a);
     expect(global.fetch as Mock).toHaveBeenCalledTimes(1);
     expect(svc.getRequestCount()).toBe(1);
-    expect(svc.getCacheStats()).toEqual({ size: 1 });
   });
 
   it('getDailyForecast returns ascending daily forecasts', async () => {

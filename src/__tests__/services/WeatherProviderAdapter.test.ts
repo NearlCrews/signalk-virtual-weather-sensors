@@ -14,7 +14,6 @@ const provider: ForecastCapableProvider = {
   fetchCurrentWeather: async () => ({}) as never,
   getRequestCount: () => 0,
   getRequestCountLast24h: () => 0,
-  getCacheStats: () => ({ size: 0 }),
   getObservation: vi.fn(
     async () => ({ date: '2026-06-17T12:00:00+00:00', type: 'observation' }) as never
   ),

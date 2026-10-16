@@ -8,8 +8,8 @@
  * (mapper, notifier, PGN bridge) is already provider-agnostic over it.
  *
  * Quota accessors are part of the contract because the status banner reports
- * them. A keyless provider (Open-Meteo) implements them as constant zero: it
- * has no per-key daily cap, so there is no rolling window to surface.
+ * them. A keyless provider (Open-Meteo, Met.no) reports a zero rolling window
+ * and declares no `dailyQuota`, so the banner shows no quota for it.
  */
 
 import type { WeatherData as SKWeatherData } from '@signalk/server-api';
@@ -31,6 +31,23 @@ export interface CurrentWeatherProvider {
   /** Maximum acceptable age of a current observation from this provider. */
   readonly maxObservationAgeMs?: number;
 
+  /**
+   * Daily request cap this provider enforces on itself, or absent for a keyless
+   * source with none. The status banner shows `K/Q today`, the quota warning,
+   * and the quota pause only against a declared cap.
+   */
+  readonly dailyQuota?: number | undefined;
+
+  /**
+   * True for a provider that authenticates with an operator-supplied API key.
+   * A 401 from it means the key is wrong, which no retry can fix, so the
+   * service stops fetching until the configuration changes. Absent for keyless
+   * providers (a 401 there comes from something else, such as an
+   * authenticating proxy in front of a self-hosted instance) and for the
+   * merging provider (a rejected child leaves the blend running on its siblings).
+   */
+  readonly usesApiKey?: boolean;
+
   /** Fetch and transform current conditions for a position into SI `WeatherData`. */
   fetchCurrentWeather(location: GeoLocation): Promise<WeatherData>;
 
@@ -45,9 +62,6 @@ export interface CurrentWeatherProvider {
    * banner. Zero for a keyless provider with no daily cap.
    */
   getRequestCountLast24h(): number;
-
-  /** Location-cache size, for the status panel. Zero-sized for cacheless providers. */
-  getCacheStats(): { size: number };
 
   /** True only when this provider cannot make a current request right now. */
   isCurrentWeatherFetchBlocked?(): boolean;
@@ -71,31 +85,16 @@ export interface ForecastCapabilities {
 }
 
 /**
- * A provider that can serve a single current observation in the Signal K v2
- * envelope, in addition to the live emission path. Open-Meteo and AccuWeather
- * both implement this; a minimal source might implement only the base tier.
+ * A provider that additionally serves a current observation, point (hourly)
+ * forecasts, and daily forecasts in the SK v2 envelope, and declares its own
+ * forecast horizon. Forecast arrays are ascending by date, per the v2 contract.
  */
-export interface ObservationCapableProvider extends CurrentWeatherProvider {
+export interface ForecastCapableProvider extends CurrentWeatherProvider {
+  readonly forecastCapabilities: ForecastCapabilities;
   /** Current conditions at an arbitrary position, in the SK v2 WeatherData shape. */
   getObservation(location: GeoLocation): Promise<SKWeatherData>;
-}
-
-/**
- * A provider that additionally serves point (hourly) and daily forecasts in the
- * SK v2 envelope, and declares its own forecast horizon. Forecast arrays are
- * ascending by date, per the v2 contract.
- */
-export interface ForecastCapableProvider extends ObservationCapableProvider {
-  readonly forecastCapabilities: ForecastCapabilities;
   getHourlyForecast(location: GeoLocation): Promise<SKWeatherData[]>;
   getDailyForecast(location: GeoLocation): Promise<SKWeatherData[]>;
-}
-
-/** Narrow a base provider to one that can serve a v2 observation. */
-export function supportsObservations(
-  provider: CurrentWeatherProvider
-): provider is ObservationCapableProvider {
-  return typeof (provider as ObservationCapableProvider).getObservation === 'function';
 }
 
 /** Narrow a base provider to one that can serve v2 forecasts. */

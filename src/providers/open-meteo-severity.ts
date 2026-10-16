@@ -31,8 +31,11 @@ const WMO_CODE_SEVERITY: ReadonlyMap<number, SevereCondition> = new Map([
   // Snow showers.
   [85, { state: 'warn', label: 'Snow' }],
   [86, { state: 'warn', label: 'Snow' }],
-  // Thunderstorm without hail: matches AccuWeather thunderstorms (warn).
+  // Thunderstorm without hail: matches AccuWeather thunderstorms (warn). Models
+  // with no hail forecast report every thunderstorm as 95 or 97 (heavy), so 97
+  // stays at warn like Met.no's heavy thunder codes; only hail escalates.
   [95, { state: 'warn', label: 'Thunderstorms' }],
+  [97, { state: 'warn', label: 'Thunderstorms' }],
   // Thunderstorm with hail: escalated to alarm, as AccuWeather treats ice.
   [96, { state: 'alarm', label: 'Thunderstorms' }],
   [99, { state: 'alarm', label: 'Thunderstorms' }],

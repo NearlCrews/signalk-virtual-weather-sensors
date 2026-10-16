@@ -80,7 +80,7 @@ export const MAX_OBSERVATION_FUTURE_MS = 60 * 60 * 1000;
  * this one step, so none of them round-trips through a formatted string to get
  * back to the epoch it already had.
  */
-function isoToEpochMs(value: unknown): number {
+export function isoToEpochMs(value: unknown): number {
   if (typeof value !== 'string') return Number.NaN;
   const time = value.trim();
   if (time === '') return Number.NaN;
@@ -94,22 +94,6 @@ function isoToEpochMs(value: unknown): number {
 export function normalizeIsoTimestamp(value: unknown): string {
   const epochMs = isoToEpochMs(value);
   return Number.isFinite(epochMs) ? new Date(epochMs).toISOString() : '';
-}
-
-/** Milliseconds in one hour, used to floor an instant onto its hour boundary. */
-const MS_PER_HOUR = 60 * 60 * 1000;
-
-/**
- * Floor an ISO 8601 instant onto the top of its UTC hour, in epoch
- * milliseconds, or `NaN` when the input is not a valid instant. Used to line a
- * provider's sub-hourly observation stamp up with the hourly accumulation
- * bucket that covers the hour ending at that boundary. The result is a number
- * rather than a formatted instant because every caller only compares two of
- * them for equality.
- */
-export function floorToUtcHourMs(value: unknown): number {
-  const epochMs = isoToEpochMs(value);
-  return Number.isFinite(epochMs) ? Math.floor(epochMs / MS_PER_HOUR) * MS_PER_HOUR : Number.NaN;
 }
 
 /** Normalize a calendar date to UTC midnight, or return an empty string when invalid. */
@@ -263,6 +247,30 @@ export function optionalCelsiusToKelvin(value: unknown): number | undefined {
 export function optionalPercentageToRatio(value: unknown): number | undefined {
   const pct = asOptionalNumber(value);
   return pct !== undefined ? percentageToRatio(pct) : undefined;
+}
+
+/** Convert an optional millibar (hPa) value to pascals; undefined when missing or non-numeric. */
+export function optionalMillibarsToPA(value: unknown): number | undefined {
+  const millibars = asOptionalNumber(value);
+  return millibars !== undefined ? millibarsToPA(millibars) : undefined;
+}
+
+/** Convert an optional km/h value to m/s; undefined when missing or non-numeric. */
+export function optionalKmhToMS(value: unknown): number | undefined {
+  const kmh = asOptionalNumber(value);
+  return kmh !== undefined ? kmhToMS(kmh) : undefined;
+}
+
+/** Convert an optional kilometre value to metres; undefined when missing or non-numeric. */
+export function optionalKmToM(value: unknown): number | undefined {
+  const km = asOptionalNumber(value);
+  return km !== undefined ? km * UNITS.LENGTH.KM_TO_M : undefined;
+}
+
+/** Convert an optional millimetre depth to metres; undefined when missing or non-numeric. */
+export function optionalMmToM(value: unknown): number | undefined {
+  const mm = asOptionalNumber(value);
+  return mm !== undefined ? mm * UNITS.PRECIPITATION.MM_TO_M : undefined;
 }
 
 /**

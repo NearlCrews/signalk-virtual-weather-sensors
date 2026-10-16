@@ -11,7 +11,7 @@ import {
   VisuallyHidden,
 } from 'signalk-nearlcrews-ui';
 import {
-  providerRequiresApiKey,
+  isProviderAvailable,
   WEATHER_PROVIDER_IDS,
   WEATHER_PROVIDER_LABELS,
   WEATHER_PROVIDER_SHORT_LABELS,
@@ -119,7 +119,7 @@ export default function MergeProviderList({
     id: WeatherProviderId,
     isIncluded: boolean
   ): { disabled: boolean; note: string | undefined } => {
-    const keyMissing = providerRequiresApiKey(id) && !hasAccuWeatherKey;
+    const keyMissing = !isProviderAvailable(id, hasAccuWeatherKey);
     // The last included provider is locked whatever its key state. An empty
     // list is not saved as an empty merge: resolveMergeProviders reads it as
     // absent and restores every provider, the opposite of what unchecking the

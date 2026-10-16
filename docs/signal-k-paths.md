@@ -80,7 +80,7 @@ list.
 | `environment.weather.cloudCover` | ratio (0 to 1) | Cloud coverage |
 | `environment.weather.cloudCeiling` | m | Cloud base height |
 | `environment.weather.temperatureDeparture24h` | K | 24-hour temperature change (a delta, not an absolute temperature; the data browser renders it as a Kelvin delta) |
-| `environment.weather.precipitationLastHour` | m | Liquid-equivalent precipitation depth over the past hour (the data browser renders it in mm). Open-Meteo and AccuWeather only: Met.no publishes no past-hour accumulation. Open-Meteo's value comes from the hourly `precipitation` series, whose bucket is documented as the sum of the preceding hour; the current block reports only a 15-minute accumulation and is not used for this path |
+| `environment.weather.precipitationLastHour` | m | Liquid-equivalent precipitation depth over the past hour (the data browser renders it in mm). Open-Meteo and AccuWeather only: Met.no publishes no past-hour accumulation. Open-Meteo's value sums the four `minutely_15` `precipitation` buckets ending at the observation time, a rolling past hour; the current block alone reports only a 15-minute accumulation and is not scaled up for this path |
 | `environment.weather.speedGust` | m/s | Wind gust speed |
 | `environment.weather.gustFactor` | (unitless) | Gust / sustained ratio, always >= 1. Deliberately ships without `units`: `ratio` would trip consumers that clamp ratio paths to [0, 1]. Omitted entirely when the upstream gust reading is not above the sustained wind speed |
 | `environment.weather.beaufortScale` | (unitless) | Beaufort scale category (0..12) |
@@ -193,9 +193,11 @@ multiple paths concurrently.
 | `notifications.environment.weather.severe` | `warn` or `alarm` | AccuWeather `WeatherIcon` 15-17 thunderstorms (warn), 19-21 flurries (warn), 22-23 / 29 / 43-44 snow (warn), 24 ice (alarm), 25-26 sleet / freezing rain (warn), 41-42 thunderstorms (warn) |
 
 The severe-condition trigger above lists the AccuWeather `WeatherIcon` codes.
-The band is provider-agnostic: under Open-Meteo the equivalent WMO weather codes
-map to the same `warn` and `alarm` classification, so the notification behaves
-the same regardless of source.
+The band is provider-agnostic, so the notification behaves the same regardless
+of source. Open-Meteo maps WMO codes 56 and 57 (freezing drizzle), 66 and 67
+(freezing rain), 71 to 77 and 85 and 86 (snow), and 95 and 97 (thunderstorm and
+heavy thunderstorm) to `warn`, and 96 and 99 (thunderstorm with hail) to
+`alarm`. Met.no maps every thunder, snow, and sleet symbol to `warn`.
 
 Each notification value follows the SK 1.8.2 shape
 `{ state, method, message, timestamp }`. `state: 'normal'` is written on exit
@@ -252,10 +254,13 @@ the endpoints. These endpoints are served:
   requested position (including the atmospheric pressure and pressure tendency
   the forecasts omit).
 - `GET /signalk/v2/api/weather/warnings` returns region-aware severe-weather
-  alerts: keyless NWS CAP active alerts for US waters, keyless Met.no MetAlerts
-  for Norwegian waters, and an empty list elsewhere. An upstream failure inside
-  a covered region is reported as an error rather than an empty list, so a
-  consumer can tell "unavailable" from "none active".
+  alerts: keyless NWS CAP active alerts for US waters (including Puerto Rico,
+  the Virgin Islands, Guam, the Northern Marianas, the Aleutians, and American
+  Samoa), keyless Met.no MetAlerts for Norwegian waters, and an empty list
+  elsewhere, including nearby waters NWS does not cover, such as British
+  Columbia, Bermuda, and Mexico. An upstream failure inside a covered region is
+  reported as an error rather than an empty list, so a consumer can tell
+  "unavailable" from "none active".
 
 Forecast and observation requests honor the Signal K `startDate` and
 `maxCount` options. Nonempty custom requests are rejected because this provider
@@ -331,5 +336,6 @@ and AccuWeather supply their own whole-day aggregates and are unaffected.
   Met.no, or AccuWeather), so a default keyless install advertises the forecast,
   observation, and warning endpoints. In merge mode the designated forecast
   child backs them.
-- Warnings cover US waters (NWS CAP) and Norwegian waters (Met.no MetAlerts);
-  other regions return an empty list.
+- Warnings cover US waters, including the Caribbean and Pacific territories
+  (NWS CAP), and Norwegian waters (Met.no MetAlerts); other regions return an
+  empty list.

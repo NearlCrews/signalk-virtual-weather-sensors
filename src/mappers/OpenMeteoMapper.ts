@@ -9,26 +9,20 @@
  * those leaves are left unset. Wind chill and heat index are recomputed (as
  * AccuWeather already does for heat index), and wet-bulb globe temperature is
  * estimated so the heat-stress band still functions. Past-hour precipitation
- * comes from the `hourly` companion block rather than the current block, which
- * reports only a 15-minute accumulation; see `pastHourPrecipitationMm`.
+ * sums the `minutely_15` companion block rather than reading the current block,
+ * which reports only a 15-minute accumulation; see `pastHourPrecipitationMm`.
  */
 
-import { deriveBaseWeatherFields } from '../calculators/deriveWeatherFields.js';
+import { buildKeylessBaseWeatherData } from '../calculators/deriveWeatherFields.js';
 import { ERROR_CODES } from '../constants/index.js';
 import { openMeteoSevereCondition } from '../providers/open-meteo-severity.js';
 import type { OpenMeteoCurrentResponse, WeatherData } from '../types/index.js';
 import {
   asOptionalNumber,
   calculateGustFactor,
-  calculateHeatStressIndex,
-  celsiusToKelvin,
-  degreesToRadians,
-  estimateWetBulbGlobeTemperature,
-  floorToUtcHourMs,
-  millibarsToPA,
-  normalizeAngle0To2Pi,
+  isoToEpochMs,
+  optionalCelsiusToKelvin,
   optionalPercentageToRatio,
-  percentageToRatio,
   requireObservationTimestamp,
 } from '../utils/conversions.js';
 import { requireNumber } from './mapperUtils.js';
@@ -66,22 +60,33 @@ export const WMO_DESCRIPTIONS: ReadonlyMap<number, string> = new Map([
   [86, 'Heavy snow showers'],
   [95, 'Thunderstorm'],
   [96, 'Thunderstorm with slight hail'],
+  [97, 'Heavy thunderstorm'],
   [99, 'Thunderstorm with heavy hail'],
 ]);
 
+/** Describe a WMO weather code, or undefined when the code is absent or unmapped. */
+export function wmoDescription(code: number | undefined): string | undefined {
+  return code !== undefined ? WMO_DESCRIPTIONS.get(code) : undefined;
+}
+
+/** Span of the past-hour accumulation, in milliseconds. */
+const PAST_HOUR_MS = 60 * 60 * 1000;
+/** `minutely_15` buckets that tile one hour. */
+const BUCKETS_PER_HOUR = 4;
+/** Open-Meteo reports precipitation to 0.01 mm; summing must not add float noise. */
+const PRECIPITATION_SCALE = 100;
+
 /**
- * Read the past-hour precipitation depth in millimetres from the `hourly`
- * companion block, or `undefined` when the covering bucket is absent.
+ * Sum the past-hour precipitation depth in millimetres from the `minutely_15`
+ * companion block, or `undefined` unless all four buckets are present.
  *
- * `current.precipitation` cannot be used for this. Open-Meteo documents the
- * current block's `interval` as "the duration in seconds used for calculating
- * backward-looking sums", and that interval is 900 s, so `current.precipitation`
- * is a 15-minute depth. `environment.weather.precipitationLastHour` promises a
- * past-hour depth, and scaling a 15-minute sample up would invent a number
- * rather than report one, so the hourly variable is requested alongside the
- * current block instead: Open-Meteo documents it as the "sum of the preceding
- * hour", so the entry stamped at the top of the observation's own hour is the
- * completed hour ending at that stamp.
+ * `current.precipitation` alone cannot be used for this. Open-Meteo documents
+ * the current block's `interval` as "the duration in seconds used for
+ * calculating backward-looking sums", and that interval is 900 s, so it is a
+ * 15-minute depth, and scaling it up would invent a number rather than report
+ * one. Each `minutely_15` bucket is the same kind of 15-minute sum ending at its
+ * stamp, so the four stamped within the hour ending at the observation time
+ * tile exactly the rolling past hour the path promises.
  *
  * Returning `undefined` leaves the path unset, which is the same choice
  * `mapMetNoCurrentToWeatherData` makes when no genuine past-hour depth exists.
@@ -90,22 +95,27 @@ export function pastHourPrecipitationMm(
   response: OpenMeteoCurrentResponse,
   observationTime: unknown
 ): number | undefined {
-  const times = response.hourly?.time;
-  const values = response.hourly?.precipitation;
+  const times = response.minutely_15?.time;
+  const values = response.minutely_15?.precipitation;
   if (times === undefined || values === undefined) return undefined;
 
-  // Compare hour boundaries as epoch milliseconds: the real key is an instant,
-  // and formatting each candidate back into a string would parse and allocate
-  // per hourly entry to answer the same question.
-  const observationHourMs = floorToUtcHourMs(observationTime);
-  if (!Number.isFinite(observationHourMs)) return undefined;
+  const endMs = isoToEpochMs(observationTime);
+  if (!Number.isFinite(endMs)) return undefined;
+  const startMs = endMs - PAST_HOUR_MS;
 
+  let total = 0;
+  let buckets = 0;
   for (let i = 0; i < times.length; i++) {
-    if (floorToUtcHourMs(times[i]) === observationHourMs) {
-      return asOptionalNumber(values[i]);
-    }
+    const stampMs = isoToEpochMs(times[i]);
+    if (!(stampMs > startMs && stampMs <= endMs)) continue;
+    const depth = asOptionalNumber(values[i]);
+    if (depth === undefined) return undefined;
+    total += depth;
+    buckets++;
   }
-  return undefined;
+  return buckets === BUCKETS_PER_HOUR
+    ? Math.round(total * PRECIPITATION_SCALE) / PRECIPITATION_SCALE
+    : undefined;
 }
 
 /**
@@ -124,12 +134,11 @@ function extractOptionalFields(
   const cloudCover = optionalPercentageToRatio(current.cloud_cover);
   const windGustSpeed = asOptionalNumber(current.wind_gusts_10m);
   const windGustFactor = calculateGustFactor(windGustSpeed, windSpeed);
-  const rawApparent = asOptionalNumber(current.apparent_temperature);
-  const apparentTemperature = rawApparent !== undefined ? celsiusToKelvin(rawApparent) : undefined;
+  const apparentTemperature = optionalCelsiusToKelvin(current.apparent_temperature);
   const precipitationLastHour = pastHourPrecipitationMm(response, current.time);
   const weatherCode = asOptionalNumber(current.weather_code);
   const severeCondition = openMeteoSevereCondition(weatherCode);
-  const description = weatherCode !== undefined ? WMO_DESCRIPTIONS.get(weatherCode) : undefined;
+  const description = wmoDescription(weatherCode);
   return {
     ...(description !== undefined && { description }),
     ...(uvIndex !== undefined && { uvIndex }),
@@ -157,48 +166,21 @@ export function mapOpenMeteoCurrentToWeatherData(response: OpenMeteoCurrentRespo
     );
   }
 
-  const temperature = celsiusToKelvin(
-    requireNumber(current.temperature_2m, 'temperature_2m', 'Open-Meteo')
-  );
-  const pressure = millibarsToPA(requireNumber(current.pressure_msl, 'pressure_msl', 'Open-Meteo'));
-  const humidity = percentageToRatio(
-    requireNumber(current.relative_humidity_2m, 'relative_humidity_2m', 'Open-Meteo')
-  );
   const windSpeed = requireNumber(current.wind_speed_10m, 'wind_speed_10m', 'Open-Meteo');
-  const windDirection = normalizeAngle0To2Pi(
-    degreesToRadians(requireNumber(current.wind_direction_10m, 'wind_direction_10m', 'Open-Meteo'))
-  );
-  const dewPoint = celsiusToKelvin(
-    requireNumber(current.dew_point_2m, 'dew_point_2m', 'Open-Meteo')
-  );
-
-  // Open-Meteo carries no wind chill: recompute from the true wind (as the
-  // AccuWeather path does when WindChillTemperature is absent). Heat index is
-  // always computed (NWS Rothfusz), matching the AccuWeather path.
-  const { windChill, heatIndex, beaufortScale, absoluteHumidity, airDensityEnhanced } =
-    deriveBaseWeatherFields(temperature, pressure, humidity, windSpeed);
-
-  // Open-Meteo provides no measured wet-bulb globe temperature: estimate it so
-  // the heat-stress band still works. This is a shade estimate (see
-  // estimateWetBulbGlobeTemperature), conservative under strong sun.
-  const wetBulbGlobeTemperature = estimateWetBulbGlobeTemperature(temperature, humidity);
-  const heatStressIndex = calculateHeatStressIndex(wetBulbGlobeTemperature);
-
   return {
-    temperature,
-    pressure,
-    humidity,
-    windSpeed,
-    windDirection,
-    dewPoint,
-    windChill,
-    heatIndex,
-    beaufortScale,
-    absoluteHumidity,
-    airDensityEnhanced,
-    wetBulbGlobeTemperature,
-    heatStressIndex,
-    timestamp: requireObservationTimestamp(current.time, 'Open-Meteo current conditions'),
+    ...buildKeylessBaseWeatherData({
+      temperatureC: requireNumber(current.temperature_2m, 'temperature_2m', 'Open-Meteo'),
+      pressureHpa: requireNumber(current.pressure_msl, 'pressure_msl', 'Open-Meteo'),
+      humidityPercent: requireNumber(
+        current.relative_humidity_2m,
+        'relative_humidity_2m',
+        'Open-Meteo'
+      ),
+      windSpeedMs: windSpeed,
+      windFromDeg: requireNumber(current.wind_direction_10m, 'wind_direction_10m', 'Open-Meteo'),
+      dewPointC: requireNumber(current.dew_point_2m, 'dew_point_2m', 'Open-Meteo'),
+      timestamp: requireObservationTimestamp(current.time, 'Open-Meteo current conditions'),
+    }),
     ...extractOptionalFields(response, current, windSpeed),
   };
 }

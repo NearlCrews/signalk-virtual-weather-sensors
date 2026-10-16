@@ -12,11 +12,12 @@
  * `pressure_msl` is hPa, temperatures are Celsius, `visibility` is meters, and
  * `cloud_cover` and `relative_humidity_2m` are percentages.
  *
- * The optional `hourly` companion block carries only `precipitation`: the
- * current block's own `precipitation` is a backward-looking sum over its
- * `interval` (900 s), while the hourly variable is documented as the "sum of
- * the preceding hour", which is what `environment.weather.precipitationLastHour`
- * promises. See `pastHourPrecipitationMm` in `src/mappers/OpenMeteoMapper.ts`.
+ * The optional `minutely_15` companion block carries only `precipitation`, each
+ * bucket the sum of the 15 minutes ending at its `time`. The current block's own
+ * `precipitation` is one such bucket, so the past hour that
+ * `environment.weather.precipitationLastHour` promises is the sum of the four
+ * buckets ending at the observation stamp. See `pastHourPrecipitationMm` in
+ * `src/mappers/OpenMeteoMapper.ts`.
  */
 export interface OpenMeteoCurrentResponse {
   readonly current?: {
@@ -35,9 +36,9 @@ export interface OpenMeteoCurrentResponse {
     readonly visibility?: number;
     readonly uv_index?: number;
   };
-  readonly hourly?: {
+  readonly minutely_15?: {
     readonly time?: ReadonlyArray<string>;
-    /** Millimetres accumulated over the hour ending at the matching `time`. */
+    /** Millimetres accumulated over the 15 minutes ending at the matching `time`. */
     readonly precipitation?: ReadonlyArray<number | null>;
   };
 }

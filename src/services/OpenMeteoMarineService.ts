@@ -17,6 +17,7 @@ import {
   DEFAULT_REQUEST_TIMEOUT_MS,
   fetchJson,
   normalizeBaseUrl,
+  RequestCounter,
   setCoordParams,
 } from '../utils/http.js';
 import { assertValidCoordinates } from '../utils/validation.js';
@@ -51,7 +52,7 @@ export class OpenMeteoMarineService {
   private readonly logger: Logger;
   private readonly baseUrl: string;
   private readonly requestTimeoutMs: number;
-  private requestCount = 0;
+  private readonly requests = new RequestCounter();
   private readonly signal: AbortSignal | undefined;
 
   constructor(logger: Logger = () => {}, options?: OpenMeteoMarineOptions) {
@@ -67,12 +68,13 @@ export class OpenMeteoMarineService {
     const url = this.buildUrl(location);
 
     try {
-      this.requestCount++;
-      const response = await fetchJson<OpenMeteoMarineResponse>(url, {
-        timeoutMs: this.requestTimeoutMs,
-        headers: { 'User-Agent': `${PLUGIN.NAME}/${PLUGIN.VERSION}` },
-        signal: this.signal,
-      });
+      const response = await this.requests.track(() =>
+        fetchJson<OpenMeteoMarineResponse>(url, {
+          timeoutMs: this.requestTimeoutMs,
+          headers: { 'User-Agent': PLUGIN.USER_AGENT },
+          signal: this.signal,
+        })
+      );
       const marine = mapOpenMeteoMarineToMarineData(response);
       this.logger('debug', 'Open-Meteo marine retrieved', {
         location: `${location.latitude},${location.longitude}`,
@@ -80,10 +82,7 @@ export class OpenMeteoMarineService {
       });
       return marine;
     } catch (error) {
-      if (isAbortError(error)) {
-        this.requestCount--;
-        throw error;
-      }
+      if (isAbortError(error)) throw error;
       // Log at debug, not error: the marine layer is best-effort, and the
       // orchestrator (WeatherService.runMarineUpdate) surfaces the single
       // operator-facing `warn`. This line just adds the request location for
@@ -111,6 +110,6 @@ export class OpenMeteoMarineService {
    * change, not dead code.
    */
   public getRequestCount(): number {
-    return this.requestCount;
+    return this.requests.value;
   }
 }

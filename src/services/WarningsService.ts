@@ -22,24 +22,52 @@ import {
 } from '../mappers/WarningsMapper.js';
 import type { GeoLocation, Logger } from '../types/index.js';
 import { isAbortError, isWithinBounds, toCoordKey, toErrorMessage } from '../utils/conversions.js';
-import { DEFAULT_REQUEST_TIMEOUT_MS, fetchJson, setCoordParams } from '../utils/http.js';
+import {
+  DEFAULT_REQUEST_TIMEOUT_MS,
+  fetchJson,
+  HttpStatusError,
+  setCoordParams,
+} from '../utils/http.js';
+
+interface CoverageBox {
+  readonly latMin: number;
+  readonly latMax: number;
+  readonly lonMin: number;
+  readonly lonMax: number;
+}
 
 /**
- * Loose bounding box for US NWS coverage (CONUS, Alaska, Hawaii, the
- * territories, and their offshore marine zones). Deliberately generous: NWS
- * returns no features for a point it does not cover, and the fetch is
- * best-effort, so over-inclusion only costs an occasional empty lookup.
+ * Loose bounding boxes for US NWS coverage: CONUS, Alaska, Hawaii, Puerto Rico,
+ * and the Virgin Islands; Guam and the Northern Marianas; the Aleutians west of
+ * the antimeridian; and American Samoa. The first is deliberately generous, and
+ * NWS answers 400 "out of bounds" for a point inside it that it does not cover
+ * (British Columbia, Mexico, Bermuda), which `fetchNws` treats as "no
+ * warnings". The Pacific boxes stay tight, so a vessel off Japan or Kamchatka
+ * makes no NWS request at all.
  */
-const US_BOX = { latMin: 15, latMax: 72, lonMin: -180, lonMax: -64 } as const;
+const US_BOXES: readonly CoverageBox[] = [
+  { latMin: 15, latMax: 72, lonMin: -180, lonMax: -64 },
+  { latMin: 12, latMax: 21, lonMin: 144, lonMax: 147 },
+  { latMin: 50, latMax: 56, lonMin: 170, lonMax: 180 },
+  { latMin: -16, latMax: -10, lonMin: -172, lonMax: -167 },
+];
+
+/**
+ * NWS answer for a point outside its coverage: status 400 with the detail
+ * `Parameter "point" is invalid: out of bounds`. Both must match, so a 400 for
+ * any other reason (a malformed request) still reports a failure rather than a
+ * false all-clear.
+ */
+const NWS_OUT_OF_BOUNDS = { status: 400, detail: 'out of bounds' } as const;
 
 /**
  * Loose bounding box for Met.no MetAlerts coverage (Norway and Norwegian waters:
  * the mainland, the Norwegian Sea, the North Sea Norwegian sector, the Barents
- * Sea, Svalbard, and Jan Mayen). Deliberately generous, like US_BOX: MetAlerts
+ * Sea, Svalbard, and Jan Mayen). Deliberately generous, like US_BOXES: MetAlerts
  * returns no features for a position it does not cover, and the fetch is
  * best-effort, so over-inclusion only costs an occasional empty lookup.
  */
-const NORDIC_BOX = { latMin: 54, latMax: 82, lonMin: -12, lonMax: 37 } as const;
+const NORDIC_BOX: CoverageBox = { latMin: 54, latMax: 82, lonMin: -12, lonMax: 37 };
 
 /** Met.no MetAlerts active-alerts endpoint; position and language are added per request. */
 const METALERTS_URL = 'https://api.met.no/weatherapi/metalerts/2.0/current.json';
@@ -77,10 +105,7 @@ export class WarningsService {
     return [];
   }
 
-  private inBox(
-    location: GeoLocation,
-    box: { latMin: number; latMax: number; lonMin: number; lonMax: number }
-  ): boolean {
+  private inBox(location: GeoLocation, box: CoverageBox): boolean {
     return (
       isWithinBounds(location.latitude, box.latMin, box.latMax) &&
       isWithinBounds(location.longitude, box.lonMin, box.lonMax)
@@ -88,7 +113,7 @@ export class WarningsService {
   }
 
   private inUsCoverage(location: GeoLocation): boolean {
-    return this.inBox(location, US_BOX);
+    return US_BOXES.some((box) => this.inBox(location, box));
   }
 
   private inNordicCoverage(location: GeoLocation): boolean {
@@ -108,6 +133,14 @@ export class WarningsService {
       return mapNwsAlertsToWarnings(response);
     } catch (error) {
       if (isAbortError(error)) throw error;
+      if (
+        error instanceof HttpStatusError &&
+        error.status === NWS_OUT_OF_BOUNDS.status &&
+        error.body.includes(NWS_OUT_OF_BOUNDS.detail)
+      ) {
+        this.logger('debug', 'Position is outside NWS coverage, returning no warnings', { point });
+        return [];
+      }
       const message = toErrorMessage(error);
       this.logger('warn', 'NWS warnings fetch failed', {
         point,

@@ -10,7 +10,7 @@
  */
 
 import type { WeatherData as SKWeatherData } from '@signalk/server-api';
-import { PLUGIN } from '../constants/index.js';
+import { FORECAST_CACHE, PLUGIN } from '../constants/index.js';
 import { WEATHER_PROVIDER_SHORT_LABELS } from '../constants/notifications-shared.js';
 import {
   mapOpenMeteoCurrentToObservation,
@@ -31,6 +31,7 @@ import {
   DEFAULT_REQUEST_TIMEOUT_MS,
   fetchJson,
   normalizeBaseUrl,
+  RequestCounter,
   setCoordParams,
 } from '../utils/http.js';
 import { assertValidCoordinates } from '../utils/validation.js';
@@ -57,20 +58,21 @@ const CURRENT_PARAMS = [
   'uv_index',
 ].join(',');
 /**
- * Hourly companion variable requested alongside the current block. The current
- * block's `precipitation` is a backward-looking sum over its 900-second
- * `interval`, so it cannot fill `environment.weather.precipitationLastHour`;
- * the hourly variable is documented as the sum of the preceding hour and does.
+ * 15-minutely companion variable requested alongside the current block. The
+ * current block's `precipitation` covers only its 900-second `interval`, so
+ * `environment.weather.precipitationLastHour` sums the four 15-minute buckets
+ * that end at the observation stamp instead: a rolling past hour, not the last
+ * completed clock hour, which lagged by up to 59 minutes.
  */
-const CURRENT_COMPANION_HOURLY_PARAMS = 'precipitation';
+const CURRENT_COMPANION_MINUTELY_PARAMS = 'precipitation';
 /**
- * Hourly companion window: the hour before the current one plus the current
- * one. `forecast_hours=1` yields the bucket stamped at the top of the current
- * hour, which covers the hour that has just elapsed, and `past_hours=1` keeps
- * the preceding bucket available when a provider clock straddles the boundary.
+ * 15-minutely companion window. `forecast_minutely_15=1` yields the bucket at
+ * the current step, which is the observation stamp, and `past_minutely_15=4`
+ * supplies the three before it plus one spare for a stamp that straddles a
+ * step boundary.
  */
-const CURRENT_COMPANION_PAST_HOURS = 1;
-const CURRENT_COMPANION_FORECAST_HOURS = 1;
+const CURRENT_COMPANION_PAST_STEPS = 4;
+const CURRENT_COMPANION_FORECAST_STEPS = 1;
 /** Hourly-block variables for the 48-hour point-forecast endpoint. */
 const HOURLY_PARAMS = [
   'temperature_2m',
@@ -104,12 +106,6 @@ const DAILY_PARAMS = [
 const HOURLY_FORECAST_DAYS = 2;
 /** Days fetched for the daily forecast, matching forecastCapabilities.dailyDays. */
 const DAILY_FORECAST_DAYS = 7;
-/** Current observations change quickly enough to warrant a short v2 memo. */
-const OBSERVATION_CACHE_TTL_MS = 10 * 60 * 1000;
-/** Hourly model output is stable across dashboard refreshes. */
-const HOURLY_CACHE_TTL_MS = 30 * 60 * 1000;
-/** Daily model output changes slowly, so retain it longer. */
-const DAILY_CACHE_TTL_MS = 3 * 60 * 60 * 1000;
 
 export interface OpenMeteoOptions {
   /** Override the Open-Meteo host (self-hosted or paid instance). */
@@ -131,10 +127,9 @@ export class OpenMeteoService implements ForecastCapableProvider {
   private readonly logger: Logger;
   private readonly baseUrl: string;
   private readonly requestTimeoutMs: number;
-  /** Cumulative attempted-fetch count (incremented before each request), for the status banner. */
-  private requestCount = 0;
+  /** Cumulative attempted-fetch count, for the status banner. */
+  private readonly requests = new RequestCounter();
   private readonly signal: AbortSignal | undefined;
-  private readonly userAgent = `${PLUGIN.NAME}/${PLUGIN.VERSION}`;
   private readonly observationCache: CoalescingTtlCache<OpenMeteoCurrentResponse>;
   private readonly hourlyCache: CoalescingTtlCache<OpenMeteoForecastResponse>;
   private readonly dailyCache: CoalescingTtlCache<OpenMeteoForecastResponse>;
@@ -145,75 +140,55 @@ export class OpenMeteoService implements ForecastCapableProvider {
     this.requestTimeoutMs = options?.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS;
     this.signal = options?.signal;
     this.observationCache = new CoalescingTtlCache(
-      OBSERVATION_CACHE_TTL_MS,
-      OBSERVATION_CACHE_TTL_MS,
+      FORECAST_CACHE.OBSERVATION_TTL_MS,
+      FORECAST_CACHE.OBSERVATION_TTL_MS,
       this.logger
     );
     this.hourlyCache = new CoalescingTtlCache(
-      HOURLY_CACHE_TTL_MS,
-      HOURLY_CACHE_TTL_MS,
+      FORECAST_CACHE.HOURLY_TTL_MS,
+      FORECAST_CACHE.HOURLY_TTL_MS,
       this.logger
     );
-    this.dailyCache = new CoalescingTtlCache(DAILY_CACHE_TTL_MS, DAILY_CACHE_TTL_MS, this.logger);
+    this.dailyCache = new CoalescingTtlCache(
+      FORECAST_CACHE.DAILY_TTL_MS,
+      FORECAST_CACHE.DAILY_TTL_MS,
+      this.logger
+    );
 
     this.logger('info', 'OpenMeteoService initialized', { baseUrl: this.baseUrl });
   }
 
   public async fetchCurrentWeather(location: GeoLocation): Promise<WeatherData> {
     assertValidCoordinates(location, 'Open-Meteo request');
-    const url = this.buildUrl(location);
-
-    try {
-      this.requestCount++;
-      const response = await fetchJson<OpenMeteoCurrentResponse>(url, {
-        timeoutMs: this.requestTimeoutMs,
-        headers: { 'User-Agent': this.userAgent },
-        signal: this.signal,
-      });
-      const weatherData = mapOpenMeteoCurrentToWeatherData(response);
-
-      this.logger('info', 'Open-Meteo weather retrieved', {
-        location: `${location.latitude},${location.longitude}`,
-        temperature: weatherData.temperature,
-        windSpeed: weatherData.windSpeed,
-      });
-
-      return weatherData;
-    } catch (error) {
-      if (isAbortError(error)) {
-        this.requestCount--;
-        throw error;
-      }
-      this.logger('error', 'Failed to fetch Open-Meteo weather', {
-        location: `${location.latitude},${location.longitude}`,
-        error: toErrorMessage(error),
-      });
-      throw error;
-    }
+    // A mapping failure is logged by the WeatherService update that called
+    // this, as on the Met.no path, so only the fetch is wrapped here.
+    const response = await this.logFailure('weather', location, () =>
+      this.fetchResponse<OpenMeteoCurrentResponse>(this.buildUrl(location))
+    );
+    const weatherData = mapOpenMeteoCurrentToWeatherData(response);
+    this.logger('info', 'Open-Meteo weather retrieved', {
+      location: `${location.latitude},${location.longitude}`,
+      temperature: weatherData.temperature,
+      windSpeed: weatherData.windSpeed,
+    });
+    return weatherData;
   }
 
   /** Fetch a single current observation at `location` in the SK v2 WeatherData shape. */
   public async getObservation(location: GeoLocation): Promise<SKWeatherData> {
     assertValidCoordinates(location, 'Open-Meteo observation');
-    try {
+    return this.logFailure('observation', location, async () => {
       const response = await this.observationCache.get(toCoordKey(location), () =>
         this.fetchResponse<OpenMeteoCurrentResponse>(this.buildUrl(location))
       );
       return mapOpenMeteoCurrentToObservation(response);
-    } catch (error) {
-      if (isAbortError(error)) throw error;
-      this.logger('error', 'Failed to fetch Open-Meteo observation', {
-        location: `${location.latitude},${location.longitude}`,
-        error: toErrorMessage(error),
-      });
-      throw error;
-    }
+    });
   }
 
   /** Fetch hourly (point) forecasts for the next 48 hours in ascending order. */
   public async getHourlyForecast(location: GeoLocation): Promise<SKWeatherData[]> {
     assertValidCoordinates(location, 'Open-Meteo hourly forecast');
-    try {
+    return this.logFailure('hourly forecast', location, async () => {
       const url = this.buildForecastUrl(location, {
         hourly: HOURLY_PARAMS,
         forecastDays: HOURLY_FORECAST_DAYS,
@@ -222,20 +197,13 @@ export class OpenMeteoService implements ForecastCapableProvider {
         this.fetchResponse<OpenMeteoForecastResponse>(url)
       );
       return mapOpenMeteoHourlyToForecasts(response);
-    } catch (error) {
-      if (isAbortError(error)) throw error;
-      this.logger('error', 'Failed to fetch Open-Meteo hourly forecast', {
-        location: `${location.latitude},${location.longitude}`,
-        error: toErrorMessage(error),
-      });
-      throw error;
-    }
+    });
   }
 
   /** Fetch daily forecasts for the next 7 days in ascending order. */
   public async getDailyForecast(location: GeoLocation): Promise<SKWeatherData[]> {
     assertValidCoordinates(location, 'Open-Meteo daily forecast');
-    try {
+    return this.logFailure('daily forecast', location, async () => {
       const url = this.buildForecastUrl(location, {
         daily: DAILY_PARAMS,
         forecastDays: DAILY_FORECAST_DAYS,
@@ -244,12 +212,24 @@ export class OpenMeteoService implements ForecastCapableProvider {
         this.fetchResponse<OpenMeteoForecastResponse>(url)
       );
       return mapOpenMeteoDailyToForecasts(response);
+    });
+  }
+
+  /** Run one public fetch, logging a failure other than an abort before rethrowing it. */
+  private async logFailure<T>(
+    what: string,
+    location: GeoLocation,
+    run: () => Promise<T>
+  ): Promise<T> {
+    try {
+      return await run();
     } catch (error) {
-      if (isAbortError(error)) throw error;
-      this.logger('error', 'Failed to fetch Open-Meteo daily forecast', {
-        location: `${location.latitude},${location.longitude}`,
-        error: toErrorMessage(error),
-      });
+      if (!isAbortError(error)) {
+        this.logger('error', `Failed to fetch Open-Meteo ${what}`, {
+          location: `${location.latitude},${location.longitude}`,
+          error: toErrorMessage(error),
+        });
+      }
       throw error;
     }
   }
@@ -266,15 +246,15 @@ export class OpenMeteoService implements ForecastCapableProvider {
   }
 
   /**
-   * Build the current-block request URL, plus the two-hour `precipitation`
-   * companion series the past-hour accumulation is read from.
+   * Build the current-block request URL, plus the 15-minutely `precipitation`
+   * companion series the past-hour accumulation is summed from.
    */
   private buildUrl(location: GeoLocation): URL {
     const url = this.buildBaseUrl(location);
     url.searchParams.set('current', CURRENT_PARAMS);
-    url.searchParams.set('hourly', CURRENT_COMPANION_HOURLY_PARAMS);
-    url.searchParams.set('past_hours', String(CURRENT_COMPANION_PAST_HOURS));
-    url.searchParams.set('forecast_hours', String(CURRENT_COMPANION_FORECAST_HOURS));
+    url.searchParams.set('minutely_15', CURRENT_COMPANION_MINUTELY_PARAMS);
+    url.searchParams.set('past_minutely_15', String(CURRENT_COMPANION_PAST_STEPS));
+    url.searchParams.set('forecast_minutely_15', String(CURRENT_COMPANION_FORECAST_STEPS));
     return url;
   }
 
@@ -297,36 +277,25 @@ export class OpenMeteoService implements ForecastCapableProvider {
     return url;
   }
 
-  /** Issue one upstream request and keep the attempted-request counter honest on abort. */
-  private async fetchResponse<T>(url: URL): Promise<T> {
-    this.requestCount++;
-    try {
-      return await fetchJson<T>(url, {
+  /** Issue one counted upstream request. */
+  private fetchResponse<T>(url: URL): Promise<T> {
+    return this.requests.track(() =>
+      fetchJson<T>(url, {
         timeoutMs: this.requestTimeoutMs,
-        headers: { 'User-Agent': this.userAgent },
+        headers: { 'User-Agent': PLUGIN.USER_AGENT },
         signal: this.signal,
-      });
-    } catch (error) {
-      if (isAbortError(error)) this.requestCount--;
-      throw error;
-    }
+      })
+    );
   }
 
   /** Cumulative request count, for the status banner. */
   public getRequestCount(): number {
-    return this.requestCount;
+    return this.requests.value;
   }
 
   /** Keyless: Open-Meteo has no per-key daily cap, so there is no rolling window to report. */
   public getRequestCountLast24h(): number {
     return 0;
-  }
-
-  /** Number of cached v2 observation and forecast responses. */
-  public getCacheStats(): { size: number } {
-    return {
-      size: this.observationCache.size() + this.hourlyCache.size() + this.dailyCache.size(),
-    };
   }
 
   public isCurrentWeatherFetchBlocked(): boolean {

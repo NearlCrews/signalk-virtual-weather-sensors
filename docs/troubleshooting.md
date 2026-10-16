@@ -6,7 +6,8 @@ string to a cause and a fix.
 
 The API-key, rate-limit, and quota banners below apply whenever AccuWeather is
 the selected single source or participates in a merged source. The keyless
-sources (the default Open-Meteo and Met.no) have no per-key quota.
+sources (the default Open-Meteo and Met.no) have no per-key quota, so the
+status banner shows no `K/Q today` count for them.
 
 ## `API_UNAUTHORIZED: Invalid API key` (HTTP 401)
 

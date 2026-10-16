@@ -32,7 +32,7 @@
 import { deriveBaseWeatherFields } from '../calculators/deriveWeatherFields.js';
 import type { SevereCondition, WeatherData } from '../types/index.js';
 import type { NotificationState } from '../types/plugin.js';
-import { calculateGustFactor, normalizeAngle0To2Pi } from '../utils/conversions.js';
+import { calculateGustFactor, normalizeAngle0To2Pi, TWO_PI } from '../utils/conversions.js';
 
 // ---- Public types ----
 
@@ -171,7 +171,7 @@ function circularMean(dirs: number[], speeds: number[], fallback: number): numbe
   if (magnitude < 1e-9) return fallback;
   const angle = normalizeAngle0To2Pi(Math.atan2(sinSum, cosSum));
   // Snap floating-point values within 1e-9 of 2π back to 0 (they are equal in circular arithmetic).
-  return angle >= 2 * Math.PI - 1e-9 ? 0 : angle;
+  return angle >= TWO_PI - 1e-9 ? 0 : angle;
 }
 
 /** Highest present numeric value. */

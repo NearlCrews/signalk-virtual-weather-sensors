@@ -37,7 +37,6 @@ function stubProvider(
     }),
     getRequestCount: () => 1,
     getRequestCountLast24h: () => 2,
-    getCacheStats: () => ({ size: 3 }),
   };
 }
 
@@ -78,12 +77,19 @@ describe('MergingWeatherProvider', () => {
     const svc = new MergingWeatherProvider([fc, stubProvider({ fail: true })], fc, () => {});
     await expect(svc.fetchCurrentWeather({ latitude: 0, longitude: 0 })).rejects.toThrow();
   });
+  it('sums the caps of the children that declare one', () => {
+    const fc = forecastStub();
+    const metered = { ...stubProvider({}), dailyQuota: 50 };
+    expect(new MergingWeatherProvider([fc, metered], fc, () => {}).dailyQuota).toBe(50);
+    expect(new MergingWeatherProvider([fc, stubProvider({})], fc, () => {}).dailyQuota).toBe(
+      undefined
+    );
+  });
   it('sums child request counts and delegates forecasts to the designated child', async () => {
     const fc = forecastStub();
     const svc = new MergingWeatherProvider([fc, stubProvider({})], fc, () => {});
     expect(svc.getRequestCount()).toBe(2); // 1 + 1
     expect(svc.getRequestCountLast24h()).toBe(4); // 2 + 2
-    expect(svc.getCacheStats()).toEqual({ size: 6 }); // 3 + 3
     expect(svc.forecastCapabilities).toEqual({ hourlyHours: 48, dailyDays: 9 });
     await svc.getHourlyForecast({ latitude: 0, longitude: 0 });
     expect(fc.getHourlyForecast).toHaveBeenCalled();

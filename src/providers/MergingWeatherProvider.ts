@@ -12,6 +12,7 @@
  */
 
 import type { WeatherData as SKWeatherData } from '@signalk/server-api'; // aliased to avoid collision with the internal WeatherData type
+import { DEFAULT_MAX_OBSERVATION_AGE_MS } from '../constants/index.js';
 import type { GeoLocation, Logger, WeatherData } from '../types/index.js';
 import { isAbortError, normalizeIsoTimestamp, toErrorMessage } from '../utils/conversions.js';
 import { mergeWeatherData } from './mergeWeatherData.js';
@@ -23,7 +24,6 @@ import type {
 
 export const MERGED_PROVIDER_NAME = 'Virtual Weather Sensors (merged)';
 export const MERGE_MAX_OBSERVATION_SKEW_MS = 60 * 60 * 1000;
-const DEFAULT_MAX_OBSERVATION_AGE_MS = 3 * 60 * 60 * 1000;
 
 /** Collect fulfilled values from allSettled results in their original order. */
 function collectSurvivors(
@@ -191,8 +191,12 @@ export class MergingWeatherProvider implements ForecastCapableProvider {
     return this.sumAcrossChildren((c) => c.getRequestCountLast24h());
   }
 
-  getCacheStats(): { size: number } {
-    return { size: this.sumAcrossChildren((c) => c.getCacheStats().size) };
+  /** The children's caps added up, like the request counts, or absent when none meters. */
+  get dailyQuota(): number | undefined {
+    const quotas = this.children
+      .map((child) => child.dailyQuota)
+      .filter((quota): quota is number => quota !== undefined);
+    return quotas.length > 0 ? quotas.reduce((sum, quota) => sum + quota, 0) : undefined;
   }
 
   /**

@@ -22,25 +22,21 @@ import { UNITS } from '../constants/index.js';
 import type { OpenMeteoCurrentResponse, OpenMeteoForecastResponse } from '../types/index.js';
 import {
   asOptionalNumber,
-  millibarsToPA,
   normalizeUtcDate,
   optionalCelsiusToKelvin,
+  optionalMillibarsToPA,
+  optionalMmToM,
   optionalPercentageToRatio,
   requireIsoTimestamp,
   requireObservationTimestamp,
 } from '../utils/conversions.js';
-import { pastHourPrecipitationMm, WMO_DESCRIPTIONS } from './OpenMeteoMapper.js';
+import { pastHourPrecipitationMm, wmoDescription } from './OpenMeteoMapper.js';
 import {
   buildSkOutsideSI,
   buildSunBlock,
   buildWindFromMs,
   type SKOutside,
 } from './skV2Envelope.js';
-
-/** Resolve a WMO weather code to a plain-language description, returning undefined when the code is absent or unmapped. */
-function wmoDescription(code: number | undefined): string | undefined {
-  return code !== undefined ? WMO_DESCRIPTIONS.get(code) : undefined;
-}
 
 /** Map the Open-Meteo hourly block to ascending-order `point` WeatherData entries. */
 export function mapOpenMeteoHourlyToForecasts(
@@ -59,8 +55,7 @@ export function mapOpenMeteoHourlyToForecasts(
     const precipitationMm = asOptionalNumber(h?.precipitation?.[i]);
     const description = wmoDescription(asOptionalNumber(h?.weather_code?.[i]));
 
-    const precipitationVolumeM =
-      precipitationMm !== undefined ? precipitationMm * UNITS.PRECIPITATION.MM_TO_M : undefined;
+    const precipitationVolumeM = optionalMmToM(precipitationMm);
     const outside = buildSkOutsideSI({
       temperatureK,
       dewPointK,
@@ -150,15 +145,14 @@ export function mapOpenMeteoCurrentToObservation(
   const visibilityM = asOptionalNumber(c?.visibility); // already meters
   const cloudCover = optionalPercentageToRatio(c?.cloud_cover);
   const uvIndex = asOptionalNumber(c?.uv_index);
-  // Past-hour depth from the hourly companion block, never the current block's
-  // 15-minute backward sum: `outside.precipitationVolume` on an observation is
+  // Past-hour depth summed from the 15-minutely companion block, never the
+  // current block's single 15-minute sum: `outside.precipitationVolume` on an observation is
   // the same quantity `environment.weather.precipitationLastHour` publishes.
   const precipitationMm = pastHourPrecipitationMm(response, c?.time);
   const description = wmoDescription(asOptionalNumber(c?.weather_code));
 
-  const pressurePa = pressureMbar !== undefined ? millibarsToPA(pressureMbar) : undefined;
-  const precipitationVolumeM =
-    precipitationMm !== undefined ? precipitationMm * UNITS.PRECIPITATION.MM_TO_M : undefined;
+  const pressurePa = optionalMillibarsToPA(pressureMbar);
+  const precipitationVolumeM = optionalMmToM(precipitationMm);
   const outside = buildSkOutsideSI({
     temperatureK,
     dewPointK,

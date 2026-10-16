@@ -21,19 +21,19 @@
 
 import type { WeatherData as SKWeatherData } from '@signalk/server-api';
 import { UNITS } from '../constants/index.js';
-import { metNoSymbolBase } from '../providers/met-no-severity.js';
 import type { MetNoLocationforecastResponse, MetNoTimeseriesEntry } from '../types/index.js';
 import {
   asOptionalNumber,
-  millibarsToPA,
   normalizeIsoTimestamp,
   normalizeUtcDate,
   optionalCelsiusToKelvin,
+  optionalMillibarsToPA,
+  optionalMmToM,
   optionalPercentageToRatio,
   requireIsoTimestamp,
   requireObservationTimestamp,
 } from '../utils/conversions.js';
-import { MET_NO_DESCRIPTIONS } from './MetNoMapper.js';
+import { metNoDescription } from './MetNoMapper.js';
 import { buildSkOutsideSI, buildWindFromMs } from './skV2Envelope.js';
 
 const GRID_HOURS = new Set([0, 6, 12, 18]);
@@ -63,31 +63,26 @@ function mapEntry(entry: MetNoTimeseriesEntry, type: 'point' | 'observation'): S
   const instant = entry.data?.instant?.details;
   const next1 = entry.data?.next_1_hours;
 
-  const pressureMbar = asOptionalNumber(instant?.air_pressure_at_sea_level);
   const precipitationMm = asOptionalNumber(next1?.details?.precipitation_amount);
   const outside = buildSkOutsideSI({
     temperatureK: optionalCelsiusToKelvin(instant?.air_temperature),
     dewPointK: optionalCelsiusToKelvin(instant?.dew_point_temperature),
     rhRatio: optionalPercentageToRatio(instant?.relative_humidity),
-    pressurePa: pressureMbar !== undefined ? millibarsToPA(pressureMbar) : undefined,
+    pressurePa: optionalMillibarsToPA(instant?.air_pressure_at_sea_level),
     cloudCover: optionalPercentageToRatio(instant?.cloud_area_fraction),
     uvIndex: asOptionalNumber(instant?.ultraviolet_index_clear_sky),
     // next_1_hours covers the hour AFTER the entry time, so it is a forecast
     // quantity. Publishing it on an observation would make the same field mean
     // different things per provider, which is why the internal mapper leaves
     // precipitationLastHour unset for Met.no as well.
-    precipitationVolumeM:
-      type === 'point' && precipitationMm !== undefined
-        ? precipitationMm * UNITS.PRECIPITATION.MM_TO_M
-        : undefined,
+    precipitationVolumeM: type === 'point' ? optionalMmToM(precipitationMm) : undefined,
   });
   const wind = buildWindFromMs(
     asOptionalNumber(instant?.wind_speed),
     asOptionalNumber(instant?.wind_from_direction),
     asOptionalNumber(instant?.wind_speed_of_gust)
   );
-  const base = metNoSymbolBase(next1?.summary?.symbol_code);
-  const description = base !== undefined ? MET_NO_DESCRIPTIONS.get(base) : undefined;
+  const description = metNoDescription(next1?.summary?.symbol_code);
 
   return {
     date:
@@ -171,8 +166,7 @@ function processGridWindow(entry: MetNoTimeseriesEntry, byDay: Map<string, DayAc
   const rawPrecip = asOptionalNumber(next6.details.precipitation_amount);
   const precipMm = rawPrecip ?? 0;
   const precipPresent = rawPrecip !== undefined;
-  const base = metNoSymbolBase(next6.summary?.symbol_code);
-  const desc = base !== undefined ? MET_NO_DESCRIPTIONS.get(base) : undefined;
+  const desc = metNoDescription(next6.summary?.symbol_code);
 
   const existing = byDay.get(day);
   if (existing === undefined) {

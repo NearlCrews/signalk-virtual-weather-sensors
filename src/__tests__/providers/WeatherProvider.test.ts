@@ -3,7 +3,6 @@ import {
   type CurrentWeatherProvider,
   type ForecastCapableProvider,
   supportsForecasts,
-  supportsObservations,
 } from '../../providers/WeatherProvider.js';
 import type { GeoLocation, WeatherData } from '../../types/index.js';
 
@@ -15,7 +14,6 @@ const currentOnly: CurrentWeatherProvider = {
   },
   getRequestCount: () => 0,
   getRequestCountLast24h: () => 0,
-  getCacheStats: () => ({ size: 0 }),
 };
 
 const full: ForecastCapableProvider = {
@@ -29,16 +27,14 @@ const full: ForecastCapableProvider = {
 };
 
 describe('provider capability guards', () => {
-  it('supportsObservations is false for a current-only provider', () => {
-    expect(supportsObservations(currentOnly)).toBe(false);
+  it('supportsForecasts is false for a current-only provider', () => {
+    expect(supportsForecasts(currentOnly)).toBe(false);
   });
-  it('supportsObservations and supportsForecasts are true for a full provider', () => {
-    expect(supportsObservations(full)).toBe(true);
+  it('supportsForecasts is true for a full provider', () => {
     expect(supportsForecasts(full)).toBe(true);
   });
   it('supportsForecasts is false when only getObservation is present', () => {
     const obsOnly = { ...currentOnly, getObservation: async () => ({}) as never };
-    expect(supportsObservations(obsOnly)).toBe(true);
     expect(supportsForecasts(obsOnly)).toBe(false);
   });
 });

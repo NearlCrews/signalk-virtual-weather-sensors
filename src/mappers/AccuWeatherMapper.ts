@@ -19,7 +19,7 @@
  */
 
 import { deriveBaseWeatherFields } from '../calculators/deriveWeatherFields.js';
-import { ACCUWEATHER, UNITS } from '../constants/index.js';
+import { ACCUWEATHER } from '../constants/index.js';
 import { accuWeatherSevereCondition } from '../providers/accuweather-severity.js';
 import type { AccuWeatherCurrentConditions, WeatherData } from '../types/index.js';
 import {
@@ -33,6 +33,8 @@ import {
   millibarsToPA,
   normalizeAngle0To2Pi,
   optionalCelsiusToKelvin,
+  optionalKmhToMS,
+  optionalKmToM,
   optionalPercentageToRatio,
   percentageToRatio,
   providerDescription,
@@ -74,12 +76,9 @@ function extractEnhancedConditions(
   conditions: AccuWeatherCurrentConditions,
   windSpeed: number
 ): Partial<WeatherData> {
-  const rawWindGustKmh = asOptionalNumber(conditions.WindGust?.Speed?.Metric?.Value);
-  const windGustSpeed = rawWindGustKmh !== undefined ? kmhToMS(rawWindGustKmh) : undefined;
+  const windGustSpeed = optionalKmhToMS(conditions.WindGust?.Speed?.Metric?.Value);
   const windGustFactor = calculateGustFactor(windGustSpeed, windSpeed);
-  const rawVisibilityKm = asOptionalNumber(conditions.Visibility?.Metric?.Value);
-  const visibility =
-    rawVisibilityKm !== undefined ? rawVisibilityKm * UNITS.LENGTH.KM_TO_M : undefined;
+  const visibility = optionalKmToM(conditions.Visibility?.Metric?.Value);
   const cloudCeiling = asOptionalNumber(conditions.Ceiling?.Metric?.Value);
   const precipitationLastHour = asOptionalNumber(conditions.Precip1hr?.Metric?.Value);
   const temperatureDeparture24h = asOptionalNumber(

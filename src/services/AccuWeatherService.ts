@@ -64,6 +64,7 @@ export class AccuWeatherService implements CurrentWeatherProvider {
   /** `$source` stamped on AccuWeather-sourced deltas. */
   public readonly sourceRef = 'accuweather';
   public readonly maxObservationAgeMs = 2 * 60 * 60 * 1000;
+  public readonly usesApiKey = true;
 
   private readonly config: AccuWeatherConfig;
   private readonly logger: Logger;
@@ -141,7 +142,7 @@ export class AccuWeatherService implements CurrentWeatherProvider {
       requestTimeoutMs: this.config.requestTimeout,
       retryAttempts: this.config.retryAttempts,
       retryDelayMs: this.config.retryDelay,
-      userAgent: `${PLUGIN.NAME}/${PLUGIN.VERSION}`,
+      userAgent: PLUGIN.USER_AGENT,
       // AccuWeather authenticates with a bearer token. Sending the key as a
       // header keeps it out of request URLs, and therefore out of every log
       // line and error body that echoes the URL.
@@ -540,11 +541,6 @@ export class AccuWeatherService implements CurrentWeatherProvider {
     this.logger('debug', 'Location and forecast caches cleared');
   }
 
-  /** Location-cache size, for monitoring. */
-  public getCacheStats(): { size: number } {
-    return { size: this.locationCache.size() };
-  }
-
   /**
    * Cumulative HTTP fetch attempts (initial plus retries), seeded from the
    * persisted quota snapshot, so the count deliberately spans previous process
@@ -561,6 +557,11 @@ export class AccuWeatherService implements CurrentWeatherProvider {
    */
   public getRequestCountLast24h(): number {
     return this.requestWindow.countLast24h();
+  }
+
+  /** The configured `dailyApiQuota`; 0 or absent disables the cap. */
+  public get dailyQuota(): number | undefined {
+    return this.config.dailyApiQuota;
   }
 
   public isCurrentWeatherFetchBlocked(): boolean {

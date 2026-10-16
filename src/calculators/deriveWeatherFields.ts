@@ -1,15 +1,24 @@
 /**
  * Shared recompute of the WeatherData fields that are pure functions of the base
- * measurements (temperature, pressure, humidity, and sustained wind). The two
+ * measurements (temperature, pressure, humidity, and sustained wind). The
  * provider mappers and the merge engine all derive these the same way, so the
- * assembly lives here once. WBGT and heatStressIndex are NOT here: their source
- * differs by caller (a mapper estimates WBGT, the merge selects it), so each
- * caller computes those with the shared conversions helpers directly.
+ * assembly lives here once. WBGT and heatStressIndex are NOT in
+ * `deriveBaseWeatherFields`: their source differs by caller (a keyless mapper
+ * estimates WBGT, AccuWeather measures it, the merge selects it), so the
+ * keyless estimate lives in `buildKeylessBaseWeatherData` below.
  */
+import type { WeatherData } from '../types/index.js';
 import {
   calculateAbsoluteHumidity,
   calculateAirDensity,
   calculateBeaufortScale,
+  calculateHeatStressIndex,
+  celsiusToKelvin,
+  degreesToRadians,
+  estimateWetBulbGlobeTemperature,
+  millibarsToPA,
+  normalizeAngle0To2Pi,
+  percentageToRatio,
 } from '../utils/conversions.js';
 import { WindCalculator } from './WindCalculator.js';
 
@@ -40,5 +49,46 @@ export function deriveBaseWeatherFields(
     beaufortScale: calculateBeaufortScale(windSpeedMs),
     absoluteHumidity: calculateAbsoluteHumidity(temperatureK, humidity),
     airDensityEnhanced: calculateAirDensity(temperatureK, pressurePa, humidity),
+  };
+}
+
+/** The six required readings, in the units both keyless APIs report them. */
+export interface KeylessBaseReadings {
+  readonly temperatureC: number;
+  readonly pressureHpa: number;
+  readonly humidityPercent: number;
+  readonly windSpeedMs: number;
+  /** Direction the wind blows FROM, degrees true. */
+  readonly windFromDeg: number;
+  readonly dewPointC: number;
+  /** Validated RFC 3339 observation time. */
+  readonly timestamp: string;
+}
+
+/**
+ * Build the required `WeatherData` fields from a keyless provider's readings.
+ * Open-Meteo and Met.no carry no wind chill and no measured wet-bulb globe
+ * temperature, so wind chill and heat index are recomputed from the true wind
+ * (as the AccuWeather path does when its own value is absent) and WBGT is
+ * estimated so the heat-stress band still works. The estimate is a shade
+ * formula (see `estimateWetBulbGlobeTemperature`), so it reads low in strong sun.
+ */
+export function buildKeylessBaseWeatherData(readings: KeylessBaseReadings): WeatherData {
+  const temperature = celsiusToKelvin(readings.temperatureC);
+  const pressure = millibarsToPA(readings.pressureHpa);
+  const humidity = percentageToRatio(readings.humidityPercent);
+  const windSpeed = readings.windSpeedMs;
+  const wetBulbGlobeTemperature = estimateWetBulbGlobeTemperature(temperature, humidity);
+  return {
+    temperature,
+    pressure,
+    humidity,
+    windSpeed,
+    windDirection: normalizeAngle0To2Pi(degreesToRadians(readings.windFromDeg)),
+    dewPoint: celsiusToKelvin(readings.dewPointC),
+    ...deriveBaseWeatherFields(temperature, pressure, humidity, windSpeed),
+    wetBulbGlobeTemperature,
+    heatStressIndex: calculateHeatStressIndex(wetBulbGlobeTemperature),
+    timestamp: readings.timestamp,
   };
 }

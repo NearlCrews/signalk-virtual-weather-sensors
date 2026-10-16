@@ -263,19 +263,34 @@ interface Band {
 }
 
 /**
- * A hazard category's bands together with the comparison direction they share.
- * Carrying the direction on the set (rather than as an `evaluateBands`
- * argument) makes a mismatched call impossible: ascending sets (wind, heat)
- * activate as the reading rises (`>= threshold`), descending sets (visibility,
- * cold) as it falls (`< threshold`).
+ * A hazard category: its bands, the comparison direction they share, the
+ * config toggle that enables it, the reading it compares, and the context its
+ * messages carry. Carrying the direction on the set (rather than as an
+ * `evaluateBands` argument) makes a mismatched call impossible: ascending sets
+ * (wind, heat) activate as the reading rises (`>= threshold`), descending sets
+ * (visibility, cold) as it falls (`< threshold`).
  */
 interface BandSet {
+  readonly configKey: 'wind' | 'visibility' | 'heat' | 'cold';
   readonly direction: 'ascending' | 'descending';
   readonly bands: ReadonlyArray<Band>;
+  /** The reading the bands compare, or undefined when the provider omitted it. */
+  readonly driver: (data: WeatherData) => number | undefined;
+  /** Context appended to an active band's message. */
+  readonly suffix: (data: WeatherData) => string;
 }
 
+/**
+ * Wind: gale (warn), storm (alarm), and hurricane (emergency) tracked
+ * independently, so during a hurricane all three are active. The suffix
+ * surfaces sustained wind, gust, cardinal direction, and pressure so the
+ * operator sees what to do (reef, run, hold) from the banner alone.
+ */
 const WIND_BANDS: BandSet = {
+  configKey: 'wind',
   direction: 'ascending',
+  driver: (data) => data.beaufortScale,
+  suffix: formatWindSuffix,
   bands: [
     {
       path: NOTIFICATION_PATHS.WIND_GALE,
@@ -298,8 +313,16 @@ const WIND_BANDS: BandSet = {
   ],
 };
 
+/**
+ * Heat stress: caution (HSI 2, warn), high (HSI 3, alarm), and extreme (HSI 4,
+ * emergency), driven by the provider's wet-bulb globe temperature (measured by
+ * AccuWeather, estimated for the keyless providers).
+ */
 const HEAT_BANDS: BandSet = {
+  configKey: 'heat',
   direction: 'ascending',
+  driver: (data) => data.heatStressIndex,
+  suffix: formatHeatSuffix,
   bands: [
     {
       path: NOTIFICATION_PATHS.HEAT_CAUTION,
@@ -322,8 +345,16 @@ const HEAT_BANDS: BandSet = {
   ],
 };
 
+/**
+ * Visibility: low (1 nm, warn) and very low (0.5 nm, alarm). 1 nm is the
+ * plugin's chosen restricted-visibility threshold; neither SOLAS nor the
+ * COLREGs define a numeric value.
+ */
 const VISIBILITY_BANDS: BandSet = {
+  configKey: 'visibility',
   direction: 'descending',
+  driver: (data) => data.visibility,
+  suffix: formatVisibilitySuffix,
   bands: [
     {
       path: NOTIFICATION_PATHS.VISIBILITY_LOW,
@@ -340,8 +371,16 @@ const VISIBILITY_BANDS: BandSet = {
   ],
 };
 
+/**
+ * Cold: caution (wind chill below 0 C, warn) and extreme (below -20 C, alarm),
+ * compared in kelvin. The suffix adds air temperature and wind speed because
+ * wind chill alone undersells the exposure on a windy day.
+ */
 const COLD_BANDS: BandSet = {
+  configKey: 'cold',
   direction: 'descending',
+  driver: (data) => (Number.isFinite(data.windChill) ? data.windChill : undefined),
+  suffix: formatColdSuffix,
   bands: [
     {
       path: NOTIFICATION_PATHS.COLD_CAUTION,
@@ -357,6 +396,9 @@ const COLD_BANDS: BandSet = {
     },
   ],
 };
+
+/** The numeric hazard categories, in evaluation (and therefore emission) order. */
+const BAND_SETS: ReadonlyArray<BandSet> = [WIND_BANDS, VISIBILITY_BANDS, HEAT_BANDS, COLD_BANDS];
 
 /** One notification path's published state and the message that explains it. */
 interface PublishedNotification {
@@ -377,7 +419,6 @@ interface EvaluationSink {
 /** What an evaluation will record once the caller confirms it reached the bus. */
 interface PendingEvaluation {
   readonly states: Map<string, PublishedNotification>;
-  readonly primed: boolean;
 }
 
 /**
@@ -467,14 +508,13 @@ export class WeatherNotifier {
 
     const sink: EvaluationSink = { transitions: [], states };
 
-    if (this.config.wind) this.evaluateWind(data, sink);
-    else this.clearBands(WIND_BANDS, sink);
-    if (this.config.visibility) this.evaluateVisibility(data, sink);
-    else this.clearBands(VISIBILITY_BANDS, sink);
-    if (this.config.heat) this.evaluateHeat(data, sink);
-    else this.clearBands(HEAT_BANDS, sink);
-    if (this.config.cold) this.evaluateCold(data, sink);
-    else this.clearBands(COLD_BANDS, sink);
+    // A disabled category, or one whose driver the provider omitted, clears to
+    // `normal`: without the exit edge a band would latch in its last state.
+    for (const set of BAND_SETS) {
+      const value = this.config[set.configKey] ? set.driver(data) : undefined;
+      if (value === undefined) this.clearBands(set, sink);
+      else this.evaluateBands(set, value, () => set.suffix(data), sink);
+    }
     if (this.config.weather) this.evaluateSevereCondition(data, sink);
     else this.maybeTransition(NOTIFICATION_PATHS.WEATHER_SEVERE, 'normal', () => '', sink);
 
@@ -500,14 +540,14 @@ export class WeatherNotifier {
     transitions: PathValue[],
     states: Map<string, PublishedNotification>
   ): NotificationEvaluation {
-    const sealed: PendingEvaluation = { states, primed: true };
+    const sealed: PendingEvaluation = { states };
     this.pending = sealed;
     return {
       transitions,
       commit: () => {
         if (this.pending !== sealed) return;
         for (const [path, entry] of sealed.states) this.published.set(path, entry);
-        this.primed = sealed.primed;
+        this.primed = true;
         this.pending = null;
       },
     };
@@ -610,52 +650,6 @@ export class WeatherNotifier {
   }
 
   /**
-   * Wind: gale (warn) / storm (alarm) / hurricane (emergency) tracked
-   * independently. Each band is active when Beaufort >= its threshold, so
-   * during a hurricane all three are concurrently active. The shared suffix
-   * surfaces sustained wind, gust, cardinal direction, and pressure so the
-   * operator sees what to actually do (reef, run, hold) from the banner alone.
-   */
-  private evaluateWind(data: WeatherData, sink: EvaluationSink): void {
-    const bft = data.beaufortScale;
-    if (bft === undefined) {
-      this.clearBands(WIND_BANDS, sink);
-      return;
-    }
-    this.evaluateBands(WIND_BANDS, bft, () => formatWindSuffix(data), sink);
-  }
-
-  /**
-   * Visibility: low (1 nm, warn) and very-low (0.5 nm, alarm) tracked
-   * independently. 1 nm is the plugin's chosen restricted-visibility
-   * threshold; neither SOLAS nor the COLREGs define a numeric value.
-   */
-  private evaluateVisibility(data: WeatherData, sink: EvaluationSink): void {
-    const vis = data.visibility;
-    if (vis === undefined) {
-      this.clearBands(VISIBILITY_BANDS, sink);
-      return;
-    }
-    this.evaluateBands(VISIBILITY_BANDS, vis, () => formatVisibilitySuffix(data), sink);
-  }
-
-  /**
-   * Heat stress: caution (HSI 2, warn), high (HSI 3, alarm), extreme
-   * (HSI 4, emergency). Driven by the provider's wet-bulb globe temperature
-   * (measured by AccuWeather, estimated for Open-Meteo); the suffix surfaces
-   * WBGT, RH, and RealFeel-in-shade (when present) so the operator sees both
-   * the index and the underlying physiology drivers.
-   */
-  private evaluateHeat(data: WeatherData, sink: EvaluationSink): void {
-    const hsi = data.heatStressIndex;
-    if (hsi === undefined) {
-      this.clearBands(HEAT_BANDS, sink);
-      return;
-    }
-    this.evaluateBands(HEAT_BANDS, hsi, () => formatHeatSuffix(data), sink);
-  }
-
-  /**
    * Drive a band set against one numeric reading, using the comparison
    * direction the set declares (ascending: `value >= threshold`; descending:
    * `value < threshold`). Each band clears with `normal` otherwise. The
@@ -696,21 +690,6 @@ export class WeatherNotifier {
     for (const band of set.bands) {
       this.maybeTransition(band.path, 'normal', () => '', sink);
     }
-  }
-
-  /**
-   * Cold: caution (wind chill < 0 C, warn) and extreme (< -20 C, alarm).
-   * Wind chill stored in Kelvin; thresholds compare directly. The suffix
-   * adds air temp and wind speed because wind chill alone undersells the
-   * exposure risk on a windy day.
-   */
-  private evaluateCold(data: WeatherData, sink: EvaluationSink): void {
-    const windChillK = data.windChill;
-    if (!Number.isFinite(windChillK)) {
-      this.clearBands(COLD_BANDS, sink);
-      return;
-    }
-    this.evaluateBands(COLD_BANDS, windChillK, () => formatColdSuffix(data), sink);
   }
 
   /**

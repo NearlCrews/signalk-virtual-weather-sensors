@@ -62,6 +62,55 @@ describe('WarningsService', () => {
     await expect(service.getWarnings(MIAMI)).rejects.toThrow('NWS warnings unavailable');
   });
 
+  it('treats an NWS 400 out-of-bounds answer as no warnings', async () => {
+    // NWS answers 400 for a point inside the generous US box but outside its
+    // coverage (British Columbia, Bermuda, Mexico). That is a documented
+    // limitation, not an outage, so it must not surface as a consumer error.
+    (global.fetch as Mock).mockResolvedValueOnce(
+      createMockFetchResponse(
+        { status: 400, detail: 'Parameter "point" is invalid: out of bounds' },
+        { ok: false, status: 400, statusText: 'Bad Request' }
+      )
+    );
+    const service = new WarningsService();
+    await expect(service.getWarnings({ latitude: 48.4, longitude: -123.4 })).resolves.toEqual([]);
+  });
+
+  it('still reports other NWS client errors, including a 400 for another reason', async () => {
+    (global.fetch as Mock).mockResolvedValueOnce(
+      createMockFetchResponse('err', { ok: false, status: 404, statusText: 'Not Found' })
+    );
+    const service = new WarningsService();
+    await expect(service.getWarnings(MIAMI)).rejects.toThrow('NWS warnings unavailable');
+
+    // A 400 that is not the out-of-bounds answer (a malformed request) must not
+    // turn into a false all-clear for a covered position.
+    (global.fetch as Mock).mockResolvedValueOnce(
+      createMockFetchResponse(
+        { status: 400, detail: 'Parameter "point" is invalid: bad format' },
+        { ok: false, status: 400, statusText: 'Bad Request' }
+      )
+    );
+    await expect(service.getWarnings(MIAMI)).rejects.toThrow('NWS warnings unavailable');
+  });
+
+  it('makes no NWS request for Pacific positions outside the US territories', async () => {
+    const service = new WarningsService();
+    await expect(service.getWarnings({ latitude: 38.3, longitude: 141.0 })).resolves.toEqual([]);
+    expect(global.fetch as Mock).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['Guam', { latitude: 13.4, longitude: 144.7 }],
+    ['the western Aleutians', { latitude: 52.9, longitude: 173.2 }],
+    ['American Samoa', { latitude: -14.3, longitude: -170.7 }],
+  ])('routes %s to NWS', async (_name, point) => {
+    (global.fetch as Mock).mockResolvedValueOnce(createMockFetchResponse({ features: [] }));
+    const service = new WarningsService();
+    await expect(service.getWarnings(point)).resolves.toEqual([]);
+    expect(String((global.fetch as Mock).mock.calls[0][0])).toContain('api.weather.gov');
+  });
+
   it('fetches MetAlerts for a Norwegian-waters position and maps the result', async () => {
     const metAlerts = {
       features: [

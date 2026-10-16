@@ -1,6 +1,6 @@
 // src/__tests__/mappers/MetNoMapper.test.ts
 import { describe, expect, it } from 'vitest';
-import { mapMetNoCurrentToWeatherData } from '../../mappers/MetNoMapper.js';
+import { MET_NO_DESCRIPTIONS, mapMetNoCurrentToWeatherData } from '../../mappers/MetNoMapper.js';
 import type { MetNoLocationforecastResponse } from '../../types/index.js';
 
 const sample: MetNoLocationforecastResponse = {
@@ -107,5 +107,18 @@ describe('mapMetNoCurrentToWeatherData', () => {
       },
     };
     expect(() => mapMetNoCurrentToWeatherData(missingTemp)).toThrow(/missing air_temperature/);
+  });
+});
+
+describe('MET_NO_DESCRIPTIONS', () => {
+  it('describes the symbol codes the API spells with an extra "s"', () => {
+    // The official legend (github.com/metno/weathericons) lists these two
+    // spellings, and they are what the API actually emits.
+    expect(MET_NO_DESCRIPTIONS.get('lightssleetshowersandthunder')).toBe(
+      'Light sleet showers and thunder'
+    );
+    expect(MET_NO_DESCRIPTIONS.get('lightssnowshowersandthunder')).toBe(
+      'Light snow showers and thunder'
+    );
   });
 });

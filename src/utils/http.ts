@@ -8,7 +8,7 @@
 
 import { ERROR_CODES } from '../constants/index.js';
 import type { GeoLocation } from '../types/navigation.js';
-import { toErrorMessage } from './conversions.js';
+import { isAbortError, toErrorMessage } from './conversions.js';
 
 /** Default response-body cap (1 MiB), matching the AccuWeather fetch path. */
 export const DEFAULT_MAX_RESPONSE_BYTES = 1_048_576;
@@ -62,11 +62,59 @@ function classifyStatus(status: number): string {
   return ERROR_CODES.NETWORK.API_INVALID_RESPONSE;
 }
 
-/** The tagged throw both entry points produce for a non-2xx status. */
-function statusError(response: Response): Error {
-  return new Error(
-    `${classifyStatus(response.status)}: request failed (${response.status} ${response.statusText})`
-  );
+/** Bytes of a non-2xx body kept on `HttpStatusError.body`: enough for a problem+json detail. */
+const ERROR_BODY_MAX_BYTES = 4096;
+
+/**
+ * The tagged throw both entry points produce for a non-2xx status. The message
+ * keeps the `ERROR_CODES` substring the plugin classifies on and never carries
+ * the body; `status` and `body` let a caller recognize one specific answer
+ * without parsing the message.
+ */
+export class HttpStatusError extends Error {
+  readonly status: number;
+  /** The response body, or empty when it was unreadable or over `ERROR_BODY_MAX_BYTES`. */
+  readonly body: string;
+
+  constructor(status: number, statusText: string, body = '') {
+    super(`${classifyStatus(status)}: request failed (${status} ${statusText})`);
+    this.status = status;
+    this.body = body;
+  }
+}
+
+async function statusError(response: Response): Promise<Error> {
+  let body = '';
+  try {
+    body = await readBoundedText(response, ERROR_BODY_MAX_BYTES, 'error response');
+  } catch (error) {
+    if (isAbortError(error)) throw error;
+    // An unreadable or oversized error body leaves only the status to go on.
+  }
+  return new HttpStatusError(response.status, response.statusText, body);
+}
+
+/**
+ * Attempted-request counter for the status banner, shared by the keyless
+ * clients. A request aborted by the plugin stopping never really went out, so
+ * it is taken back off; every other outcome, success or failure, counts.
+ */
+export class RequestCounter {
+  private count = 0;
+
+  public get value(): number {
+    return this.count;
+  }
+
+  public async track<T>(request: () => Promise<T>): Promise<T> {
+    this.count++;
+    try {
+      return await request();
+    } catch (error) {
+      if (isAbortError(error)) this.count--;
+      throw error;
+    }
+  }
 }
 
 /**
@@ -125,7 +173,7 @@ async function readConditionalResponse<T>(
   if (response.status === NOT_MODIFIED_STATUS) {
     return { body: null, lastModified, expiresMs };
   }
-  if (!response.ok) throw statusError(response);
+  if (!response.ok) throw await statusError(response);
   return { body: await readBoundedJson<T>(response, maxBytes), lastModified, expiresMs };
 }
 
@@ -267,7 +315,7 @@ async function fetchWithTimeout<R>(
 export async function fetchJson<T>(url: URL | string, options: FetchJsonOptions): Promise<T> {
   const maxBytes = options.maxBytes ?? DEFAULT_MAX_RESPONSE_BYTES;
   return fetchWithTimeout(url, options, async (response) => {
-    if (!response.ok) throw statusError(response);
+    if (!response.ok) throw await statusError(response);
     return readBoundedJson<T>(response, maxBytes);
   });
 }

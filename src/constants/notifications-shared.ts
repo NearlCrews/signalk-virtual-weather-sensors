@@ -167,6 +167,17 @@ export function providerRequiresApiKey(id: WeatherProviderId): boolean {
   return WEATHER_PROVIDER_REQUIRES_KEY[id];
 }
 
+/**
+ * True when a provider can run: a keyless provider always, a keyed one only
+ * with its key. AccuWeather is the only keyed provider, so its key is the only
+ * key; a second keyed provider brings its own key field and a clause here. The
+ * one rule for which providers can join a blend, shared by the runtime factory
+ * and the panel's merge list so the two cannot disagree.
+ */
+export function isProviderAvailable(id: WeatherProviderId, hasAccuWeatherKey: boolean): boolean {
+  return !providerRequiresApiKey(id) || hasAccuWeatherKey;
+}
+
 /** How configured providers are combined: one source, or a synthetic blend. */
 export type WeatherMode = 'single' | 'merged';
 

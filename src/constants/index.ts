@@ -34,19 +34,24 @@ export const TEST_KEY_LOCATION = { latitude: 51.4779, longitude: 0.0015 } as con
 // Plugin Metadata
 // ===============================
 
+const PLUGIN_VERSION = process.env.PKG_VERSION || '1.0.0';
+const PLUGIN_USER_AGENT = `${PLUGIN_NAME}/${PLUGIN_VERSION}`;
+
 /** Plugin identification and versioning */
 export const PLUGIN = {
   NAME: PLUGIN_NAME,
   DISPLAY_NAME: PLUGIN_DISPLAY_NAME,
   DESCRIPTION:
     'Signal K plugin providing comprehensive weather data with NMEA2000-compatible environmental measurements',
-  VERSION: process.env.PKG_VERSION || '1.0.0',
+  VERSION: PLUGIN_VERSION,
+  /** Plain `name/version` User-Agent for upstreams that ask for no contact. */
+  USER_AGENT: PLUGIN_USER_AGENT,
   /**
    * Identifying User-Agent required by Met.no and NWS terms of service.
    * Both APIs require a contact URL or email address in the User-Agent header.
    * See https://api.met.no/doc/TermsOfService
    */
-  CONTACT_USER_AGENT: `${PLUGIN_NAME}/${process.env.PKG_VERSION || '1.0.0'} (+https://github.com/NearlCrews/signalk-virtual-weather-sensors)`,
+  CONTACT_USER_AGENT: `${PLUGIN_USER_AGENT} (+https://github.com/NearlCrews/signalk-virtual-weather-sensors)`,
   STATUS: {
     RUNNING: 'Running',
     /**
@@ -406,6 +411,13 @@ export const WARNINGS = {
   MAX_DETAILS_LENGTH: 512,
   MAX_LABEL_LENGTH: 64,
 } as const;
+
+/**
+ * Observation age past which weather data counts as stale when the provider
+ * declares no `maxObservationAgeMs` of its own, and the age the merged and
+ * marine paths use.
+ */
+export const DEFAULT_MAX_OBSERVATION_AGE_MS = 3 * 60 * 60 * 1000;
 
 /**
  * On-demand forecast cache lifetimes. The Weather API is pull-based: a consumer

@@ -419,23 +419,6 @@ describe('AccuWeatherService', () => {
     });
   });
 
-  describe('Cache Management', () => {
-    it('should clear cache correctly', () => {
-      service.clearLocationCache();
-      const stats = service.getCacheStats();
-      expect(stats.size).toBe(0);
-    });
-
-    it('should provide cache statistics', () => {
-      const stats = service.getCacheStats();
-      expect(stats).toEqual(
-        expect.objectContaining({
-          size: expect.any(Number),
-        })
-      );
-    });
-  });
-
   describe('Error Handling', () => {
     it('should handle network timeouts', async () => {
       service.clearLocationCache();

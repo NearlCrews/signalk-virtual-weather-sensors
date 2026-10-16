@@ -9,12 +9,12 @@ import type { ServerAPI } from '@signalk/server-api';
 import { WindCalculator } from '../calculators/WindCalculator.js';
 import {
   API_QUOTA,
+  DEFAULT_MAX_OBSERVATION_AGE_MS,
   ERROR_CODES,
   PERFORMANCE,
   PLUGIN,
   QUOTA_WARN_PERCENT_PLACEHOLDER,
 } from '../constants/index.js';
-import { providerRequiresApiKey } from '../constants/notifications-shared.js';
 import { createCurrentWeatherProvider } from '../providers/createCurrentWeatherProvider.js';
 import type { CurrentWeatherProvider } from '../providers/WeatherProvider.js';
 import {
@@ -36,20 +36,13 @@ import {
 import type { OpenMeteoMarineService } from './OpenMeteoMarineService.js';
 import { SignalKService } from './SignalKService.js';
 
-/**
- * Public, stable shape returned by `getServiceStatus()`. The nested health and
- * cache shapes are derived from the underlying service methods so the contract
- * stays in lockstep with what those services actually return.
- */
+/** Public, stable shape returned by `getServiceStatus()`. */
 export interface WeatherServiceStatus {
   readonly state: PluginState;
   readonly lastUpdate: Date | null;
   readonly updateCount: number;
   readonly errorCount: number;
   readonly hasWeatherData: boolean;
-  readonly signalKHealth: ReturnType<SignalKService['getHealthStatus']>;
-  readonly cacheStats: ReturnType<CurrentWeatherProvider['getCacheStats']>;
-  readonly apiRequestCount: number;
 }
 
 /** Apparent-wind result. Either field is absent when it cannot be derived. */
@@ -460,7 +453,8 @@ export class WeatherService {
     return (
       (fetchAgeMs !== null && fetchAgeMs > this.maxStalenessMs()) ||
       (observationAgeMs !== null &&
-        observationAgeMs > (this.weatherProvider.maxObservationAgeMs ?? 3 * 60 * 60 * 1000))
+        observationAgeMs >
+          (this.weatherProvider.maxObservationAgeMs ?? DEFAULT_MAX_OBSERVATION_AGE_MS))
     );
   }
 
@@ -470,7 +464,7 @@ export class WeatherService {
     const observationAgeMs = elapsedSinceMs(this.lastMarineObservationMs);
     return (
       (fetchAgeMs !== null && fetchAgeMs > this.maxStalenessMs()) ||
-      (observationAgeMs !== null && observationAgeMs > 3 * 60 * 60 * 1000)
+      (observationAgeMs !== null && observationAgeMs > DEFAULT_MAX_OBSERVATION_AGE_MS)
     );
   }
 
@@ -647,22 +641,31 @@ export class WeatherService {
   }
 
   /**
-   * `K/Q today` segment (no leading separator) when `dailyApiQuota > 0`,
-   * otherwise empty. `used` is the rolling 24h count, read once by the caller.
+   * The active provider's own daily cap, or 0 when it meters nothing: a keyless
+   * source has no quota to report however `dailyApiQuota` is configured.
+   * @private
+   */
+  private dailyQuota(): number {
+    return this.weatherProvider.dailyQuota ?? 0;
+  }
+
+  /**
+   * `K/Q today` segment (no leading separator) when the provider declares a
+   * cap, otherwise empty. `used` is the rolling 24h count, read once by the caller.
    * @private
    */
   private formatQuotaSegment(used: number): string {
-    if (this.config.dailyApiQuota <= 0) return '';
-    return `${used}/${this.config.dailyApiQuota} today`;
+    const quota = this.dailyQuota();
+    return quota > 0 ? `${used}/${quota} today` : '';
   }
 
   /**
    * True when the rolling 24h request count `used` has crossed `WARN_RATIO` of
-   * the configured quota. Returns false when the cap is disabled.
+   * the provider's cap. Returns false when there is no cap.
    * @private
    */
   private shouldShowQuotaWarning(used: number): boolean {
-    return isApiQuotaReached(used, this.config.dailyApiQuota, API_QUOTA.WARN_RATIO);
+    return isApiQuotaReached(used, this.dailyQuota(), API_QUOTA.WARN_RATIO);
   }
 
   /**
@@ -694,7 +697,7 @@ export class WeatherService {
    * @private
    */
   private quotaPercentUsed(used: number): number {
-    return Math.floor((used / this.config.dailyApiQuota) * 100);
+    return Math.floor((used / this.dailyQuota()) * 100);
   }
 
   /**
@@ -707,15 +710,13 @@ export class WeatherService {
   }
 
   /**
-   * True when the rolling 24h request count has reached the configured cap.
-   * Used by `updateWeatherData` to short-circuit fetches; the existing
-   * stale-data error path then surfaces the pause to operators.
+   * True when the provider reports it cannot fetch (its quota is spent). Used
+   * by `updateWeatherData` to short-circuit fetches; the existing stale-data
+   * error path then surfaces the pause to operators. A provider without the
+   * hook meters nothing and is never blocked.
    */
   public isQuotaExhausted(): boolean {
-    if (this.weatherProvider.isCurrentWeatherFetchBlocked) {
-      return this.weatherProvider.isCurrentWeatherFetchBlocked();
-    }
-    return isApiQuotaReached(this.getRequestCountLast24h(), this.config.dailyApiQuota);
+    return this.weatherProvider.isCurrentWeatherFetchBlocked?.() ?? false;
   }
 
   /**
@@ -729,7 +730,7 @@ export class WeatherService {
    * non-zero rolling-24h request count (keyless providers report 0).
    */
   public formatQuotaExhaustedMessage(used: number = this.getRequestCountLast24h()): string {
-    const quota = this.config.dailyApiQuota;
+    const quota = this.dailyQuota();
     return `${this.weatherProvider.name} daily quota reached (${used}/${quota} in last 24h). Fetches paused until the rolling window drops below the cap. To resume sooner, raise dailyApiQuota or increase updateFrequency.`;
   }
 
@@ -743,9 +744,6 @@ export class WeatherService {
       updateCount: this.updateCount,
       errorCount: this.errorCount,
       hasWeatherData: !!this.currentWeatherData,
-      signalKHealth: this.signalKService.getHealthStatus(),
-      cacheStats: this.weatherProvider.getCacheStats(),
-      apiRequestCount: this.weatherProvider.getRequestCount(),
     };
   }
 
@@ -767,19 +765,18 @@ export class WeatherService {
    * brief plan glitch), so it surfaces an error but leaves the retry timer
    * running to recover on its own.
    *
-   * Only a key-gated provider can have its key rejected. `fetchJson` tags every
-   * upstream 401 with the same code, and a keyless provider can produce one
-   * too: a self-hosted `openMeteoBaseUrl` behind an authenticating proxy, for
-   * instance. Latching `key-rejected` there would stop all fetching until a
-   * config change and tell the operator to fix a key that provider has no field
-   * for, so the terminal latch is gated on the provider actually using a key.
-   * Merged mode never latches either: a key-gated child failing leaves the
-   * blend running on its siblings, and `MergingWeatherProvider` reports
-   * "All weather providers failed", which carries no 401 tag.
+   * Only a provider that declares `usesApiKey` can have its key rejected.
+   * `fetchJson` tags every upstream 401 with the same code, and a keyless
+   * provider can produce one too: a self-hosted `openMeteoBaseUrl` behind an
+   * authenticating proxy, for instance. Latching `key-rejected` there would
+   * stop all fetching until a config change and tell the operator to fix a key
+   * that provider has no field for. The merging provider never declares it
+   * either: a key-gated child failing leaves the blend running on its
+   * siblings. Asking the provider that was actually built, rather than the
+   * config, also covers a merged config that degraded to AccuWeather alone.
    */
   private isAuthError(error: unknown): boolean {
-    if (this.config.weatherMode === 'merged') return false;
-    if (!providerRequiresApiKey(this.config.weatherProvider)) return false;
+    if (this.weatherProvider.usesApiKey !== true) return false;
     return error instanceof Error && error.message.includes(ERROR_CODES.NETWORK.API_UNAUTHORIZED);
   }
 
