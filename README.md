@@ -18,32 +18,18 @@ service; AccuWeather is an optional source for users who have an API key.
 > for safety-of-life decisions: always cross-check official forecasts and
 > warnings against your primary instruments.
 
-## What's new in 1.15.0
+## What's new in 1.15.1
 
-Version 1.15.0 corrects several weather readings and alerts after a live check
-of every data source, moves the configuration panel to the shared marine UI
-0.14.0, and brings the development toolchain current. Emitted paths and saved
-configuration fields are unchanged.
+Version 1.15.1 is a maintenance release. The configuration panel builds on
+the shared marine UI 0.14.1 and webpack 5.112.0. Emitted paths, saved
+configuration fields, and the panel's behavior are unchanged from 1.15.0.
 
-- **Heavy thunderstorms raise an alert under Open-Meteo.** WMO code 97, which
-  models without a hail forecast report for every strong thunderstorm, was
-  unmapped, so those storms raised no severe-weather notification.
-- **Past-hour precipitation is a rolling hour.** Open-Meteo's
-  `precipitationLastHour` sums the four 15-minute buckets that end at the
-  observation instead of reading the last completed clock hour, which lagged
-  by up to 59 minutes and could read 0 mm while it rained.
-- **Warnings reach the US territories and fail less.** Guam, the Northern
-  Marianas, the western Aleutians, and American Samoa now get NWS warnings, and
-  a position near the US that NWS does not cover, such as British Columbia,
-  Bermuda, or Mexico, gets an empty list instead of an error.
-- **The banner reports a quota only where one exists.** A keyless install no
-  longer shows `0/50 today`, and a merged configuration that falls back to
-  AccuWeather alone stops retrying a rejected key.
-- **Shared marine UI 0.14.0.** A save the plugin cannot hand to Signal K shows
-  in the save bar with Save still available, a refused API key or base URL
-  moves focus to its field, and locked controls say why they are blocked.
+- **Shared marine UI 0.14.1.** The panel looks and behaves as in 1.15.0. Its
+  bundle check now works with webpack 5.112, so the build no longer holds
+  webpack at 5.111, and the newer webpack only writes some of the panel's CSS
+  differently.
 
-See the [v1.15.0 changelog entry](https://github.com/NearlCrews/signalk-virtual-weather-sensors/blob/main/CHANGELOG.md#v1150), or the
+See the [v1.15.1 changelog entry](https://github.com/NearlCrews/signalk-virtual-weather-sensors/blob/main/CHANGELOG.md#v1151), or the
 [full changelog](https://github.com/NearlCrews/signalk-virtual-weather-sensors/blob/main/CHANGELOG.md).
 
 ## What it does

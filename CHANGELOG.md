@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+<a id="v1151"></a>
+
+## [1.15.1] - 2026-10-17
+
 ### Changed
 
 - The configuration panel moves to `signalk-nearlcrews-ui` 0.14.1, whose bundle
@@ -2172,7 +2176,9 @@ First production release of signalk-virtual-weather-sensors: a comprehensive wea
 
 **For technical support and feature requests, please visit the GitHub repository.**
 
-[Unreleased]: https://github.com/NearlCrews/signalk-virtual-weather-sensors/compare/v1.14.0...HEAD
+[Unreleased]: https://github.com/NearlCrews/signalk-virtual-weather-sensors/compare/v1.15.1...HEAD
+[1.15.1]: https://github.com/NearlCrews/signalk-virtual-weather-sensors/compare/v1.15.0...v1.15.1
+[1.15.0]: https://github.com/NearlCrews/signalk-virtual-weather-sensors/compare/v1.14.0...v1.15.0
 [1.14.0]: https://github.com/NearlCrews/signalk-virtual-weather-sensors/compare/v1.13.5...v1.14.0
 [1.13.5]: https://github.com/NearlCrews/signalk-virtual-weather-sensors/compare/v1.13.4...v1.13.5
 [1.13.4]: https://github.com/NearlCrews/signalk-virtual-weather-sensors/compare/v1.13.3...v1.13.4
