@@ -134,13 +134,13 @@
     "publint": "0.3.25",
     "react": "19.3.1",
     "react-dom": "19.3.1",
-    "signalk-nearlcrews-ui": "0.14.0",
+    "signalk-nearlcrews-ui": "0.14.1",
     "size-limit": "14.2.0",
     "tsx": "^4.23.15",
     "typescript": "7.0.2",
     "vite": "^8.3.4",
     "vitest": "5.0.5",
-    "webpack": "~5.111.1",
+    "webpack": "^5.112.0",
     "webpack-cli": "^7.2.3"
   },
   "scripts": {

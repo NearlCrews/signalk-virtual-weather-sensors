@@ -54,7 +54,7 @@ bar. Keep provider, quota, status, and save-confirmation behavior local to this
 plugin. Project CSS must stay in focused CSS modules and use public `--snui-*`
 tokens; the panel never re-implements a primitive the shared UI provides.
 
-The shared UI is pinned exactly at 0.14.0. Fresh profiles use Match Admin
+The shared UI is pinned exactly at 0.14.1. Fresh profiles use Match Admin
 without writing an implicit preference. Match Admin follows an explicit host
 theme and otherwise stays Light; Match device is the explicit operating-system
 preference.

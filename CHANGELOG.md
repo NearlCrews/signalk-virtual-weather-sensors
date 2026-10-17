@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- The configuration panel moves to `signalk-nearlcrews-ui` 0.14.1, whose bundle
+  check works with webpack 5.112.0, so webpack is no longer held at 5.111. The
+  panel looks and behaves as in 1.15.0; the newer build only writes some of its
+  CSS differently, such as a `max-width` container query in place of the range
+  form.
+
 <a id="v1150"></a>
 
 ## [1.15.0] - 2026-10-16
