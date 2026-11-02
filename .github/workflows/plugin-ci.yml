@@ -29,7 +29,7 @@ concurrency:
 # release commit.
 jobs:
   validate:
-    uses: SignalK/signalk-server/.github/workflows/plugin-ci.yml@340d5bb62c17ec58d2a3497dbbf081cd87af2a96 # master 2026-10-16
+    uses: SignalK/signalk-server/.github/workflows/plugin-ci.yml@9fd347062f40ea602dd7575a8648293b593efbca # master 2026-10-16
     with:
       test-command: npm run test:run
       build-command: npm run build
